@@ -1313,16 +1313,16 @@ canvas {
 .weekly-overview-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: 10px;
 }
 
 .weekly-kpi-card {
   display: grid;
-  gap: 10px;
-  min-height: 132px;
-  padding: 16px 18px;
+  gap: 6px;
+  min-height: 96px;
+  padding: 12px 14px;
   border: 1px solid var(--line);
-  border-radius: 22px;
+  border-radius: 18px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)),
     rgba(7, 14, 23, 0.76);
@@ -1349,16 +1349,20 @@ canvas {
 .weekly-kpi-value {
   margin: 0;
   color: var(--text);
-  font-size: clamp(26px, 2.2vw, 34px);
+  font-size: clamp(22px, 1.9vw, 28px);
   font-weight: 700;
-  line-height: 1;
+  line-height: 1.05;
 }
 
-.weekly-kpi-copy {
+.weekly-kpi-meta {
   margin: 0;
-  color: rgba(247, 243, 235, 0.68);
-  font-size: 13px;
-  line-height: 1.65;
+  color: rgba(247, 243, 235, 0.52);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.weekly-kpi-meta.is-success {
+  color: #7ce7d7;
 }
 
 .weekly-panel-head {
@@ -1371,16 +1375,18 @@ canvas {
 .weekly-record-list {
   display: grid;
   gap: 10px;
+  padding-top: 4px;
+  padding-bottom: 2px;
 }
 
 .weekly-record-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
-  padding: 16px 18px;
+  gap: 10px;
+  padding: 12px 14px;
   border: 1px solid var(--line);
-  border-radius: 22px;
+  border-radius: 18px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
     rgba(7, 14, 23, 0.72);
@@ -1410,47 +1416,37 @@ canvas {
 
 .weekly-record-left {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
   min-width: 0;
 }
 
 .weekly-record-copy {
-  display: grid;
-  gap: 6px;
+  display: flex;
+  align-items: center;
   min-width: 0;
 }
 
 .weekly-record-topline {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 
 .weekly-record-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex: 0 0 auto;
 }
 
 .weekly-record-delete {
-  min-height: 36px;
-  padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text);
-  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
-  white-space: nowrap;
-}
-
-.weekly-record-delete:hover {
-  transform: translateY(-1px);
-  border-color: rgba(255, 141, 119, 0.22);
-  background: rgba(255, 141, 119, 0.1);
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
 }
 
 .weekly-record-title,
@@ -1468,33 +1464,52 @@ canvas {
   text-overflow: ellipsis;
 }
 
-.weekly-record-summary {
-  margin: 0;
-  color: rgba(247, 243, 235, 0.7);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
 .weekly-record-metrics {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 6px;
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .weekly-record-metric {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  font-size: 11px;
   background: rgba(255, 255, 255, 0.04);
-}
-
-.weekly-record-hint {
-  margin: 0;
-  color: rgba(247, 243, 235, 0.64);
-  font-size: 13px;
-  line-height: 1.55;
 }
 
 .weekly-record-pill {
   flex: 0 0 auto;
+  position: relative;
+  overflow: hidden;
+  min-height: 28px;
+  padding: 0 11px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.weekly-record-pill.is-current {
+  gap: 7px;
+  background:
+    radial-gradient(circle at 18% 50%, rgba(255, 255, 255, 0.22), transparent 22%),
+    linear-gradient(135deg, rgba(92, 225, 194, 0.28), rgba(245, 200, 107, 0.18), rgba(255, 141, 119, 0.18));
+  border-color: rgba(92, 225, 194, 0.24);
+  color: #f7fff9;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 8px 18px rgba(92, 225, 194, 0.08);
+}
+
+.weekly-record-pill.is-current::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #f4fff9;
+  box-shadow: 0 0 10px rgba(244, 255, 249, 0.75);
+}
+
+.weekly-record-pill.is-history {
+  color: rgba(247, 243, 235, 0.72);
 }
 
 .weekly-record-status {
@@ -1646,6 +1661,23 @@ canvas {
   gap: 12px;
 }
 
+.weekly-report-stage {
+  position: relative;
+}
+
+.weekly-report-stage.is-locked > :not(.weekly-report-lock-layer) {
+  opacity: 0.76;
+}
+
+.weekly-report-lock-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  border-radius: 18px;
+  background: rgba(8, 15, 24, 0.08);
+  cursor: progress;
+}
+
 .weekly-back-button {
   width: 36px;
   height: 36px;
@@ -1722,8 +1754,18 @@ canvas {
   transition: transform 180ms ease, border-color 180ms ease, background 180ms ease, color 180ms ease;
 }
 
+.weekly-mini-action.is-loading {
+  gap: 8px;
+}
+
 .weekly-mini-action:hover {
   transform: translateY(-1px);
+}
+
+.weekly-mini-action:disabled {
+  opacity: 0.44;
+  transform: none;
+  cursor: not-allowed;
 }
 
 .weekly-mini-action-primary {
@@ -1739,11 +1781,43 @@ canvas {
   gap: 16px;
 }
 
+.weekly-template-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.weekly-template-select-field {
+  gap: 6px;
+}
+
+.weekly-template-select {
+  width: clamp(200px, 24vw, 260px);
+  min-height: 38px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+}
+
+.weekly-template-toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .weekly-textarea {
   min-height: 220px;
   line-height: 1.7;
   font-family: "SFMono-Regular", "SF Mono", "Consolas", "Liberation Mono", monospace;
   white-space: pre-wrap;
+}
+
+.weekly-textarea.is-readonly {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .weekly-textarea-secondary {
@@ -3048,13 +3122,16 @@ canvas {
   }
 
   .weekly-overview-grid,
-  .weekly-editor-toolbar {
+  .weekly-editor-toolbar,
+  .weekly-template-toolbar {
     grid-template-columns: 1fr;
   }
 
+  .weekly-record-topline,
   .weekly-record-metrics,
   .weekly-hero-actions {
     justify-content: flex-start;
+    flex-wrap: wrap;
   }
 
   .weekly-canvas-head,

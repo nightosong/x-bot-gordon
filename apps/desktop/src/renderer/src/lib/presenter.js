@@ -294,14 +294,29 @@ export function createWeeklyProjectDraft(project = null) {
   };
 }
 
+export function createWeeklyReportTemplateDraft(template = null) {
+  return {
+    id: template?.id ?? createWeeklyDraftId("weekly_report_template"),
+    name: String(template?.name ?? ""),
+    content: String(template?.content ?? ""),
+    builtin: Boolean(template?.builtin)
+  };
+}
+
 export function cloneWeeklyProgressRecord(record = null) {
   if (!record) {
     return null;
   }
 
+  const reportTemplates = Array.isArray(record.reportTemplates)
+    ? record.reportTemplates.map((template) => createWeeklyReportTemplateDraft(template))
+    : [];
+
   return {
     ...deepClone(record),
     content: String(record.content ?? ""),
+    reportTemplates,
+    selectedReportTemplateId: String(record.selectedReportTemplateId ?? reportTemplates[0]?.id ?? ""),
     reportTemplate: String(record.reportTemplate ?? ""),
     generatedReport: String(record.generatedReport ?? ""),
     projects: Array.isArray(record.projects) ? record.projects.map((project) => createWeeklyProjectDraft(project)) : []
@@ -473,10 +488,17 @@ export function sanitizeWeeklyProgressRecord(record) {
   const projects = Array.isArray(record.projects)
     ? record.projects.map((project) => sanitizeWeeklyProjectDraft(project)).filter(Boolean)
     : [];
+  const reportTemplates = Array.isArray(record.reportTemplates)
+    ? record.reportTemplates.map((template) => createWeeklyReportTemplateDraft(template))
+    : [];
+  const selectedReportTemplate =
+    reportTemplates.find((template) => template.id === String(record.selectedReportTemplateId ?? "").trim()) ?? reportTemplates[0] ?? null;
 
   return {
     ...record,
-    reportTemplate: String(record.reportTemplate ?? "").trim(),
+    reportTemplates,
+    selectedReportTemplateId: selectedReportTemplate?.id ?? "",
+    reportTemplate: String(selectedReportTemplate?.content ?? record.reportTemplate ?? "").trim(),
     generatedReport: String(record.generatedReport ?? "").trim(),
     projects,
     content: serializeWeeklyProgressProjects(projects)

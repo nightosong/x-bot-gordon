@@ -125,6 +125,13 @@ export interface WeeklyProgressProjectItem {
   tasks: WeeklyProgressTaskItem[];
 }
 
+export interface WeeklyReportTemplateItem {
+  id: string;
+  name: string;
+  content: string;
+  builtin: boolean;
+}
+
 export interface WeeklyProgressRecord {
   id: string;
   weekKey: string;
@@ -133,6 +140,8 @@ export interface WeeklyProgressRecord {
   endDate: string;
   content: string;
   projects: WeeklyProgressProjectItem[];
+  reportTemplates: WeeklyReportTemplateItem[];
+  selectedReportTemplateId: string;
   reportTemplate: string;
   generatedReport: string;
   status: WeeklyProgressStatus;

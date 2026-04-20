@@ -300,12 +300,6 @@
                       <p class="feature-kicker">Weekly Progress</p>
                       <p class="models-title">任务推进</p>
                     </div>
-
-                    <div class="weekly-hero-actions">
-                      <button type="button" class="model-action" @click="openLatestWeeklyRecord">
-                        {{ weeklyFocusRecord ? "打开本周推进" : "查看任务推进" }}
-                      </button>
-                    </div>
                   </div>
 
                   <div class="weekly-hero-side">
@@ -322,7 +316,7 @@
                   <article v-for="card in weeklyListOverviewCards" :key="card.id" class="weekly-kpi-card">
                     <p class="weekly-kpi-label">{{ card.label }}</p>
                     <p class="weekly-kpi-value">{{ card.value }}</p>
-                    <p class="weekly-kpi-copy">{{ card.copy }}</p>
+                    <p v-if="card.meta" class="weekly-kpi-meta" :class="{ 'is-success': card.metaTone === 'success' }">{{ card.meta }}</p>
                   </article>
                 </section>
 
@@ -342,7 +336,7 @@
                       </div>
                     </div>
 
-                    <div class="model-section-body model-configured-list">
+                    <div class="model-section-body model-configured-list weekly-record-list">
                       <div v-if="!workbench.weeklyProgress.length" class="model-empty">
                         <p class="model-empty-copy">当前还没有周记录，首次进入时会自动创建本周空白计划。</p>
                       </div>
@@ -359,19 +353,20 @@
                               <div class="weekly-record-topline">
                                 <span
                                   class="pill weekly-record-pill"
-                                  :class="record.status === 'active' ? '' : 'pill-neutral'"
+                                  :class="{
+                                    'is-current': record.status === 'active',
+                                    'is-history pill-neutral': record.status !== 'active'
+                                  }"
                                 >
                                   {{ record.status === "active" ? "本周" : "历史" }}
                                 </span>
                                 <p class="weekly-record-title">{{ record.title }}</p>
+                                <div class="weekly-record-metrics">
+                                  <span v-for="tag in getWeeklyRecordTags(record)" :key="tag" class="pill pill-neutral weekly-record-metric">
+                                    {{ tag }}
+                                  </span>
+                                </div>
                               </div>
-                              <p class="weekly-record-summary">{{ getWeeklyProgressSummaryText(record) }}</p>
-                              <div class="weekly-record-metrics">
-                                <span v-for="tag in getWeeklyRecordTags(record)" :key="tag" class="pill pill-neutral weekly-record-metric">
-                                  {{ tag }}
-                                </span>
-                              </div>
-                              <p class="weekly-record-hint">{{ getWeeklyRecordHint(record) }}</p>
                             </div>
                           </div>
                         </button>
@@ -391,7 +386,14 @@
                             }}
                           </span>
 
-                          <button type="button" class="weekly-record-delete" @click="handleWeeklyDelete(record.id)">删除</button>
+                          <button
+                            type="button"
+                            class="model-icon-button model-icon-button-danger weekly-record-delete"
+                            :aria-label="`删除 ${record.title}`"
+                            title="删除周记录"
+                            @click.stop="handleWeeklyDelete(record.id)"
+                            v-html="renderActionIcon('delete')"
+                          ></button>
                         </div>
                       </article>
                     </div>
@@ -407,6 +409,7 @@
                               class="model-icon-button weekly-back-button"
                               aria-label="返回列表"
                               title="返回列表"
+                              :disabled="ui.weekly.isGeneratingReport"
                               @click="closeWeeklyEditor"
                               v-html="renderActionIcon('return')"
                             ></button>
@@ -418,6 +421,7 @@
                               class="weekly-editor-tab"
                               :class="{ 'is-active': ui.weekly.editorView === 'projects' }"
                               :aria-selected="ui.weekly.editorView === 'projects' ? 'true' : 'false'"
+                              :disabled="ui.weekly.isGeneratingReport"
                               @click="ui.weekly.editorView = 'projects'"
                             >
                               项目推进
@@ -427,6 +431,7 @@
                               class="weekly-editor-tab"
                               :class="{ 'is-active': ui.weekly.editorView === 'reporting' }"
                               :aria-selected="ui.weekly.editorView === 'reporting' ? 'true' : 'false'"
+                              :disabled="ui.weekly.isGeneratingReport"
                               @click="ui.weekly.editorView = 'reporting'"
                             >
                               汇报视图
@@ -442,6 +447,7 @@
                               v-if="ui.weekly.editorView === 'projects'"
                               type="button"
                               class="weekly-mini-action weekly-mini-action-primary"
+                              :disabled="ui.weekly.isGeneratingReport"
                               @click="addWeeklyProject"
                             >
                               新增项目
@@ -450,9 +456,12 @@
                               v-else
                               type="button"
                               class="weekly-mini-action weekly-mini-action-primary"
+                              :class="{ 'is-loading': ui.weekly.isGeneratingReport }"
+                              :disabled="ui.weekly.isGeneratingReport"
                               @click="handleWeeklyReportGeneration"
                             >
-                              生成周报
+                              <span v-if="ui.weekly.isGeneratingReport" class="weekly-task-spinner" aria-hidden="true"></span>
+                              <span>{{ ui.weekly.isGeneratingReport ? "生成中..." : "生成周报" }}</span>
                             </button>
                           </div>
                         </div>
@@ -597,13 +606,50 @@
                         </template>
 
                         <template v-else>
-                          <div class="weekly-report-stage">
+                          <div class="weekly-report-stage" :class="{ 'is-locked': ui.weekly.isGeneratingReport }" :aria-busy="ui.weekly.isGeneratingReport ? 'true' : 'false'">
                             <section class="weekly-rail-card weekly-report-main-card">
+                              <div class="weekly-template-toolbar">
+                                <label class="field weekly-template-select-field">
+                                  <span class="field-label">模板列表</span>
+                                  <select
+                                    v-model="ui.weekly.draft.selectedReportTemplateId"
+                                    class="field-input weekly-template-select"
+                                    :disabled="ui.weekly.isGeneratingReport"
+                                    @change="handleWeeklyReportTemplateSelectionChange"
+                                  >
+                                    <option v-for="template in weeklyReportTemplates" :key="template.id" :value="template.id">
+                                      {{ getWeeklyReportTemplateOptionLabel(template) }}
+                                    </option>
+                                  </select>
+                                </label>
+
+                                <div class="weekly-template-toolbar-actions">
+                                  <button
+                                    type="button"
+                                    class="weekly-mini-action weekly-mini-action-primary"
+                                    :disabled="ui.weekly.isGeneratingReport"
+                                    @click="addWeeklyReportTemplate"
+                                  >
+                                    新增模板
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="weekly-mini-action"
+                                    :disabled="ui.weekly.isGeneratingReport || !weeklyCanDeleteSelectedReportTemplate"
+                                    @click="removeWeeklySelectedReportTemplate"
+                                  >
+                                    删除模板
+                                  </button>
+                                </div>
+                              </div>
+
                               <label class="field field-full">
                                 <span class="field-label">周报模板</span>
                                 <textarea
-                                  v-model="weeklyDraft.reportTemplate"
+                                  v-model="weeklySelectedReportTemplateContent"
                                   class="field-textarea weekly-textarea weekly-textarea-secondary"
+                                  :class="{ 'is-readonly': weeklySelectedReportTemplate?.builtin || ui.weekly.isGeneratingReport }"
+                                  :readonly="Boolean(weeklySelectedReportTemplate?.builtin || ui.weekly.isGeneratingReport)"
                                   placeholder="在这里维护固定模板，生成周报时会严格按模板输出"
                                 ></textarea>
                               </label>
@@ -613,6 +659,8 @@
                                 <textarea
                                   v-model="weeklyDraft.generatedReport"
                                   class="field-textarea weekly-textarea weekly-textarea-report"
+                                  :readonly="ui.weekly.isGeneratingReport"
+                                  :class="{ 'is-readonly': ui.weekly.isGeneratingReport }"
                                   placeholder="点击“生成周报”后会在这里填充结果，确认后再保存"
                                 ></textarea>
                               </label>
@@ -706,6 +754,8 @@
                                 </div>
                               </section>
                             </div>
+
+                            <div v-if="ui.weekly.isGeneratingReport" class="weekly-report-lock-layer" aria-hidden="true"></div>
                           </div>
                         </template>
                       </form>
@@ -1826,6 +1876,7 @@ import {
   buildCommandWorkshopArtifact,
   buildCommandWorkshopTitle,
   cloneWeeklyProgressRecord,
+  createWeeklyDraftId,
   createWeeklyProjectDraft,
   createWeeklyTaskDraft,
   formatLocalDateTime,
@@ -1836,7 +1887,6 @@ import {
   getSkillSourceDetail,
   getSkillSourceLabel,
   getWeeklyProgressMetrics,
-  getWeeklyProgressSummaryText,
   isBuiltinWorkbenchItem,
   maskSecret,
   normalizeTagList,
@@ -1996,7 +2046,8 @@ function createWeeklyState() {
     activeRecordId: null,
     draft: null,
     collapsedProjectIds: [],
-    editorView: "projects"
+    editorView: "projects",
+    isGeneratingReport: false
   };
 }
 
@@ -2230,35 +2281,56 @@ const weeklyFocusRecord = computed(
 const weeklyFocusMetrics = computed(() => getWeeklyProgressMetrics(weeklyFocusRecord.value ?? { projects: [] }));
 const weeklyFocusCompletionRate = computed(() => getWeeklyProgressCompletionRate(weeklyFocusRecord.value ?? { projects: [] }));
 const weeklyDraft = computed(() => ui.weekly.draft);
+const weeklyReportTemplates = computed(() => (Array.isArray(ui.weekly.draft?.reportTemplates) ? ui.weekly.draft.reportTemplates : []));
+const weeklySelectedReportTemplate = computed(() => getWeeklySelectedReportTemplate(ui.weekly.draft));
+const weeklySelectedReportTemplateContent = computed({
+  get: () => weeklySelectedReportTemplate.value?.content ?? "",
+  set: (value) => {
+    const template = weeklySelectedReportTemplate.value;
+
+    if (!template || template.builtin) {
+      return;
+    }
+
+    const nextContent = String(value ?? "");
+    template.content = nextContent;
+
+    if (ui.weekly.draft) {
+      ui.weekly.draft.reportTemplate = nextContent;
+    }
+  }
+});
+const weeklyCanDeleteSelectedReportTemplate = computed(
+  () => Boolean(weeklySelectedReportTemplate.value && !weeklySelectedReportTemplate.value.builtin && weeklyReportTemplates.value.length > 1)
+);
 const weeklyListOverviewCards = computed(() => {
   const record = weeklyFocusRecord.value;
   const metrics = weeklyFocusMetrics.value;
   const hasGeneratedReport = Boolean(String(record?.generatedReport ?? "").trim());
+  const reportMeta = record?.updatedAt ? `更新于 ${formatLocalDateTime(record.updatedAt)}` : "";
 
   return [
     {
       id: "project-count",
       label: "本周项目",
-      value: `${metrics.projectCount}`,
-      copy: metrics.projectCount ? "按项目拆解推进，周会更容易讲清楚。" : "还没有形成项目视角，建议先补项目。"
+      value: `${metrics.projectCount}`
     },
     {
       id: "completion-rate",
       label: "任务完成率",
-      value: `${weeklyFocusCompletionRate.value}%`,
-      copy: metrics.taskCount ? `共 ${metrics.taskCount} 个任务，已完成 ${metrics.completedTaskCount} 个。` : "还没有任务拆分，暂时无法计算完成率。"
+      value: `${weeklyFocusCompletionRate.value}%`
     },
     {
       id: "risk-count",
       label: "待协调事项",
-      value: `${metrics.blockedTaskCount}`,
-      copy: metrics.blockedTaskCount ? "建议在周报中单列风险、影响和需要支持。" : "当前没有显式受阻任务，适合补一句“风险可控”。"
+      value: `${metrics.blockedTaskCount}`
     },
     {
       id: "report-status",
       label: "领导周报",
       value: hasGeneratedReport ? "已生成" : "待生成",
-      copy: hasGeneratedReport ? `最近更新 ${formatLocalDateTime(record?.updatedAt)}` : "建议在周会前生成一版，先改后发。"
+      meta: reportMeta,
+      metaTone: reportMeta ? "success" : "neutral"
     }
   ];
 });
@@ -2328,6 +2400,8 @@ function getWeeklyDraftSnapshot(record = ui.weekly.draft) {
 
   return JSON.stringify({
     projects: sanitized.projects,
+    reportTemplates: sanitized.reportTemplates,
+    selectedReportTemplateId: sanitized.selectedReportTemplateId,
     reportTemplate: sanitized.reportTemplate,
     generatedReport: sanitized.generatedReport,
     content: sanitized.content
@@ -2368,6 +2442,63 @@ function syncWeeklyProjectStatus(project) {
   }
 
   project.status = deriveWeeklyProjectStatus(project.tasks);
+}
+
+function getWeeklySelectedReportTemplate(draft = ui.weekly.draft) {
+  const templates = Array.isArray(draft?.reportTemplates) ? draft.reportTemplates : [];
+
+  if (!templates.length) {
+    return null;
+  }
+
+  return templates.find((template) => template.id === String(draft?.selectedReportTemplateId ?? "").trim()) ?? templates[0];
+}
+
+function syncWeeklySelectedReportTemplate(draft = ui.weekly.draft) {
+  if (!draft) {
+    return;
+  }
+
+  const selectedTemplate = getWeeklySelectedReportTemplate(draft);
+
+  if (!selectedTemplate) {
+    draft.selectedReportTemplateId = "";
+    draft.reportTemplate = String(draft.reportTemplate ?? "");
+    return;
+  }
+
+  if (draft.selectedReportTemplateId !== selectedTemplate.id) {
+    draft.selectedReportTemplateId = selectedTemplate.id;
+  }
+
+  const selectedContent = String(selectedTemplate.content ?? "");
+
+  if (draft.reportTemplate !== selectedContent) {
+    draft.reportTemplate = selectedContent;
+  }
+}
+
+function getWeeklyReportTemplateOptionLabel(template) {
+  const name = String(template?.name ?? "").trim() || (template?.builtin ? "默认模板" : "未命名模板");
+  return template?.builtin ? `${name}（默认）` : name;
+}
+
+function getNextWeeklyReportTemplateName(draft = ui.weekly.draft) {
+  const existingNames = new Set(
+    (Array.isArray(draft?.reportTemplates) ? draft.reportTemplates : [])
+      .map((template) => String(template?.name ?? "").trim())
+      .filter(Boolean)
+  );
+
+  let index = 1;
+  let candidate = `自定义模板 ${index}`;
+
+  while (existingNames.has(candidate)) {
+    index += 1;
+    candidate = `自定义模板 ${index}`;
+  }
+
+  return candidate;
 }
 
 function focusWeeklyProjectInput(projectId) {
@@ -2418,44 +2549,13 @@ function findWeeklyRiskNotes(value) {
   return extractWeeklyMeaningfulLines(value).filter((line) => WEEKLY_RISK_KEYWORDS.some((keyword) => line.includes(keyword)));
 }
 
-function getWeeklyRecordHint(record) {
-  const metrics = getWeeklyProgressMetrics(record);
-
-  if (!metrics.projectCount) {
-    return "建议先按项目拆开，再把结果、风险和下周动作分别补齐。";
-  }
-
-  if (metrics.blockedTaskCount) {
-    return `当前识别到 ${metrics.blockedTaskCount} 项受阻，适合单列“风险与待协调事项”。`;
-  }
-
-  if (!metrics.taskCount) {
-    return "已经有项目，但任务还不够具体，继续补任务后周报会更像真实推进。";
-  }
-
-  if (getWeeklyProgressCompletionRate(record) >= 80) {
-    return "本周结果已经比较完整，适合先写结论，再提炼影响和下一步。";
-  }
-
-  if (metrics.completedTaskCount) {
-    return "已经出现阶段结果，建议把“做到哪一步”和“下周动作”写得更明确。";
-  }
-
-  return "项目和任务已搭起来了，下一步建议补更多阶段结果和汇报语气。";
-}
-
 function getWeeklyRecordTags(record) {
   const metrics = getWeeklyProgressMetrics(record);
-  const tags = [
-    `完成率 ${getWeeklyProgressCompletionRate(record)}%`,
-    metrics.taskCount ? `任务 ${metrics.taskCount}` : "未拆任务"
-  ];
+  const tags = [`项目 ${metrics.projectCount}`, `任务 ${metrics.taskCount}`];
 
   if (metrics.blockedTaskCount) {
     tags.push(`风险 ${metrics.blockedTaskCount}`);
   }
-
-  tags.push(String(record?.generatedReport ?? "").trim() ? "已生成领导稿" : "未生成领导稿");
 
   return tags;
 }
@@ -2763,6 +2863,7 @@ function syncWeeklyEditorState() {
   if (!activeWeeklyRecord.value) {
     ui.weekly.draft = null;
     weeklyTaskRewriteIds.value = [];
+    ui.weekly.isGeneratingReport = false;
     markWeeklyDraftSaved(null);
     return;
   }
@@ -2770,8 +2871,10 @@ function syncWeeklyEditorState() {
   clearWeeklyAutosaveTimer();
   ui.weekly.draft = cloneWeeklyProgressRecord(activeWeeklyRecord.value);
   ui.weekly.draft?.projects?.forEach((project) => syncWeeklyProjectStatus(project));
+  syncWeeklySelectedReportTemplate(ui.weekly.draft);
   ui.weekly.collapsedProjectIds = [];
   weeklyTaskRewriteIds.value = [];
+  ui.weekly.isGeneratingReport = false;
   markWeeklyDraftSaved(ui.weekly.draft);
 }
 
@@ -2987,6 +3090,7 @@ function closeWeeklyEditor() {
   ui.weekly.collapsedProjectIds = [];
   ui.weekly.editorView = "projects";
   weeklyTaskRewriteIds.value = [];
+  ui.weekly.isGeneratingReport = false;
   markWeeklyDraftSaved(null);
 }
 
@@ -3181,6 +3285,63 @@ async function optimizeWeeklyTaskTitle(projectId, taskId, event) {
   }
 }
 
+function handleWeeklyReportTemplateSelectionChange() {
+  syncWeeklySelectedReportTemplate(ui.weekly.draft);
+}
+
+function addWeeklyReportTemplate() {
+  if (!ui.weekly.draft) {
+    return;
+  }
+
+  const baseTemplate = getWeeklySelectedReportTemplate(ui.weekly.draft);
+  const defaultName = getNextWeeklyReportTemplateName(ui.weekly.draft);
+  const nextName = window.prompt("请输入模板名称", defaultName);
+
+  if (nextName === null) {
+    return;
+  }
+
+  const normalizedName = String(nextName ?? "").trim() || defaultName;
+  const nextTemplate = {
+    id: createWeeklyDraftId("weekly_report_template"),
+    name: normalizedName,
+    content: String(baseTemplate?.content ?? ui.weekly.draft.reportTemplate ?? ""),
+    builtin: false
+  };
+
+  ui.weekly.draft.reportTemplates = [...(Array.isArray(ui.weekly.draft.reportTemplates) ? ui.weekly.draft.reportTemplates : []), nextTemplate];
+  ui.weekly.draft.selectedReportTemplateId = nextTemplate.id;
+  ui.weekly.draft.reportTemplate = nextTemplate.content;
+  setStatus(`已新增模板「${normalizedName}」。`, "success");
+}
+
+function removeWeeklySelectedReportTemplate() {
+  if (!ui.weekly.draft || !weeklyCanDeleteSelectedReportTemplate.value) {
+    return;
+  }
+
+  const selectedTemplate = getWeeklySelectedReportTemplate(ui.weekly.draft);
+
+  if (!selectedTemplate || selectedTemplate.builtin) {
+    return;
+  }
+
+  if (!window.confirm(`确认删除模板「${String(selectedTemplate.name ?? "").trim() || "未命名模板"}」吗？`)) {
+    return;
+  }
+
+  const templates = Array.isArray(ui.weekly.draft.reportTemplates) ? ui.weekly.draft.reportTemplates : [];
+  const templateIndex = templates.findIndex((template) => template.id === selectedTemplate.id);
+  const nextTemplates = templates.filter((template) => template.id !== selectedTemplate.id);
+  const fallbackTemplate = nextTemplates[templateIndex] ?? nextTemplates[templateIndex - 1] ?? nextTemplates[0] ?? null;
+
+  ui.weekly.draft.reportTemplates = nextTemplates;
+  ui.weekly.draft.selectedReportTemplateId = fallbackTemplate?.id ?? "";
+  ui.weekly.draft.reportTemplate = String(fallbackTemplate?.content ?? "");
+  setStatus("模板已删除。", "success");
+}
+
 async function handleWeeklySave(options = {}) {
   if (!desktopApi || !activeWeeklyRecord.value || !ui.weekly.draft) {
     setStatus("周记录尚未就绪，暂时无法保存。", "danger");
@@ -3269,6 +3430,10 @@ async function handleWeeklyReportGeneration() {
     return;
   }
 
+  if (ui.weekly.isGeneratingReport) {
+    return;
+  }
+
   const sanitizedDraft = sanitizeWeeklyProgressRecord(ui.weekly.draft);
 
   if (!sanitizedDraft?.content.trim()) {
@@ -3276,7 +3441,16 @@ async function handleWeeklyReportGeneration() {
     return;
   }
 
+  if (!String(sanitizedDraft.reportTemplate ?? "").trim()) {
+    setStatus("当前模板内容为空，先补一版模板再生成周报。", "warning");
+    return;
+  }
+
   try {
+    ui.weekly.isGeneratingReport = true;
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     setStatus("正在生成周报...", "neutral");
     const result = await desktopApi.generateWeeklyProgressReport({
       weekTitle: activeWeeklyRecord.value.title,
@@ -3288,6 +3462,8 @@ async function handleWeeklyReportGeneration() {
   } catch (error) {
     console.error("Failed to generate weekly report", error);
     setStatus(`周报生成失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+  } finally {
+    ui.weekly.isGeneratingReport = false;
   }
 }
 
@@ -4155,6 +4331,17 @@ watch(
     }
   },
   { deep: true }
+);
+
+watch(
+  () => ui.weekly.draft?.selectedReportTemplateId,
+  () => {
+    if (!ui.weekly.draft) {
+      return;
+    }
+
+    syncWeeklySelectedReportTemplate(ui.weekly.draft);
+  }
 );
 
 watch(

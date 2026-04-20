@@ -17,6 +17,7 @@ import type {
   WeeklyProgressItemStatus,
   WeeklyProgressProjectItem,
   WeeklyProgressRecord,
+  WeeklyReportTemplateItem,
   WeeklyProgressTaskItem,
   WorkTask
 } from "../../shared/src/index.js";
@@ -43,6 +44,9 @@ function getDefaultModelSettings(): ModelSettings {
 
 const LEGACY_DEFAULT_WEEKLY_REPORT_TEMPLATE = readPromptAsset("weeklyReportTemplateLegacy");
 const DEFAULT_WEEKLY_REPORT_TEMPLATE = readPromptAsset("weeklyReportTemplateDefault");
+const DEFAULT_WEEKLY_REPORT_TEMPLATE_ID = "builtin:weekly-report-template:default";
+const DEFAULT_WEEKLY_REPORT_TEMPLATE_NAME = "默认模板";
+const MIGRATED_WEEKLY_REPORT_TEMPLATE_NAME = "当前模板";
 
 const WEEKLY_PROGRESS_FALLBACK_PROJECT_TITLE = "未分类项目";
 
@@ -572,6 +576,104 @@ function createWeeklyProgressProjectItem(
   };
 }
 
+function createDefaultWeeklyReportTemplateItem(): WeeklyReportTemplateItem {
+  return {
+    id: DEFAULT_WEEKLY_REPORT_TEMPLATE_ID,
+    name: DEFAULT_WEEKLY_REPORT_TEMPLATE_NAME,
+    content: DEFAULT_WEEKLY_REPORT_TEMPLATE,
+    builtin: true
+  };
+}
+
+function createWeeklyReportTemplateItem(
+  overrides: Partial<WeeklyReportTemplateItem> = {}
+): WeeklyReportTemplateItem {
+  const builtin = Boolean(overrides.builtin) || overrides.id === DEFAULT_WEEKLY_REPORT_TEMPLATE_ID;
+
+  if (builtin) {
+    return createDefaultWeeklyReportTemplateItem();
+  }
+
+  return {
+    id: overrides.id ?? `weekly_report_template_${randomUUID()}`,
+    name: String(overrides.name ?? ""),
+    content: String(overrides.content ?? ""),
+    builtin: false
+  };
+}
+
+function normalizeWeeklyReportTemplateItem(
+  template: Partial<WeeklyReportTemplateItem> | null | undefined
+): WeeklyReportTemplateItem | null {
+  if (!template) {
+    return null;
+  }
+
+  return createWeeklyReportTemplateItem({
+    id: String(template.id ?? "").trim() || undefined,
+    name: String(template.name ?? ""),
+    content: String(template.content ?? ""),
+    builtin: Boolean(template.builtin)
+  });
+}
+
+function isLegacyCustomWeeklyReportTemplate(content: string): boolean {
+  return Boolean(content) && content !== LEGACY_DEFAULT_WEEKLY_REPORT_TEMPLATE && content !== DEFAULT_WEEKLY_REPORT_TEMPLATE;
+}
+
+function normalizeWeeklyReportTemplates(record: WeeklyProgressRecord): {
+  reportTemplates: WeeklyReportTemplateItem[];
+  selectedReportTemplateId: string;
+  reportTemplate: string;
+} {
+  const legacyReportTemplate = String(record.reportTemplate ?? "").trim();
+  const hasReportTemplateCollection = Array.isArray(record.reportTemplates) && record.reportTemplates.length > 0;
+  const defaultTemplate = createDefaultWeeklyReportTemplateItem();
+  const normalizedTemplates = (Array.isArray(record.reportTemplates) ? record.reportTemplates : [])
+    .map((template) => normalizeWeeklyReportTemplateItem(template))
+    .filter((template): template is WeeklyReportTemplateItem => Boolean(template));
+  const dedupedTemplates: WeeklyReportTemplateItem[] = [];
+  const seenTemplateIds = new Set<string>();
+
+  for (const template of normalizedTemplates) {
+    if (seenTemplateIds.has(template.id)) {
+      continue;
+    }
+
+    seenTemplateIds.add(template.id);
+    dedupedTemplates.push(template);
+  }
+
+  const customTemplates = dedupedTemplates.filter((template) => template.id !== DEFAULT_WEEKLY_REPORT_TEMPLATE_ID && !template.builtin);
+  const reportTemplates = [defaultTemplate, ...customTemplates];
+
+  if (!hasReportTemplateCollection && isLegacyCustomWeeklyReportTemplate(legacyReportTemplate)) {
+    reportTemplates.push(
+      createWeeklyReportTemplateItem({
+        name: MIGRATED_WEEKLY_REPORT_TEMPLATE_NAME,
+        content: legacyReportTemplate
+      })
+    );
+  }
+
+  let selectedTemplate =
+    reportTemplates.find((template) => template.id === String(record.selectedReportTemplateId ?? "").trim()) ?? null;
+
+  if (!selectedTemplate && legacyReportTemplate) {
+    selectedTemplate = reportTemplates.find((template) => template.content.trim() === legacyReportTemplate) ?? null;
+  }
+
+  if (!selectedTemplate) {
+    selectedTemplate = reportTemplates.find((template) => !template.builtin) ?? reportTemplates[0];
+  }
+
+  return {
+    reportTemplates,
+    selectedReportTemplateId: selectedTemplate.id,
+    reportTemplate: selectedTemplate.content
+  };
+}
+
 function deriveWeeklyProgressProjectStatus(tasks: WeeklyProgressTaskItem[]): WeeklyProgressItemStatus {
   if (!tasks.length) {
     return "in_progress";
@@ -749,14 +851,15 @@ function normalizeWeeklyProgressRecord(record: WeeklyProgressRecord): WeeklyProg
   )
     .map((project) => normalizeWeeklyProgressProjectItem(project))
     .filter((project): project is WeeklyProgressProjectItem => Boolean(project));
-  const normalizedTemplate = String(record.reportTemplate ?? "").trim();
-  const shouldUpgradeTemplate = !normalizedTemplate || normalizedTemplate === LEGACY_DEFAULT_WEEKLY_REPORT_TEMPLATE.trim();
+  const normalizedTemplates = normalizeWeeklyReportTemplates(record);
 
   return {
     ...record,
     content: normalizedProjects.length ? buildWeeklyProgressContent(normalizedProjects) : String(record.content ?? "").trim(),
     projects: normalizedProjects,
-    reportTemplate: shouldUpgradeTemplate ? DEFAULT_WEEKLY_REPORT_TEMPLATE : record.reportTemplate,
+    reportTemplates: normalizedTemplates.reportTemplates,
+    selectedReportTemplateId: normalizedTemplates.selectedReportTemplateId,
+    reportTemplate: normalizedTemplates.reportTemplate,
     generatedReport: record.generatedReport ?? "",
     status: record.status ?? "archived"
   };
@@ -774,6 +877,8 @@ function createWeeklyProgressRecord(referenceDate = new Date()): WeeklyProgressR
     endDate: range.endDate,
     content: "",
     projects: [],
+    reportTemplates: [createDefaultWeeklyReportTemplateItem()],
+    selectedReportTemplateId: DEFAULT_WEEKLY_REPORT_TEMPLATE_ID,
     reportTemplate: DEFAULT_WEEKLY_REPORT_TEMPLATE,
     generatedReport: "",
     status: "active",
