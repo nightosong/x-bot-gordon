@@ -45,6 +45,9 @@ export async function rewriteWeeklyProgressItem(
   request: WeeklyProgressRewriteRequest
 ): Promise<ModelTextResponse> {
   const selectedText = request.selectedText.trim();
+  const childTaskTitles = Array.isArray(request.childTaskTitles)
+    ? request.childTaskTitles.map((item) => String(item ?? "").trim()).filter(Boolean)
+    : [];
 
   if (!selectedText) {
     throw new Error("请先在编辑器中选中需要优化的计划内容");
@@ -65,6 +68,12 @@ ${request.weekTitle}
 
 完整上下文：
 ${request.fullContent || "(空)"}
+
+当前任务层级：
+${childTaskTitles.length ? "父任务（下有子任务）" : "普通任务 / 叶子任务"}
+
+直接子任务标题：
+${childTaskTitles.length ? childTaskTitles.map((item) => `- ${item}`).join("\n") : "(无)"}
 
 需要优化的选中内容：
 ${selectedText}`

@@ -560,7 +560,8 @@ function createWeeklyProgressTaskItem(
     id: overrides.id ?? `weekly_task_${randomUUID()}`,
     title: overrides.title ?? "",
     detail: overrides.detail ?? "",
-    status: overrides.status ?? "planned"
+    status: overrides.status ?? "planned",
+    children: Array.isArray(overrides.children) ? overrides.children : []
   };
 }
 
@@ -674,20 +675,46 @@ function normalizeWeeklyReportTemplates(record: WeeklyProgressRecord): {
   };
 }
 
+function getWeeklyTaskChildren(task: Partial<WeeklyProgressTaskItem> | null | undefined): Partial<WeeklyProgressTaskItem>[] {
+  return Array.isArray(task?.children) ? task.children : [];
+}
+
+function hasWeeklyTaskContent(task: Partial<WeeklyProgressTaskItem> | null | undefined): boolean {
+  return Boolean(String(task?.title ?? "").trim() || String(task?.detail ?? "").trim() || getWeeklyTaskChildren(task).length);
+}
+
+function collectWeeklyProgressTasks(tasks: WeeklyProgressTaskItem[]): WeeklyProgressTaskItem[] {
+  const flattened: WeeklyProgressTaskItem[] = [];
+
+  for (const task of Array.isArray(tasks) ? tasks : []) {
+    flattened.push(task);
+
+    const children = getWeeklyTaskChildren(task) as WeeklyProgressTaskItem[];
+
+    if (children.length) {
+      flattened.push(...collectWeeklyProgressTasks(children));
+    }
+  }
+
+  return flattened;
+}
+
 function deriveWeeklyProgressProjectStatus(tasks: WeeklyProgressTaskItem[]): WeeklyProgressItemStatus {
-  if (!tasks.length) {
+  const meaningfulTasks = collectWeeklyProgressTasks(tasks).filter((task) => hasWeeklyTaskContent(task));
+
+  if (!meaningfulTasks.length) {
     return "in_progress";
   }
 
-  if (tasks.some((task) => task.status === "blocked")) {
+  if (meaningfulTasks.some((task) => task.status === "blocked")) {
     return "blocked";
   }
 
-  if (tasks.every((task) => task.status === "completed")) {
+  if (meaningfulTasks.every((task) => task.status === "completed")) {
     return "completed";
   }
 
-  if (tasks.some((task) => task.status === "in_progress" || task.status === "completed")) {
+  if (meaningfulTasks.some((task) => task.status === "in_progress" || task.status === "completed")) {
     return "in_progress";
   }
 
@@ -703,8 +730,11 @@ function normalizeWeeklyProgressTaskItem(
 
   const title = String(task.title ?? "").trim();
   const detail = String(task.detail ?? "").trim();
+  const children = getWeeklyTaskChildren(task)
+    .map((child) => normalizeWeeklyProgressTaskItem(child))
+    .filter((child): child is WeeklyProgressTaskItem => Boolean(child));
 
-  if (!title && !detail) {
+  if (!title && !detail && !children.length) {
     return null;
   }
 
@@ -712,7 +742,8 @@ function normalizeWeeklyProgressTaskItem(
     ...task,
     title: title || detail || "未命名任务",
     detail,
-    status: normalizeWeeklyProgressItemStatus(task.status)
+    status: normalizeWeeklyProgressItemStatus(task.status),
+    children
   });
 }
 
@@ -748,17 +779,18 @@ function parseLegacyWeeklyProgressContent(content: string | undefined): WeeklyPr
   const lines = String(content ?? "").replace(/\r\n?/g, "\n").split("\n");
   const projects: WeeklyProgressProjectItem[] = [];
   let currentProject: WeeklyProgressProjectItem | null = null;
-  let currentTask: WeeklyProgressTaskItem | null = null;
+  let taskStack: WeeklyProgressTaskItem[] = [];
 
   for (const rawLine of lines) {
     const trimmed = rawLine.trim();
 
     if (!trimmed) {
-      currentTask = null;
+      taskStack = [];
       continue;
     }
 
     const indentLength = rawLine.match(/^\s*/)?.[0]?.length ?? 0;
+    const indentLevel = Math.max(0, Math.floor(indentLength / 4));
     const metadata = extractWeeklyProgressLineMetadata(trimmed);
     const normalizedTitle = metadata.title.trim();
 
@@ -772,7 +804,7 @@ function parseLegacyWeeklyProgressContent(content: string | undefined): WeeklyPr
         status: metadata.status ?? "in_progress"
       });
       projects.push(currentProject);
-      currentTask = null;
+      taskStack = [];
       continue;
     }
 
@@ -787,27 +819,38 @@ function parseLegacyWeeklyProgressContent(content: string | undefined): WeeklyPr
 
     if (noteMatch) {
       const detailText = noteMatch[1].trim();
+      const targetTask = taskStack[Math.min(Math.max(indentLevel - 2, 0), Math.max(taskStack.length - 1, 0))] ?? null;
 
-      if (indentLength >= 8 && currentTask) {
-        currentTask.detail = currentTask.detail ? `${currentTask.detail}\n${detailText}` : detailText;
+      if (indentLevel >= 2 && targetTask) {
+        targetTask.detail = targetTask.detail ? `${targetTask.detail}\n${detailText}` : detailText;
       } else {
         currentProject.note = currentProject.note ? `${currentProject.note}\n${detailText}` : detailText;
-        currentTask = null;
       }
 
       continue;
     }
 
-    if (indentLength >= 8 && currentTask) {
-      currentTask.detail = currentTask.detail ? `${currentTask.detail}\n${normalizedTitle}` : normalizedTitle;
+    if (!metadata.status && indentLevel > taskStack.length && taskStack.length) {
+      const deepestTask = taskStack[taskStack.length - 1];
+      deepestTask.detail = deepestTask.detail ? `${deepestTask.detail}\n${normalizedTitle}` : normalizedTitle;
       continue;
     }
 
-    currentTask = createWeeklyProgressTaskItem({
+    const taskDepth = Math.max(0, indentLevel - 1);
+    const parentTask = taskDepth > 0 ? taskStack[taskDepth - 1] ?? null : null;
+    const task = createWeeklyProgressTaskItem({
       title: normalizedTitle,
       status: metadata.status ?? "planned"
     });
-    currentProject.tasks.push(currentTask);
+
+    if (parentTask) {
+      parentTask.children.push(task);
+    } else {
+      currentProject.tasks.push(task);
+    }
+
+    taskStack = taskStack.slice(0, taskDepth);
+    taskStack[taskDepth] = task;
   }
 
   return projects
@@ -816,6 +859,22 @@ function parseLegacyWeeklyProgressContent(content: string | undefined): WeeklyPr
 }
 
 function buildWeeklyProgressContent(projects: WeeklyProgressProjectItem[]): string {
+  function buildWeeklyTaskLines(task: WeeklyProgressTaskItem, depth: number): string[] {
+    const indent = "    ".repeat(depth);
+    const detailIndent = "    ".repeat(depth + 1);
+    const lines = [`${indent}[${getWeeklyProgressStatusLabel(task.status)}] ${task.title}`];
+
+    if (task.detail) {
+      lines.push(...task.detail.split("\n").map((line) => `${detailIndent}说明：${line.trim()}`));
+    }
+
+    for (const child of getWeeklyTaskChildren(task) as WeeklyProgressTaskItem[]) {
+      lines.push(...buildWeeklyTaskLines(child, depth + 1));
+    }
+
+    return lines;
+  }
+
   return projects
     .map((project) => {
       const lines = [`${project.title}（${getWeeklyProgressStatusLabel(project.status)}）`];
@@ -825,11 +884,7 @@ function buildWeeklyProgressContent(projects: WeeklyProgressProjectItem[]): stri
       }
 
       for (const task of project.tasks) {
-        lines.push(`    [${getWeeklyProgressStatusLabel(task.status)}] ${task.title}`);
-
-        if (task.detail) {
-          lines.push(...task.detail.split("\n").map((line) => `        说明：${line.trim()}`));
-        }
+        lines.push(...buildWeeklyTaskLines(task, 1));
       }
 
       return lines.join("\n");

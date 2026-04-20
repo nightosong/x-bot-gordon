@@ -280,7 +280,8 @@ export function createWeeklyTaskDraft(task = null) {
     id: task?.id ?? createWeeklyDraftId("weekly_task"),
     title: task?.title ?? "",
     detail: task?.detail ?? "",
-    status: normalizeWeeklyProgressItemStatus(task?.status ?? "planned")
+    status: normalizeWeeklyProgressItemStatus(task?.status ?? "planned"),
+    children: Array.isArray(task?.children) ? task.children.map((child) => createWeeklyTaskDraft(child)) : []
   };
 }
 
@@ -327,6 +328,21 @@ export function getWeeklyProgressStatusMeta(status) {
   return WEEKLY_PROGRESS_STATUS_META[normalizeWeeklyProgressItemStatus(status)] ?? WEEKLY_PROGRESS_STATUS_META.planned;
 }
 
+function getWeeklyTaskChildren(task) {
+  return Array.isArray(task?.children) ? task.children : [];
+}
+
+function hasWeeklyTaskContent(task) {
+  return Boolean(String(task?.title ?? "").trim() || String(task?.detail ?? "").trim() || getWeeklyTaskChildren(task).length);
+}
+
+function walkWeeklyTasks(tasks, visitor, parentTask = null) {
+  for (const task of Array.isArray(tasks) ? tasks : []) {
+    visitor(task, parentTask);
+    walkWeeklyTasks(getWeeklyTaskChildren(task), visitor, task);
+  }
+}
+
 export function getWeeklyProgressMetrics(record) {
   const projects = Array.isArray(record?.projects) ? record.projects : [];
   const metrics = {
@@ -351,11 +367,9 @@ export function getWeeklyProgressMetrics(record) {
       metrics.noteCount += 1;
     }
 
-    for (const task of project.tasks ?? []) {
-      const hasTaskContent = task.title?.trim() || task.detail?.trim();
-
-      if (!hasTaskContent) {
-        continue;
+    walkWeeklyTasks(project.tasks, (task) => {
+      if (!hasWeeklyTaskContent(task)) {
+        return;
       }
 
       metrics.taskCount += 1;
@@ -367,7 +381,7 @@ export function getWeeklyProgressMetrics(record) {
       } else if (task.status === "in_progress") {
         metrics.activeTaskCount += 1;
       }
-    }
+    });
   }
 
   return metrics;
@@ -416,8 +430,9 @@ export function sanitizeWeeklyTaskDraft(task) {
 
   const title = String(task.title ?? "").trim();
   const detail = String(task.detail ?? "").trim();
+  const children = getWeeklyTaskChildren(task).map((child) => sanitizeWeeklyTaskDraft(child)).filter(Boolean);
 
-  if (!title && !detail) {
+  if (!title && !detail && !children.length) {
     return null;
   }
 
@@ -425,7 +440,8 @@ export function sanitizeWeeklyTaskDraft(task) {
     ...task,
     title: title || detail || "未命名任务",
     detail,
-    status: normalizeWeeklyProgressItemStatus(task.status)
+    status: normalizeWeeklyProgressItemStatus(task.status),
+    children
   };
 }
 
@@ -454,6 +470,23 @@ export function sanitizeWeeklyProjectDraft(project) {
 }
 
 export function serializeWeeklyProgressProjects(projects) {
+  const serializeWeeklyTask = (task, depth = 1) => {
+    const indent = "    ".repeat(depth);
+    const detailIndent = "    ".repeat(depth + 1);
+    const taskStatus = getWeeklyProgressStatusMeta(task.status).label;
+    const lines = [`${indent}[${taskStatus}] ${task.title}`];
+
+    if (task.detail) {
+      lines.push(...task.detail.split("\n").map((line) => `${detailIndent}说明：${line.trim()}`));
+    }
+
+    for (const child of getWeeklyTaskChildren(task)) {
+      lines.push(...serializeWeeklyTask(child, depth + 1));
+    }
+
+    return lines;
+  };
+
   return (Array.isArray(projects) ? projects : [])
     .map((project) => sanitizeWeeklyProjectDraft(project))
     .filter(Boolean)
@@ -466,12 +499,7 @@ export function serializeWeeklyProgressProjects(projects) {
       }
 
       for (const task of project.tasks) {
-        const taskStatus = getWeeklyProgressStatusMeta(task.status).label;
-        lines.push(`    [${taskStatus}] ${task.title}`);
-
-        if (task.detail) {
-          lines.push(...task.detail.split("\n").map((line) => `        说明：${line.trim()}`));
-        }
+        lines.push(...serializeWeeklyTask(task, 1));
       }
 
       return lines.join("\n");

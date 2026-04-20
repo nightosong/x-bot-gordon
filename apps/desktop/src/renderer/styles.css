@@ -1239,6 +1239,301 @@ canvas {
   font-size: 14px;
 }
 
+.extensions-shell {
+  gap: 12px;
+  padding: 10px 12px 12px;
+}
+
+.extensions-shell .models-hero {
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 20px;
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.1), rgba(124, 173, 255, 0.06), rgba(245, 200, 107, 0.08)),
+    rgba(8, 15, 24, 0.92);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.extensions-shell .feature-kicker {
+  margin-bottom: 4px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+}
+
+.extensions-shell .models-title {
+  margin: 0;
+  font-size: clamp(24px, 2vw, 30px);
+}
+
+.extensions-shell .models-subcopy {
+  max-width: 580px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.extensions-shell .models-grid {
+  gap: 12px;
+}
+
+.extensions-list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.extensions-shell .extensions-list-tabs {
+  padding: 5px;
+  gap: 6px;
+}
+
+.extensions-shell .extensions-list-tabs .weekly-editor-tab {
+  min-height: 34px;
+  padding: 0 14px;
+  font-size: 12px;
+}
+
+.extensions-shell .model-section {
+  padding: 14px 15px;
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
+    rgba(8, 15, 24, 0.9);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.extensions-shell .model-section-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(247, 243, 235, 0.18) transparent;
+}
+
+.extensions-shell .model-section-head {
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.extensions-shell .model-section-head-leading {
+  align-items: center;
+}
+
+.extensions-shell .model-section-leading {
+  gap: 10px;
+}
+
+.extensions-shell .model-section-actions {
+  gap: 8px;
+}
+
+.extensions-shell .model-section-actions .status-pill,
+.extensions-shell .model-section-actions .pill {
+  min-height: 22px;
+  gap: 6px;
+  padding: 4px 9px;
+  font-size: 10px;
+}
+
+.extensions-shell .model-section-title {
+  margin: 0 0 4px;
+  font-size: 18px;
+  line-height: 1.15;
+}
+
+.extensions-shell .model-section-body {
+  gap: 10px;
+}
+
+.extensions-shell .extension-configured-list {
+  gap: 10px;
+  padding-right: 0;
+}
+
+.extensions-shell .model-empty {
+  padding: 14px 15px;
+  border-radius: 16px;
+}
+
+.extensions-shell .model-empty-copy {
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.extensions-shell .model-config-card {
+  gap: 10px;
+  padding: 12px 13px;
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.015)),
+    rgba(7, 14, 23, 0.84);
+  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+}
+
+.extensions-shell .extension-config-card:hover,
+.extensions-shell .extension-history-section .model-config-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(92, 225, 194, 0.18);
+  background:
+    linear-gradient(180deg, rgba(92, 225, 194, 0.06), rgba(245, 200, 107, 0.03)),
+    rgba(8, 15, 24, 0.94);
+}
+
+.extensions-shell .model-config-head {
+  gap: 10px;
+}
+
+.extensions-shell .model-config-main {
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.extensions-shell .provider-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+.extensions-shell .model-card-title {
+  margin: 0 0 3px;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.extensions-shell .model-card-meta {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.extensions-shell .model-card-copy {
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.extensions-shell .model-icon-button {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+}
+
+.extensions-shell .action-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.extensions-shell .model-status-toggle {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+.extensions-shell .model-action,
+.extensions-shell .model-action-secondary {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
+.extensions-shell .extension-tag-row {
+  gap: 6px;
+}
+
+.extensions-shell .extension-tag-row .pill {
+  min-height: 22px;
+  gap: 6px;
+  padding: 4px 9px;
+  font-size: 10px;
+}
+
+.extensions-shell .model-editor {
+  gap: 12px;
+}
+
+.extensions-shell .extension-form {
+  gap: 10px 12px;
+}
+
+.extensions-shell .field {
+  gap: 6px;
+}
+
+.extensions-shell .field-label {
+  font-size: 12px;
+  color: rgba(247, 243, 235, 0.84);
+}
+
+.extensions-shell .field-input,
+.extensions-shell .field-textarea {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.extensions-shell .field-input {
+  min-height: 38px;
+}
+
+.extensions-shell .field-textarea {
+  min-height: 76px;
+}
+
+.extensions-shell .extension-textarea-md {
+  min-height: 104px;
+}
+
+.extensions-shell .extension-textarea-lg {
+  min-height: 156px;
+}
+
+.extensions-shell .extension-selection-list {
+  gap: 8px;
+}
+
+.extensions-shell .extension-selection-item {
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+.extensions-shell .extension-selection-item input {
+  width: 14px;
+  height: 14px;
+  accent-color: #7ce7d7;
+}
+
+.extensions-shell .agent-run-step-list {
+  gap: 8px;
+}
+
+.extensions-shell .agent-run-step {
+  padding: 11px 12px;
+  border-radius: 14px;
+}
+
+.extensions-shell .agent-run-step-head {
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.extensions-shell .agent-run-step-title {
+  font-size: 13px;
+}
+
+.extensions-shell .form-actions {
+  padding-top: 10px;
+  padding-bottom: 2px;
+}
+
+.extensions-runner-grid {
+  grid-template-columns: minmax(0, 0.88fr) minmax(0, 1.12fr);
+  align-items: start;
+}
+
+.extensions-shell .extension-history-section {
+  grid-column: 1 / -1;
+}
+
 .form-actions {
   display: flex;
   justify-content: flex-end;
@@ -1922,6 +2217,8 @@ canvas {
   opacity: 0.72;
   border-color: rgba(92, 225, 194, 0.16);
   background: rgba(7, 16, 26, 0.58);
+  pointer-events: none;
+  user-select: none;
 }
 
 .weekly-task-card.is-busy .weekly-task-row {
@@ -1953,6 +2250,7 @@ canvas {
   color: rgba(247, 243, 235, 0.78);
   font-size: 12px;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
   cursor: pointer;
   list-style: none;
   transition: transform 180ms ease, border-color 180ms ease, background 180ms ease, color 180ms ease;
@@ -2033,6 +2331,12 @@ canvas {
 
 .weekly-task-title-input {
   min-width: 0;
+}
+
+.weekly-task-children {
+  margin-left: 14px;
+  padding-left: 12px;
+  border-left: 1px dashed rgba(151, 182, 216, 0.22);
 }
 
 .weekly-row-action {
@@ -3487,6 +3791,46 @@ canvas {
   }
 
   .command-session-card {
+    grid-template-columns: 1fr;
+  }
+
+  .extensions-shell {
+    padding-inline: 0;
+  }
+
+  .extensions-runner-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .extensions-shell .extension-history-section {
+    grid-column: auto;
+  }
+
+  .extensions-list-toolbar {
+    width: 100%;
+  }
+
+  .extensions-shell .extensions-list-tabs {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .extensions-shell .extensions-list-tabs .weekly-editor-tab {
+    flex: 1 1 0;
+  }
+
+  .extensions-shell .model-section-head,
+  .extensions-shell .model-config-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .extensions-shell .model-section-actions,
+  .extensions-shell .model-card-actions-inline {
+    justify-content: flex-start;
+  }
+
+  .extensions-shell .model-form {
     grid-template-columns: 1fr;
   }
 

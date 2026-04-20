@@ -505,92 +505,18 @@
                                   </div>
 
                                   <div v-if="!isWeeklyProjectCollapsed(project.id)" class="weekly-project-body">
-                                    <div v-if="project.tasks.length" class="weekly-task-list">
-                                      <article
-                                        v-for="(task, taskIndex) in project.tasks"
-                                        :key="task.id"
-                                        class="weekly-task-card"
-                                        :class="{ 'is-busy': isWeeklyTaskRewriting(task.id) }"
-                                      >
-                                        <div class="weekly-task-row">
-                                          <details v-if="!isWeeklyTaskRewriting(task.id)" class="weekly-task-status-menu">
-                                            <summary
-                                              class="weekly-task-index-button"
-                                              :class="getWeeklyStatusToneClass(task.status)"
-                                              :aria-label="`第 ${taskIndex + 1} 个任务，当前状态：${getWeeklyProgressStatusMeta(task.status).label}`"
-                                            >
-                                              {{ taskIndex + 1 }}
-                                            </summary>
-
-                                            <div class="weekly-task-status-panel">
-                                              <button
-                                                v-for="(meta, statusKey) in WEEKLY_PROGRESS_STATUS_META"
-                                                :key="statusKey"
-                                                type="button"
-                                                class="weekly-task-status-option"
-                                                :class="{ 'is-active': task.status === statusKey }"
-                                                @click="setWeeklyTaskStatus(project.id, task.id, statusKey, $event)"
-                                              >
-                                                <span class="weekly-task-status-swatch" :class="getWeeklyStatusToneClass(statusKey)"></span>
-                                                <span>{{ meta.label }}</span>
-                                              </button>
-                                            </div>
-                                          </details>
-                                          <span v-else class="weekly-task-index-button is-running" aria-label="任务优化中">
-                                            <span class="weekly-task-spinner"></span>
-                                          </span>
-
-                                          <input
-                                            v-model="task.title"
-                                            class="field-input weekly-compact-input weekly-task-title-input"
-                                            type="text"
-                                            :data-weekly-task-input="task.id"
-                                            placeholder="输入任务名称"
-                                            :disabled="isWeeklyTaskRewriting(task.id)"
-                                          />
-
-                                          <button
-                                            type="button"
-                                            class="weekly-row-action weekly-row-action-add"
-                                            aria-label="在当前任务后新增一条任务"
-                                            @click="addWeeklyTask(project.id, task.id)"
-                                            :disabled="isWeeklyTaskRewriting(task.id)"
-                                          >
-                                            +
-                                          </button>
-
-                                          <details
-                                            class="weekly-task-action-menu"
-                                            :class="{ 'is-disabled': isWeeklyTaskRewriting(task.id) }"
-                                          >
-                                            <summary
-                                              class="weekly-row-action weekly-row-action-more"
-                                              aria-label="更多任务操作"
-                                            >
-                                              更多
-                                            </summary>
-
-                                            <div class="weekly-task-action-panel">
-                                              <button
-                                                type="button"
-                                                class="weekly-task-action-option"
-                                                :disabled="isWeeklyTaskRewriting(task.id) || !task.title.trim()"
-                                                @click="optimizeWeeklyTaskTitle(project.id, task.id, $event)"
-                                              >
-                                                {{ isWeeklyTaskRewriting(task.id) ? "优化中..." : "优化" }}
-                                              </button>
-                                              <button
-                                                type="button"
-                                                class="weekly-task-action-option weekly-task-action-option-danger"
-                                                @click="removeWeeklyTask(project.id, task.id)"
-                                              >
-                                                删除
-                                              </button>
-                                            </div>
-                                          </details>
-                                        </div>
-                                      </article>
-                                    </div>
+                                    <WeeklyTaskTree
+                                      v-if="project.tasks.length"
+                                      :tasks="project.tasks"
+                                      :project-id="project.id"
+                                      :rewriting-ids="weeklyTaskRewriteIds"
+                                      :status-meta="WEEKLY_PROGRESS_STATUS_META"
+                                      :get-status-tone-class="getWeeklyStatusToneClass"
+                                      @add-child="addWeeklyTask($event.projectId, $event.taskId)"
+                                      @remove-task="removeWeeklyTask($event.projectId, $event.taskId)"
+                                      @set-status="setWeeklyTaskStatus($event.projectId, $event.taskId, $event.status, $event.event)"
+                                      @optimize-task="optimizeWeeklyTaskTitle($event.projectId, $event.taskId, $event.event)"
+                                    />
 
                                     <p v-else class="weekly-project-empty-copy weekly-project-empty-inline">暂无任务，点击右侧 + 直接新增。</p>
                                   </div>
@@ -1132,11 +1058,43 @@
 
           <template v-else-if="activeFeature === FEATURE_EXTENSIONS_MANAGEMENT">
             <div class="workspace-stage workspace-stage-scroll">
-              <div class="models-shell">
+              <div class="models-shell extensions-shell">
                 <section v-if="ui.extensions.view === 'list'" class="models-hero">
                   <div>
                     <p class="feature-kicker">Capability Expansion</p>
                     <p class="models-title">能力拓展</p>
+                  </div>
+
+                                    <div class="extensions-list-toolbar">
+                    <div class="weekly-editor-segmented extensions-list-tabs" role="tablist" aria-label="能力拓展配置分类">
+                      <button
+                        type="button"
+                        class="weekly-editor-tab"
+                        :class="{ 'is-active': ui.extensions.listTab === 'agent' }"
+                        :aria-selected="ui.extensions.listTab === 'agent' ? 'true' : 'false'"
+                        @click="ui.extensions.listTab = 'agent'"
+                      >
+                        Agent 配置
+                      </button>
+                      <button
+                        type="button"
+                        class="weekly-editor-tab"
+                        :class="{ 'is-active': ui.extensions.listTab === 'skill' }"
+                        :aria-selected="ui.extensions.listTab === 'skill' ? 'true' : 'false'"
+                        @click="ui.extensions.listTab = 'skill'"
+                      >
+                        Skill 配置
+                      </button>
+                      <button
+                        type="button"
+                        class="weekly-editor-tab"
+                        :class="{ 'is-active': ui.extensions.listTab === 'mcp' }"
+                        :aria-selected="ui.extensions.listTab === 'mcp' ? 'true' : 'false'"
+                        @click="ui.extensions.listTab = 'mcp'"
+                      >
+                        MCP 配置
+                      </button>
+                    </div>
                   </div>
 
                   <div class="model-section-actions">
@@ -1147,8 +1105,8 @@
                 </section>
 
                 <template v-if="ui.extensions.view === 'list'">
-                  <div class="models-grid models-grid-single">
-                    <section class="model-section">
+                  <div class="models-grid models-grid-single extensions-list-grid">
+                    <section v-if="ui.extensions.listTab === 'agent'" class="model-section extension-section">
                       <div class="model-section-head">
                         <div>
                           <p class="feature-kicker">Agents</p>
@@ -1161,12 +1119,12 @@
                         </div>
                       </div>
 
-                      <div class="model-section-body model-configured-list">
+                      <div class="model-section-body model-configured-list extension-configured-list">
                         <div v-if="!workbench.agentProfiles.length" class="model-empty">
                           <p class="model-empty-copy">当前还没有 Agent。先添加一个执行角色，再绑定模型、Skill 和 MCP Server。</p>
                         </div>
 
-                        <article v-for="agent in workbench.agentProfiles" :key="agent.id" class="model-config-card">
+                        <article v-for="agent in workbench.agentProfiles" :key="agent.id" class="model-config-card extension-config-card">
                           <div class="model-config-head">
                             <div class="model-config-main">
                               <div class="provider-avatar extension-avatar extension-avatar-agent" aria-hidden="true">
@@ -1236,7 +1194,7 @@
                       </div>
                     </section>
 
-                    <section class="model-section">
+                    <section v-else-if="ui.extensions.listTab === 'skill'" class="model-section extension-section">
                       <div class="model-section-head">
                         <div>
                           <p class="feature-kicker">Skills</p>
@@ -1250,12 +1208,12 @@
                         </div>
                       </div>
 
-                      <div class="model-section-body model-configured-list">
+                      <div class="model-section-body model-configured-list extension-configured-list">
                         <div v-if="!workbench.skillDefinitions.length" class="model-empty">
                           <p class="model-empty-copy">当前还没有 Skill。先添加可复用提示模板或工作流定义，后续再由 Agent 选择调用。</p>
                         </div>
 
-                        <article v-for="skill in workbench.skillDefinitions" :key="skill.id" class="model-config-card">
+                        <article v-for="skill in workbench.skillDefinitions" :key="skill.id" class="model-config-card extension-config-card">
                           <div class="model-config-head">
                             <div class="model-config-main">
                               <div class="provider-avatar extension-avatar extension-avatar-skill" aria-hidden="true">
@@ -1320,7 +1278,7 @@
                       </div>
                     </section>
 
-                    <section class="model-section">
+                    <section v-else class="model-section extension-section">
                       <div class="model-section-head">
                         <div>
                           <p class="feature-kicker">MCP Servers</p>
@@ -1333,12 +1291,12 @@
                         </div>
                       </div>
 
-                      <div class="model-section-body model-configured-list">
+                      <div class="model-section-body model-configured-list extension-configured-list">
                         <div v-if="!workbench.mcpServers.length" class="model-empty">
                           <p class="model-empty-copy">当前还没有 MCP Server。先维护连接配置，后续再把工具暴露给 Agent。</p>
                         </div>
 
-                        <article v-for="server in workbench.mcpServers" :key="server.id" class="model-config-card">
+                        <article v-for="server in workbench.mcpServers" :key="server.id" class="model-config-card extension-config-card">
                           <div class="model-config-head">
                             <div class="model-config-main">
                               <div class="provider-avatar extension-avatar extension-avatar-mcp" aria-hidden="true">
@@ -1402,9 +1360,9 @@
                 </template>
 
                 <template v-else-if="ui.extensions.view === 'editor'">
-                  <div class="models-grid models-grid-single">
-                    <section class="model-section model-section-scroll">
-                      <div class="model-editor">
+                  <div class="models-grid models-grid-single extensions-editor-grid">
+                    <section class="model-section model-section-scroll extension-section extension-section-editor">
+                      <div class="model-editor extension-editor">
                         <div class="model-section-head model-section-head-leading">
                           <div class="model-section-leading">
                             <button type="button" class="model-action-secondary" @click="closeExtensionPanels">返回列表</button>
@@ -1415,7 +1373,7 @@
                           </div>
                         </div>
 
-                        <form class="model-form" @submit.prevent="handleExtensionEditorSave">
+                        <form class="model-form extension-form" @submit.prevent="handleExtensionEditorSave">
                           <template v-if="ui.extensions.editor.kind === 'agent'">
                             <label class="field">
                               <span class="field-label">Agent 名称</span>
@@ -1668,9 +1626,9 @@ Workflow handler 会在 Skill 本地目录下执行，并通过 stdin 接收 JSO
                 </template>
 
                 <template v-else>
-                  <div class="models-grid">
-                    <section class="model-section model-section-scroll">
-                      <div class="model-editor">
+                  <div class="models-grid extensions-runner-grid">
+                    <section class="model-section model-section-scroll extension-section extension-section-editor">
+                      <div class="model-editor extension-editor">
                         <div class="model-section-head model-section-head-leading">
                           <div class="model-section-leading">
                             <button type="button" class="model-action-secondary" @click="closeExtensionPanels">返回列表</button>
@@ -1688,7 +1646,7 @@ Workflow handler 会在 Skill 本地目录下执行，并通过 stdin 接收 JSO
                           </div>
                         </div>
 
-                        <form class="model-form" @submit.prevent="handleRunnerSubmit">
+                        <form class="model-form extension-form" @submit.prevent="handleRunnerSubmit">
                           <label class="field field-full">
                             <span class="field-label">本次附加 Skill</span>
                             <select v-model="ui.extensions.runner.skillId" class="field-input">
@@ -1755,7 +1713,7 @@ Workflow handler 会在 Skill 本地目录下执行，并通过 stdin 接收 JSO
                       </div>
                     </section>
 
-                    <section class="model-section model-section-scroll">
+                    <section class="model-section model-section-scroll extension-section extension-section-result">
                       <div class="model-section-head">
                         <div>
                           <p class="feature-kicker">Result</p>
@@ -1838,7 +1796,7 @@ Workflow handler 会在 Skill 本地目录下执行，并通过 stdin 接收 JSO
                       </div>
                     </section>
 
-                    <section class="model-section">
+                    <section class="model-section extension-section extension-history-section">
                       <div class="model-section-head">
                         <div>
                           <p class="feature-kicker">History</p>
@@ -1900,6 +1858,7 @@ Workflow handler 会在 Skill 本地目录下执行，并通过 stdin 接收 JSO
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 
 import robotSceneUrl from "../assets/spline-backups/home-robot-scene.splinecode?url";
+import WeeklyTaskTree from "./components/WeeklyTaskTree.vue";
 import {
   BUILTIN_GORDON_AGENT_ID,
   PROVIDER_ORDER,
@@ -2178,6 +2137,27 @@ function createAgentRunnerState(agentId = "") {
   };
 }
 
+function getExtensionListTab(kind = "agent") {
+  if (kind === "skill" || kind === "skill-import") {
+    return "skill";
+  }
+
+  if (kind === "mcp") {
+    return "mcp";
+  }
+
+  return "agent";
+}
+
+function createExtensionsState() {
+  return {
+    view: "list",
+    listTab: "agent",
+    editor: createExtensionEditorState("agent"),
+    runner: createAgentRunnerState()
+  };
+}
+
 function getProviderFields(provider) {
   const commonFields = [
     { key: "displayName", label: "配置名称", placeholder: "例如：OpenAI 主账号", required: true, full: false },
@@ -2264,11 +2244,7 @@ const ui = reactive({
     availableMcpTools: [],
     isRunning: false
   },
-  extensions: {
-    view: "list",
-    editor: createExtensionEditorState("agent"),
-    runner: createAgentRunnerState()
-  }
+  extensions: createExtensionsState()
 });
 
 const robotRuntimeState = {
@@ -2450,10 +2426,67 @@ function markWeeklyDraftSaved(record = ui.weekly.draft) {
   weeklySavedSnapshot = getWeeklyDraftSnapshot(record);
 }
 
+function getWeeklyTaskChildren(task) {
+  return Array.isArray(task?.children) ? task.children : [];
+}
+
+function hasWeeklyTaskContent(task) {
+  return Boolean(String(task?.title ?? "").trim() || String(task?.detail ?? "").trim() || getWeeklyTaskChildren(task).length);
+}
+
+function walkWeeklyTasks(tasks = [], visitor, parentTask = null) {
+  for (const task of Array.isArray(tasks) ? tasks : []) {
+    visitor(task, parentTask);
+    walkWeeklyTasks(getWeeklyTaskChildren(task), visitor, task);
+  }
+}
+
+function flattenWeeklyTasks(tasks = []) {
+  const flattened = [];
+  walkWeeklyTasks(tasks, (task) => {
+    flattened.push(task);
+  });
+  return flattened;
+}
+
+function findWeeklyTaskContext(tasks = [], taskId, parentTask = null) {
+  const taskList = Array.isArray(tasks) ? tasks : [];
+
+  for (let index = 0; index < taskList.length; index += 1) {
+    const task = taskList[index];
+
+    if (task?.id === taskId) {
+      return {
+        task,
+        parentTask,
+        tasks: taskList,
+        index
+      };
+    }
+
+    const childContext = findWeeklyTaskContext(getWeeklyTaskChildren(task), taskId, task);
+
+    if (childContext) {
+      return childContext;
+    }
+  }
+
+  return null;
+}
+
+function removeWeeklyTaskFromCollection(tasks = [], taskId) {
+  const context = findWeeklyTaskContext(tasks, taskId);
+
+  if (!context) {
+    return false;
+  }
+
+  context.tasks.splice(context.index, 1);
+  return true;
+}
+
 function deriveWeeklyProjectStatus(tasks = []) {
-  const meaningfulTasks = (Array.isArray(tasks) ? tasks : []).filter(
-    (task) => String(task?.title ?? "").trim() || String(task?.detail ?? "").trim()
-  );
+  const meaningfulTasks = flattenWeeklyTasks(tasks).filter((task) => hasWeeklyTaskContent(task));
 
   if (!meaningfulTasks.length) {
     return "in_progress";
@@ -2670,12 +2703,13 @@ function buildWeeklyDraftInsights(record) {
   for (const project of record.projects ?? []) {
     const noteLines = extractWeeklyMeaningfulLines(project.note);
     const riskNotes = findWeeklyRiskNotes(project.note);
+    const projectTasks = flattenWeeklyTasks(project.tasks).filter((task) => hasWeeklyTaskContent(task));
 
     if (WEEKLY_NO_RISK_PATTERN.test(project.note)) {
       hasNoRiskStatement = true;
     }
 
-    if (project.note.trim() && !project.tasks.length) {
+    if (project.note.trim() && !projectTasks.length) {
       achievements.push(buildWeeklyInsightEntry("project-note", project, null, getWeeklyFirstMeaningfulLine(project.note)));
     }
 
@@ -2683,13 +2717,7 @@ function buildWeeklyDraftInsights(record) {
       risks.push(buildWeeklyInsightEntry("risk-note", project, null, riskLine));
     }
 
-    for (const task of project.tasks ?? []) {
-      const hasTaskContent = task.title.trim() || task.detail.trim();
-
-      if (!hasTaskContent) {
-        continue;
-      }
-
+    for (const task of projectTasks) {
       if (task.status === "completed") {
         achievements.push(buildWeeklyInsightEntry("achievement", project, task, getWeeklyFirstMeaningfulLine(task.detail)));
         continue;
@@ -2703,7 +2731,7 @@ function buildWeeklyDraftInsights(record) {
       nextSteps.push(buildWeeklyInsightEntry("next-step", project, task, getWeeklyFirstMeaningfulLine(task.detail)));
     }
 
-    if (!project.tasks.length && noteLines.length > 1) {
+    if (!projectTasks.length && noteLines.length > 1) {
       nextSteps.push(buildWeeklyInsightEntry("project-follow-up", project, null, noteLines[1]));
     }
   }
@@ -3169,7 +3197,7 @@ function removeWeeklyProject(projectId) {
   ui.weekly.collapsedProjectIds = ui.weekly.collapsedProjectIds.filter((id) => id !== projectId);
 }
 
-function addWeeklyTask(projectId, afterTaskId = null) {
+function addWeeklyTask(projectId, parentTaskId = null) {
   const project = findWeeklyProjectById(projectId);
 
   if (!project) {
@@ -3178,11 +3206,15 @@ function addWeeklyTask(projectId, afterTaskId = null) {
 
   const task = createWeeklyTaskDraft();
 
-  if (afterTaskId) {
-    const taskIndex = project.tasks.findIndex((item) => item.id === afterTaskId);
+  if (parentTaskId) {
+    const context = findWeeklyTaskContext(project.tasks, parentTaskId);
 
-    if (taskIndex >= 0) {
-      project.tasks.splice(taskIndex + 1, 0, task);
+    if (context) {
+      if (!Array.isArray(context.task.children)) {
+        context.task.children = [];
+      }
+
+      context.task.children.push(task);
     } else {
       project.tasks.push(task);
     }
@@ -3202,7 +3234,7 @@ function removeWeeklyTask(projectId, taskId) {
     return;
   }
 
-  project.tasks = project.tasks.filter((task) => task.id !== taskId);
+  removeWeeklyTaskFromCollection(project.tasks, taskId);
   syncWeeklyProjectStatus(project);
 }
 
@@ -3251,7 +3283,7 @@ function setWeeklyTaskStatus(projectId, taskId, nextStatus, event) {
     return;
   }
 
-  const task = project.tasks.find((item) => item.id === taskId);
+  const task = findWeeklyTaskContext(project.tasks, taskId)?.task ?? null;
 
   if (!task) {
     return;
@@ -3275,8 +3307,11 @@ async function optimizeWeeklyTaskTitle(projectId, taskId, event) {
   }
 
   const project = findWeeklyProjectById(projectId);
-  const task = project?.tasks.find((item) => item.id === taskId) ?? null;
+  const task = project ? findWeeklyTaskContext(project.tasks, taskId)?.task ?? null : null;
   const selectedText = String(task?.title ?? "").trim();
+  const childTaskTitles = getWeeklyTaskChildren(task)
+    .map((child) => String(child?.title ?? "").trim())
+    .filter(Boolean);
 
   if (!task || !selectedText) {
     setStatus("先填写任务内容，再使用优化功能。", "warning");
@@ -3295,7 +3330,8 @@ async function optimizeWeeklyTaskTitle(projectId, taskId, event) {
     const result = await desktopApi.rewriteWeeklyProgressItem({
       selectedText,
       fullContent: currentDraft?.content ?? "",
-      weekTitle: ui.weekly.draft.title
+      weekTitle: ui.weekly.draft.title,
+      childTaskTitles
     });
     const rewrittenText = String(result?.text ?? "").trim();
 
@@ -3305,7 +3341,7 @@ async function optimizeWeeklyTaskTitle(projectId, taskId, event) {
     }
 
     const latestProject = findWeeklyProjectById(projectId);
-    const latestTask = latestProject?.tasks.find((item) => item.id === taskId) ?? null;
+    const latestTask = latestProject ? findWeeklyTaskContext(latestProject.tasks, taskId)?.task ?? null : null;
 
     if (!latestProject || !latestTask) {
       setStatus("任务已变化，本次优化结果未回填。", "warning");
@@ -3804,19 +3840,22 @@ async function handleCommandSubmit() {
 
 function openExtensionEditor(kind, entry = null) {
   activeFeature.value = FEATURE_EXTENSIONS_MANAGEMENT;
+  ui.extensions.listTab = getExtensionListTab(kind);
   ui.extensions.editor = createExtensionEditorState(kind, entry);
   ui.extensions.view = "editor";
 }
 
 function openAgentRunner(agentId) {
   activeFeature.value = FEATURE_EXTENSIONS_MANAGEMENT;
+  ui.extensions.listTab = "agent";
   ui.extensions.runner = createAgentRunnerState(agentId);
   ui.extensions.view = "runner";
 }
 
 function closeExtensionPanels() {
+  const currentTab = ui.extensions.listTab;
   ui.extensions.view = "list";
-  ui.extensions.editor = createExtensionEditorState("agent");
+  ui.extensions.editor = createExtensionEditorState(currentTab === "skill" ? "skill" : currentTab === "mcp" ? "mcp" : "agent");
   ui.extensions.runner = createAgentRunnerState();
 }
 

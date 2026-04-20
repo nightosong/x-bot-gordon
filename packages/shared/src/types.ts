@@ -115,6 +115,7 @@ export interface WeeklyProgressTaskItem {
   title: string;
   detail: string;
   status: WeeklyProgressItemStatus;
+  children: WeeklyProgressTaskItem[];
 }
 
 export interface WeeklyProgressProjectItem {
@@ -424,6 +425,7 @@ export interface WeeklyProgressRewriteRequest {
   selectedText: string;
   fullContent: string;
   weekTitle: string;
+  childTaskTitles?: string[];
 }
 
 export interface WeeklyReportGenerateRequest {
