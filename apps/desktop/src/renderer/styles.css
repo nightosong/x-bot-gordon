@@ -133,7 +133,7 @@ canvas {
 .brand-row h1,
 .brand-title {
   font-family: "Avenir Next Condensed", "Arial Narrow", "Avenir Next", "Helvetica Neue", sans-serif;
-  font-size: clamp(32px, 3.2vw, 46px);
+  font-size: clamp(40px, 4vw, 58px);
   font-weight: 800;
   letter-spacing: 0.14em;
 }
@@ -174,17 +174,7 @@ canvas {
 }
 
 .brand-row::after {
-  content: "";
-  display: block;
-  flex: 0 0 100%;
-  width: clamp(112px, 14vw, 164px);
-  height: 2px;
-  margin-top: 8px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgba(92, 225, 194, 0.88), rgba(245, 200, 107, 0.7), rgba(255, 141, 119, 0));
-  box-shadow:
-    0 0 10px rgba(92, 225, 194, 0.22),
-    0 0 18px rgba(255, 141, 119, 0.14);
+  content: none;
 }
 
 .brand-copy,
@@ -2363,7 +2353,18 @@ canvas {
 
 .command-session-list-shell {
   display: grid;
-  gap: 16px;
+  gap: 14px;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  padding-top: 4px;
+  padding-right: 4px;
+  overscroll-behavior: contain;
+}
+
+.command-session-section {
+  display: flex;
+  flex-direction: column;
   min-height: 0;
 }
 
@@ -2450,7 +2451,8 @@ canvas {
 
 .command-session-group {
   display: grid;
-  gap: 12px;
+  gap: 10px;
+  align-content: start;
 }
 
 .command-session-group-head {
@@ -2463,17 +2465,27 @@ canvas {
 .command-session-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .command-session-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  padding: 12px;
-  border-radius: 22px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 18px;
   border: 1px solid rgba(151, 182, 216, 0.12);
   background: rgba(255, 255, 255, 0.03);
+  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+}
+
+.command-session-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(92, 225, 194, 0.2);
+  background:
+    linear-gradient(180deg, rgba(92, 225, 194, 0.06), rgba(255, 255, 255, 0.03)),
+    rgba(255, 255, 255, 0.03);
 }
 
 .command-session-card.is-active {
@@ -2485,27 +2497,27 @@ canvas {
 
 .command-session-main {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-  align-items: flex-start;
+  align-items: center;
   width: 100%;
+  min-width: 0;
   padding: 0;
   background: transparent;
   color: inherit;
   text-align: left;
 }
 
-.command-session-head {
+.command-session-topline {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 8px;
+  align-items: center;
+  gap: 12px;
   width: 100%;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .command-session-title {
   margin: 0;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   min-width: 0;
   white-space: nowrap;
@@ -2513,16 +2525,11 @@ canvas {
   text-overflow: ellipsis;
 }
 
-.command-session-summary,
 .command-message-body,
 .command-input-hint,
 .command-session-meta {
   margin: 0;
   color: var(--muted);
-}
-
-.command-session-summary {
-  line-height: 1.6;
 }
 
 .command-session-meta,
@@ -2531,8 +2538,19 @@ canvas {
   font-size: 12px;
 }
 
+.command-session-meta {
+  flex: 0 1 auto;
+  max-width: min(44%, 360px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+
 .command-session-delete {
-  align-self: flex-start;
+  width: 30px;
+  height: 30px;
+  align-self: center;
 }
 
 .command-empty-card {
@@ -2577,12 +2595,13 @@ canvas {
 }
 
 .command-chat-shell-immersive {
-  padding: 12px 14px 14px;
+  gap: 10px;
+  padding: 10px 12px 12px;
 }
 
 .command-chat-head {
   display: grid;
-  grid-template-columns: minmax(92px, 1fr) minmax(0, auto) minmax(92px, 1fr);
+  grid-template-columns: 40px minmax(0, 1fr) 40px;
   align-items: center;
   gap: 10px;
   position: relative;
@@ -2609,7 +2628,7 @@ canvas {
 
 .command-chat-title {
   margin: 0;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--text);
   white-space: nowrap;
@@ -2617,26 +2636,36 @@ canvas {
   text-overflow: ellipsis;
 }
 
+.command-chat-nav-button {
+  width: 36px;
+  height: 36px;
+}
+
+.command-chat-nav-button-primary {
+  border-color: rgba(92, 225, 194, 0.2);
+  background: rgba(92, 225, 194, 0.1);
+}
+
 .command-chat-scroll-region {
   min-height: 0;
   overflow: auto;
-  padding-right: 4px;
+  padding-right: 2px;
   overscroll-behavior: contain;
 }
 
 .command-message-stream {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   min-height: 100%;
-  padding: 4px 2px 18px;
+  padding: 2px 2px 12px;
 }
 
 .command-message {
   align-self: flex-start;
-  width: min(100%, 760px);
-  padding: 16px 18px;
-  border-radius: 20px;
+  width: min(100%, 820px);
+  padding: 12px 14px;
+  border-radius: 16px;
   border: 1px solid rgba(151, 182, 216, 0.1);
   background: rgba(255, 255, 255, 0.025);
 }
@@ -2661,11 +2690,11 @@ canvas {
   justify-content: space-between;
   align-items: center;
   gap: 10px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .command-message-role {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -2673,18 +2702,19 @@ canvas {
 }
 
 .command-message-time {
-  font-size: 12px;
+  font-size: 11px;
   color: rgba(247, 243, 235, 0.48);
 }
 
 .command-message-body {
   color: var(--text);
+  font-size: 13px;
 }
 
 .command-rich-text {
   display: grid;
-  gap: 12px;
-  line-height: 1.68;
+  gap: 10px;
+  line-height: 1.58;
 }
 
 .command-rich-text > * {
@@ -2693,7 +2723,7 @@ canvas {
 
 .command-rich-heading {
   color: var(--text);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
 }
 
@@ -2703,8 +2733,8 @@ canvas {
 
 .command-rich-list {
   display: grid;
-  gap: 8px;
-  padding-left: 20px;
+  gap: 6px;
+  padding-left: 18px;
   color: var(--text);
 }
 
@@ -2721,17 +2751,17 @@ canvas {
 
 .command-inline-code {
   display: inline-block;
-  padding: 1px 6px;
+  padding: 1px 5px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.06);
   color: #bcf8ea;
-  font-size: 0.95em;
+  font-size: 0.92em;
   font-family: "SFMono-Regular", "Menlo", "Consolas", monospace;
 }
 
 .command-code-block {
   border: 1px solid rgba(151, 182, 216, 0.14);
-  border-radius: 16px;
+  border-radius: 14px;
   overflow: hidden;
   background: rgba(5, 11, 18, 0.96);
 }
@@ -2741,14 +2771,14 @@ canvas {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border-bottom: 1px solid rgba(151, 182, 216, 0.12);
   background: rgba(255, 255, 255, 0.03);
 }
 
 .command-code-language {
   color: rgba(247, 243, 235, 0.62);
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -2760,7 +2790,7 @@ canvas {
   border: 1px solid rgba(151, 182, 216, 0.14);
   background: rgba(255, 255, 255, 0.04);
   color: rgba(247, 243, 235, 0.82);
-  font-size: 12px;
+  font-size: 11px;
   transition: border-color 180ms ease, background 180ms ease, color 180ms ease;
 }
 
@@ -2772,22 +2802,22 @@ canvas {
 
 .command-code-pre {
   margin: 0;
-  padding: 8px 0 10px;
+  padding: 6px 0 8px;
   overflow: auto;
 }
 
 .command-code-pre code {
   display: grid;
   color: #dce7ff;
-  font-size: 13px;
-  line-height: 1.7;
+  font-size: 12px;
+  line-height: 1.6;
   font-family: "SFMono-Regular", "Menlo", "Consolas", monospace;
   white-space: normal;
 }
 
 .command-code-line {
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr);
+  grid-template-columns: 42px minmax(0, 1fr);
   align-items: start;
 }
 
@@ -2871,15 +2901,15 @@ canvas {
 }
 
 .command-artifact-panel {
-  margin-top: 14px;
+  margin-top: 12px;
   border-top: 1px solid rgba(151, 182, 216, 0.12);
-  padding-top: 14px;
+  padding-top: 12px;
 }
 
 .command-artifact-panel summary {
   cursor: pointer;
   color: #bcf8ea;
-  font-size: 13px;
+  font-size: 12px;
   list-style: none;
 }
 
@@ -2890,15 +2920,15 @@ canvas {
 .command-artifact-body {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  margin-top: 14px;
+  gap: 12px;
+  margin-top: 12px;
 }
 
 .command-composer {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding-top: 12px;
+  gap: 10px;
+  padding-top: 10px;
   padding-bottom: 0;
   border-top: 0;
   position: relative;
@@ -2908,61 +2938,139 @@ canvas {
 }
 
 .command-inline-toggle {
-  min-height: 100%;
-  justify-content: center;
-  border: 1px solid rgba(151, 182, 216, 0.14);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.03);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 12px;
+}
+
+.command-inline-toggle input {
+  width: 14px;
+  height: 14px;
+  accent-color: #7ce7d7;
+}
+
+.command-inline-toggle-label {
+  color: rgba(247, 243, 235, 0.82);
+  line-height: 1;
 }
 
 .command-settings-shell {
-  gap: 16px;
+  width: min(100%, 780px);
+  align-self: flex-end;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  border-color: rgba(151, 182, 216, 0.2);
+  background:
+    linear-gradient(180deg, rgba(92, 225, 194, 0.06), rgba(8, 15, 24, 0.92) 18%),
+    rgba(8, 15, 24, 0.94);
 }
 
 .command-settings-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
 }
 
 .command-settings-copy {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
 }
 
 .command-settings-title {
   margin: 0;
   color: var(--text);
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .command-settings-caption {
   margin: 0;
   color: rgba(247, 243, 235, 0.52);
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .command-settings-close {
   flex: 0 0 auto;
 }
 
+.command-load-tools-button {
+  flex: 0 0 auto;
+}
+
 .command-settings-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  gap: 8px 10px;
   margin-top: 0;
+  align-items: start;
+}
+
+.command-settings-cell {
+  grid-column: span 1;
+}
+
+.command-settings-grid .field {
+  gap: 6px;
+}
+
+.command-settings-grid .field-label {
+  font-size: 12px;
+  color: rgba(247, 243, 235, 0.82);
+}
+
+.command-settings-grid .field-input,
+.command-settings-grid .field-textarea {
+  min-height: 38px;
+  border-radius: 12px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.command-settings-grid .field-textarea {
+  min-height: 60px;
+}
+
+.command-settings-toggle {
+  align-self: end;
+  justify-self: start;
+}
+
+.command-settings-tool-field {
+  grid-column: span 2;
+}
+
+.command-settings-tool-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.command-settings-json-field {
+  grid-column: 1 / -1;
+}
+
+.command-settings-json-textarea {
+  min-height: 68px;
+  resize: vertical;
 }
 
 .command-input-shell {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 14px;
-  border-radius: 20px;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 18px;
   border: 1px solid rgba(151, 182, 216, 0.16);
   background: rgba(8, 15, 24, 0.92);
 }
@@ -2981,7 +3089,7 @@ canvas {
 .command-input-label {
   margin: 0;
   color: var(--text);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -3007,29 +3115,31 @@ canvas {
 }
 
 .command-input {
-  min-height: 128px;
-  max-height: 38vh;
+  min-height: 104px;
+  max-height: 32vh;
   resize: vertical;
-  padding-right: 72px;
-  padding-bottom: 72px;
+  padding-right: 64px;
+  padding-bottom: 62px;
   background: rgba(255, 255, 255, 0.04);
+  font-size: 13px;
+  line-height: 1.58;
 }
 
 .command-input-submit {
   position: absolute;
-  right: 14px;
-  bottom: 14px;
-  width: 42px;
-  height: 42px;
-  border-radius: 14px;
+  right: 12px;
+  bottom: 12px;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
   border-color: rgba(92, 225, 194, 0.22);
   background: rgba(92, 225, 194, 0.12);
   z-index: 1;
 }
 
 .command-input-submit .action-icon {
-  width: 18px;
-  height: 18px;
+  width: 17px;
+  height: 17px;
 }
 
 .command-input-submit:disabled {
@@ -3180,7 +3290,7 @@ canvas {
     grid-template-columns: 1fr;
   }
 
-  .command-session-head,
+  .command-session-topline,
   .command-chat-head,
   .command-input-toolbar,
   .command-settings-head,
@@ -3191,6 +3301,20 @@ canvas {
 
   .command-chat-head {
     display: flex;
+  }
+
+  .command-session-card {
+    grid-template-columns: 1fr;
+  }
+
+  .command-session-meta {
+    white-space: normal;
+    max-width: none;
+    text-align: left;
+  }
+
+  .command-session-delete {
+    align-self: flex-end;
   }
 
   .command-prompt-grid {
@@ -3216,7 +3340,7 @@ canvas {
 
   .command-input {
     padding-right: 14px;
-    padding-bottom: 74px;
+    padding-bottom: 70px;
   }
 
   .command-input-submit {

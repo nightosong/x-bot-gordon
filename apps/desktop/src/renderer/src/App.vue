@@ -776,7 +776,6 @@
                   <div>
                     <p class="feature-kicker">Command Workshop</p>
                     <p class="models-title">命令工坊</p>
-                    <p class="models-subcopy">选择历史会话，或开始新对话进入命令工坊。</p>
                   </div>
 
                   <div class="model-section-actions">
@@ -792,11 +791,12 @@
                           <button
                             v-if="workbench.commandSessions.length"
                             type="button"
-                            class="model-action-secondary"
+                            class="model-icon-button command-chat-nav-button"
+                            aria-label="返回列表"
+                            title="返回列表"
                             @click="backToCommandList"
-                          >
-                            返回列表
-                          </button>
+                            v-html="renderActionIcon('return')"
+                          ></button>
                         </div>
 
                         <div class="command-chat-center">
@@ -804,7 +804,14 @@
                         </div>
 
                         <div class="command-chat-side command-chat-side-end">
-                          <button type="button" class="model-action" @click="beginNewCommandSession">新对话</button>
+                          <button
+                            type="button"
+                            class="model-icon-button command-chat-nav-button command-chat-nav-button-primary"
+                            aria-label="新对话"
+                            title="新对话"
+                            @click="beginNewCommandSession"
+                            v-html="renderActionIcon('jump')"
+                          ></button>
                         </div>
                       </div>
 
@@ -926,13 +933,13 @@
                               <p class="command-settings-caption">{{ commandSettingsSummary }}</p>
                             </div>
 
-                            <button type="button" class="model-action-secondary command-settings-close" @click="ui.command.composerView = 'input'">
+                            <button type="button" class="weekly-mini-action command-settings-close" @click="ui.command.composerView = 'input'">
                               返回输入
                             </button>
                           </div>
 
                           <div class="command-settings-grid">
-                            <label class="field">
+                            <label class="field command-settings-cell">
                               <span class="field-label">Agent</span>
                               <select v-model="ui.command.form.agentProfileId" class="field-input" :disabled="!enabledAgentProfiles.length" @change="handleCommandAgentChange">
                                 <option v-for="agent in enabledAgentProfiles" :key="agent.id" :value="agent.id">{{ agent.name }}</option>
@@ -940,7 +947,7 @@
                               </select>
                             </label>
 
-                            <label class="field">
+                            <label class="field command-settings-cell">
                               <span class="field-label">Skill</span>
                               <select v-model="ui.command.form.skillId" class="field-input" :disabled="!commandSelectedAgent">
                                 <option value="">通用模式</option>
@@ -950,12 +957,12 @@
                               </select>
                             </label>
 
-                            <label class="extension-selection-item command-inline-toggle">
+                            <label class="command-inline-toggle command-settings-toggle">
+                              <span class="command-inline-toggle-label">允许自动工具</span>
                               <input v-model="ui.command.form.autoSelectMcp" type="checkbox" />
-                              <span>允许自动工具</span>
                             </label>
 
-                            <label class="field">
+                            <label class="field command-settings-cell">
                               <span class="field-label">MCP Server</span>
                               <select v-model="ui.command.form.mcpServerId" class="field-input" :disabled="!commandSelectedAgent" @change="handleCommandServerChange">
                                 <option value="">不指定 MCP Server</option>
@@ -965,25 +972,26 @@
                               </select>
                             </label>
 
-                            <div class="field">
-                              <div class="weekly-inline-actions weekly-inline-actions-spread">
-                                <span class="field-label">MCP 工具</span>
-                                <button type="button" class="model-action-secondary" @click="handleCommandLoadMcpTools">读取工具</button>
-                              </div>
+                            <div class="field command-settings-tool-field">
+                              <span class="field-label">MCP 工具</span>
+                              <div class="command-settings-tool-row">
+                                <select v-model="ui.command.form.mcpToolName" class="field-input" :disabled="!ui.command.form.mcpServerId">
+                                  <option value="">不指定工具</option>
+                                  <option v-for="tool in commandToolOptions" :key="`${tool.serverId ?? 'server'}-${tool.name}`" :value="tool.name">
+                                    {{ tool.name }}{{ tool.description ? ` / ${tool.description}` : "" }}
+                                  </option>
+                                </select>
 
-                              <select v-model="ui.command.form.mcpToolName" class="field-input" :disabled="!ui.command.form.mcpServerId">
-                                <option value="">不指定工具</option>
-                                <option v-for="tool in commandToolOptions" :key="`${tool.serverId ?? 'server'}-${tool.name}`" :value="tool.name">
-                                  {{ tool.name }}{{ tool.description ? ` / ${tool.description}` : "" }}
-                                </option>
-                              </select>
+                                <button type="button" class="weekly-mini-action command-load-tools-button" @click="handleCommandLoadMcpTools">读取工具</button>
+                              </div>
                             </div>
 
-                            <label class="field field-full">
+                            <label class="field command-settings-json-field">
                               <span class="field-label">MCP 参数 JSON</span>
                               <textarea
                                 v-model="ui.command.form.mcpArgumentsText"
-                                class="field-textarea extension-textarea-md"
+                                rows="2"
+                                class="field-textarea command-settings-json-textarea"
                                 placeholder='例如：{"path":"docs/ARCHITECTURE.md"}'
                               ></textarea>
                             </label>
@@ -1036,16 +1044,13 @@
                 </div>
 
                 <div v-else class="models-grid models-grid-single">
-                  <section class="model-section">
+                  <section class="model-section command-session-section">
                     <div class="model-section-head">
                       <div>
                         <p class="feature-kicker">Sessions</p>
                         <p class="model-section-title">会话列表</p>
                       </div>
 
-                      <div class="model-section-actions">
-                        <button type="button" class="model-action" @click="beginNewCommandSession">新对话</button>
-                      </div>
                     </div>
 
                     <div class="model-section-body command-session-list-shell">
@@ -1063,15 +1068,13 @@
                             :class="{ 'is-active': ui.command.activeSessionId === session.id }"
                           >
                             <button type="button" class="command-session-main" @click="openCommandSession(session.id)">
-                              <div class="command-session-head">
+                              <div class="command-session-topline">
                                 <p class="command-session-title">{{ session.title || "新对话" }}</p>
+                                <p class="command-session-meta">
+                                  {{ formatLocalDateTime(session.updatedAt) }} · {{ session.messages.length }} 条消息 ·
+                                  {{ session.messages.filter((message) => message.role === "assistant").length }} 次响应
+                                </p>
                               </div>
-
-                              <p class="command-session-summary">{{ session.summary || "等待输入" }}</p>
-                              <p class="command-session-meta">
-                                {{ formatLocalDateTime(session.updatedAt) }} · {{ session.messages.length }} 条消息 ·
-                                {{ session.messages.filter((message) => message.role === "assistant").length }} 次响应
-                              </p>
                             </button>
 
                             <button
@@ -1079,17 +1082,14 @@
                               class="model-icon-button model-icon-button-danger command-session-delete"
                               :aria-label="`删除 ${session.title || '当前会话'}`"
                               title="删除会话"
-                              @click="handleCommandSessionDelete(session.id)"
+                              @click.stop="handleCommandSessionDelete(session.id)"
                               v-html="renderActionIcon('delete')"
                             ></button>
                           </article>
                         </div>
 
                         <div v-else class="command-empty-card">
-                          <p class="model-empty-copy">还没有历史会话。点击开始新对话，直接进入命令工坊。</p>
-                          <div class="form-actions">
-                            <button type="button" class="model-action" @click="beginNewCommandSession">开始新对话</button>
-                          </div>
+                          <p class="model-empty-copy">还没有历史会话。点击上方“开始协作”，直接进入命令工坊。</p>
                         </div>
                       </div>
                     </div>
@@ -1992,6 +1992,13 @@ const ACTION_ICONS = {
     <svg viewBox="0 0 20 20" class="action-icon" aria-hidden="true">
       <path d="M15.5 4.5v4.2a3 3 0 0 1-3 3H5.2" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" />
       <path d="m8.4 8.7-3.2 3.2 3.2 3.2" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" />
+    </svg>
+  `,
+  jump: `
+    <svg viewBox="0 0 20 20" class="action-icon" aria-hidden="true">
+      <path d="M5 14.5V6.8A1.8 1.8 0 0 1 6.8 5h6.6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" />
+      <path d="M10.7 3.9H15v4.3" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" />
+      <path d="m8.9 11.1 6.1-6.1" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" />
     </svg>
   `,
   delete: `
