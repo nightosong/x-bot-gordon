@@ -440,18 +440,15 @@
                           <div class="weekly-editor-stage">
                             <section class="weekly-canvas-card">
                               <div class="weekly-canvas-head">
-                                <div>
-                                  <p class="feature-kicker">Projects</p>
-                                  <p class="model-section-title">项目推进板</p>
-                                </div>
+                                <p class="model-section-title weekly-canvas-title">项目推进板</p>
 
-                                <button type="button" class="model-action-secondary" @click="addWeeklyProject">新增项目</button>
+                                <button type="button" class="weekly-mini-action weekly-mini-action-primary" @click="addWeeklyProject">新增项目</button>
                               </div>
 
                               <section class="weekly-project-stack">
                                 <template v-if="weeklyDraft.projects.length">
                                   <section
-                                    v-for="(project, projectIndex) in weeklyDraft.projects"
+                                    v-for="project in weeklyDraft.projects"
                                     :key="project.id"
                                     class="weekly-project-card"
                                     :class="{ 'is-collapsed': isWeeklyProjectCollapsed(project.id) }"
@@ -464,85 +461,89 @@
                                         @click="toggleWeeklyProjectCollapsed(project.id)"
                                       >
                                         <span class="weekly-project-toggle-glyph">
-                                          {{ isWeeklyProjectCollapsed(project.id) ? "+" : "-" }}
+                                          {{ isWeeklyProjectCollapsed(project.id) ? "▸" : "▾" }}
                                         </span>
                                       </button>
 
                                       <input
                                         v-model="project.title"
-                                        class="field-input weekly-project-name-input"
+                                        class="field-input weekly-compact-input weekly-project-name-input"
                                         type="text"
                                         :data-weekly-project-input="project.id"
-                                        :placeholder="`项目 ${projectIndex + 1}`"
+                                        placeholder="输入项目名称"
                                       />
 
-                                      <div class="weekly-project-head-actions">
-                                        <button type="button" class="weekly-inline-link weekly-inline-danger" @click="removeWeeklyProject(project.id)">
-                                          删除项目
-                                        </button>
-                                      </div>
+                                      <button type="button" class="weekly-row-action weekly-row-action-add" aria-label="新增任务" @click="addWeeklyTask(project.id)">
+                                        +
+                                      </button>
+                                      <button type="button" class="weekly-row-action weekly-row-action-delete" @click="removeWeeklyProject(project.id)">
+                                        删除
+                                      </button>
                                     </div>
 
                                     <div v-if="!isWeeklyProjectCollapsed(project.id)" class="weekly-project-body">
-                                      <div class="weekly-project-task-block">
-                                        <div class="weekly-project-task-head">
-                                          <span class="field-label">项目任务</span>
-                                          <button type="button" class="model-action-secondary" @click="addWeeklyTask(project.id)">新增任务</button>
-                                        </div>
+                                      <div v-if="project.tasks.length" class="weekly-task-list">
+                                        <article v-for="(task, taskIndex) in project.tasks" :key="task.id" class="weekly-task-card">
+                                          <div class="weekly-task-row">
+                                            <details class="weekly-task-status-menu">
+                                              <summary
+                                                class="weekly-task-index-button"
+                                                :class="getWeeklyStatusToneClass(task.status)"
+                                                :aria-label="`第 ${taskIndex + 1} 个任务，当前状态：${getWeeklyProgressStatusMeta(task.status).label}`"
+                                              >
+                                                {{ taskIndex + 1 }}
+                                              </summary>
 
-                                        <div class="weekly-task-list">
-                                          <template v-if="project.tasks.length">
-                                            <article v-for="(task, taskIndex) in project.tasks" :key="task.id" class="weekly-task-card">
-                                              <div class="weekly-task-row">
-                                                <span class="weekly-task-index">{{ taskIndex + 1 }}</span>
-
-                                                <select v-model="task.status" class="weekly-status-select weekly-status-select-compact" aria-label="任务状态">
-                                                  <option
-                                                    v-for="(meta, statusKey) in WEEKLY_PROGRESS_STATUS_META"
-                                                    :key="statusKey"
-                                                    :value="statusKey"
-                                                  >
-                                                    {{ meta.label }}
-                                                  </option>
-                                                </select>
-
-                                                <input
-                                                  v-model="task.title"
-                                                  class="field-input weekly-task-title-input"
-                                                  type="text"
-                                                  :data-weekly-task-input="task.id"
-                                                  placeholder="例如：补齐 Feishu 周报同步 schema"
-                                                />
-
-                                                <div class="weekly-task-actions">
-                                                  <button
-                                                    type="button"
-                                                    class="weekly-inline-link weekly-inline-danger"
-                                                    @click="removeWeeklyTask(project.id, task.id)"
-                                                  >
-                                                    删除
-                                                  </button>
-                                                </div>
+                                              <div class="weekly-task-status-panel">
+                                                <button
+                                                  v-for="(meta, statusKey) in WEEKLY_PROGRESS_STATUS_META"
+                                                  :key="statusKey"
+                                                  type="button"
+                                                  class="weekly-task-status-option"
+                                                  :class="{ 'is-active': task.status === statusKey }"
+                                                  @click="setWeeklyTaskStatus(project.id, task.id, statusKey, $event)"
+                                                >
+                                                  <span class="weekly-task-status-swatch" :class="getWeeklyStatusToneClass(statusKey)"></span>
+                                                  <span>{{ meta.label }}</span>
+                                                </button>
                                               </div>
-                                            </article>
-                                          </template>
+                                            </details>
 
-                                          <div v-else class="weekly-project-empty">
-                                            <p class="weekly-project-empty-copy">这个项目还没有拆任务，建议先把“要做什么”和“做到哪一步”拆清楚。</p>
-                                            <button type="button" class="model-action-secondary" @click="addWeeklyTask(project.id)">新增第一条任务</button>
+                                            <input
+                                              v-model="task.title"
+                                              class="field-input weekly-compact-input weekly-task-title-input"
+                                              type="text"
+                                              :data-weekly-task-input="task.id"
+                                              placeholder="输入任务名称"
+                                            />
+
+                                            <button
+                                              type="button"
+                                              class="weekly-row-action weekly-row-action-add"
+                                              aria-label="在当前任务后新增一条任务"
+                                              @click="addWeeklyTask(project.id, task.id)"
+                                            >
+                                              +
+                                            </button>
+                                            <button
+                                              type="button"
+                                              class="weekly-row-action weekly-row-action-delete"
+                                              @click="removeWeeklyTask(project.id, task.id)"
+                                            >
+                                              删除
+                                            </button>
                                           </div>
-                                        </div>
+                                        </article>
                                       </div>
+
+                                      <p v-else class="weekly-project-empty-copy weekly-project-empty-inline">暂无任务，点击右侧 + 直接新增。</p>
                                     </div>
                                   </section>
                                 </template>
 
                                 <div v-else class="weekly-editor-empty">
-                                  <p class="weekly-editor-empty-title">先按项目拆开，再写任务，周报才会像一个工作台而不是记事本。</p>
-                                  <p class="weekly-editor-empty-copy">
-                                    建议至少拆成“项目名称 + 阶段结果/风险 + 具体任务状态”三层，再切到“汇报视图”整理周报输出。
-                                  </p>
-                                  <button type="button" class="model-action" @click="addWeeklyProject">新增第一个项目</button>
+                                  <p class="weekly-editor-empty-title">先新增一个项目，再在项目行里继续补任务。</p>
+                                  <button type="button" class="weekly-mini-action weekly-mini-action-primary" @click="addWeeklyProject">新增项目</button>
                                 </div>
                               </section>
                             </section>
@@ -1793,6 +1794,7 @@ import {
   formatLocalDateTime,
   getProviderMeta,
   getWeeklyProgressCompletionRate,
+  getWeeklyProgressStatusMeta,
   getSkillLocalMirrorDetail,
   getSkillSourceDetail,
   getSkillSourceLabel,
@@ -2286,6 +2288,38 @@ function markWeeklyDraftSaved(record = ui.weekly.draft) {
   weeklySavedSnapshot = getWeeklyDraftSnapshot(record);
 }
 
+function deriveWeeklyProjectStatus(tasks = []) {
+  const meaningfulTasks = (Array.isArray(tasks) ? tasks : []).filter(
+    (task) => String(task?.title ?? "").trim() || String(task?.detail ?? "").trim()
+  );
+
+  if (!meaningfulTasks.length) {
+    return "in_progress";
+  }
+
+  if (meaningfulTasks.some((task) => task.status === "blocked")) {
+    return "blocked";
+  }
+
+  if (meaningfulTasks.every((task) => task.status === "completed")) {
+    return "completed";
+  }
+
+  if (meaningfulTasks.some((task) => task.status === "in_progress" || task.status === "completed")) {
+    return "in_progress";
+  }
+
+  return "planned";
+}
+
+function syncWeeklyProjectStatus(project) {
+  if (!project) {
+    return;
+  }
+
+  project.status = deriveWeeklyProjectStatus(project.tasks);
+}
+
 function focusWeeklyProjectInput(projectId) {
   nextTick(() => {
     const input = document.querySelector(`[data-weekly-project-input="${projectId}"]`);
@@ -2684,6 +2718,7 @@ function syncWeeklyEditorState() {
 
   clearWeeklyAutosaveTimer();
   ui.weekly.draft = cloneWeeklyProgressRecord(activeWeeklyRecord.value);
+  ui.weekly.draft?.projects?.forEach((project) => syncWeeklyProjectStatus(project));
   ui.weekly.collapsedProjectIds = [];
   markWeeklyDraftSaved(ui.weekly.draft);
 }
@@ -2939,7 +2974,7 @@ function removeWeeklyProject(projectId) {
   ui.weekly.collapsedProjectIds = ui.weekly.collapsedProjectIds.filter((id) => id !== projectId);
 }
 
-function addWeeklyTask(projectId) {
+function addWeeklyTask(projectId, afterTaskId = null) {
   const project = findWeeklyProjectById(projectId);
 
   if (!project) {
@@ -2947,7 +2982,20 @@ function addWeeklyTask(projectId) {
   }
 
   const task = createWeeklyTaskDraft();
-  project.tasks.push(task);
+
+  if (afterTaskId) {
+    const taskIndex = project.tasks.findIndex((item) => item.id === afterTaskId);
+
+    if (taskIndex >= 0) {
+      project.tasks.splice(taskIndex + 1, 0, task);
+    } else {
+      project.tasks.push(task);
+    }
+  } else {
+    project.tasks.push(task);
+  }
+
+  syncWeeklyProjectStatus(project);
   ui.weekly.collapsedProjectIds = ui.weekly.collapsedProjectIds.filter((id) => id !== projectId);
   focusWeeklyTaskInput(task.id);
 }
@@ -2960,6 +3008,43 @@ function removeWeeklyTask(projectId, taskId) {
   }
 
   project.tasks = project.tasks.filter((task) => task.id !== taskId);
+  syncWeeklyProjectStatus(project);
+}
+
+function getWeeklyStatusToneClass(status) {
+  return `is-${getWeeklyProgressStatusMeta(status).tone}`;
+}
+
+function closeWeeklyStatusMenu(trigger) {
+  const source = trigger instanceof Event ? trigger.currentTarget : trigger;
+
+  if (!(source instanceof HTMLElement)) {
+    return;
+  }
+
+  const menu = source.closest(".weekly-task-status-menu");
+
+  if (menu instanceof HTMLDetailsElement) {
+    menu.open = false;
+  }
+}
+
+function setWeeklyTaskStatus(projectId, taskId, nextStatus, event) {
+  const project = findWeeklyProjectById(projectId);
+
+  if (!project) {
+    return;
+  }
+
+  const task = project.tasks.find((item) => item.id === taskId);
+
+  if (!task) {
+    return;
+  }
+
+  task.status = nextStatus;
+  syncWeeklyProjectStatus(project);
+  closeWeeklyStatusMenu(event);
 }
 
 async function handleWeeklySave(options = {}) {
