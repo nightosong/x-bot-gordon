@@ -838,7 +838,7 @@
                               <summary>{{ getCommandArtifactSummary(message.artifact) }}</summary>
 
                               <div class="command-artifact-body">
-                                <div class="extension-tag-row">
+                                <div class="extension-tag-row command-artifact-tag-row">
                                   <span class="pill pill-neutral">{{ message.artifact.profileLabel }}</span>
                                   <span class="pill pill-neutral">{{ message.artifact.model }}</span>
                                   <span v-if="message.artifact.skillName" class="pill">{{ message.artifact.skillName }}</span>
@@ -847,63 +847,94 @@
                                   <span v-if="message.artifact.mcpToolName" class="pill pill-neutral">{{ message.artifact.mcpToolName }}</span>
                                 </div>
 
-                                <label v-if="message.artifact.mcpResultText" class="field field-full">
-                                  <span class="field-label">MCP 汇总结果</span>
-                                  <textarea class="field-textarea extension-textarea-md" readonly>{{ message.artifact.mcpResultText }}</textarea>
-                                </label>
+                                <div v-if="message.artifact.mcpResultText || message.artifact.stopReason" class="command-artifact-inline-list">
+                                  <div v-if="message.artifact.mcpResultText" class="command-artifact-inline-row">
+                                    <span class="command-artifact-inline-label">MCP 汇总</span>
+                                    <p
+                                      class="command-artifact-inline-copy"
+                                      :title="getCommandArtifactInlineText(message.artifact.mcpResultText)"
+                                    >
+                                      {{ getCommandArtifactInlineText(message.artifact.mcpResultText) }}
+                                    </p>
+                                  </div>
 
-                                <label v-if="message.artifact.stopReason" class="field field-full">
-                                  <span class="field-label">停止原因</span>
-                                  <textarea class="field-textarea extension-textarea-md" readonly>{{ message.artifact.stopReason }}</textarea>
-                                </label>
+                                  <div v-if="message.artifact.stopReason" class="command-artifact-inline-row">
+                                    <span class="command-artifact-inline-label">停止原因</span>
+                                    <p
+                                      class="command-artifact-inline-copy"
+                                      :title="getCommandArtifactInlineText(message.artifact.stopReason)"
+                                    >
+                                      {{ getCommandArtifactInlineText(message.artifact.stopReason) }}
+                                    </p>
+                                  </div>
+                                </div>
 
-                                <div class="field field-full">
-                                  <span class="field-label">执行步骤</span>
-                                  <div v-if="message.artifact.steps?.length" class="agent-run-step-list">
-                                    <article v-for="step in message.artifact.steps" :key="step.id" class="agent-run-step">
-                                      <div class="agent-run-step-head">
-                                        <p class="agent-run-step-title">{{ step.title }}</p>
-                                        <span class="pill pill-neutral">{{ formatLocalDateTime(step.createdAt) }}</span>
+                                <div class="command-artifact-section">
+                                  <div class="command-artifact-section-head">
+                                    <span class="command-artifact-section-title">执行步骤</span>
+                                    <span class="pill pill-neutral command-artifact-section-count">
+                                      {{ message.artifact.steps?.length ?? 0 }}
+                                    </span>
+                                  </div>
+
+                                  <div v-if="message.artifact.steps?.length" class="command-artifact-chain">
+                                    <article v-for="step in message.artifact.steps" :key="step.id" class="command-artifact-chain-item">
+                                      <span class="command-artifact-chain-rail" aria-hidden="true">
+                                        <span class="command-artifact-chain-bead"></span>
+                                      </span>
+
+                                      <div class="command-artifact-chain-main">
+                                        <p class="command-artifact-chain-title" :title="step.title">{{ step.title }}</p>
+                                        <p
+                                          v-if="getCommandArtifactStepSecondary(step)"
+                                          class="command-artifact-chain-secondary"
+                                          :title="getCommandArtifactStepSecondary(step)"
+                                        >
+                                          {{ getCommandArtifactStepSecondary(step) }}
+                                        </p>
                                       </div>
-                                      <p class="model-card-copy">{{ step.detail }}</p>
+
+                                      <span class="command-artifact-chain-time">{{ formatLocalDateTime(step.createdAt) }}</span>
                                     </article>
                                   </div>
                                   <p v-else class="model-empty-copy">本次运行还没有步骤记录。</p>
                                 </div>
 
-                                <div v-if="message.artifact.mcpCalls?.length" class="field field-full">
-                                  <span class="field-label">MCP 调用明细</span>
-                                  <div class="agent-run-step-list">
+                                <div v-if="message.artifact.mcpCalls?.length" class="command-artifact-section">
+                                  <div class="command-artifact-section-head">
+                                    <span class="command-artifact-section-title">MCP 调用</span>
+                                    <span class="pill pill-neutral command-artifact-section-count">
+                                      {{ message.artifact.mcpCalls.length }}
+                                    </span>
+                                  </div>
+
+                                  <div class="command-artifact-chain">
                                     <article
                                       v-for="call in message.artifact.mcpCalls"
                                       :key="`${call.createdAt}-${call.serverName}-${call.toolName}-${call.round}`"
-                                      class="agent-run-step"
+                                      class="command-artifact-chain-item is-mcp"
                                     >
-                                      <div class="agent-run-step-head">
-                                        <p class="agent-run-step-title">第 {{ call.round }} 轮 / {{ call.serverName }} / {{ call.toolName }}</p>
-                                        <div class="extension-tag-row">
-                                          <span v-if="call.autoSelected" class="pill">自动选择</span>
-                                          <span v-if="call.recovered" class="pill">已重试恢复（{{ call.attemptCount }} 次）</span>
-                                          <span v-if="call.repairedFromArguments" class="pill">参数已修复</span>
-                                          <span v-if="call.fallbackFromToolName" class="pill">fallback 接管</span>
-                                          <span v-if="call.isError" class="pill pill-neutral">返回错误标记</span>
-                                          <span v-if="call.isError && call.errorCategory" class="pill pill-neutral">
-                                            {{ call.errorCategory === "retryable" ? "可重试错误" : "不可重试错误" }}
-                                          </span>
-                                          <span v-if="call.failureKind" class="pill pill-neutral">{{ formatFailureKind(call.failureKind) }}</span>
-                                        </div>
+                                      <span class="command-artifact-chain-rail" aria-hidden="true">
+                                        <span class="command-artifact-chain-bead"></span>
+                                      </span>
+
+                                      <div class="command-artifact-chain-main">
+                                        <p
+                                          class="command-artifact-chain-title"
+                                          :title="getCommandArtifactCallTitle(call)"
+                                        >
+                                          {{ getCommandArtifactCallTitle(call) }}
+                                        </p>
+                                        <p
+                                          v-if="getCommandArtifactCallSecondary(call)"
+                                          class="command-artifact-chain-secondary"
+                                          :title="getCommandArtifactCallSecondary(call)"
+                                        >
+                                          {{ getCommandArtifactCallSecondary(call) }}
+                                        </p>
                                       </div>
 
-                                      <p class="model-card-copy">参数：{{ JSON.stringify(call.arguments ?? {}, null, 2) }}</p>
-                                      <p v-if="call.repairedFromArguments" class="model-card-copy">
-                                        修复前参数：{{ JSON.stringify(call.repairedFromArguments, null, 2) }}
-                                      </p>
-                                      <p v-if="call.repairReason" class="model-card-copy">修复策略：{{ call.repairReason }}</p>
-                                      <p v-if="call.fallbackFromToolName" class="model-card-copy">
-                                        fallback 来源：{{ call.fallbackFromServerName ?? call.serverName }} / {{ call.fallbackFromToolName }}
-                                      </p>
-                                      <p v-if="call.failureReason" class="model-card-copy">失败原因：{{ call.failureReason }}</p>
-                                      <textarea class="field-textarea extension-textarea-md" readonly>{{ call.resultText }}</textarea>
+                                      <span class="command-artifact-chain-time">{{ formatLocalDateTime(call.createdAt) }}</span>
                                     </article>
                                   </div>
                                 </div>
@@ -4170,6 +4201,72 @@ function getCommandArtifactSummary(artifact) {
   ].filter(Boolean);
 
   return summaryParts.length ? `执行链路 · ${summaryParts.join(" / ")}` : "查看执行链路";
+}
+
+function normalizeCommandArtifactInlineText(value) {
+  return String(value ?? "")
+    .replace(/\s*\n+\s*/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function getCommandArtifactInlineText(value) {
+  return normalizeCommandArtifactInlineText(value);
+}
+
+function getCommandArtifactStepSecondary(step) {
+  const detail = normalizeCommandArtifactInlineText(step?.detail);
+
+  if (!detail || detail === step?.title) {
+    return "";
+  }
+
+  return detail;
+}
+
+function getCommandArtifactCallTitle(call) {
+  return `第 ${call.round} 轮 · ${call.serverName} / ${call.toolName}`;
+}
+
+function getCommandArtifactCallSecondary(call) {
+  const secondaryParts = [];
+
+  if (call.autoSelected) {
+    secondaryParts.push("自动选择");
+  }
+
+  if (call.recovered) {
+    secondaryParts.push(`重试恢复 x${call.attemptCount}`);
+  } else if (call.attemptCount > 1) {
+    secondaryParts.push(`尝试 x${call.attemptCount}`);
+  }
+
+  if (call.repairedFromArguments) {
+    secondaryParts.push(call.repairReason ? normalizeCommandArtifactInlineText(call.repairReason) : "参数修复");
+  }
+
+  if (call.fallbackFromToolName) {
+    secondaryParts.push(`fallback ${call.fallbackFromServerName ?? call.serverName}/${call.fallbackFromToolName}`);
+  }
+
+  if (call.isError) {
+    secondaryParts.push("返回错误标记");
+  }
+
+  if (call.failureKind) {
+    secondaryParts.push(formatFailureKind(call.failureKind));
+  }
+
+  const failureReason = normalizeCommandArtifactInlineText(call.failureReason);
+  const resultText = normalizeCommandArtifactInlineText(call.resultText);
+
+  if (failureReason) {
+    secondaryParts.push(failureReason);
+  } else if (resultText) {
+    secondaryParts.push(resultText);
+  }
+
+  return secondaryParts.join(" · ");
 }
 
 function formatFailureKind(failureKind) {
