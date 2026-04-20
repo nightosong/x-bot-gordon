@@ -27,6 +27,7 @@ import {
   isBuiltinWorkbenchEntry,
   mergeBuiltinEntries
 } from "./default-assets.js";
+import { readPromptAsset } from "./prompt-assets.js";
 
 async function readJsonFile<T>(filePath: string): Promise<T> {
   const content = await readFile(filePath, "utf8");
@@ -40,32 +41,8 @@ function getDefaultModelSettings(): ModelSettings {
   };
 }
 
-const LEGACY_DEFAULT_WEEKLY_REPORT_TEMPLATE = `请基于本周计划与进展，生成一份可以直接同步给领导的周报，严格按照以下结构输出：
-1. 本周重点完成事项
-2. 当前进展与结果
-3. 风险、问题与待协调事项
-4. 下周计划
-
-要求：
-- 语言专业、简洁、条理清晰
-- 尽量突出结果、影响和下一步动作
-- 如果原始内容里没有的信息，不要编造`;
-
-const DEFAULT_WEEKLY_REPORT_TEMPLATE = `请基于本周计划与进展，生成一份可以直接同步给领导的周报，严格按照以下结构输出：
-1. 本周结论
-- 用 2-3 句先概括本周最重要结果、整体进展判断，以及是否存在需要关注的风险
-2. 本周重点结果
-- 按项目归纳，优先写结果、影响、完成到哪一步
-3. 风险、问题与待协调事项
-- 只列真实存在的风险；写清影响、当前卡点，以及需要谁支持或决策
-4. 下周推进计划
-- 按优先级列出 3-5 条动作，尽量写成“动作 + 目标”
-
-要求：
-- 先结论后细节，避免流水账
-- 能量化就量化，不能量化也要写清完成度
-- 语言专业、简洁、条理清晰
-- 如果原始内容里没有的信息，不要编造`;
+const LEGACY_DEFAULT_WEEKLY_REPORT_TEMPLATE = readPromptAsset("weeklyReportTemplateLegacy");
+const DEFAULT_WEEKLY_REPORT_TEMPLATE = readPromptAsset("weeklyReportTemplateDefault");
 
 const WEEKLY_PROGRESS_FALLBACK_PROJECT_TITLE = "未分类项目";
 

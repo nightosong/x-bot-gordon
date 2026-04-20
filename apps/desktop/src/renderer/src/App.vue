@@ -81,7 +81,7 @@
       </section>
 
       <section class="right-column">
-        <section class="workspace-panel">
+        <section class="workspace-panel" :class="{ 'workspace-panel-flush': isWorkspaceImmersive }">
           <template v-if="activeFeature === FEATURE_HOME">
             <div class="workspace-stage robot-stage">
               <div class="robot-frame">
@@ -292,14 +292,13 @@
           </template>
 
           <template v-else-if="activeFeature === FEATURE_TASKS">
-            <div class="workspace-stage workspace-stage-scroll">
-              <div class="weekly-shell">
+            <div class="workspace-stage workspace-stage-scroll" :class="{ 'workspace-stage-flush': ui.weekly.view === 'editor' }">
+              <div class="weekly-shell" :class="{ 'weekly-shell-editor': ui.weekly.view === 'editor' }">
                 <section v-if="ui.weekly.view === 'list'" class="weekly-hero weekly-hero-cockpit">
                   <div class="weekly-hero-main">
                     <div>
                       <p class="feature-kicker">Weekly Progress</p>
                       <p class="models-title">任务推进</p>
-                      <p class="models-subcopy">把任务推进、周会汇报和领导周报收进同一块主舞台，先看结论，再追项目细节。</p>
                     </div>
 
                     <div class="weekly-hero-actions">
@@ -327,7 +326,7 @@
                   </article>
                 </section>
 
-                <div class="models-grid models-grid-single">
+                <div class="models-grid models-grid-single" :class="{ 'models-grid-immersive': ui.weekly.view === 'editor' }">
                   <section v-if="ui.weekly.view === 'list'" class="model-section">
                     <div class="model-section-head">
                       <div>
@@ -398,22 +397,21 @@
                     </div>
                   </section>
 
-                  <section v-else-if="weeklyDraft" class="model-section model-section-scroll">
-                    <div class="weekly-form-shell">
-                      <form class="weekly-form" @submit.prevent="handleWeeklySave()">
+                  <section v-else-if="weeklyDraft" class="model-section model-section-immersive">
+                    <div class="weekly-form-shell weekly-form-shell-immersive">
+                      <form class="weekly-form weekly-form-immersive" @submit.prevent="handleWeeklySave()">
                         <div class="weekly-panel-head weekly-panel-head-compact">
                           <div class="weekly-panel-side weekly-panel-side-start">
-                            <button type="button" class="model-action-secondary" @click="closeWeeklyEditor">返回列表</button>
+                            <button
+                              type="button"
+                              class="model-icon-button weekly-back-button"
+                              aria-label="返回列表"
+                              title="返回列表"
+                              @click="closeWeeklyEditor"
+                              v-html="renderActionIcon('return')"
+                            ></button>
                           </div>
 
-                          <p class="weekly-panel-title weekly-panel-title-centered">{{ weeklyDraft.title }}</p>
-
-                          <div class="weekly-panel-side weekly-panel-side-end">
-                            <span class="pill pill-neutral">自动保存</span>
-                          </div>
-                        </div>
-
-                        <div class="weekly-editor-toolbar">
                           <div class="weekly-editor-segmented" role="tablist" aria-label="任务推进编辑视图">
                             <button
                               type="button"
@@ -433,119 +431,167 @@
                             >
                               汇报视图
                             </button>
+                            <div class="weekly-panel-title-slot">
+                              <p class="weekly-panel-title weekly-panel-title-centered">{{ weeklyDraft.title }}</p>
+                              <span class="weekly-autosave-hint">自动保存</span>
+                            </div>
+                          </div>
+
+                          <div class="weekly-panel-side weekly-panel-side-end">
+                            <button
+                              v-if="ui.weekly.editorView === 'projects'"
+                              type="button"
+                              class="weekly-mini-action weekly-mini-action-primary"
+                              @click="addWeeklyProject"
+                            >
+                              新增项目
+                            </button>
+                            <button
+                              v-else
+                              type="button"
+                              class="weekly-mini-action weekly-mini-action-primary"
+                              @click="handleWeeklyReportGeneration"
+                            >
+                              生成周报
+                            </button>
                           </div>
                         </div>
 
                         <template v-if="ui.weekly.editorView === 'projects'">
                           <div class="weekly-editor-stage">
-                            <section class="weekly-canvas-card">
-                              <div class="weekly-canvas-head">
-                                <p class="model-section-title weekly-canvas-title">项目推进板</p>
+                            <section class="weekly-project-stack">
+                              <template v-if="weeklyDraft.projects.length">
+                                <section
+                                  v-for="project in weeklyDraft.projects"
+                                  :key="project.id"
+                                  class="weekly-project-card"
+                                  :class="{ 'is-collapsed': isWeeklyProjectCollapsed(project.id) }"
+                                >
+                                  <div class="weekly-project-head">
+                                    <button
+                                      type="button"
+                                      class="weekly-project-toggle"
+                                      :aria-expanded="String(!isWeeklyProjectCollapsed(project.id))"
+                                      @click="toggleWeeklyProjectCollapsed(project.id)"
+                                    >
+                                      <span class="weekly-project-toggle-glyph">
+                                        {{ isWeeklyProjectCollapsed(project.id) ? "▸" : "▾" }}
+                                      </span>
+                                    </button>
 
+                                    <input
+                                      v-model="project.title"
+                                      class="field-input weekly-compact-input weekly-project-name-input"
+                                      type="text"
+                                      :data-weekly-project-input="project.id"
+                                      placeholder="输入项目名称"
+                                    />
+
+                                    <button type="button" class="weekly-row-action weekly-row-action-add" aria-label="新增任务" @click="addWeeklyTask(project.id)">
+                                      +
+                                    </button>
+                                    <button type="button" class="weekly-row-action weekly-row-action-delete" @click="removeWeeklyProject(project.id)">
+                                      删除
+                                    </button>
+                                  </div>
+
+                                  <div v-if="!isWeeklyProjectCollapsed(project.id)" class="weekly-project-body">
+                                    <div v-if="project.tasks.length" class="weekly-task-list">
+                                      <article
+                                        v-for="(task, taskIndex) in project.tasks"
+                                        :key="task.id"
+                                        class="weekly-task-card"
+                                        :class="{ 'is-busy': isWeeklyTaskRewriting(task.id) }"
+                                      >
+                                        <div class="weekly-task-row">
+                                          <details v-if="!isWeeklyTaskRewriting(task.id)" class="weekly-task-status-menu">
+                                            <summary
+                                              class="weekly-task-index-button"
+                                              :class="getWeeklyStatusToneClass(task.status)"
+                                              :aria-label="`第 ${taskIndex + 1} 个任务，当前状态：${getWeeklyProgressStatusMeta(task.status).label}`"
+                                            >
+                                              {{ taskIndex + 1 }}
+                                            </summary>
+
+                                            <div class="weekly-task-status-panel">
+                                              <button
+                                                v-for="(meta, statusKey) in WEEKLY_PROGRESS_STATUS_META"
+                                                :key="statusKey"
+                                                type="button"
+                                                class="weekly-task-status-option"
+                                                :class="{ 'is-active': task.status === statusKey }"
+                                                @click="setWeeklyTaskStatus(project.id, task.id, statusKey, $event)"
+                                              >
+                                                <span class="weekly-task-status-swatch" :class="getWeeklyStatusToneClass(statusKey)"></span>
+                                                <span>{{ meta.label }}</span>
+                                              </button>
+                                            </div>
+                                          </details>
+                                          <span v-else class="weekly-task-index-button is-running" aria-label="任务优化中">
+                                            <span class="weekly-task-spinner"></span>
+                                          </span>
+
+                                          <input
+                                            v-model="task.title"
+                                            class="field-input weekly-compact-input weekly-task-title-input"
+                                            type="text"
+                                            :data-weekly-task-input="task.id"
+                                            placeholder="输入任务名称"
+                                            :disabled="isWeeklyTaskRewriting(task.id)"
+                                          />
+
+                                          <button
+                                            type="button"
+                                            class="weekly-row-action weekly-row-action-add"
+                                            aria-label="在当前任务后新增一条任务"
+                                            @click="addWeeklyTask(project.id, task.id)"
+                                            :disabled="isWeeklyTaskRewriting(task.id)"
+                                          >
+                                            +
+                                          </button>
+
+                                          <details
+                                            class="weekly-task-action-menu"
+                                            :class="{ 'is-disabled': isWeeklyTaskRewriting(task.id) }"
+                                          >
+                                            <summary
+                                              class="weekly-row-action weekly-row-action-more"
+                                              aria-label="更多任务操作"
+                                            >
+                                              更多
+                                            </summary>
+
+                                            <div class="weekly-task-action-panel">
+                                              <button
+                                                type="button"
+                                                class="weekly-task-action-option"
+                                                :disabled="isWeeklyTaskRewriting(task.id) || !task.title.trim()"
+                                                @click="optimizeWeeklyTaskTitle(project.id, task.id, $event)"
+                                              >
+                                                {{ isWeeklyTaskRewriting(task.id) ? "优化中..." : "优化" }}
+                                              </button>
+                                              <button
+                                                type="button"
+                                                class="weekly-task-action-option weekly-task-action-option-danger"
+                                                @click="removeWeeklyTask(project.id, task.id)"
+                                              >
+                                                删除
+                                              </button>
+                                            </div>
+                                          </details>
+                                        </div>
+                                      </article>
+                                    </div>
+
+                                    <p v-else class="weekly-project-empty-copy weekly-project-empty-inline">暂无任务，点击右侧 + 直接新增。</p>
+                                  </div>
+                                </section>
+                              </template>
+
+                              <div v-else class="weekly-editor-empty">
+                                <p class="weekly-editor-empty-title">先新增一个项目，再在项目行里继续补任务。</p>
                                 <button type="button" class="weekly-mini-action weekly-mini-action-primary" @click="addWeeklyProject">新增项目</button>
                               </div>
-
-                              <section class="weekly-project-stack">
-                                <template v-if="weeklyDraft.projects.length">
-                                  <section
-                                    v-for="project in weeklyDraft.projects"
-                                    :key="project.id"
-                                    class="weekly-project-card"
-                                    :class="{ 'is-collapsed': isWeeklyProjectCollapsed(project.id) }"
-                                  >
-                                    <div class="weekly-project-head">
-                                      <button
-                                        type="button"
-                                        class="weekly-project-toggle"
-                                        :aria-expanded="String(!isWeeklyProjectCollapsed(project.id))"
-                                        @click="toggleWeeklyProjectCollapsed(project.id)"
-                                      >
-                                        <span class="weekly-project-toggle-glyph">
-                                          {{ isWeeklyProjectCollapsed(project.id) ? "▸" : "▾" }}
-                                        </span>
-                                      </button>
-
-                                      <input
-                                        v-model="project.title"
-                                        class="field-input weekly-compact-input weekly-project-name-input"
-                                        type="text"
-                                        :data-weekly-project-input="project.id"
-                                        placeholder="输入项目名称"
-                                      />
-
-                                      <button type="button" class="weekly-row-action weekly-row-action-add" aria-label="新增任务" @click="addWeeklyTask(project.id)">
-                                        +
-                                      </button>
-                                      <button type="button" class="weekly-row-action weekly-row-action-delete" @click="removeWeeklyProject(project.id)">
-                                        删除
-                                      </button>
-                                    </div>
-
-                                    <div v-if="!isWeeklyProjectCollapsed(project.id)" class="weekly-project-body">
-                                      <div v-if="project.tasks.length" class="weekly-task-list">
-                                        <article v-for="(task, taskIndex) in project.tasks" :key="task.id" class="weekly-task-card">
-                                          <div class="weekly-task-row">
-                                            <details class="weekly-task-status-menu">
-                                              <summary
-                                                class="weekly-task-index-button"
-                                                :class="getWeeklyStatusToneClass(task.status)"
-                                                :aria-label="`第 ${taskIndex + 1} 个任务，当前状态：${getWeeklyProgressStatusMeta(task.status).label}`"
-                                              >
-                                                {{ taskIndex + 1 }}
-                                              </summary>
-
-                                              <div class="weekly-task-status-panel">
-                                                <button
-                                                  v-for="(meta, statusKey) in WEEKLY_PROGRESS_STATUS_META"
-                                                  :key="statusKey"
-                                                  type="button"
-                                                  class="weekly-task-status-option"
-                                                  :class="{ 'is-active': task.status === statusKey }"
-                                                  @click="setWeeklyTaskStatus(project.id, task.id, statusKey, $event)"
-                                                >
-                                                  <span class="weekly-task-status-swatch" :class="getWeeklyStatusToneClass(statusKey)"></span>
-                                                  <span>{{ meta.label }}</span>
-                                                </button>
-                                              </div>
-                                            </details>
-
-                                            <input
-                                              v-model="task.title"
-                                              class="field-input weekly-compact-input weekly-task-title-input"
-                                              type="text"
-                                              :data-weekly-task-input="task.id"
-                                              placeholder="输入任务名称"
-                                            />
-
-                                            <button
-                                              type="button"
-                                              class="weekly-row-action weekly-row-action-add"
-                                              aria-label="在当前任务后新增一条任务"
-                                              @click="addWeeklyTask(project.id, task.id)"
-                                            >
-                                              +
-                                            </button>
-                                            <button
-                                              type="button"
-                                              class="weekly-row-action weekly-row-action-delete"
-                                              @click="removeWeeklyTask(project.id, task.id)"
-                                            >
-                                              删除
-                                            </button>
-                                          </div>
-                                        </article>
-                                      </div>
-
-                                      <p v-else class="weekly-project-empty-copy weekly-project-empty-inline">暂无任务，点击右侧 + 直接新增。</p>
-                                    </div>
-                                  </section>
-                                </template>
-
-                                <div v-else class="weekly-editor-empty">
-                                  <p class="weekly-editor-empty-title">先新增一个项目，再在项目行里继续补任务。</p>
-                                  <button type="button" class="weekly-mini-action weekly-mini-action-primary" @click="addWeeklyProject">新增项目</button>
-                                </div>
-                              </section>
                             </section>
                           </div>
                         </template>
@@ -553,15 +599,6 @@
                         <template v-else>
                           <div class="weekly-report-stage">
                             <section class="weekly-rail-card weekly-report-main-card">
-                              <div class="weekly-rail-head weekly-rail-head-action">
-                                <div>
-                                  <p class="feature-kicker">Leader Report</p>
-                                  <p class="model-section-title">领导周报输出</p>
-                                </div>
-
-                                <button type="button" class="model-action" @click="handleWeeklyReportGeneration">生成周报</button>
-                              </div>
-
                               <label class="field field-full">
                                 <span class="field-label">周报模板</span>
                                 <textarea
@@ -682,9 +719,9 @@
           <template v-else-if="activeFeature === FEATURE_COMMAND_WORKSHOP">
             <div
               class="workspace-stage command-workshop-stage"
-              :class="ui.command.view === 'chat' ? 'command-workshop-stage-chat' : 'workspace-stage-scroll'"
+              :class="ui.command.view === 'chat' ? 'command-workshop-stage-chat workspace-stage-flush' : 'workspace-stage-scroll'"
             >
-              <div class="command-workshop-shell">
+              <div class="command-workshop-shell" :class="{ 'command-workshop-shell-chat': ui.command.view === 'chat' }">
                 <section v-if="ui.command.view !== 'chat'" class="models-hero">
                   <div>
                     <p class="feature-kicker">Command Workshop</p>
@@ -697,9 +734,9 @@
                   </div>
                 </section>
 
-                <div v-if="ui.command.view === 'chat'" class="models-grid models-grid-single command-chat-layout">
-                  <section class="model-section command-chat-section">
-                    <div class="command-chat-shell">
+                <div v-if="ui.command.view === 'chat'" class="models-grid models-grid-single command-chat-layout command-chat-layout-immersive">
+                  <section class="model-section model-section-immersive command-chat-section command-chat-section-immersive">
+                    <div class="command-chat-shell command-chat-shell-immersive">
                       <div class="command-chat-head">
                         <div class="command-chat-side command-chat-side-start">
                           <button
@@ -1895,6 +1932,12 @@ const ACTION_ICONS = {
       <path d="M10 2.7v2.1M10 15.2v2.1M17.3 10h-2.1M4.8 10H2.7M15.2 4.8l-1.5 1.5M6.3 13.7l-1.5 1.5M15.2 15.2l-1.5-1.5M6.3 6.3 4.8 4.8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5" />
     </svg>
   `,
+  return: `
+    <svg viewBox="0 0 20 20" class="action-icon" aria-hidden="true">
+      <path d="M8.8 4.8 4.6 9l4.2 4.2" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" />
+      <path d="M5 9h6.6c2.4 0 4.4 2 4.4 4.4v1.8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" />
+    </svg>
+  `,
   enter: `
     <svg viewBox="0 0 20 20" class="action-icon" aria-hidden="true">
       <path d="M15.5 4.5v4.2a3 3 0 0 1-3 3H5.2" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" />
@@ -2099,6 +2142,7 @@ const homeSettingsMenuRef = ref(null);
 const robotCanvasRef = ref(null);
 const commandInputRef = ref(null);
 const commandMessagesRef = ref(null);
+const weeklyTaskRewriteIds = ref([]);
 
 const status = reactive({
   text: "正在加载工作台...",
@@ -2144,6 +2188,12 @@ const robotRuntimeState = {
   resizeObserver: null,
   loadToken: 0
 };
+
+const isWorkspaceImmersive = computed(
+  () =>
+    (activeFeature.value === FEATURE_TASKS && ui.weekly.view === "editor") ||
+    (activeFeature.value === FEATURE_COMMAND_WORKSHOP && ui.command.view === "chat")
+);
 
 const providerOptions = computed(() =>
   PROVIDER_ORDER.map((kind) => {
@@ -2712,6 +2762,7 @@ function normalizeCommandWorkshopConfig(config = {}) {
 function syncWeeklyEditorState() {
   if (!activeWeeklyRecord.value) {
     ui.weekly.draft = null;
+    weeklyTaskRewriteIds.value = [];
     markWeeklyDraftSaved(null);
     return;
   }
@@ -2720,6 +2771,7 @@ function syncWeeklyEditorState() {
   ui.weekly.draft = cloneWeeklyProgressRecord(activeWeeklyRecord.value);
   ui.weekly.draft?.projects?.forEach((project) => syncWeeklyProjectStatus(project));
   ui.weekly.collapsedProjectIds = [];
+  weeklyTaskRewriteIds.value = [];
   markWeeklyDraftSaved(ui.weekly.draft);
 }
 
@@ -2934,6 +2986,7 @@ function closeWeeklyEditor() {
   ui.weekly.draft = null;
   ui.weekly.collapsedProjectIds = [];
   ui.weekly.editorView = "projects";
+  weeklyTaskRewriteIds.value = [];
   markWeeklyDraftSaved(null);
 }
 
@@ -3015,18 +3068,38 @@ function getWeeklyStatusToneClass(status) {
   return `is-${getWeeklyProgressStatusMeta(status).tone}`;
 }
 
-function closeWeeklyStatusMenu(trigger) {
+function isWeeklyTaskRewriting(taskId) {
+  return weeklyTaskRewriteIds.value.includes(taskId);
+}
+
+function setWeeklyTaskRewriting(taskId, nextValue) {
+  if (nextValue) {
+    if (!weeklyTaskRewriteIds.value.includes(taskId)) {
+      weeklyTaskRewriteIds.value = [...weeklyTaskRewriteIds.value, taskId];
+    }
+
+    return;
+  }
+
+  weeklyTaskRewriteIds.value = weeklyTaskRewriteIds.value.filter((id) => id !== taskId);
+}
+
+function closeWeeklyDetailsMenu(trigger, selector) {
   const source = trigger instanceof Event ? trigger.currentTarget : trigger;
 
   if (!(source instanceof HTMLElement)) {
     return;
   }
 
-  const menu = source.closest(".weekly-task-status-menu");
+  const menu = source.closest(selector);
 
   if (menu instanceof HTMLDetailsElement) {
     menu.open = false;
   }
+}
+
+function closeWeeklyStatusMenu(trigger) {
+  closeWeeklyDetailsMenu(trigger, ".weekly-task-status-menu");
 }
 
 function setWeeklyTaskStatus(projectId, taskId, nextStatus, event) {
@@ -3045,6 +3118,67 @@ function setWeeklyTaskStatus(projectId, taskId, nextStatus, event) {
   task.status = nextStatus;
   syncWeeklyProjectStatus(project);
   closeWeeklyStatusMenu(event);
+}
+
+function closeWeeklyTaskActionMenu(trigger) {
+  closeWeeklyDetailsMenu(trigger, ".weekly-task-action-menu");
+}
+
+async function optimizeWeeklyTaskTitle(projectId, taskId, event) {
+  closeWeeklyTaskActionMenu(event);
+
+  if (!desktopApi || !ui.weekly.draft) {
+    setStatus("当前周报编辑器尚未就绪，暂无法优化任务表达。", "danger");
+    return;
+  }
+
+  const project = findWeeklyProjectById(projectId);
+  const task = project?.tasks.find((item) => item.id === taskId) ?? null;
+  const selectedText = String(task?.title ?? "").trim();
+
+  if (!task || !selectedText) {
+    setStatus("先填写任务内容，再使用优化功能。", "warning");
+    return;
+  }
+
+  if (isWeeklyTaskRewriting(taskId)) {
+    return;
+  }
+
+  try {
+    setWeeklyTaskRewriting(taskId, true);
+    setStatus("正在优化任务表达...", "neutral");
+
+    const currentDraft = sanitizeWeeklyProgressRecord(ui.weekly.draft);
+    const result = await desktopApi.rewriteWeeklyProgressItem({
+      selectedText,
+      fullContent: currentDraft?.content ?? "",
+      weekTitle: ui.weekly.draft.title
+    });
+    const rewrittenText = String(result?.text ?? "").trim();
+
+    if (!rewrittenText) {
+      setStatus("优化未返回可用结果，请稍后再试。", "warning");
+      return;
+    }
+
+    const latestProject = findWeeklyProjectById(projectId);
+    const latestTask = latestProject?.tasks.find((item) => item.id === taskId) ?? null;
+
+    if (!latestProject || !latestTask) {
+      setStatus("任务已变化，本次优化结果未回填。", "warning");
+      return;
+    }
+
+    latestTask.title = rewrittenText;
+    syncWeeklyProjectStatus(latestProject);
+    setStatus("任务表达已优化，请确认后自动保存。", "success");
+  } catch (error) {
+    console.error("Failed to optimize weekly task title", error);
+    setStatus(`任务优化失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+  } finally {
+    setWeeklyTaskRewriting(taskId, false);
+  }
 }
 
 async function handleWeeklySave(options = {}) {
