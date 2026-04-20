@@ -1553,7 +1553,7 @@ canvas {
 }
 
 .weekly-editor-toolbar {
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 1fr;
   align-items: center;
   padding: 14px 16px;
   border: 1px solid var(--line);
@@ -1591,14 +1591,6 @@ canvas {
 .weekly-editor-tab.is-active {
   background: linear-gradient(135deg, rgba(92, 225, 194, 0.22), rgba(245, 200, 107, 0.2));
   color: var(--text);
-}
-
-.weekly-editor-toolbar-meta {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  flex-wrap: wrap;
 }
 
 .weekly-report-support-grid {
@@ -1724,64 +1716,11 @@ canvas {
   min-width: 0;
 }
 
-.weekly-project-title {
-  margin: 0;
-  color: var(--text);
-  font-size: 20px;
+.weekly-project-name-input {
+  min-width: 0;
+  min-height: 46px;
+  font-size: 18px;
   font-weight: 700;
-  line-height: 1.2;
-}
-
-.weekly-project-head-meta {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.weekly-project-status,
-.weekly-task-status-label {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.weekly-project-status.is-planned,
-.weekly-task-status-label.is-planned {
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(247, 243, 235, 0.78);
-}
-
-.weekly-project-status.is-in-progress,
-.weekly-task-status-label.is-in-progress {
-  background: rgba(245, 200, 107, 0.12);
-  border-color: rgba(245, 200, 107, 0.18);
-  color: #f7ddb1;
-}
-
-.weekly-project-status.is-completed,
-.weekly-task-status-label.is-completed {
-  background: rgba(92, 225, 194, 0.12);
-  border-color: rgba(92, 225, 194, 0.18);
-  color: #bcf8ea;
-}
-
-.weekly-project-status.is-blocked,
-.weekly-task-status-label.is-blocked {
-  background: rgba(255, 141, 119, 0.12);
-  border-color: rgba(255, 141, 119, 0.18);
-  color: #ffd0c6;
-}
-
-.weekly-project-head-summary {
-  margin: 0;
-  color: rgba(247, 243, 235, 0.7);
-  font-size: 13px;
 }
 
 .weekly-project-head-actions {
@@ -1808,10 +1747,6 @@ canvas {
 
 .weekly-status-select-compact {
   min-height: 36px;
-}
-
-.weekly-project-note {
-  min-height: 120px;
 }
 
 .weekly-project-task-block {
@@ -1843,7 +1778,7 @@ canvas {
 
 .weekly-task-row {
   display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
 }
@@ -1868,10 +1803,6 @@ canvas {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.weekly-task-detail {
-  min-height: 96px;
 }
 
 .weekly-inline-link {
@@ -2798,8 +2729,7 @@ canvas {
 
   .weekly-task-actions,
   .weekly-record-metrics,
-  .weekly-hero-actions,
-  .weekly-editor-toolbar-meta {
+  .weekly-hero-actions {
     justify-content: flex-start;
   }
 

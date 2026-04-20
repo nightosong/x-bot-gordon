@@ -400,7 +400,7 @@
 
                   <section v-else-if="weeklyDraft" class="model-section model-section-scroll">
                     <div class="weekly-form-shell">
-                      <form class="weekly-form" @submit.prevent="handleWeeklySave">
+                      <form class="weekly-form" @submit.prevent="handleWeeklySave()">
                         <div class="weekly-panel-head weekly-panel-head-compact">
                           <div class="weekly-panel-side weekly-panel-side-start">
                             <button type="button" class="model-action-secondary" @click="closeWeeklyEditor">返回列表</button>
@@ -409,7 +409,7 @@
                           <p class="weekly-panel-title weekly-panel-title-centered">{{ weeklyDraft.title }}</p>
 
                           <div class="weekly-panel-side weekly-panel-side-end">
-                            <button type="submit" class="model-action">保存修改</button>
+                            <span class="pill pill-neutral">自动保存</span>
                           </div>
                         </div>
 
@@ -434,26 +434,10 @@
                               汇报视图
                             </button>
                           </div>
-
-                          <div class="weekly-editor-toolbar-meta">
-                            <span class="pill pill-neutral">完成率 {{ weeklyDraftCompletionRate }}%</span>
-                            <span class="pill pill-neutral">风险 {{ weeklyDraftMetrics.blockedTaskCount }}</span>
-                            <span class="pill pill-neutral">
-                              {{ ui.weekly.editorView === "projects" ? "当前专注项目编辑" : "当前专注汇报整理" }}
-                            </span>
-                          </div>
                         </div>
 
                         <template v-if="ui.weekly.editorView === 'projects'">
                           <div class="weekly-editor-stage">
-                            <div class="weekly-overview-grid weekly-overview-grid-editor">
-                              <article v-for="card in weeklyDraftSummaryCards" :key="card.id" class="weekly-kpi-card weekly-kpi-card-editor">
-                                <p class="weekly-kpi-label">{{ card.label }}</p>
-                                <p class="weekly-kpi-value">{{ card.value }}</p>
-                                <p class="weekly-kpi-copy">{{ card.copy }}</p>
-                              </article>
-                            </div>
-
                             <section class="weekly-canvas-card">
                               <div class="weekly-canvas-head">
                                 <div>
@@ -484,34 +468,15 @@
                                         </span>
                                       </button>
 
-                                      <div class="weekly-project-head-copy">
-                                        <div class="weekly-project-head-meta">
-                                          <span class="pill pill-neutral">项目 {{ projectIndex + 1 }}</span>
-                                          <span
-                                            class="weekly-project-status"
-                                            :class="`is-${getWeeklyProgressStatusMeta(project.status).tone}`"
-                                          >
-                                            {{ getWeeklyProgressStatusMeta(project.status).label }}
-                                          </span>
-                                          <span class="pill pill-neutral">完成率 {{ getWeeklyProjectCompletionRate(project) }}%</span>
-                                        </div>
-
-                                        <p class="weekly-project-title">{{ project.title.trim() || `未命名项目 ${projectIndex + 1}` }}</p>
-                                        <p class="weekly-project-head-summary">{{ getWeeklyProjectLeadText(project) }}</p>
-                                      </div>
+                                      <input
+                                        v-model="project.title"
+                                        class="field-input weekly-project-name-input"
+                                        type="text"
+                                        :data-weekly-project-input="project.id"
+                                        :placeholder="`项目 ${projectIndex + 1}`"
+                                      />
 
                                       <div class="weekly-project-head-actions">
-                                        <select v-model="project.status" class="weekly-status-select" aria-label="项目状态">
-                                          <option
-                                            v-for="(meta, statusKey) in WEEKLY_PROGRESS_STATUS_META"
-                                            :key="statusKey"
-                                            :value="statusKey"
-                                          >
-                                            {{ meta.label }}
-                                          </option>
-                                        </select>
-
-                                        <button type="button" class="model-action-secondary" @click="addWeeklyTask(project.id)">新增任务</button>
                                         <button type="button" class="weekly-inline-link weekly-inline-danger" @click="removeWeeklyProject(project.id)">
                                           删除项目
                                         </button>
@@ -519,40 +484,10 @@
                                     </div>
 
                                     <div v-if="!isWeeklyProjectCollapsed(project.id)" class="weekly-project-body">
-                                      <label class="field field-full">
-                                        <span class="field-label">项目名称</span>
-                                        <input
-                                          v-model="project.title"
-                                          class="field-input"
-                                          type="text"
-                                          placeholder="例如：命令工坊 / 飞书同步 / 模型管理"
-                                        />
-                                      </label>
-
-                                      <label class="field field-full">
-                                        <div class="weekly-inline-actions weekly-inline-actions-spread">
-                                          <span class="field-label">阶段结果 / 风险备注</span>
-                                          <button
-                                            type="button"
-                                            class="weekly-inline-link"
-                                            :disabled="!project.note.trim()"
-                                            @click="handleWeeklyProjectPolish(project.id)"
-                                          >
-                                            润色备注
-                                          </button>
-                                        </div>
-
-                                        <textarea
-                                          v-model="project.note"
-                                          class="field-textarea weekly-project-note"
-                                          placeholder="建议写结果、影响、当前风险、待协调事项，切到“汇报视图”时会自动提炼。"
-                                        ></textarea>
-                                      </label>
-
                                       <div class="weekly-project-task-block">
                                         <div class="weekly-project-task-head">
                                           <span class="field-label">项目任务</span>
-                                          <button type="button" class="weekly-inline-link" @click="addWeeklyTask(project.id)">新增任务</button>
+                                          <button type="button" class="model-action-secondary" @click="addWeeklyTask(project.id)">新增任务</button>
                                         </div>
 
                                         <div class="weekly-task-list">
@@ -575,26 +510,11 @@
                                                   v-model="task.title"
                                                   class="field-input weekly-task-title-input"
                                                   type="text"
+                                                  :data-weekly-task-input="task.id"
                                                   placeholder="例如：补齐 Feishu 周报同步 schema"
                                                 />
 
-                                                <span
-                                                  class="weekly-task-status-label"
-                                                  :class="`is-${getWeeklyProgressStatusMeta(task.status).tone}`"
-                                                >
-                                                  {{ getWeeklyProgressStatusMeta(task.status).label }}
-                                                </span>
-
                                                 <div class="weekly-task-actions">
-                                                  <button
-                                                    type="button"
-                                                    class="weekly-inline-link"
-                                                    :disabled="!(task.title.trim() || task.detail.trim())"
-                                                    @click="handleWeeklyTaskPolish(project.id, task.id)"
-                                                  >
-                                                    润色
-                                                  </button>
-
                                                   <button
                                                     type="button"
                                                     class="weekly-inline-link weekly-inline-danger"
@@ -604,12 +524,6 @@
                                                   </button>
                                                 </div>
                                               </div>
-
-                                              <textarea
-                                                v-model="task.detail"
-                                                class="field-textarea weekly-task-detail"
-                                                placeholder="补充结果、影响、风险、协同信息（可选）"
-                                              ></textarea>
                                             </article>
                                           </template>
 
@@ -637,14 +551,6 @@
 
                         <template v-else>
                           <div class="weekly-report-stage">
-                            <div class="weekly-overview-grid weekly-overview-grid-editor">
-                              <article v-for="card in weeklyDraftSummaryCards" :key="card.id" class="weekly-kpi-card weekly-kpi-card-editor">
-                                <p class="weekly-kpi-label">{{ card.label }}</p>
-                                <p class="weekly-kpi-value">{{ card.value }}</p>
-                                <p class="weekly-kpi-copy">{{ card.copy }}</p>
-                              </article>
-                            </div>
-
                             <section class="weekly-rail-card weekly-report-main-card">
                               <div class="weekly-rail-head weekly-rail-head-action">
                                 <div>
@@ -1886,13 +1792,11 @@ import {
   createWeeklyTaskDraft,
   formatLocalDateTime,
   getProviderMeta,
-  getWeeklyProjectMetrics,
   getWeeklyProgressCompletionRate,
   getSkillLocalMirrorDetail,
   getSkillSourceDetail,
   getSkillSourceLabel,
   getWeeklyProgressMetrics,
-  getWeeklyProgressStatusMeta,
   getWeeklyProgressSummaryText,
   isBuiltinWorkbenchItem,
   maskSecret,
@@ -2007,10 +1911,14 @@ const ACTION_ICONS = {
 
 const WEEKLY_RISK_KEYWORDS = ["风险", "问题", "阻塞", "受阻", "卡点", "依赖", "待协调", "延期", "等待"];
 const WEEKLY_NO_RISK_PATTERN = /(暂无风险|无风险|无阻塞|暂无阻塞|未发现阻塞|风险可控)/;
+const WEEKLY_AUTOSAVE_DELAY = 700;
 
 const desktopApi = window.gordonDesktop ?? null;
 let splineApplicationClass = null;
 let splineApplicationPromise = null;
+let weeklyAutosaveTimer = null;
+let weeklySavedSnapshot = "";
+let weeklyAutosaveInFlight = false;
 
 function createEmptyModelSettings() {
   return {
@@ -2270,8 +2178,6 @@ const weeklyFocusRecord = computed(
 const weeklyFocusMetrics = computed(() => getWeeklyProgressMetrics(weeklyFocusRecord.value ?? { projects: [] }));
 const weeklyFocusCompletionRate = computed(() => getWeeklyProgressCompletionRate(weeklyFocusRecord.value ?? { projects: [] }));
 const weeklyDraft = computed(() => ui.weekly.draft);
-const weeklyDraftMetrics = computed(() => getWeeklyProgressMetrics(ui.weekly.draft ?? { projects: [] }));
-const weeklyDraftCompletionRate = computed(() => getWeeklyProgressCompletionRate(ui.weekly.draft ?? { projects: [] }));
 const weeklyListOverviewCards = computed(() => {
   const record = weeklyFocusRecord.value;
   const metrics = weeklyFocusMetrics.value;
@@ -2301,37 +2207,6 @@ const weeklyListOverviewCards = computed(() => {
       label: "领导周报",
       value: hasGeneratedReport ? "已生成" : "待生成",
       copy: hasGeneratedReport ? `最近更新 ${formatLocalDateTime(record?.updatedAt)}` : "建议在周会前生成一版，先改后发。"
-    }
-  ];
-});
-const weeklyDraftSummaryCards = computed(() => {
-  const metrics = weeklyDraftMetrics.value;
-  const hasGeneratedReport = Boolean(String(ui.weekly.draft?.generatedReport ?? "").trim());
-
-  return [
-    {
-      id: "projects",
-      label: "项目数",
-      value: `${metrics.projectCount}`,
-      copy: metrics.projectCount ? "按项目汇报比堆任务更有管理感。" : "先新增一个项目，把事项挂到项目下。"
-    },
-    {
-      id: "completion",
-      label: "完成率",
-      value: `${weeklyDraftCompletionRate.value}%`,
-      copy: metrics.taskCount ? `已完成 ${metrics.completedTaskCount} / ${metrics.taskCount}` : "当前还没有可统计的任务。"
-    },
-    {
-      id: "blocked",
-      label: "风险项",
-      value: `${metrics.blockedTaskCount}`,
-      copy: metrics.blockedTaskCount ? "把影响和待协调事项写清，周报会更像汇报。" : "没有显式受阻项时，也建议补一句风险判断。"
-    },
-    {
-      id: "report",
-      label: "领导稿",
-      value: hasGeneratedReport ? "已准备" : "未生成",
-      copy: hasGeneratedReport ? "右侧已经生成一版，可直接继续修改。" : "完善项目与任务后，可在右侧直接生成。"
     }
   ];
 });
@@ -2383,6 +2258,65 @@ const runnerLatestResult = computed(() => ui.extensions.runner.result ?? runnerR
 function setStatus(text, tone = "neutral") {
   status.text = text;
   status.tone = tone;
+}
+
+function clearWeeklyAutosaveTimer() {
+  if (weeklyAutosaveTimer) {
+    clearTimeout(weeklyAutosaveTimer);
+    weeklyAutosaveTimer = null;
+  }
+}
+
+function getWeeklyDraftSnapshot(record = ui.weekly.draft) {
+  const sanitized = sanitizeWeeklyProgressRecord(record);
+
+  if (!sanitized) {
+    return "";
+  }
+
+  return JSON.stringify({
+    projects: sanitized.projects,
+    reportTemplate: sanitized.reportTemplate,
+    generatedReport: sanitized.generatedReport,
+    content: sanitized.content
+  });
+}
+
+function markWeeklyDraftSaved(record = ui.weekly.draft) {
+  weeklySavedSnapshot = getWeeklyDraftSnapshot(record);
+}
+
+function focusWeeklyProjectInput(projectId) {
+  nextTick(() => {
+    const input = document.querySelector(`[data-weekly-project-input="${projectId}"]`);
+
+    if (input instanceof HTMLInputElement) {
+      input.focus();
+      input.select();
+    }
+  });
+}
+
+function focusWeeklyTaskInput(taskId) {
+  nextTick(() => {
+    const input = document.querySelector(`[data-weekly-task-input="${taskId}"]`);
+
+    if (input instanceof HTMLInputElement) {
+      input.focus();
+      input.select();
+    }
+  });
+}
+
+function scheduleWeeklyAutosave() {
+  if (ui.weekly.view !== "editor" || !ui.weekly.draft) {
+    return;
+  }
+
+  clearWeeklyAutosaveTimer();
+  weeklyAutosaveTimer = setTimeout(() => {
+    handleWeeklySave({ silent: true, reason: "auto" });
+  }, WEEKLY_AUTOSAVE_DELAY);
 }
 
 function extractWeeklyMeaningfulLines(value) {
@@ -2440,37 +2374,6 @@ function getWeeklyRecordTags(record) {
   tags.push(String(record?.generatedReport ?? "").trim() ? "已生成领导稿" : "未生成领导稿");
 
   return tags;
-}
-
-function getWeeklyProjectLeadText(project) {
-  const metrics = getWeeklyProjectMetrics(project);
-  const noteLine = getWeeklyFirstMeaningfulLine(project.note);
-  const completedTask = project.tasks.find((task) => task.status === "completed" && (task.title.trim() || task.detail.trim()));
-  const blockedTask = project.tasks.find((task) => task.status === "blocked" && (task.title.trim() || task.detail.trim()));
-
-  if (noteLine) {
-    return noteLine;
-  }
-
-  if (completedTask) {
-    return `阶段结果：${completedTask.title.trim() || getWeeklyFirstMeaningfulLine(completedTask.detail)}`;
-  }
-
-  if (blockedTask) {
-    return `当前卡点：${blockedTask.title.trim() || getWeeklyFirstMeaningfulLine(blockedTask.detail)}`;
-  }
-
-  if (!metrics.taskCount) {
-    return "这个项目还没有拆任务，先补“要做什么”和“做到哪一步”。";
-  }
-
-  return `共 ${metrics.taskCount} 个任务，已完成 ${metrics.completedTaskCount} 个，继续补结果和下周动作会更完整。`;
-}
-
-function getWeeklyProjectCompletionRate(project) {
-  return getWeeklyProgressCompletionRate({
-    projects: project ? [project] : []
-  });
 }
 
 function buildWeeklyInsightEntry(category, project, task, detail = "") {
@@ -2775,11 +2678,14 @@ function normalizeCommandWorkshopConfig(config = {}) {
 function syncWeeklyEditorState() {
   if (!activeWeeklyRecord.value) {
     ui.weekly.draft = null;
+    markWeeklyDraftSaved(null);
     return;
   }
 
+  clearWeeklyAutosaveTimer();
   ui.weekly.draft = cloneWeeklyProgressRecord(activeWeeklyRecord.value);
   ui.weekly.collapsedProjectIds = [];
+  markWeeklyDraftSaved(ui.weekly.draft);
 }
 
 function applyWorkbenchSnapshot(snapshot, modelSettings) {
@@ -2988,10 +2894,12 @@ function openLatestWeeklyRecord() {
 }
 
 function closeWeeklyEditor() {
+  clearWeeklyAutosaveTimer();
   ui.weekly.view = "list";
   ui.weekly.draft = null;
   ui.weekly.collapsedProjectIds = [];
   ui.weekly.editorView = "projects";
+  markWeeklyDraftSaved(null);
 }
 
 function isWeeklyProjectCollapsed(projectId) {
@@ -3011,12 +2919,15 @@ function findWeeklyProjectById(projectId) {
   return ui.weekly.draft?.projects?.find((project) => project.id === projectId) ?? null;
 }
 
-function findWeeklyTaskById(projectId, taskId) {
-  return findWeeklyProjectById(projectId)?.tasks?.find((task) => task.id === taskId) ?? null;
-}
-
 function addWeeklyProject() {
-  ui.weekly.draft?.projects?.push(createWeeklyProjectDraft());
+  if (!ui.weekly.draft) {
+    return;
+  }
+
+  const project = createWeeklyProjectDraft();
+  ui.weekly.draft.projects.push(project);
+  ui.weekly.collapsedProjectIds = ui.weekly.collapsedProjectIds.filter((id) => id !== project.id);
+  focusWeeklyProjectInput(project.id);
 }
 
 function removeWeeklyProject(projectId) {
@@ -3035,8 +2946,10 @@ function addWeeklyTask(projectId) {
     return;
   }
 
-  project.tasks.push(createWeeklyTaskDraft());
+  const task = createWeeklyTaskDraft();
+  project.tasks.push(task);
   ui.weekly.collapsedProjectIds = ui.weekly.collapsedProjectIds.filter((id) => id !== projectId);
+  focusWeeklyTaskInput(task.id);
 }
 
 function removeWeeklyTask(projectId, taskId) {
@@ -3049,11 +2962,24 @@ function removeWeeklyTask(projectId, taskId) {
   project.tasks = project.tasks.filter((task) => task.id !== taskId);
 }
 
-async function handleWeeklySave() {
+async function handleWeeklySave(options = {}) {
   if (!desktopApi || !activeWeeklyRecord.value || !ui.weekly.draft) {
     setStatus("周记录尚未就绪，暂时无法保存。", "danger");
     return;
   }
+
+  const { silent = false, reason = "manual" } = options;
+  const snapshotBeforeSave = getWeeklyDraftSnapshot(ui.weekly.draft);
+
+  if (reason === "auto") {
+    if (!snapshotBeforeSave || snapshotBeforeSave === weeklySavedSnapshot || weeklyAutosaveInFlight) {
+      return;
+    }
+
+    weeklyAutosaveInFlight = true;
+  }
+
+  clearWeeklyAutosaveTimer();
 
   try {
     const nextRecord = {
@@ -3064,11 +2990,32 @@ async function handleWeeklySave() {
 
     workbench.weeklyProgress = await desktopApi.saveWeeklyProgress(nextRecord);
     ui.weekly.activeRecordId = nextRecord.id;
-    syncWeeklyEditorState();
-    setStatus("任务推进内容已保存。", "success");
+
+    if (ui.weekly.draft) {
+      ui.weekly.draft.updatedAt = nextRecord.updatedAt;
+      ui.weekly.draft.content = nextRecord.content;
+    }
+
+    weeklySavedSnapshot = snapshotBeforeSave;
+
+    const latestSnapshot = getWeeklyDraftSnapshot(ui.weekly.draft);
+
+    if (latestSnapshot !== weeklySavedSnapshot) {
+      scheduleWeeklyAutosave();
+    }
+
+    if (!silent) {
+      setStatus("任务推进内容已保存。", "success");
+    } else {
+      setStatus("任务推进已自动保存。", "success");
+    }
   } catch (error) {
     console.error("Failed to save weekly progress", error);
     setStatus(`任务推进保存失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+  } finally {
+    if (reason === "auto") {
+      weeklyAutosaveInFlight = false;
+    }
   }
 }
 
@@ -3095,72 +3042,6 @@ async function handleWeeklyDelete(recordId) {
     console.error("Failed to delete weekly progress", error);
     setStatus(`周记录删除失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
   }
-}
-
-async function rewriteWeeklyField(selectedText, applyResult, loadingText, successText) {
-  if (!desktopApi || !ui.weekly.draft) {
-    setStatus("当前周报编辑器尚未就绪，暂无法润色。", "danger");
-    return;
-  }
-
-  if (!selectedText.trim()) {
-    setStatus("先补充内容，再使用润色能力。", "warning");
-    return;
-  }
-
-  try {
-    setStatus(loadingText, "neutral");
-    const result = await desktopApi.rewriteWeeklyProgressItem({
-      selectedText,
-      fullContent: sanitizeWeeklyProgressRecord(ui.weekly.draft)?.content ?? "",
-      weekTitle: ui.weekly.draft.title
-    });
-    applyResult(result.text);
-    setStatus(successText, "success");
-  } catch (error) {
-    console.error("Failed to rewrite weekly field", error);
-    setStatus(`润色失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
-  }
-}
-
-async function handleWeeklyProjectPolish(projectId) {
-  const project = findWeeklyProjectById(projectId);
-
-  if (!project) {
-    return;
-  }
-
-  await rewriteWeeklyField(
-    project.note,
-    (text) => {
-      project.note = text;
-    },
-    "正在润色项目备注...",
-    "项目备注已润色，请确认后保存。"
-  );
-}
-
-async function handleWeeklyTaskPolish(projectId, taskId) {
-  const task = findWeeklyTaskById(projectId, taskId);
-
-  if (!task) {
-    return;
-  }
-
-  const selectedText = task.title.trim() || task.detail.trim();
-
-  await rewriteWeeklyField(
-    selectedText,
-    (text) => {
-      if (task.title.trim()) {
-        task.title = text;
-      } else {
-        task.detail = text;
-      }
-    },
-    "正在润色任务表达...",
-    "任务表达已润色，请确认后保存。"
-  );
 }
 
 async function handleWeeklyReportGeneration() {
@@ -4057,6 +3938,17 @@ watch(
   { deep: true }
 );
 
+watch(
+  () => getWeeklyDraftSnapshot(ui.weekly.draft),
+  (nextSnapshot) => {
+    if (!ui.weekly.draft || ui.weekly.view !== "editor" || !nextSnapshot || nextSnapshot === weeklySavedSnapshot) {
+      return;
+    }
+
+    scheduleWeeklyAutosave();
+  }
+);
+
 onMounted(async () => {
   await bootstrapWorkbench();
   ui.command.form = normalizeCommandWorkshopConfig(ui.command.form);
@@ -4065,6 +3957,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  clearWeeklyAutosaveTimer();
   disposeRobotRuntime();
   document.body.classList.remove("load-error");
 });
