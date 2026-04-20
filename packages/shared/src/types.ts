@@ -4,6 +4,7 @@ export type WorkModuleStatus = "planned" | "seeded" | "ready";
 export type TaskStatus = "todo" | "doing" | "done";
 export type ProviderKind = "openai" | "anthropic" | "google" | "openai_like";
 export type WeeklyProgressStatus = "active" | "archived";
+export type WeeklyProgressItemStatus = "planned" | "in_progress" | "completed" | "blocked";
 export type ModelModality =
   | "text"
   | "vision"
@@ -109,6 +110,21 @@ export interface WorkTask {
   dailyReportHint: string;
 }
 
+export interface WeeklyProgressTaskItem {
+  id: string;
+  title: string;
+  detail: string;
+  status: WeeklyProgressItemStatus;
+}
+
+export interface WeeklyProgressProjectItem {
+  id: string;
+  title: string;
+  note: string;
+  status: WeeklyProgressItemStatus;
+  tasks: WeeklyProgressTaskItem[];
+}
+
 export interface WeeklyProgressRecord {
   id: string;
   weekKey: string;
@@ -116,6 +132,7 @@ export interface WeeklyProgressRecord {
   startDate: string;
   endDate: string;
   content: string;
+  projects: WeeklyProgressProjectItem[];
   reportTemplate: string;
   generatedReport: string;
   status: WeeklyProgressStatus;

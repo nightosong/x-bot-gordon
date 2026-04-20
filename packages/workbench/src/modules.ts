@@ -12,10 +12,10 @@ export const workModules: WorkModule[] = [
   {
     id: "task-board",
     label: "Task Board",
-    value: "工作清单编辑、语句优化、日报生成的任务工作台。",
+    value: "面向周报 / 日报的项目树编辑、任务状态维护与汇报生成工作台。",
     status: "seeded",
     surfaces: ["desktop", "cli"],
-    extensionPoints: ["task-editor", "rewrite-assistant", "daily-report-template", "calendar-sync"]
+    extensionPoints: ["project-task-tree", "rewrite-assistant", "weekly-report-template", "feishu-sync"]
   },
   {
     id: "feishu-hub",

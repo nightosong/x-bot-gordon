@@ -25,8 +25,8 @@ const FEATURE_ENTRIES = [
     id: "tasks",
     kicker: "Tasks",
     title: "任务推进",
-    description: "按周维护计划、归档历史，并用大模型优化表述与生成领导周报。",
-    meta: ["周报工作台", "AI 增强"],
+    description: "按周维护项目树、任务状态与阶段结果，并生成更像真实汇报的周报。",
+    meta: ["结构化周报", "AI 增强"],
     badge: "已接通",
     tier: "default"
   },
@@ -87,8 +87,27 @@ const COMMAND_WORKSHOP_FEATURE = "command-workshop";
 const EXTENSIONS_MANAGEMENT_FEATURE = "extensions-management";
 const EDITOR_INDENT = "    ";
 const WEEKLY_PROGRESS_PAGE_SIZE = 5;
+const WEEKLY_PROGRESS_FALLBACK_PROJECT_TITLE = "未命名项目";
 const BUILTIN_WORKBENCH_ID_PREFIX = "builtin:";
 const BUILTIN_GORDON_AGENT_ID = "builtin:agent:gordon";
+const WEEKLY_PROGRESS_STATUS_META = {
+  planned: {
+    label: "待开始",
+    tone: "planned"
+  },
+  in_progress: {
+    label: "进行中",
+    tone: "in-progress"
+  },
+  completed: {
+    label: "已完成",
+    tone: "completed"
+  },
+  blocked: {
+    label: "受阻",
+    tone: "blocked"
+  }
+};
 
 const state = {
   activeFeature: "home",
@@ -99,6 +118,7 @@ const state = {
   },
   weeklyProgress: [],
   activeWeeklyProgressId: null,
+  weeklyProgressEditor: createWeeklyProgressEditorState(),
   tasksView: "list",
   editor: createEditorState("openai"),
   modelManagementView: "list",
@@ -307,6 +327,59 @@ function createCommandWorkshopState() {
   };
 }
 
+function createWeeklyDraftId(prefix) {
+  if (globalThis.crypto?.randomUUID) {
+    return `${prefix}_${globalThis.crypto.randomUUID()}`;
+  }
+
+  return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+function normalizeWeeklyProgressItemStatus(status) {
+  return Object.prototype.hasOwnProperty.call(WEEKLY_PROGRESS_STATUS_META, status) ? status : "planned";
+}
+
+function createWeeklyTaskDraft(task = null) {
+  return {
+    id: task?.id ?? createWeeklyDraftId("weekly_task"),
+    title: task?.title ?? "",
+    detail: task?.detail ?? "",
+    status: normalizeWeeklyProgressItemStatus(task?.status ?? "planned")
+  };
+}
+
+function createWeeklyProjectDraft(project = null) {
+  return {
+    id: project?.id ?? createWeeklyDraftId("weekly_project"),
+    title: project?.title ?? "",
+    note: project?.note ?? "",
+    status: normalizeWeeklyProgressItemStatus(project?.status ?? "in_progress"),
+    tasks: Array.isArray(project?.tasks) ? project.tasks.map((task) => createWeeklyTaskDraft(task)) : []
+  };
+}
+
+function cloneWeeklyProgressRecord(record = null) {
+  if (!record) {
+    return null;
+  }
+
+  return {
+    ...record,
+    content: String(record.content ?? ""),
+    reportTemplate: String(record.reportTemplate ?? ""),
+    generatedReport: String(record.generatedReport ?? ""),
+    projects: Array.isArray(record.projects) ? record.projects.map((project) => createWeeklyProjectDraft(project)) : []
+  };
+}
+
+function createWeeklyProgressEditorState(record = null) {
+  return {
+    recordId: record?.id ?? null,
+    draft: cloneWeeklyProgressRecord(record),
+    collapsedProjectIds: []
+  };
+}
+
 function normalizeTagList(rawValue) {
   return String(rawValue ?? "")
     .split(",")
@@ -354,14 +427,25 @@ function syncWeeklyProgressSelection(records) {
 
   if (!state.weeklyProgress.length) {
     state.activeWeeklyProgressId = null;
+    state.weeklyProgressEditor = createWeeklyProgressEditorState();
     return;
   }
 
   if (state.weeklyProgress.some((record) => record.id === state.activeWeeklyProgressId)) {
+    const refreshedRecord = state.weeklyProgress.find((record) => record.id === state.weeklyProgressEditor.recordId) ?? null;
+
+    if (refreshedRecord && state.tasksView === "editor") {
+      setWeeklyProgressEditorRecord(refreshedRecord);
+    }
+
     return;
   }
 
   state.activeWeeklyProgressId = state.weeklyProgress.find((record) => record.status === "active")?.id ?? state.weeklyProgress[0].id;
+
+  if (state.tasksView === "editor") {
+    setWeeklyProgressEditorRecord(getActiveWeeklyProgressRecord());
+  }
 }
 
 function getActiveWeeklyProgressRecord() {
@@ -1040,11 +1124,324 @@ function formatLocalDateTime(value) {
   }).format(new Date(value));
 }
 
-function countWeeklyContentLines(content) {
-  return String(content ?? "")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean).length;
+function getWeeklyProgressStatusMeta(status) {
+  return WEEKLY_PROGRESS_STATUS_META[normalizeWeeklyProgressItemStatus(status)] ?? WEEKLY_PROGRESS_STATUS_META.planned;
+}
+
+function getWeeklyProgressEditorDraft() {
+  const activeRecord = getActiveWeeklyProgressRecord();
+
+  if (!activeRecord) {
+    return null;
+  }
+
+  if (state.weeklyProgressEditor.recordId !== activeRecord.id || !state.weeklyProgressEditor.draft) {
+    state.weeklyProgressEditor = createWeeklyProgressEditorState(activeRecord);
+  }
+
+  return state.weeklyProgressEditor.draft;
+}
+
+function setWeeklyProgressEditorRecord(record) {
+  state.weeklyProgressEditor = createWeeklyProgressEditorState(record);
+}
+
+function isWeeklyProjectCollapsed(projectId) {
+  return state.weeklyProgressEditor.collapsedProjectIds.includes(projectId);
+}
+
+function toggleWeeklyProjectCollapsed(projectId) {
+  if (isWeeklyProjectCollapsed(projectId)) {
+    state.weeklyProgressEditor.collapsedProjectIds = state.weeklyProgressEditor.collapsedProjectIds.filter((id) => id !== projectId);
+    return;
+  }
+
+  state.weeklyProgressEditor.collapsedProjectIds = [...state.weeklyProgressEditor.collapsedProjectIds, projectId];
+}
+
+function findWeeklyProjectById(draft, projectId) {
+  return draft?.projects?.find((project) => project.id === projectId) ?? null;
+}
+
+function findWeeklyTaskById(draft, projectId, taskId) {
+  return findWeeklyProjectById(draft, projectId)?.tasks?.find((task) => task.id === taskId) ?? null;
+}
+
+function getWeeklyProgressMetrics(record) {
+  const projects = Array.isArray(record?.projects) ? record.projects : [];
+  const metrics = {
+    projectCount: 0,
+    taskCount: 0,
+    completedTaskCount: 0,
+    activeTaskCount: 0,
+    blockedTaskCount: 0,
+    noteCount: 0
+  };
+
+  for (const project of projects) {
+    const hasProjectContent = project.title?.trim() || project.note?.trim() || project.tasks?.length;
+
+    if (!hasProjectContent) {
+      continue;
+    }
+
+    metrics.projectCount += 1;
+
+    if (project.note?.trim()) {
+      metrics.noteCount += 1;
+    }
+
+    for (const task of project.tasks ?? []) {
+      const hasTaskContent = task.title?.trim() || task.detail?.trim();
+
+      if (!hasTaskContent) {
+        continue;
+      }
+
+      metrics.taskCount += 1;
+
+      if (task.status === "completed") {
+        metrics.completedTaskCount += 1;
+      } else if (task.status === "blocked") {
+        metrics.blockedTaskCount += 1;
+      } else if (task.status === "in_progress") {
+        metrics.activeTaskCount += 1;
+      }
+    }
+  }
+
+  return metrics;
+}
+
+function getWeeklyProgressSummaryText(record) {
+  const metrics = getWeeklyProgressMetrics(record);
+
+  if (!metrics.projectCount && !metrics.taskCount && !metrics.noteCount) {
+    return "还没有拆出本周项目，适合直接按项目维度补齐。";
+  }
+
+  const summaryParts = [`${metrics.projectCount} 个项目`, `${metrics.taskCount} 个任务`, `完成 ${metrics.completedTaskCount} 个`];
+
+  if (metrics.activeTaskCount) {
+    summaryParts.push(`进行中 ${metrics.activeTaskCount} 个`);
+  }
+
+  if (metrics.blockedTaskCount) {
+    summaryParts.push(`受阻 ${metrics.blockedTaskCount} 个`);
+  }
+
+  return summaryParts.join(" / ");
+}
+
+function sanitizeWeeklyTaskDraft(task) {
+  if (!task) {
+    return null;
+  }
+
+  const title = String(task.title ?? "").trim();
+  const detail = String(task.detail ?? "").trim();
+
+  if (!title && !detail) {
+    return null;
+  }
+
+  return {
+    ...task,
+    title: title || detail || "未命名任务",
+    detail,
+    status: normalizeWeeklyProgressItemStatus(task.status)
+  };
+}
+
+function sanitizeWeeklyProjectDraft(project) {
+  if (!project) {
+    return null;
+  }
+
+  const title = String(project.title ?? "").trim();
+  const note = String(project.note ?? "").trim();
+  const tasks = Array.isArray(project.tasks)
+    ? project.tasks.map((task) => sanitizeWeeklyTaskDraft(task)).filter(Boolean)
+    : [];
+
+  if (!title && !note && !tasks.length) {
+    return null;
+  }
+
+  return {
+    ...project,
+    title: title || WEEKLY_PROGRESS_FALLBACK_PROJECT_TITLE,
+    note,
+    status: normalizeWeeklyProgressItemStatus(project.status),
+    tasks
+  };
+}
+
+function serializeWeeklyProgressProjects(projects) {
+  return (Array.isArray(projects) ? projects : [])
+    .map((project) => sanitizeWeeklyProjectDraft(project))
+    .filter(Boolean)
+    .map((project) => {
+      const projectStatus = getWeeklyProgressStatusMeta(project.status).label;
+      const lines = [`${project.title}（${projectStatus}）`];
+
+      if (project.note) {
+        lines.push(...project.note.split("\n").map((line) => `    备注：${line.trim()}`));
+      }
+
+      for (const task of project.tasks) {
+        const taskStatus = getWeeklyProgressStatusMeta(task.status).label;
+        lines.push(`    [${taskStatus}] ${task.title}`);
+
+        if (task.detail) {
+          lines.push(...task.detail.split("\n").map((line) => `        说明：${line.trim()}`));
+        }
+      }
+
+      return lines.join("\n");
+    })
+    .join("\n\n")
+    .trim();
+}
+
+function sanitizeWeeklyProgressDraft(record) {
+  if (!record) {
+    return null;
+  }
+
+  const projects = Array.isArray(record.projects)
+    ? record.projects.map((project) => sanitizeWeeklyProjectDraft(project)).filter(Boolean)
+    : [];
+  const content = serializeWeeklyProgressProjects(projects);
+
+  return {
+    ...record,
+    reportTemplate: String(record.reportTemplate ?? "").trim(),
+    generatedReport: String(record.generatedReport ?? "").trim(),
+    projects,
+    content
+  };
+}
+
+function syncWeeklyProgressDraftField(target) {
+  const draft = getWeeklyProgressEditorDraft();
+
+  if (!draft) {
+    return false;
+  }
+
+  const recordField = target.getAttribute("data-weekly-record-field");
+
+  if (recordField) {
+    draft[recordField] = target.value;
+    return true;
+  }
+
+  const projectId = target.getAttribute("data-weekly-project-id");
+  const projectField = target.getAttribute("data-weekly-project-field");
+
+  if (projectId && projectField) {
+    const project = findWeeklyProjectById(draft, projectId);
+
+    if (project) {
+      project[projectField] = target.value;
+      return true;
+    }
+  }
+
+  const taskProjectId = target.getAttribute("data-weekly-task-project-id");
+  const taskId = target.getAttribute("data-weekly-task-id");
+  const taskField = target.getAttribute("data-weekly-task-field");
+
+  if (taskProjectId && taskId && taskField) {
+    const task = findWeeklyTaskById(draft, taskProjectId, taskId);
+
+    if (task) {
+      task[taskField] = target.value;
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function addWeeklyProject() {
+  const draft = getWeeklyProgressEditorDraft();
+
+  if (!draft) {
+    return;
+  }
+
+  draft.projects.push(createWeeklyProjectDraft());
+  renderApp();
+}
+
+function removeWeeklyProject(projectId) {
+  const draft = getWeeklyProgressEditorDraft();
+
+  if (!draft) {
+    return;
+  }
+
+  draft.projects = draft.projects.filter((project) => project.id !== projectId);
+  state.weeklyProgressEditor.collapsedProjectIds = state.weeklyProgressEditor.collapsedProjectIds.filter((id) => id !== projectId);
+  renderApp();
+}
+
+function addWeeklyTask(projectId) {
+  const draft = getWeeklyProgressEditorDraft();
+  const project = findWeeklyProjectById(draft, projectId);
+
+  if (!project) {
+    return;
+  }
+
+  project.tasks.push(createWeeklyTaskDraft());
+  state.weeklyProgressEditor.collapsedProjectIds = state.weeklyProgressEditor.collapsedProjectIds.filter((id) => id !== projectId);
+  renderApp();
+}
+
+function removeWeeklyTask(projectId, taskId) {
+  const draft = getWeeklyProgressEditorDraft();
+  const project = findWeeklyProjectById(draft, projectId);
+
+  if (!project) {
+    return;
+  }
+
+  project.tasks = project.tasks.filter((task) => task.id !== taskId);
+  renderApp();
+}
+
+async function rewriteWeeklyProgressValue(selectedText, applyResult, loadingText, successText) {
+  const desktopApi = getDesktopApi();
+  const draft = getWeeklyProgressEditorDraft();
+
+  if (!desktopApi || !draft) {
+    updateLoadState("当前周报编辑器尚未就绪，暂无法润色", true);
+    return;
+  }
+
+  if (!selectedText.trim()) {
+    updateLoadState("先补充内容，再使用润色能力", true);
+    return;
+  }
+
+  try {
+    updateLoadState(loadingText);
+    const result = await desktopApi.rewriteWeeklyProgressItem({
+      selectedText,
+      fullContent: serializeWeeklyProgressProjects(draft.projects),
+      weekTitle: draft.title
+    });
+
+    applyResult(result.text);
+    updateLoadState(successText);
+    renderApp();
+  } catch (error) {
+    console.error("Failed to rewrite weekly progress field", error);
+    updateLoadState(`润色失败：${error instanceof Error ? error.message : "未知错误"}`, true);
+  }
 }
 
 function getProviderMeta(provider) {
@@ -2833,6 +3230,175 @@ function renderExtensionsManagementWorkspace() {
   `;
 }
 
+function renderWeeklyProgressStatusOptions(selectedStatus) {
+  return Object.entries(WEEKLY_PROGRESS_STATUS_META)
+    .map(
+      ([status, meta]) => `
+        <option value="${escapeHtml(status)}" ${status === selectedStatus ? "selected" : ""}>${escapeHtml(meta.label)}</option>
+      `
+    )
+    .join("");
+}
+
+function renderWeeklyTaskCard(projectId, task, index) {
+  const statusMeta = getWeeklyProgressStatusMeta(task.status);
+  const rewriteEnabled = task.title.trim() || task.detail.trim();
+
+  return `
+    <article class="weekly-task-card">
+      <div class="weekly-task-row">
+        <span class="weekly-task-index">${index + 1}</span>
+        <select
+          class="weekly-status-select weekly-status-select-compact"
+          data-weekly-task-project-id="${escapeHtml(projectId)}"
+          data-weekly-task-id="${escapeHtml(task.id)}"
+          data-weekly-task-field="status"
+          aria-label="任务状态"
+        >
+          ${renderWeeklyProgressStatusOptions(task.status)}
+        </select>
+        <input
+          class="field-input weekly-task-title-input"
+          type="text"
+          value="${escapeHtml(task.title)}"
+          placeholder="例如：补齐 Feishu 周报同步 schema"
+          data-weekly-task-project-id="${escapeHtml(projectId)}"
+          data-weekly-task-id="${escapeHtml(task.id)}"
+          data-weekly-task-field="title"
+        />
+        <span class="weekly-task-status-label is-${escapeHtml(statusMeta.tone)}">${escapeHtml(statusMeta.label)}</span>
+        <div class="weekly-task-actions">
+          <button
+            type="button"
+            class="weekly-inline-link"
+            data-weekly-polish-task="${escapeHtml(task.id)}"
+            data-weekly-task-project-id="${escapeHtml(projectId)}"
+            ${rewriteEnabled ? "" : "disabled"}
+          >
+            润色
+          </button>
+          <button
+            type="button"
+            class="weekly-inline-link weekly-inline-danger"
+            data-weekly-remove-task="${escapeHtml(task.id)}"
+            data-weekly-task-project-id="${escapeHtml(projectId)}"
+          >
+            删除
+          </button>
+        </div>
+      </div>
+
+      <textarea
+        class="field-textarea weekly-task-detail"
+        placeholder="补充结果、风险、协同信息（可选）"
+        data-weekly-task-project-id="${escapeHtml(projectId)}"
+        data-weekly-task-id="${escapeHtml(task.id)}"
+        data-weekly-task-field="detail"
+      >${escapeHtml(task.detail)}</textarea>
+    </article>
+  `;
+}
+
+function renderWeeklyProjectCard(project, index) {
+  const isCollapsed = isWeeklyProjectCollapsed(project.id);
+  const metrics = getWeeklyProgressMetrics({ projects: [project] });
+  const statusMeta = getWeeklyProgressStatusMeta(project.status);
+  const tasksContent = project.tasks.length
+    ? project.tasks.map((task, taskIndex) => renderWeeklyTaskCard(project.id, task, taskIndex)).join("")
+    : `
+        <div class="weekly-project-empty">
+          <p class="weekly-project-empty-copy">这个项目还没有拆任务，建议先把“要做什么”和“做到哪一步”拆清楚。</p>
+          <button type="button" class="model-action-secondary" data-weekly-add-task="${escapeHtml(project.id)}">新增第一条任务</button>
+        </div>
+      `;
+
+  return `
+    <section class="weekly-project-card ${isCollapsed ? "is-collapsed" : ""}">
+      <div class="weekly-project-head">
+        <button
+          type="button"
+          class="weekly-project-toggle"
+          data-weekly-toggle-project="${escapeHtml(project.id)}"
+          aria-expanded="${String(!isCollapsed)}"
+        >
+          <span class="weekly-project-toggle-glyph">${isCollapsed ? "+" : "-"}</span>
+        </button>
+
+        <div class="weekly-project-head-copy">
+          <div class="weekly-project-head-meta">
+            <span class="pill pill-neutral">项目 ${index + 1}</span>
+            <span class="weekly-project-status is-${escapeHtml(statusMeta.tone)}">${escapeHtml(statusMeta.label)}</span>
+          </div>
+          <p class="weekly-project-head-summary">
+            ${metrics.taskCount ? `共 ${metrics.taskCount} 个任务，已完成 ${metrics.completedTaskCount} 个` : "还没有拆分任务"}
+          </p>
+        </div>
+
+        <div class="weekly-project-head-actions">
+          <select
+            class="weekly-status-select"
+            data-weekly-project-id="${escapeHtml(project.id)}"
+            data-weekly-project-field="status"
+            aria-label="项目状态"
+          >
+            ${renderWeeklyProgressStatusOptions(project.status)}
+          </select>
+          <button type="button" class="model-action-secondary" data-weekly-add-task="${escapeHtml(project.id)}">新增任务</button>
+          <button type="button" class="weekly-inline-link weekly-inline-danger" data-weekly-remove-project="${escapeHtml(project.id)}">删除项目</button>
+        </div>
+      </div>
+
+      ${isCollapsed
+        ? ""
+        : `
+          <div class="weekly-project-body">
+            <label class="field field-full">
+              <span class="field-label">项目名称</span>
+              <input
+                class="field-input"
+                type="text"
+                value="${escapeHtml(project.title)}"
+                placeholder="例如：命令工坊 / 飞书同步 / 模型管理"
+                data-weekly-project-id="${escapeHtml(project.id)}"
+                data-weekly-project-field="title"
+              />
+            </label>
+
+            <label class="field field-full">
+              <div class="weekly-inline-actions weekly-inline-actions-spread">
+                <span class="field-label">阶段结果 / 风险备注</span>
+                <button
+                  type="button"
+                  class="weekly-inline-link"
+                  data-weekly-polish-project-note="${escapeHtml(project.id)}"
+                  ${project.note.trim() ? "" : "disabled"}
+                >
+                  润色备注
+                </button>
+              </div>
+              <textarea
+                class="field-textarea weekly-project-note"
+                placeholder="建议写结果、影响、当前风险，后面生成周报时会更像真正的汇报。"
+                data-weekly-project-id="${escapeHtml(project.id)}"
+                data-weekly-project-field="note"
+              >${escapeHtml(project.note)}</textarea>
+            </label>
+
+            <div class="weekly-project-task-block">
+              <div class="weekly-project-task-head">
+                <span class="field-label">项目任务</span>
+                <button type="button" class="weekly-inline-link" data-weekly-add-task="${escapeHtml(project.id)}">新增任务</button>
+              </div>
+              <div class="weekly-task-list">
+                ${tasksContent}
+              </div>
+            </div>
+          </div>
+        `}
+    </section>
+  `;
+}
+
 function renderWeeklyProgressList(records, activeRecordId) {
   if (!records.length) {
     return `
@@ -2844,17 +3410,14 @@ function renderWeeklyProgressList(records, activeRecordId) {
 
   return records
     .map((record) => {
-      const lineCount = countWeeklyContentLines(record.content);
+      const metrics = getWeeklyProgressMetrics(record);
       const isActive = record.id === activeRecordId;
-      const updateStatus = lineCount ? `已更新 ${formatLocalDateTime(record.updatedAt)}` : "待更新";
+      const hasContent = metrics.projectCount || metrics.taskCount || metrics.noteCount || String(record.generatedReport ?? "").trim();
+      const updateStatus = hasContent ? `已更新 ${formatLocalDateTime(record.updatedAt)}` : "待规划";
       const leftStatusTag =
         record.status === "active"
           ? `<span class="pill weekly-record-pill">本周</span>`
           : `<span class="pill pill-neutral weekly-record-pill">历史</span>`;
-      const leftContent =
-        record.status === "active"
-          ? `${leftStatusTag}<p class="weekly-record-title">${escapeHtml(record.title)}</p>`
-          : `<p class="weekly-record-title">${escapeHtml(record.title)}</p>${leftStatusTag}`;
 
       return `
         <article class="weekly-record-card ${isActive ? "is-active" : ""}">
@@ -2864,11 +3427,17 @@ function renderWeeklyProgressList(records, activeRecordId) {
             data-weekly-select="${escapeHtml(record.id)}"
           >
             <div class="weekly-record-left">
-              ${leftContent}
+              <div class="weekly-record-copy">
+                <div class="weekly-record-topline">
+                  ${leftStatusTag}
+                  <p class="weekly-record-title">${escapeHtml(record.title)}</p>
+                </div>
+                <p class="weekly-record-summary">${escapeHtml(getWeeklyProgressSummaryText(record))}</p>
+              </div>
             </div>
           </button>
           <div class="weekly-record-actions">
-            <span class="weekly-record-status ${lineCount ? "is-updated" : "is-pending"}">${escapeHtml(updateStatus)}</span>
+            <span class="weekly-record-status ${hasContent ? "is-updated" : "is-pending"}">${escapeHtml(updateStatus)}</span>
             <button
               type="button"
               class="weekly-record-delete"
@@ -2912,6 +3481,18 @@ function renderWeeklyProgressListWorkspace() {
 }
 
 function renderWeeklyProgressEditorWorkspace(activeRecord) {
+  const draft = getWeeklyProgressEditorDraft() ?? cloneWeeklyProgressRecord(activeRecord);
+  const metrics = getWeeklyProgressMetrics(draft);
+  const projectCards = draft.projects.length
+    ? draft.projects.map((project, index) => renderWeeklyProjectCard(project, index)).join("")
+    : `
+        <div class="weekly-editor-empty">
+          <p class="weekly-editor-empty-title">先按项目拆开，再写任务，周报才会像一个工作台而不是记事本。</p>
+          <p class="weekly-editor-empty-copy">建议至少拆成“项目名称 + 阶段结果/风险 + 具体任务状态”三层，后面生成领导周报和接飞书都会更顺。</p>
+          <button type="button" class="model-action" data-weekly-add-project="true">新增第一个项目</button>
+        </div>
+      `;
+
   return `
     <div class="models-grid models-grid-single">
       <section class="model-section model-section-scroll">
@@ -2927,28 +3508,27 @@ function renderWeeklyProgressEditorWorkspace(activeRecord) {
               </div>
             </div>
 
-            <label class="field field-full">
-              <span class="field-label">本周计划 / 推进记录</span>
-              <textarea
-                id="weekly-progress-content"
-                class="field-textarea weekly-textarea"
-                name="content"
-                placeholder="例如：&#10;apifree&#10;    迁移模型线路&#10;    上线新的视频能力"
-                data-weekly-smart-indent="true"
-              >${escapeHtml(activeRecord.content)}</textarea>
-              <div class="weekly-inline-actions">
-                <button type="button" class="model-action-secondary" data-weekly-rewrite="true">优化选中计划</button>
+            <div class="weekly-summary-strip">
+              <div class="weekly-summary-pills">
+                <span class="pill pill-neutral">项目 ${metrics.projectCount}</span>
+                <span class="pill pill-neutral">任务 ${metrics.taskCount}</span>
+                <span class="pill pill-neutral">完成 ${metrics.completedTaskCount}</span>
+                <span class="pill pill-neutral">受阻 ${metrics.blockedTaskCount}</span>
               </div>
-            </label>
+              <button type="button" class="model-action-secondary" data-weekly-add-project="true">新增项目</button>
+            </div>
+
+            <section class="weekly-project-stack">
+              ${projectCards}
+            </section>
 
             <label class="field field-full">
               <span class="field-label">周报模板</span>
               <textarea
-                id="weekly-progress-template"
                 class="field-textarea weekly-textarea weekly-textarea-secondary"
-                name="reportTemplate"
                 placeholder="在这里维护固定模板，生成周报时会严格按模板输出"
-              >${escapeHtml(activeRecord.reportTemplate)}</textarea>
+                data-weekly-record-field="reportTemplate"
+              >${escapeHtml(draft.reportTemplate)}</textarea>
             </label>
 
             <label class="field field-full">
@@ -2957,11 +3537,10 @@ function renderWeeklyProgressEditorWorkspace(activeRecord) {
                 <button type="button" class="model-action" data-weekly-generate-report="true">生成周报</button>
               </div>
               <textarea
-                id="weekly-progress-report"
                 class="field-textarea weekly-textarea weekly-textarea-secondary"
-                name="generatedReport"
                 placeholder="点击“生成周报”后会在这里填充结果，确认后再保存"
-              >${escapeHtml(activeRecord.generatedReport)}</textarea>
+                data-weekly-record-field="generatedReport"
+              >${escapeHtml(draft.generatedReport)}</textarea>
             </label>
           </form>
         </div>
@@ -3131,6 +3710,7 @@ function setActiveFeature(featureId) {
 
   if (featureId === TASKS_FEATURE) {
     state.tasksView = "list";
+    state.weeklyProgressEditor = createWeeklyProgressEditorState();
   }
 
   if (featureId === COMMAND_WORKSHOP_FEATURE) {
@@ -3264,45 +3844,36 @@ function setActiveWeeklyProgress(recordId) {
   state.activeWeeklyProgressId = recordId;
   state.activeFeature = TASKS_FEATURE;
   state.tasksView = "editor";
+  setWeeklyProgressEditorRecord(getActiveWeeklyProgressRecord());
   renderApp();
 }
 
 function handleWeeklyProgressBack() {
   state.tasksView = "list";
+  state.weeklyProgressEditor = createWeeklyProgressEditorState();
   renderApp();
 }
 
-function getWeeklyProgressForm() {
-  const form = byId("weekly-progress-form");
-  return form instanceof HTMLFormElement ? form : null;
-}
-
-function getWeeklyContentTextarea() {
-  const textarea = byId("weekly-progress-content");
-  return textarea instanceof HTMLTextAreaElement ? textarea : null;
-}
-
-async function handleWeeklyProgressSave(form) {
+async function handleWeeklyProgressSave() {
   const desktopApi = getDesktopApi();
   const activeRecord = getActiveWeeklyProgressRecord();
+  const draft = sanitizeWeeklyProgressDraft(getWeeklyProgressEditorDraft());
 
-  if (!desktopApi || !activeRecord) {
+  if (!desktopApi || !activeRecord || !draft) {
     updateLoadState("周记录尚未就绪，暂时无法保存", true);
     return;
   }
 
-  const formData = new FormData(form);
   const nextRecord = {
-    ...activeRecord,
-    content: String(formData.get("content") ?? ""),
-    reportTemplate: String(formData.get("reportTemplate") ?? ""),
-    generatedReport: String(formData.get("generatedReport") ?? ""),
+    ...draft,
+    id: activeRecord.id,
     updatedAt: new Date().toISOString()
   };
 
   try {
     const records = await desktopApi.saveWeeklyProgress(nextRecord);
     syncWeeklyProgressSelection(records);
+    setWeeklyProgressEditorRecord(getActiveWeeklyProgressRecord());
     updateLoadState("任务推进内容已保存");
     renderApp();
   } catch (error) {
@@ -3327,6 +3898,7 @@ async function handleWeeklyProgressDelete(recordId) {
     const records = await desktopApi.deleteWeeklyProgress(recordId);
     syncWeeklyProgressSelection(records);
     state.tasksView = "list";
+    state.weeklyProgressEditor = createWeeklyProgressEditorState();
     updateLoadState("周记录已删除");
     renderApp();
   } catch (error) {
@@ -3335,70 +3907,78 @@ async function handleWeeklyProgressDelete(recordId) {
   }
 }
 
-async function handleWeeklyProgressRewrite() {
-  const desktopApi = getDesktopApi();
-  const textarea = getWeeklyContentTextarea();
-  const activeRecord = getActiveWeeklyProgressRecord();
+async function handleWeeklyProjectNoteRewrite(projectId) {
+  const draft = getWeeklyProgressEditorDraft();
+  const project = findWeeklyProjectById(draft, projectId);
 
-  if (!desktopApi || !textarea || !activeRecord) {
-    updateLoadState("当前编辑器尚未就绪，暂无法优化计划", true);
+  if (!project) {
+    updateLoadState("当前项目尚未就绪，暂无法润色备注", true);
     return;
   }
 
-  const { selectionStart, selectionEnd, value } = textarea;
-  const selectedText = value.slice(selectionStart, selectionEnd);
+  await rewriteWeeklyProgressValue(
+    project.note,
+    (text) => {
+      project.note = text;
+    },
+    "正在润色项目备注...",
+    "项目备注已润色，请确认后保存"
+  );
+}
 
-  if (!selectedText.trim()) {
-    updateLoadState("先在计划编辑区选中一段内容，再使用优化语句功能", true);
+async function handleWeeklyTaskRewrite(projectId, taskId) {
+  const draft = getWeeklyProgressEditorDraft();
+  const task = findWeeklyTaskById(draft, projectId, taskId);
+
+  if (!task) {
+    updateLoadState("当前任务尚未就绪，暂无法润色", true);
     return;
   }
 
-  try {
-    updateLoadState("正在优化选中计划...");
-    const result = await desktopApi.rewriteWeeklyProgressItem({
-      selectedText,
-      fullContent: value,
-      weekTitle: activeRecord.title
-    });
+  const selectedText = task.title.trim() || task.detail.trim();
 
-    textarea.setRangeText(result.text, selectionStart, selectionEnd, "select");
-    textarea.focus();
-    updateLoadState(`计划语句已优化，请确认后保存（${result.profileLabel}）`);
-  } catch (error) {
-    console.error("Failed to rewrite weekly progress item", error);
-    updateLoadState(`语句优化失败：${error instanceof Error ? error.message : "未知错误"}`, true);
-  }
+  await rewriteWeeklyProgressValue(
+    selectedText,
+    (text) => {
+      if (task.title.trim()) {
+        task.title = text;
+      } else {
+        task.detail = text;
+      }
+    },
+    "正在润色任务表达...",
+    "任务表达已润色，请确认后保存"
+  );
 }
 
 async function handleWeeklyProgressReportGeneration() {
   const desktopApi = getDesktopApi();
-  const form = getWeeklyProgressForm();
   const activeRecord = getActiveWeeklyProgressRecord();
+  const draft = sanitizeWeeklyProgressDraft(getWeeklyProgressEditorDraft());
 
-  if (!desktopApi || !form || !activeRecord) {
+  if (!desktopApi || !activeRecord || !draft) {
     updateLoadState("当前周报表单尚未就绪，暂无法生成周报", true);
     return;
   }
 
-  const formData = new FormData(form);
-  const content = String(formData.get("content") ?? "");
-  const reportTemplate = String(formData.get("reportTemplate") ?? "");
-  const reportTextarea = byId("weekly-progress-report");
+  if (!draft.content.trim()) {
+    updateLoadState("当前还没有项目或任务，先补充任务推进内容再生成周报", true);
+    return;
+  }
 
   try {
     updateLoadState("正在生成周报...");
     const result = await desktopApi.generateWeeklyProgressReport({
       weekTitle: activeRecord.title,
-      content,
-      reportTemplate
+      content: draft.content,
+      reportTemplate: draft.reportTemplate
     });
 
-    if (reportTextarea instanceof HTMLTextAreaElement) {
-      reportTextarea.value = result.text;
-      reportTextarea.focus();
-    }
+    draft.generatedReport = result.text;
+    setWeeklyProgressEditorRecord(draft);
 
     updateLoadState(`周报已生成，请确认后保存（${result.profileLabel}）`);
+    renderApp();
   } catch (error) {
     console.error("Failed to generate weekly progress report", error);
     updateLoadState(`周报生成失败：${error instanceof Error ? error.message : "未知错误"}`, true);
@@ -4734,10 +5314,85 @@ function bindInteractions() {
       return;
     }
 
-    const weeklyRewriteTrigger = target.closest("[data-weekly-rewrite]");
+    const weeklyAddProjectTrigger = target.closest("[data-weekly-add-project]");
 
-    if (weeklyRewriteTrigger) {
-      await handleWeeklyProgressRewrite();
+    if (weeklyAddProjectTrigger) {
+      addWeeklyProject();
+      return;
+    }
+
+    const weeklyToggleProjectTrigger = target.closest("[data-weekly-toggle-project]");
+
+    if (weeklyToggleProjectTrigger) {
+      const projectId = weeklyToggleProjectTrigger.getAttribute("data-weekly-toggle-project");
+
+      if (projectId) {
+        toggleWeeklyProjectCollapsed(projectId);
+        renderApp();
+      }
+
+      return;
+    }
+
+    const weeklyRemoveProjectTrigger = target.closest("[data-weekly-remove-project]");
+
+    if (weeklyRemoveProjectTrigger) {
+      const projectId = weeklyRemoveProjectTrigger.getAttribute("data-weekly-remove-project");
+
+      if (projectId) {
+        removeWeeklyProject(projectId);
+      }
+
+      return;
+    }
+
+    const weeklyAddTaskTrigger = target.closest("[data-weekly-add-task]");
+
+    if (weeklyAddTaskTrigger) {
+      const projectId = weeklyAddTaskTrigger.getAttribute("data-weekly-add-task");
+
+      if (projectId) {
+        addWeeklyTask(projectId);
+      }
+
+      return;
+    }
+
+    const weeklyRemoveTaskTrigger = target.closest("[data-weekly-remove-task]");
+
+    if (weeklyRemoveTaskTrigger) {
+      const projectId = weeklyRemoveTaskTrigger.getAttribute("data-weekly-task-project-id");
+      const taskId = weeklyRemoveTaskTrigger.getAttribute("data-weekly-remove-task");
+
+      if (projectId && taskId) {
+        removeWeeklyTask(projectId, taskId);
+      }
+
+      return;
+    }
+
+    const weeklyProjectNoteRewriteTrigger = target.closest("[data-weekly-polish-project-note]");
+
+    if (weeklyProjectNoteRewriteTrigger) {
+      const projectId = weeklyProjectNoteRewriteTrigger.getAttribute("data-weekly-polish-project-note");
+
+      if (projectId) {
+        await handleWeeklyProjectNoteRewrite(projectId);
+      }
+
+      return;
+    }
+
+    const weeklyTaskRewriteTrigger = target.closest("[data-weekly-polish-task]");
+
+    if (weeklyTaskRewriteTrigger) {
+      const projectId = weeklyTaskRewriteTrigger.getAttribute("data-weekly-task-project-id");
+      const taskId = weeklyTaskRewriteTrigger.getAttribute("data-weekly-polish-task");
+
+      if (projectId && taskId) {
+        await handleWeeklyTaskRewrite(projectId, taskId);
+      }
+
       return;
     }
 
@@ -4822,6 +5477,10 @@ function bindInteractions() {
       return;
     }
 
+    if (syncWeeklyProgressDraftField(target)) {
+      return;
+    }
+
     const form = target.closest("form");
 
     if (!(form instanceof HTMLFormElement) || form.id !== "command-workshop-form") {
@@ -4837,6 +5496,10 @@ function bindInteractions() {
     const target = event.target instanceof Element ? event.target : null;
 
     if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement)) {
+      return;
+    }
+
+    if (syncWeeklyProgressDraftField(target)) {
       return;
     }
 

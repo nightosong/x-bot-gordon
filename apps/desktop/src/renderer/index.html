@@ -4,61 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Gordon Work Assistant</title>
-    <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <div class="app-shell">
-      <div class="ambient ambient-one"></div>
-      <div class="ambient ambient-two"></div>
-
-      <main class="dashboard">
-        <section class="left-column">
-          <section class="brand-panel">
-            <div class="brand-panel-head">
-              <div class="brand-lockup">
-                <div class="brand-row">
-                  <h1 id="brand-title" class="brand-title" data-text="Gordon">Gordon</h1>
-                </div>
-              </div>
-
-              <details id="home-settings-menu" class="home-settings-menu">
-                <summary aria-label="打开设置菜单">
-                  <svg class="home-settings-trigger-gear" viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.04 7.04 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.58.22-1.12.53-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22l-1.92 3.32a.5.5 0 0 0 .12.64L4.86 11c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.4 1.05.72 1.63.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54c.58-.22 1.12-.53 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"
-                      fill="currentColor"
-                    ></path>
-                  </svg>
-                </summary>
-
-                <div class="home-settings-menu-panel">
-                  <button type="button" class="home-settings-item" data-select-feature="model-management">
-                    <span class="home-settings-item-title">模型管理</span>
-                    <span class="home-settings-item-copy">配置优先模型与供应商</span>
-                  </button>
-
-                  <button type="button" class="home-settings-item" data-select-feature="extensions-management">
-                    <span class="home-settings-item-title">能力拓展</span>
-                    <span class="home-settings-item-copy">管理 Agent、Skill 与 MCP</span>
-                  </button>
-                </div>
-              </details>
-            </div>
-          </section>
-
-          <section class="feature-panel">
-            <div id="feature-board" class="feature-board"></div>
-          </section>
-        </section>
-
-        <section class="right-column">
-          <section id="workspace-panel" class="workspace-panel">
-            <div id="workspace-stage" class="workspace-stage"></div>
-          </section>
-        </section>
-      </main>
-    </div>
-
-    <script type="module" src="./renderer.js"></script>
+    <div id="app"></div>
+    <script type="module" src="./src/main.js"></script>
   </body>
 </html>

@@ -14,7 +14,10 @@ import type {
   ModelSettings,
   SkillKind,
   SkillDefinition,
+  WeeklyProgressItemStatus,
+  WeeklyProgressProjectItem,
   WeeklyProgressRecord,
+  WeeklyProgressTaskItem,
   WorkTask
 } from "../../shared/src/index.js";
 import {
@@ -37,7 +40,7 @@ function getDefaultModelSettings(): ModelSettings {
   };
 }
 
-const DEFAULT_WEEKLY_REPORT_TEMPLATE = `请基于本周计划与进展，生成一份可以直接同步给领导的周报，严格按照以下结构输出：
+const LEGACY_DEFAULT_WEEKLY_REPORT_TEMPLATE = `请基于本周计划与进展，生成一份可以直接同步给领导的周报，严格按照以下结构输出：
 1. 本周重点完成事项
 2. 当前进展与结果
 3. 风险、问题与待协调事项
@@ -47,6 +50,24 @@ const DEFAULT_WEEKLY_REPORT_TEMPLATE = `请基于本周计划与进展，生成�
 - 语言专业、简洁、条理清晰
 - 尽量突出结果、影响和下一步动作
 - 如果原始内容里没有的信息，不要编造`;
+
+const DEFAULT_WEEKLY_REPORT_TEMPLATE = `请基于本周计划与进展，生成一份可以直接同步给领导的周报，严格按照以下结构输出：
+1. 本周结论
+- 用 2-3 句先概括本周最重要结果、整体进展判断，以及是否存在需要关注的风险
+2. 本周重点结果
+- 按项目归纳，优先写结果、影响、完成到哪一步
+3. 风险、问题与待协调事项
+- 只列真实存在的风险；写清影响、当前卡点，以及需要谁支持或决策
+4. 下周推进计划
+- 按优先级列出 3-5 条动作，尽量写成“动作 + 目标”
+
+要求：
+- 先结论后细节，避免流水账
+- 能量化就量化，不能量化也要写清完成度
+- 语言专业、简洁、条理清晰
+- 如果原始内容里没有的信息，不要编造`;
+
+const WEEKLY_PROGRESS_FALLBACK_PROJECT_TITLE = "未分类项目";
 
 function getWeeklyProgressFilePath(): string {
   return resolveFromRoot("data", "workbench", "weekly-progress.json");
@@ -470,6 +491,274 @@ function getWeekRange(referenceDate = new Date()): { weekKey: string; startDate:
   };
 }
 
+function getWeeklyProgressStatusLabel(status: WeeklyProgressItemStatus): string {
+  switch (status) {
+    case "completed":
+      return "已完成";
+    case "in_progress":
+      return "进行中";
+    case "blocked":
+      return "受阻";
+    case "planned":
+    default:
+      return "待开始";
+  }
+}
+
+function tryParseWeeklyProgressItemStatus(status: string | undefined): WeeklyProgressItemStatus | undefined {
+  const normalized = String(status ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "");
+
+  if (["completed", "done", "finish", "finished", "已完成", "完成", "x"].includes(normalized)) {
+    return "completed";
+  }
+
+  if (["inprogress", "doing", "active", "进行中", "处理中", "~", "-"].includes(normalized)) {
+    return "in_progress";
+  }
+
+  if (["blocked", "block", "受阻", "阻塞", "卡住", "!"].includes(normalized)) {
+    return "blocked";
+  }
+
+  if (["planned", "plan", "todo", "待开始", "待办", "未开始"].includes(normalized)) {
+    return "planned";
+  }
+
+  return undefined;
+}
+
+function normalizeWeeklyProgressItemStatus(status: string | undefined): WeeklyProgressItemStatus {
+  const parsedStatus = tryParseWeeklyProgressItemStatus(status);
+
+  if (parsedStatus) {
+    return parsedStatus;
+  }
+
+  return "planned";
+}
+
+function extractWeeklyProgressLineMetadata(rawText: string): { title: string; status?: WeeklyProgressItemStatus } {
+  let text = rawText.trim().replace(/^[-*+•]\s+/, "");
+  let detectedStatus: WeeklyProgressItemStatus | undefined;
+
+  const prefixMatch = text.match(/^\[([^\]]+)\]\s*(.*)$/);
+
+  if (prefixMatch) {
+    const nextStatus = tryParseWeeklyProgressItemStatus(prefixMatch[1]);
+
+    if (nextStatus) {
+      detectedStatus = nextStatus;
+      text = prefixMatch[2].trim();
+    }
+  }
+
+  const suffixMatch = text.match(/^(.*?)[（(]([^)）]+)[)）]$/);
+
+  if (suffixMatch) {
+    const nextStatus = tryParseWeeklyProgressItemStatus(suffixMatch[2]);
+
+    if (nextStatus) {
+      detectedStatus = nextStatus;
+      text = suffixMatch[1].trim();
+    }
+  }
+
+  return {
+    title: text,
+    status: detectedStatus
+  };
+}
+
+function createWeeklyProgressTaskItem(
+  overrides: Partial<WeeklyProgressTaskItem> = {}
+): WeeklyProgressTaskItem {
+  return {
+    id: overrides.id ?? `weekly_task_${randomUUID()}`,
+    title: overrides.title ?? "",
+    detail: overrides.detail ?? "",
+    status: overrides.status ?? "planned"
+  };
+}
+
+function createWeeklyProgressProjectItem(
+  overrides: Partial<WeeklyProgressProjectItem> = {}
+): WeeklyProgressProjectItem {
+  return {
+    id: overrides.id ?? `weekly_project_${randomUUID()}`,
+    title: overrides.title ?? "",
+    note: overrides.note ?? "",
+    status: overrides.status ?? "in_progress",
+    tasks: overrides.tasks ?? []
+  };
+}
+
+function deriveWeeklyProgressProjectStatus(tasks: WeeklyProgressTaskItem[]): WeeklyProgressItemStatus {
+  if (!tasks.length) {
+    return "in_progress";
+  }
+
+  if (tasks.some((task) => task.status === "blocked")) {
+    return "blocked";
+  }
+
+  if (tasks.every((task) => task.status === "completed")) {
+    return "completed";
+  }
+
+  if (tasks.some((task) => task.status === "in_progress" || task.status === "completed")) {
+    return "in_progress";
+  }
+
+  return "planned";
+}
+
+function normalizeWeeklyProgressTaskItem(
+  task: Partial<WeeklyProgressTaskItem> | null | undefined
+): WeeklyProgressTaskItem | null {
+  if (!task) {
+    return null;
+  }
+
+  const title = String(task.title ?? "").trim();
+  const detail = String(task.detail ?? "").trim();
+
+  if (!title && !detail) {
+    return null;
+  }
+
+  return createWeeklyProgressTaskItem({
+    ...task,
+    title: title || detail || "未命名任务",
+    detail,
+    status: normalizeWeeklyProgressItemStatus(task.status)
+  });
+}
+
+function normalizeWeeklyProgressProjectItem(
+  project: Partial<WeeklyProgressProjectItem> | null | undefined
+): WeeklyProgressProjectItem | null {
+  if (!project) {
+    return null;
+  }
+
+  const title = String(project.title ?? "").trim();
+  const note = String(project.note ?? "").trim();
+  const tasks = Array.isArray(project.tasks)
+    ? project.tasks
+        .map((task) => normalizeWeeklyProgressTaskItem(task))
+        .filter((task): task is WeeklyProgressTaskItem => Boolean(task))
+    : [];
+
+  if (!title && !note && !tasks.length) {
+    return null;
+  }
+
+  return createWeeklyProgressProjectItem({
+    ...project,
+    title: title || WEEKLY_PROGRESS_FALLBACK_PROJECT_TITLE,
+    note,
+    status: project.status ? normalizeWeeklyProgressItemStatus(project.status) : deriveWeeklyProgressProjectStatus(tasks),
+    tasks
+  });
+}
+
+function parseLegacyWeeklyProgressContent(content: string | undefined): WeeklyProgressProjectItem[] {
+  const lines = String(content ?? "").replace(/\r\n?/g, "\n").split("\n");
+  const projects: WeeklyProgressProjectItem[] = [];
+  let currentProject: WeeklyProgressProjectItem | null = null;
+  let currentTask: WeeklyProgressTaskItem | null = null;
+
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+
+    if (!trimmed) {
+      currentTask = null;
+      continue;
+    }
+
+    const indentLength = rawLine.match(/^\s*/)?.[0]?.length ?? 0;
+    const metadata = extractWeeklyProgressLineMetadata(trimmed);
+    const normalizedTitle = metadata.title.trim();
+
+    if (!normalizedTitle) {
+      continue;
+    }
+
+    if (indentLength === 0) {
+      currentProject = createWeeklyProgressProjectItem({
+        title: normalizedTitle,
+        status: metadata.status ?? "in_progress"
+      });
+      projects.push(currentProject);
+      currentTask = null;
+      continue;
+    }
+
+    if (!currentProject) {
+      currentProject = createWeeklyProgressProjectItem({
+        title: WEEKLY_PROGRESS_FALLBACK_PROJECT_TITLE
+      });
+      projects.push(currentProject);
+    }
+
+    const noteMatch = normalizedTitle.match(/^(?:备注|说明|结果|风险)[:：]\s*(.*)$/);
+
+    if (noteMatch) {
+      const detailText = noteMatch[1].trim();
+
+      if (indentLength >= 8 && currentTask) {
+        currentTask.detail = currentTask.detail ? `${currentTask.detail}\n${detailText}` : detailText;
+      } else {
+        currentProject.note = currentProject.note ? `${currentProject.note}\n${detailText}` : detailText;
+        currentTask = null;
+      }
+
+      continue;
+    }
+
+    if (indentLength >= 8 && currentTask) {
+      currentTask.detail = currentTask.detail ? `${currentTask.detail}\n${normalizedTitle}` : normalizedTitle;
+      continue;
+    }
+
+    currentTask = createWeeklyProgressTaskItem({
+      title: normalizedTitle,
+      status: metadata.status ?? "planned"
+    });
+    currentProject.tasks.push(currentTask);
+  }
+
+  return projects
+    .map((project) => normalizeWeeklyProgressProjectItem(project))
+    .filter((project): project is WeeklyProgressProjectItem => Boolean(project));
+}
+
+function buildWeeklyProgressContent(projects: WeeklyProgressProjectItem[]): string {
+  return projects
+    .map((project) => {
+      const lines = [`${project.title}（${getWeeklyProgressStatusLabel(project.status)}）`];
+
+      if (project.note) {
+        lines.push(...project.note.split("\n").map((line) => `    备注：${line.trim()}`));
+      }
+
+      for (const task of project.tasks) {
+        lines.push(`    [${getWeeklyProgressStatusLabel(task.status)}] ${task.title}`);
+
+        if (task.detail) {
+          lines.push(...task.detail.split("\n").map((line) => `        说明：${line.trim()}`));
+        }
+      }
+
+      return lines.join("\n");
+    })
+    .join("\n\n")
+    .trim();
+}
+
 function sortWeeklyProgress(records: WeeklyProgressRecord[]): WeeklyProgressRecord[] {
   return [...records].sort(
     (left, right) => right.weekKey.localeCompare(left.weekKey) || right.updatedAt.localeCompare(left.updatedAt)
@@ -477,9 +766,20 @@ function sortWeeklyProgress(records: WeeklyProgressRecord[]): WeeklyProgressReco
 }
 
 function normalizeWeeklyProgressRecord(record: WeeklyProgressRecord): WeeklyProgressRecord {
+  const normalizedProjects = (Array.isArray(record.projects) && record.projects.length
+    ? record.projects
+    : parseLegacyWeeklyProgressContent(record.content)
+  )
+    .map((project) => normalizeWeeklyProgressProjectItem(project))
+    .filter((project): project is WeeklyProgressProjectItem => Boolean(project));
+  const normalizedTemplate = String(record.reportTemplate ?? "").trim();
+  const shouldUpgradeTemplate = !normalizedTemplate || normalizedTemplate === LEGACY_DEFAULT_WEEKLY_REPORT_TEMPLATE.trim();
+
   return {
     ...record,
-    reportTemplate: record.reportTemplate?.trim() ? record.reportTemplate : DEFAULT_WEEKLY_REPORT_TEMPLATE,
+    content: normalizedProjects.length ? buildWeeklyProgressContent(normalizedProjects) : String(record.content ?? "").trim(),
+    projects: normalizedProjects,
+    reportTemplate: shouldUpgradeTemplate ? DEFAULT_WEEKLY_REPORT_TEMPLATE : record.reportTemplate,
     generatedReport: record.generatedReport ?? "",
     status: record.status ?? "archived"
   };
@@ -496,6 +796,7 @@ function createWeeklyProgressRecord(referenceDate = new Date()): WeeklyProgressR
     startDate: range.startDate,
     endDate: range.endDate,
     content: "",
+    projects: [],
     reportTemplate: DEFAULT_WEEKLY_REPORT_TEMPLATE,
     generatedReport: "",
     status: "active",

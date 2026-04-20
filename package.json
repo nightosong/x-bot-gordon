@@ -5,18 +5,24 @@
   "type": "module",
   "description": "Gordon (Gord/gord) is a desktop + CLI work assistant harness with an extensible memory and capability system.",
   "scripts": {
-    "build": "tsc -p tsconfig.json && node ./scripts/copy-desktop-assets.mjs",
+    "build": "pnpm run build:main && pnpm run build:renderer && node ./scripts/copy-desktop-assets.mjs",
+    "build:main": "tsc -p tsconfig.json",
+    "build:renderer": "vite build --config ./apps/desktop/vite.config.mjs",
     "check": "tsc --noEmit -p tsconfig.json",
     "dev:cli": "node --import tsx ./apps/cli/src/index.ts",
     "dev:desktop": "pnpm build && electron ./dist/apps/desktop/src/main.js"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "electron": "^36.0.0",
+    "@vitejs/plugin-vue": "^6.0.1",
+    "@vue/compiler-sfc": "^3.5.32",
+    "electron": "^40.9.1",
     "tsx": "^4.20.0",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vite": "^7.1.7"
   },
   "dependencies": {
-    "@splinetool/runtime": "1.10.53"
+    "@splinetool/runtime": "1.10.53",
+    "vue": "^3.5.32"
   }
 }
