@@ -31,5 +31,6 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
   saveWeeklyProgress: (record) => ipcRenderer.invoke("gordon:weekly-progress:save", record),
   deleteWeeklyProgress: (recordId) => ipcRenderer.invoke("gordon:weekly-progress:delete", recordId),
   rewriteWeeklyProgressItem: (request) => ipcRenderer.invoke("gordon:weekly-progress:rewrite", request),
+  generateDailyProgressReport: (request) => ipcRenderer.invoke("gordon:weekly-progress:generate-daily-report", request),
   generateWeeklyProgressReport: (request) => ipcRenderer.invoke("gordon:weekly-progress:generate-report", request)
 });
