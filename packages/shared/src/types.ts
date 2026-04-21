@@ -2,7 +2,18 @@ export type RuntimeSurface = "desktop" | "cli" | "api";
 export type MemoryScope = "references" | "experience";
 export type WorkModuleStatus = "planned" | "seeded" | "ready";
 export type TaskStatus = "todo" | "doing" | "done";
-export type ProviderKind = "openai" | "anthropic" | "google" | "openai_like";
+export type ProviderKind =
+  | "openai"
+  | "azure"
+  | "anthropic"
+  | "google"
+  | "doubao"
+  | "qwen"
+  | "deepseek"
+  | "moonshot"
+  | "zhipu"
+  | "grok"
+  | "openai_like";
 export type WeeklyProgressStatus = "active" | "archived";
 export type WeeklyProgressItemStatus = "planned" | "in_progress" | "completed" | "blocked";
 export type ModelModality =

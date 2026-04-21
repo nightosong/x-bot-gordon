@@ -1,6 +1,14 @@
+import azureLogo from "../../assets/logos/azure.svg";
 import anthropicLogo from "../../assets/logos/anthropic.svg";
+import deepseekLogo from "../../assets/logos/deepseek.svg";
+import doubaoLogo from "../../assets/logos/doubao.svg";
 import googleLogo from "../../assets/logos/google.svg";
+import grokLogo from "../../assets/logos/grok.svg";
+import moonshotLogo from "../../assets/logos/moonshot.svg";
 import openaiLogo from "../../assets/logos/openai.svg";
+import openAiLikeLogo from "../../assets/logos/openai-like.svg";
+import qwenLogo from "../../assets/logos/qwen.svg";
+import zhipuLogo from "../../assets/logos/zai.svg";
 
 export const NAV_ITEMS = [
   {
@@ -40,7 +48,19 @@ export const NAV_ITEMS = [
   }
 ];
 
-export const PROVIDER_ORDER = ["openai", "google", "anthropic", "openai_like"];
+export const PROVIDER_ORDER = [
+  "openai",
+  "azure",
+  "google",
+  "anthropic",
+  "doubao",
+  "qwen",
+  "deepseek",
+  "moonshot",
+  "zhipu",
+  "grok",
+  "openai_like"
+];
 
 export const PROVIDER_META = {
   openai: {
@@ -49,6 +69,13 @@ export const PROVIDER_META = {
     logo: openaiLogo,
     copy: "适合 GPT 系列和官方原生能力接入，作为默认高配路线使用。",
     popularModels: ["gpt-5.4", "gpt-4.1", "o4-mini", "gpt-4.1-mini"]
+  },
+  azure: {
+    label: "Azure",
+    short: "AZ",
+    logo: azureLogo,
+    copy: "适合 Azure OpenAI / Azure AI 推理终端，便于企业云上统一纳管与权限隔离。",
+    popularModels: ["gpt-4.1", "gpt-4o", "o4-mini", "gpt-4.1-mini"]
   },
   google: {
     label: "Google",
@@ -64,11 +91,53 @@ export const PROVIDER_META = {
     copy: "适合 Claude 系列和长上下文整理，文案与分析风格更稳定。",
     popularModels: ["claude-3-7-sonnet", "claude-3-5-sonnet", "claude-3-5-haiku"]
   },
+  doubao: {
+    label: "豆包",
+    short: "DB",
+    logo: doubaoLogo,
+    copy: "适合火山引擎路线与国内推理场景，当前按 OpenAI-compatible 方式接入。",
+    popularModels: ["doubao-pro-32k", "doubao-lite-32k", "doubao-vision-pro", "doubao-embedding"]
+  },
+  qwen: {
+    label: "千问",
+    short: "QW",
+    logo: qwenLogo,
+    copy: "适合阿里云百炼与千问模型线路，文本、工具调用和多模态扩展都比较灵活。",
+    popularModels: ["qwen-max", "qwen-plus", "qwen-turbo", "qwen-vl-max"]
+  },
+  deepseek: {
+    label: "DeepSeek",
+    short: "DS",
+    logo: deepseekLogo,
+    copy: "适合高性价比推理与代码场景，当前按 OpenAI-compatible 方式接入。",
+    popularModels: ["deepseek-chat", "deepseek-reasoner", "deepseek-coder", "deepseek-vl"]
+  },
+  moonshot: {
+    label: "月之暗面",
+    short: "MS",
+    logo: moonshotLogo,
+    copy: "适合 Kimi / Moonshot 线路的长文本整理与中文工作流，当前按兼容协议接入。",
+    popularModels: ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k", "kimi-k2"]
+  },
+  zhipu: {
+    label: "智谱",
+    short: "ZP",
+    logo: zhipuLogo,
+    copy: "适合 GLM 系列模型与国内推理场景，当前按 OpenAI-compatible 方式接入。",
+    popularModels: ["glm-4-plus", "glm-4-air", "glm-4-flash", "glm-4v-plus"]
+  },
+  grok: {
+    label: "Grok",
+    short: "GK",
+    logo: grokLogo,
+    copy: "适合 xAI / Grok 模型线路，当前按 OpenAI-compatible 方式接入。",
+    popularModels: ["grok-3", "grok-3-fast", "grok-2", "grok-vision-beta"]
+  },
   openai_like: {
     label: "OpenAI-like",
     short: "CL",
-    logo: "",
-    copy: "兼容自定义网关和第三方模型线路，适合把多家模型收拢到统一协议。",
+    logo: openAiLikeLogo,
+    copy: "兼容自定义网关和第三方模型线路，适合把多家模型收拢到统一协议入口。",
     popularModels: ["deepseek-chat", "kimi-k2", "qwen-max", "doubao-pro"]
   }
 };

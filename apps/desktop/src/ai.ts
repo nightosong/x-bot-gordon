@@ -11,6 +11,16 @@ import type {
 
 const WEEKLY_REWRITE_ITEM_SYSTEM_PROMPT = readPromptAsset("weeklyRewriteItemSystem");
 const WEEKLY_REPORT_GENERATE_SYSTEM_PROMPT = readPromptAsset("weeklyReportGenerateSystem");
+const BASE_URL_REQUIRED_PROVIDERS = new Set([
+  "azure",
+  "openai_like",
+  "doubao",
+  "qwen",
+  "deepseek",
+  "moonshot",
+  "zhipu",
+  "grok"
+]);
 
 async function getActiveModelProfile(): Promise<ModelProfile> {
   const settings = await listModelSettings();
@@ -29,8 +39,8 @@ async function getActiveModelProfile(): Promise<ModelProfile> {
     throw new Error("当前优先模型配置不完整，请补全模型名称和 API Key");
   }
 
-  if (profile.provider === "openai_like" && !profile.baseUrl?.trim()) {
-    throw new Error("OpenAI-like 配置缺少 Base URL，请先补全后再使用");
+  if (BASE_URL_REQUIRED_PROVIDERS.has(profile.provider) && !profile.baseUrl?.trim()) {
+    throw new Error(`${profile.displayName || profile.provider} 配置缺少 Base URL，请先补全后再使用`);
   }
 
   return profile;

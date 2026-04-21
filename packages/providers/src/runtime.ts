@@ -1,5 +1,16 @@
 import type { ModelMessage, ModelProfile, ModelTextRequest, ModelTextResponse } from "../../shared/src/index.js";
 
+const OPENAI_COMPATIBLE_PROVIDERS = new Set([
+  "openai",
+  "openai_like",
+  "doubao",
+  "qwen",
+  "deepseek",
+  "moonshot",
+  "zhipu",
+  "grok"
+]);
+
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, "");
 }
@@ -76,6 +87,38 @@ async function parseErrorResponse(response: Response): Promise<string> {
   }
 }
 
+function buildAzureEndpoint(profile: ModelProfile): string {
+  const baseUrl = trimTrailingSlash(profile.baseUrl?.trim() || "");
+  const defaultApiVersion = "2024-10-21";
+
+  if (!baseUrl) {
+    throw new Error("Azure 配置缺少 Base URL");
+  }
+
+  if (baseUrl.includes("/chat/completions")) {
+    return baseUrl.includes("api-version=")
+      ? baseUrl
+      : `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}api-version=${defaultApiVersion}`;
+  }
+
+  if (baseUrl.includes("{deployment}")) {
+    const resolved = baseUrl.replaceAll("{deployment}", encodeURIComponent(profile.model));
+    const normalized = resolved.includes("/chat/completions") ? resolved : `${trimTrailingSlash(resolved)}/chat/completions`;
+    return normalized.includes("api-version=")
+      ? normalized
+      : `${normalized}${normalized.includes("?") ? "&" : "?"}api-version=${defaultApiVersion}`;
+  }
+
+  const normalizedBaseUrl = trimTrailingSlash(baseUrl);
+  const endpoint = normalizedBaseUrl.includes("/openai/deployments/")
+    ? `${normalizedBaseUrl}/chat/completions`
+    : `${normalizedBaseUrl}/openai/deployments/${encodeURIComponent(profile.model)}/chat/completions`;
+
+  return endpoint.includes("api-version=")
+    ? endpoint
+    : `${endpoint}${endpoint.includes("?") ? "&" : "?"}api-version=${defaultApiVersion}`;
+}
+
 async function invokeOpenAiCompatible(profile: ModelProfile, request: ModelTextRequest): Promise<ModelTextResponse> {
   const endpoint = `${trimTrailingSlash(profile.baseUrl?.trim() || "https://api.openai.com/v1")}/chat/completions`;
   const response = await fetch(endpoint, {
@@ -87,6 +130,49 @@ async function invokeOpenAiCompatible(profile: ModelProfile, request: ModelTextR
     },
     body: JSON.stringify({
       model: profile.model,
+      messages: request.messages.map((message) => ({
+        role: message.role,
+        content: message.content
+      })),
+      ...(typeof request.temperature === "number" ? { temperature: request.temperature } : {}),
+      ...(typeof request.maxOutputTokens === "number" ? { max_tokens: request.maxOutputTokens } : {})
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseErrorResponse(response));
+  }
+
+  const payload = (await response.json()) as {
+    choices?: Array<{
+      message?: {
+        content?: unknown;
+      };
+    }>;
+  };
+  const text = parseOpenAiMessageContent(payload.choices?.[0]?.message?.content).trim();
+
+  if (!text) {
+    throw new Error("模型没有返回可用文本内容");
+  }
+
+  return {
+    text,
+    model: profile.model,
+    profileId: profile.id,
+    profileLabel: profile.displayName,
+    provider: profile.provider
+  };
+}
+
+async function invokeAzure(profile: ModelProfile, request: ModelTextRequest): Promise<ModelTextResponse> {
+  const response = await fetch(buildAzureEndpoint(profile), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "api-key": profile.apiKey
+    },
+    body: JSON.stringify({
       messages: request.messages.map((message) => ({
         role: message.role,
         content: message.content
@@ -246,8 +332,12 @@ async function invokeGoogle(profile: ModelProfile, request: ModelTextRequest): P
 }
 
 export async function invokeModelText(profile: ModelProfile, request: ModelTextRequest): Promise<ModelTextResponse> {
-  if (profile.provider === "openai" || profile.provider === "openai_like") {
+  if (OPENAI_COMPATIBLE_PROVIDERS.has(profile.provider)) {
     return invokeOpenAiCompatible(profile, request);
+  }
+
+  if (profile.provider === "azure") {
+    return invokeAzure(profile, request);
   }
 
   if (profile.provider === "anthropic") {

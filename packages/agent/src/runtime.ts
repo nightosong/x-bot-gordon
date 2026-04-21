@@ -35,6 +35,16 @@ const MAX_MCP_ARGUMENT_REPAIRS = 1;
 const MAX_SKILL_HANDLER_DURATION_MS = 20_000;
 const SKILL_HANDLER_PROTOCOL_VERSION = "gordon-skill/v1";
 const MAX_CONVERSATION_CONTEXT_MESSAGES = 8;
+const BASE_URL_REQUIRED_PROVIDERS = new Set([
+  "azure",
+  "openai_like",
+  "doubao",
+  "qwen",
+  "deepseek",
+  "moonshot",
+  "zhipu",
+  "grok"
+]);
 
 interface SkillExecutionResult {
   mode: "context" | "final";
@@ -109,8 +119,8 @@ function ensureRunnableModelProfile(profile: ModelProfile | undefined): ModelPro
     throw new Error("当前 Agent 绑定的模型配置不完整，请补全模型名称和 API Key");
   }
 
-  if (profile.provider === "openai_like" && !profile.baseUrl?.trim()) {
-    throw new Error("当前 Agent 绑定的是 OpenAI-like 模型，但缺少 Base URL");
+  if (BASE_URL_REQUIRED_PROVIDERS.has(profile.provider) && !profile.baseUrl?.trim()) {
+    throw new Error(`当前 Agent 绑定的是 ${profile.displayName || profile.provider} 模型，但缺少 Base URL`);
   }
 
   return profile;

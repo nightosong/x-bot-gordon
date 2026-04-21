@@ -129,7 +129,10 @@
                           <div class="model-config-main">
                             <div
                               class="provider-avatar"
-                              :class="{ 'has-logo': Boolean(getProviderMeta(profile.provider).logo) }"
+                              :class="[
+                                { 'has-logo': Boolean(getProviderMeta(profile.provider).logo) },
+                                `is-provider-${profile.provider.replaceAll('_', '-')}`
+                              ]"
                               aria-hidden="true"
                             >
                               <img
@@ -189,14 +192,24 @@
 
                   <section v-else-if="ui.modelManagement.view === 'picker'" class="model-section">
                     <div class="model-editor model-editor-compact">
-                      <div class="model-section-head model-section-head-leading">
-                        <div class="model-section-leading">
-                          <button type="button" class="model-action-secondary" @click="backModelManagement">返回列表</button>
-                          <div>
-                            <p class="feature-kicker">Provider</p>
-                            <p class="model-section-title">选择供应商</p>
-                          </div>
+                      <div class="model-section-head model-section-head-leading model-section-head-picker">
+                        <div class="model-section-head-start">
+                          <button
+                            type="button"
+                            class="model-icon-button weekly-back-button"
+                            aria-label="返回列表"
+                            title="返回列表"
+                            @click="backModelManagement"
+                            v-html="renderActionIcon('return')"
+                          ></button>
                         </div>
+
+                        <div class="model-section-title-block model-section-title-block-centered">
+                          <p class="feature-kicker">Provider</p>
+                          <p class="model-section-title">选择供应商</p>
+                        </div>
+
+                        <span class="model-section-head-spacer" aria-hidden="true"></span>
                       </div>
 
                       <div class="provider-picker-grid">
@@ -209,7 +222,10 @@
                         >
                           <div
                             class="provider-avatar"
-                            :class="{ 'has-logo': Boolean(getProviderMeta(provider.kind).logo) }"
+                            :class="[
+                              { 'has-logo': Boolean(getProviderMeta(provider.kind).logo) },
+                              `is-provider-${provider.kind.replaceAll('_', '-')}`
+                            ]"
                             aria-hidden="true"
                           >
                             <img
@@ -231,12 +247,24 @@
 
                   <section v-else class="model-section model-section-scroll">
                     <div class="model-editor">
-                      <div class="model-section-head model-section-head-leading">
-                        <div class="model-section-leading">
-                          <button type="button" class="model-action-secondary" @click="backModelManagement">返回列表</button>
+                      <div class="model-section-head model-section-head-leading model-section-head-editor">
+                        <div class="model-section-head-start">
+                          <button
+                            type="button"
+                            class="model-icon-button weekly-back-button"
+                            aria-label="返回列表"
+                            title="返回列表"
+                            @click="backModelManagement"
+                            v-html="renderActionIcon('return')"
+                          ></button>
                         </div>
 
-                        <div class="model-section-actions">
+                        <div class="model-section-title-block model-section-title-block-centered">
+                          <p class="feature-kicker">Configuration</p>
+                          <p class="model-section-title">编辑配置</p>
+                        </div>
+
+                        <div class="model-section-actions model-section-actions-end">
                           <span class="pill pill-neutral">{{ getProviderMeta(ui.modelManagement.editor.provider).label }}</span>
                         </div>
                       </div>
@@ -2164,6 +2192,15 @@ function getProviderFields(provider) {
     { key: "model", label: "模型名称", placeholder: "例如：gpt-4.1", required: true, full: false },
     { key: "apiKey", label: "API Key", placeholder: "sk-...", required: true, full: true }
   ];
+  const openAiCompatibleProviders = new Set([
+    "openai_like",
+    "doubao",
+    "qwen",
+    "deepseek",
+    "moonshot",
+    "zhipu",
+    "grok"
+  ]);
 
   if (provider === "openai") {
     return [
@@ -2183,11 +2220,27 @@ function getProviderFields(provider) {
     ];
   }
 
+  if (provider === "azure") {
+    return [
+      ...commonFields,
+      { key: "baseUrl", label: "Base URL", placeholder: "Azure OpenAI / Azure AI 推理终端地址", required: true, full: false },
+      { key: "notes", label: "备注", placeholder: "可补充资源组、区域或部署说明", required: false, full: true, textarea: true }
+    ];
+  }
+
   if (provider === "anthropic") {
     return [
       ...commonFields,
       { key: "baseUrl", label: "Base URL", placeholder: "可留空，默认官方地址", required: false, full: false },
       { key: "notes", label: "备注", placeholder: "补充配置说明", required: false, full: true, textarea: true }
+    ];
+  }
+
+  if (openAiCompatibleProviders.has(provider)) {
+    return [
+      ...commonFields,
+      { key: "baseUrl", label: "Base URL", placeholder: "兼容 OpenAI 的服务地址", required: true, full: false },
+      { key: "notes", label: "备注", placeholder: "可补充厂商网关、环境或线路说明", required: false, full: true, textarea: true }
     ];
   }
 

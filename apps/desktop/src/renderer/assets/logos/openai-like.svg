@@ -1,0 +1,34 @@
+<svg width="1em" height="1em" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <title>OpenAI-like</title>
+  <defs>
+    <linearGradient id="openai-like-line" x1="3.5" y1="4" x2="19.5" y2="20" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#9ce8ff"></stop>
+      <stop offset="48%" stop-color="#53bcff"></stop>
+      <stop offset="100%" stop-color="#4c79ff"></stop>
+    </linearGradient>
+    <filter id="openai-like-glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="0.45" result="blur"></feGaussianBlur>
+      <feMerge>
+        <feMergeNode in="blur"></feMergeNode>
+        <feMergeNode in="SourceGraphic"></feMergeNode>
+      </feMerge>
+    </filter>
+    <rect id="openai-like-petal" x="9.45" y="3.7" width="5.1" height="8.9" rx="2.55"></rect>
+  </defs>
+  <g
+    fill="none"
+    stroke="url(#openai-like-line)"
+    stroke-width="1.35"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    filter="url(#openai-like-glow)"
+  >
+    <use href="#openai-like-petal"></use>
+    <use href="#openai-like-petal" transform="rotate(60 12 12)"></use>
+    <use href="#openai-like-petal" transform="rotate(120 12 12)"></use>
+    <use href="#openai-like-petal" transform="rotate(180 12 12)"></use>
+    <use href="#openai-like-petal" transform="rotate(240 12 12)"></use>
+    <use href="#openai-like-petal" transform="rotate(300 12 12)"></use>
+    <circle cx="12" cy="12" r="2.15" opacity="0.92"></circle>
+  </g>
+</svg>
