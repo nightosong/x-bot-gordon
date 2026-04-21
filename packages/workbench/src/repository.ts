@@ -643,11 +643,17 @@ function extractWeeklyProgressLineMetadata(rawText: string): { title: string; st
 function createWeeklyProgressTaskItem(
   overrides: Partial<WeeklyProgressTaskItem> = {}
 ): WeeklyProgressTaskItem {
+  const timestamp = new Date().toISOString();
+  const createdAt = String(overrides.createdAt ?? "").trim() || timestamp;
+  const updatedAt = String(overrides.updatedAt ?? "").trim() || createdAt;
+
   return {
     id: overrides.id ?? `weekly_task_${randomUUID()}`,
     title: overrides.title ?? "",
     detail: overrides.detail ?? "",
     status: overrides.status ?? "planned",
+    createdAt,
+    updatedAt,
     children: Array.isArray(overrides.children) ? overrides.children : []
   };
 }
@@ -766,6 +772,15 @@ function getWeeklyTaskChildren(task: Partial<WeeklyProgressTaskItem> | null | un
   return Array.isArray(task?.children) ? task.children : [];
 }
 
+function normalizeWeeklyTaskTimestamp(
+  value: unknown,
+  fallbackTimestamp: string
+): string {
+  const normalized = String(value ?? "").trim();
+
+  return normalized || fallbackTimestamp;
+}
+
 function hasWeeklyTaskContent(task: Partial<WeeklyProgressTaskItem> | null | undefined): boolean {
   return Boolean(String(task?.title ?? "").trim() || String(task?.detail ?? "").trim() || getWeeklyTaskChildren(task).length);
 }
@@ -809,7 +824,8 @@ function deriveWeeklyProgressProjectStatus(tasks: WeeklyProgressTaskItem[]): Wee
 }
 
 function normalizeWeeklyProgressTaskItem(
-  task: Partial<WeeklyProgressTaskItem> | null | undefined
+  task: Partial<WeeklyProgressTaskItem> | null | undefined,
+  fallbackTimestamp = new Date().toISOString()
 ): WeeklyProgressTaskItem | null {
   if (!task) {
     return null;
@@ -818,8 +834,10 @@ function normalizeWeeklyProgressTaskItem(
   const title = String(task.title ?? "").trim();
   const detail = String(task.detail ?? "").trim();
   const children = getWeeklyTaskChildren(task)
-    .map((child) => normalizeWeeklyProgressTaskItem(child))
+    .map((child) => normalizeWeeklyProgressTaskItem(child, fallbackTimestamp))
     .filter((child): child is WeeklyProgressTaskItem => Boolean(child));
+  const createdAt = normalizeWeeklyTaskTimestamp(task.createdAt ?? task.updatedAt, fallbackTimestamp);
+  const updatedAt = normalizeWeeklyTaskTimestamp(task.updatedAt ?? task.createdAt, createdAt);
 
   if (!title && !detail && !children.length) {
     return null;
@@ -830,12 +848,15 @@ function normalizeWeeklyProgressTaskItem(
     title: title || detail || "未命名任务",
     detail,
     status: normalizeWeeklyProgressItemStatus(task.status),
+    createdAt,
+    updatedAt,
     children
   });
 }
 
 function normalizeWeeklyProgressProjectItem(
-  project: Partial<WeeklyProgressProjectItem> | null | undefined
+  project: Partial<WeeklyProgressProjectItem> | null | undefined,
+  fallbackTaskTimestamp = new Date().toISOString()
 ): WeeklyProgressProjectItem | null {
   if (!project) {
     return null;
@@ -845,7 +866,7 @@ function normalizeWeeklyProgressProjectItem(
   const note = String(project.note ?? "").trim();
   const tasks = Array.isArray(project.tasks)
     ? project.tasks
-        .map((task) => normalizeWeeklyProgressTaskItem(task))
+        .map((task) => normalizeWeeklyProgressTaskItem(task, fallbackTaskTimestamp))
         .filter((task): task is WeeklyProgressTaskItem => Boolean(task))
     : [];
 
@@ -862,7 +883,10 @@ function normalizeWeeklyProgressProjectItem(
   });
 }
 
-function parseLegacyWeeklyProgressContent(content: string | undefined): WeeklyProgressProjectItem[] {
+function parseLegacyWeeklyProgressContent(
+  content: string | undefined,
+  fallbackTaskTimestamp = new Date().toISOString()
+): WeeklyProgressProjectItem[] {
   const lines = String(content ?? "").replace(/\r\n?/g, "\n").split("\n");
   const projects: WeeklyProgressProjectItem[] = [];
   let currentProject: WeeklyProgressProjectItem | null = null;
@@ -927,7 +951,9 @@ function parseLegacyWeeklyProgressContent(content: string | undefined): WeeklyPr
     const parentTask = taskDepth > 0 ? taskStack[taskDepth - 1] ?? null : null;
     const task = createWeeklyProgressTaskItem({
       title: normalizedTitle,
-      status: metadata.status ?? "planned"
+      status: metadata.status ?? "planned",
+      createdAt: fallbackTaskTimestamp,
+      updatedAt: fallbackTaskTimestamp
     });
 
     if (parentTask) {
@@ -941,7 +967,7 @@ function parseLegacyWeeklyProgressContent(content: string | undefined): WeeklyPr
   }
 
   return projects
-    .map((project) => normalizeWeeklyProgressProjectItem(project))
+    .map((project) => normalizeWeeklyProgressProjectItem(project, fallbackTaskTimestamp))
     .filter((project): project is WeeklyProgressProjectItem => Boolean(project));
 }
 
@@ -987,11 +1013,12 @@ function sortWeeklyProgress(records: WeeklyProgressRecord[]): WeeklyProgressReco
 }
 
 function normalizeWeeklyProgressRecord(record: WeeklyProgressRecord): WeeklyProgressRecord {
+  const taskFallbackTimestamp = String(record.createdAt ?? "").trim() || new Date().toISOString();
   const normalizedProjects = (Array.isArray(record.projects) && record.projects.length
     ? record.projects
-    : parseLegacyWeeklyProgressContent(record.content)
+    : parseLegacyWeeklyProgressContent(record.content, taskFallbackTimestamp)
   )
-    .map((project) => normalizeWeeklyProgressProjectItem(project))
+    .map((project) => normalizeWeeklyProgressProjectItem(project, taskFallbackTimestamp))
     .filter((project): project is WeeklyProgressProjectItem => Boolean(project));
   const normalizedTemplates = normalizeWeeklyReportTemplates(record);
 
@@ -1002,6 +1029,7 @@ function normalizeWeeklyProgressRecord(record: WeeklyProgressRecord): WeeklyProg
     reportTemplates: normalizedTemplates.reportTemplates,
     selectedReportTemplateId: normalizedTemplates.selectedReportTemplateId,
     reportTemplate: normalizedTemplates.reportTemplate,
+    generatedDailyReport: record.generatedDailyReport ?? "",
     generatedReport: record.generatedReport ?? "",
     status: record.status ?? "archived"
   };
@@ -1022,6 +1050,7 @@ function createWeeklyProgressRecord(referenceDate = new Date()): WeeklyProgressR
     reportTemplates: [createDefaultWeeklyReportTemplateItem()],
     selectedReportTemplateId: DEFAULT_WEEKLY_REPORT_TEMPLATE_ID,
     reportTemplate: DEFAULT_WEEKLY_REPORT_TEMPLATE,
+    generatedDailyReport: "",
     generatedReport: "",
     status: "active",
     createdAt: timestamp,

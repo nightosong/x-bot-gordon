@@ -41,6 +41,7 @@
           :data-weekly-task-input="task.id"
           placeholder="输入任务名称"
           :disabled="isTaskRewriting(task.id)"
+          @input="emit('touch-task', { projectId, taskId: task.id })"
         />
 
         <button
@@ -88,6 +89,7 @@
         @add-child="emit('add-child', $event)"
         @remove-task="emit('remove-task', $event)"
         @set-status="emit('set-status', $event)"
+        @touch-task="emit('touch-task', $event)"
         @optimize-task="emit('optimize-task', $event)"
       />
     </article>
@@ -128,7 +130,7 @@ const props = defineProps({
   }
 });
 
-const emit = defineEmits(["add-child", "remove-task", "set-status", "optimize-task"]);
+const emit = defineEmits(["add-child", "remove-task", "set-status", "touch-task", "optimize-task"]);
 
 const statusEntries = computed(() => Object.entries(props.statusMeta ?? {}));
 

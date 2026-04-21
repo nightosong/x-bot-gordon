@@ -414,6 +414,7 @@ canvas {
   padding: clamp(14px, 1.1vw, 18px);
   display: flex;
   flex-direction: column;
+  cursor: pointer;
   --graffiti-left: auto;
   --graffiti-right: -12px;
   --graffiti-top: auto;
@@ -1868,11 +1869,24 @@ canvas {
 }
 
 .weekly-panel-title {
-  font-size: clamp(24px, 2vw, 30px);
+  font-size: clamp(20px, 1.55vw, 24px);
 }
 
 .weekly-panel-title-centered {
   text-align: center;
+}
+
+.weekly-panel-center {
+  min-width: 0;
+  justify-self: center;
+}
+
+.weekly-panel-center-row {
+  display: grid;
+  grid-template-columns: auto minmax(220px, auto);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 .weekly-panel-title-slot {
@@ -1880,15 +1894,14 @@ canvas {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 1 1 auto;
   min-width: 0;
-  padding-right: 44px;
+  padding: 0 52px 0 12px;
 }
 
 .weekly-autosave-hint {
   position: absolute;
-  top: 2px;
   right: 0;
+  bottom: 2px;
   color: #7ce7d7;
   font-size: 10px;
   line-height: 1;
@@ -1911,6 +1924,7 @@ canvas {
   min-height: 0;
   margin: 6px 0;
   overflow: auto;
+  scrollbar-gutter: stable both-edges;
   overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
@@ -1949,7 +1963,7 @@ canvas {
 
 .weekly-panel-head-compact {
   display: grid;
-  grid-template-columns: minmax(120px, auto) minmax(0, 1fr) minmax(120px, auto);
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 16px;
   position: sticky;
@@ -1963,14 +1977,17 @@ canvas {
 .weekly-panel-side {
   display: flex;
   align-items: center;
+  min-width: 0;
 }
 
 .weekly-panel-side-start {
   justify-content: flex-start;
+  justify-self: start;
 }
 
 .weekly-panel-side-end {
   justify-content: flex-end;
+  justify-self: end;
 }
 
 .weekly-inline-actions {
@@ -2114,9 +2131,68 @@ canvas {
   gap: 16px;
 }
 
+.weekly-report-toolbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.weekly-report-toolbar-side {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.weekly-report-mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: min(220px, 100%);
+  padding: 4px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.weekly-report-mode-tab {
+  min-height: 34px;
+  padding: 0 16px;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(247, 243, 235, 0.68);
+  font-size: 13px;
+  font-weight: 700;
+  transition: background 180ms ease, color 180ms ease, transform 180ms ease;
+}
+
+.weekly-report-mode-tab:hover {
+  color: var(--text);
+}
+
+.weekly-report-mode-tab.is-active {
+  background: linear-gradient(135deg, rgba(92, 225, 194, 0.24), rgba(245, 200, 107, 0.2));
+  color: var(--text);
+}
+
+.weekly-report-mode-meta,
+.weekly-report-mode-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(247, 243, 235, 0.72);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .weekly-template-toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: end;
   gap: 12px;
 }
@@ -2139,6 +2215,59 @@ canvas {
   justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.weekly-report-output-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.weekly-report-feedback {
+  margin: -2px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(247, 243, 235, 0.68);
+}
+
+.weekly-report-feedback.is-neutral {
+  color: rgba(247, 243, 235, 0.68);
+}
+
+.weekly-report-feedback.is-success {
+  color: #7ce7d7;
+}
+
+.weekly-report-feedback.is-warning {
+  color: #ffd995;
+}
+
+.weekly-report-feedback.is-danger {
+  color: #ffb8aa;
+}
+
+.weekly-report-run-button {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+}
+
+.weekly-report-run-button.is-loading {
+  border-color: rgba(92, 225, 194, 0.22);
+  background: rgba(92, 225, 194, 0.1);
+  color: #bcf8ea;
+}
+
+.weekly-report-run-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.weekly-report-run-icon .action-icon {
+  width: 16px;
+  height: 16px;
 }
 
 .weekly-textarea {
@@ -2511,15 +2640,15 @@ canvas {
 }
 
 .weekly-task-index-button.is-in-progress {
-  border-color: rgba(92, 225, 194, 0.22);
-  background: rgba(92, 225, 194, 0.14);
-  color: #bcf8ea;
+  border-color: rgba(99, 164, 255, 0.24);
+  background: rgba(99, 164, 255, 0.14);
+  color: #cfe1ff;
 }
 
 .weekly-task-index-button.is-completed {
-  border-color: rgba(245, 200, 107, 0.24);
-  background: rgba(245, 200, 107, 0.16);
-  color: #ffe6b0;
+  border-color: rgba(88, 206, 130, 0.24);
+  background: rgba(88, 206, 130, 0.14);
+  color: #cbf4d7;
 }
 
 .weekly-task-index-button.is-blocked {
@@ -2533,11 +2662,11 @@ canvas {
 }
 
 .weekly-task-status-swatch.is-in-progress {
-  background: #5ce1c2;
+  background: #63a4ff;
 }
 
 .weekly-task-status-swatch.is-completed {
-  background: #f5c86b;
+  background: #58ce82;
 }
 
 .weekly-task-status-swatch.is-blocked {
@@ -3752,6 +3881,16 @@ canvas {
     grid-template-columns: 1fr;
   }
 
+  .weekly-panel-center {
+    width: 100%;
+  }
+
+  .weekly-panel-center-row {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    width: 100%;
+  }
+
   .weekly-panel-side,
   .weekly-panel-side-start,
   .weekly-panel-side-end {
@@ -3768,7 +3907,8 @@ canvas {
 
   .weekly-overview-grid,
   .weekly-editor-toolbar,
-  .weekly-template-toolbar {
+  .weekly-template-toolbar,
+  .weekly-report-toolbar {
     grid-template-columns: 1fr;
   }
 
@@ -3802,6 +3942,16 @@ canvas {
 
   .weekly-editor-tab {
     flex: 1 1 0;
+  }
+
+  .weekly-panel-title-slot,
+  .weekly-report-mode-tabs {
+    width: 100%;
+  }
+
+  .weekly-report-toolbar-side {
+    justify-content: flex-start;
+    flex-wrap: wrap;
   }
 
   .weekly-report-support-grid {

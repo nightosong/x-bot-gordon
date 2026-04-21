@@ -4,6 +4,7 @@ import type {
   AgentProfile,
   AgentRunRequest,
   CommandWorkshopSession,
+  DailyReportGenerateRequest,
   GithubSkillImportRequest,
   McpToolCallRequest,
   McpServerConfig,
@@ -52,6 +53,8 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
   deleteWeeklyProgress: (recordId: string) => ipcRenderer.invoke("gordon:weekly-progress:delete", recordId),
   rewriteWeeklyProgressItem: (request: WeeklyProgressRewriteRequest) =>
     ipcRenderer.invoke("gordon:weekly-progress:rewrite", request),
+  generateDailyProgressReport: (request: DailyReportGenerateRequest) =>
+    ipcRenderer.invoke("gordon:weekly-progress:generate-daily-report", request),
   generateWeeklyProgressReport: (request: WeeklyReportGenerateRequest) =>
     ipcRenderer.invoke("gordon:weekly-progress:generate-report", request)
 });

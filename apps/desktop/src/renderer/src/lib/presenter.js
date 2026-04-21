@@ -360,11 +360,17 @@ export function createWeeklyDraftId(prefix) {
 }
 
 export function createWeeklyTaskDraft(task = null) {
+  const defaultTimestamp = new Date().toISOString();
+  const createdAt = task ? String(task?.createdAt ?? task?.updatedAt ?? "").trim() : defaultTimestamp;
+  const updatedAt = task ? String(task?.updatedAt ?? task?.createdAt ?? "").trim() : defaultTimestamp;
+
   return {
     id: task?.id ?? createWeeklyDraftId("weekly_task"),
     title: task?.title ?? "",
     detail: task?.detail ?? "",
     status: normalizeWeeklyProgressItemStatus(task?.status ?? "planned"),
+    createdAt,
+    updatedAt: updatedAt || createdAt,
     children: Array.isArray(task?.children) ? task.children.map((child) => createWeeklyTaskDraft(child)) : []
   };
 }
@@ -403,6 +409,7 @@ export function cloneWeeklyProgressRecord(record = null) {
     reportTemplates,
     selectedReportTemplateId: String(record.selectedReportTemplateId ?? reportTemplates[0]?.id ?? ""),
     reportTemplate: String(record.reportTemplate ?? ""),
+    generatedDailyReport: String(record.generatedDailyReport ?? ""),
     generatedReport: String(record.generatedReport ?? ""),
     projects: Array.isArray(record.projects) ? record.projects.map((project) => createWeeklyProjectDraft(project)) : []
   };
@@ -525,6 +532,8 @@ export function sanitizeWeeklyTaskDraft(task) {
     title: title || detail || "未命名任务",
     detail,
     status: normalizeWeeklyProgressItemStatus(task.status),
+    createdAt: String(task.createdAt ?? task.updatedAt ?? "").trim(),
+    updatedAt: String(task.updatedAt ?? task.createdAt ?? "").trim(),
     children
   };
 }
@@ -611,6 +620,7 @@ export function sanitizeWeeklyProgressRecord(record) {
     reportTemplates,
     selectedReportTemplateId: selectedReportTemplate?.id ?? "",
     reportTemplate: String(selectedReportTemplate?.content ?? record.reportTemplate ?? "").trim(),
+    generatedDailyReport: String(record.generatedDailyReport ?? "").trim(),
     generatedReport: String(record.generatedReport ?? "").trim(),
     projects,
     content: serializeWeeklyProgressProjects(projects)

@@ -126,6 +126,8 @@ export interface WeeklyProgressTaskItem {
   title: string;
   detail: string;
   status: WeeklyProgressItemStatus;
+  createdAt: string;
+  updatedAt: string;
   children: WeeklyProgressTaskItem[];
 }
 
@@ -155,6 +157,7 @@ export interface WeeklyProgressRecord {
   reportTemplates: WeeklyReportTemplateItem[];
   selectedReportTemplateId: string;
   reportTemplate: string;
+  generatedDailyReport: string;
   generatedReport: string;
   status: WeeklyProgressStatus;
   createdAt: string;
@@ -443,6 +446,12 @@ export interface WeeklyReportGenerateRequest {
   weekTitle: string;
   content: string;
   reportTemplate: string;
+}
+
+export interface DailyReportGenerateRequest {
+  dateTitle: string;
+  weekTitle: string;
+  content: string;
 }
 
 export interface WorkbenchSnapshot {

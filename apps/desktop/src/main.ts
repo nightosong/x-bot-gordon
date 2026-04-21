@@ -30,7 +30,7 @@ import {
   upsertModelProfile,
   upsertSkillDefinition
 } from "../../../packages/workbench/src/index.js";
-import { generateWeeklyProgressReport, invokeActiveModel, rewriteWeeklyProgressItem } from "./ai.js";
+import { generateDailyProgressReport, generateWeeklyProgressReport, invokeActiveModel, rewriteWeeklyProgressItem } from "./ai.js";
 
 const currentFilePath = fileURLToPath(import.meta.url);
 const currentDir = path.dirname(currentFilePath);
@@ -94,6 +94,9 @@ app.whenReady().then(async () => {
   ipcMain.handle("gordon:weekly-progress:save", async (_event, record) => saveWeeklyProgress(record));
   ipcMain.handle("gordon:weekly-progress:delete", async (_event, recordId: string) => deleteWeeklyProgress(recordId));
   ipcMain.handle("gordon:weekly-progress:rewrite", async (_event, request) => rewriteWeeklyProgressItem(request));
+  ipcMain.handle("gordon:weekly-progress:generate-daily-report", async (_event, request) =>
+    generateDailyProgressReport(request)
+  );
   ipcMain.handle("gordon:weekly-progress:generate-report", async (_event, request) =>
     generateWeeklyProgressReport(request)
   );
