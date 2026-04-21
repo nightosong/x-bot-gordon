@@ -234,8 +234,6 @@ function createExtensionsEditorState(kind, entry = null) {
       values: {
         name: entry?.name ?? "",
         description: entry?.description ?? "",
-        tags: (entry?.tags ?? []).join(", "),
-        skillKind: entry?.kind ?? "prompt",
         promptTemplate: entry?.promptTemplate ?? "",
         handlerRef: entry?.handlerRef ?? ""
       }
@@ -1066,7 +1064,7 @@ function getSkillSourceLabel(skill) {
     return "GitHub";
   }
 
-  return "手工定义";
+  return skill?.source?.localPath?.trim() ? "本地 Skill" : "手工定义";
 }
 
 function getSkillSourceDetail(skill) {
@@ -1081,11 +1079,27 @@ function getSkillSourceDetail(skill) {
 }
 
 function getSkillLocalMirrorDetail(skill) {
-  if (skill?.source?.type !== "github") {
-    return "";
-  }
+  return skill?.source?.localPath?.trim() || "";
+}
 
-  return skill.source.localPath?.trim() || "";
+const SKILL_DISPLAY_NAME_MAP = {
+  plan: "任务拆解",
+  code: "代码助手",
+  review: "问题审查",
+  "karpathy-guidelines": "Karpathy 准则",
+  "self-improvement": "自我改进",
+  "deep-research": "深度研究"
+};
+
+function getSkillDisplayName(skillOrName) {
+  const rawName = typeof skillOrName === "string" ? skillOrName : String(skillOrName?.name ?? "");
+  return SKILL_DISPLAY_NAME_MAP[rawName] ?? rawName;
+}
+
+function getSkillOptionLabel(skill) {
+  const rawName = String(skill?.name ?? "");
+  const displayName = getSkillDisplayName(rawName);
+  return displayName && displayName !== rawName ? `${displayName} / ${rawName}` : rawName;
 }
 
 function getMcpServerById(serverId) {
@@ -2077,8 +2091,8 @@ function renderSkillDefinitionsList() {
           <div class="model-config-main">
             ${renderExtensionAvatar(skill.name, "extension-avatar-skill")}
             <div>
-              <p class="model-card-title">${escapeHtml(skill.name)}</p>
-              <p class="model-card-meta">${escapeHtml(skill.kind === "workflow" ? "Workflow Skill" : "Prompt Skill")} / ${escapeHtml(getSkillSourceLabel(skill))}</p>
+              <p class="model-card-title">${escapeHtml(getSkillDisplayName(skill))}</p>
+              <p class="model-card-meta">${escapeHtml((getSkillDisplayName(skill) !== skill.name ? `${skill.name} / ` : "") + getSkillSourceLabel(skill))}</p>
             </div>
           </div>
           <div class="model-card-actions model-card-actions-inline">
@@ -2103,8 +2117,7 @@ function renderSkillDefinitionsList() {
         <div class="extension-tag-row">
           ${isBuiltin ? '<span class="pill">默认能力</span>' : ""}
           <span class="pill pill-neutral">${escapeHtml(getSkillSourceLabel(skill))}</span>
-          ${getSkillLocalMirrorDetail(skill) ? '<span class="pill">已镜像到本地</span>' : ""}
-          ${renderTagPills(skill.tags, "未设置标签")}
+          ${getSkillLocalMirrorDetail(skill) ? '<span class="pill">本地目录</span>' : ""}
         </div>
       </article>
     `;
@@ -2254,7 +2267,7 @@ function renderAgentEditorForm(editor) {
 
   const skillItems = state.skillDefinitions.map((skill) => ({
     id: skill.id,
-    label: `${skill.name} / ${skill.kind === "workflow" ? "Workflow" : "Prompt"}`,
+    label: getSkillOptionLabel(skill),
     name: "allowedSkillIds"
   }));
   const serverItems = state.mcpServers.map((server) => ({
@@ -2319,25 +2332,12 @@ function renderSkillEditorForm(editor) {
     <form id="skill-definition-form" class="model-form">
       <label class="field">
         <span class="field-label">Skill 名称</span>
-        <input class="field-input" name="name" value="${escapeHtml(editor.values.name)}" placeholder="例如：周报生成" required />
-      </label>
-
-      <label class="field">
-        <span class="field-label">Skill 类型</span>
-        <select class="field-input" name="skillKind">
-          <option value="prompt" ${editor.values.skillKind === "prompt" ? "selected" : ""}>prompt</option>
-          <option value="workflow" ${editor.values.skillKind === "workflow" ? "selected" : ""}>workflow</option>
-        </select>
+        <input class="field-input" name="name" value="${escapeHtml(editor.values.name)}" placeholder="例如：karpathy-guidelines" required />
       </label>
 
       <label class="field field-full">
         <span class="field-label">说明</span>
         <textarea class="field-textarea" name="description" placeholder="描述这个 Skill 适用于哪些场景">${escapeHtml(editor.values.description)}</textarea>
-      </label>
-
-      <label class="field field-full">
-        <span class="field-label">标签</span>
-        <input class="field-input" name="tags" value="${escapeHtml(editor.values.tags)}" placeholder="例如：weekly-report, writing, internal" />
       </label>
 
       <label class="field field-full">
@@ -2352,7 +2352,7 @@ function renderSkillEditorForm(editor) {
 
       <label class="field field-full">
         <span class="field-label">协议约定</span>
-        <textarea class="field-textarea" readonly>Workflow handler 会在 Skill 本地目录下执行，并通过 stdin 接收 JSON。当前协议版本为 gordon-skill/v1；stdout 推荐返回 {"protocolVersion":"gordon-skill/v1","mode":"context|final","content":"..."}。</textarea>
+        <textarea class="field-textarea" readonly>如果 Skill 目录里存在可执行 handler，Gordon 会自动按 handler 模式执行；否则默认按 prompt 模式处理。当前协议版本为 gordon-skill/v1；stdout 推荐返回 {"protocolVersion":"gordon-skill/v1","mode":"context|final","content":"..."}。</textarea>
       </label>
 
       <div class="form-actions">
@@ -2383,7 +2383,7 @@ function renderSkillImportForm(editor) {
 
       <label class="field field-full">
         <span class="field-label">说明</span>
-        <textarea class="field-textarea" readonly>当前会从 GitHub 读取整个 Skill 目录，镜像到 Gordon 本地缓存，并把 SKILL.md 映射为本地 SkillDefinition。导入后你仍然可以在列表里继续编辑。</textarea>
+        <textarea class="field-textarea" readonly>当前会从 GitHub 读取整个 Skill 目录，镜像到 Gordon 的 skills/ 本地 Skill 目录，并把 SKILL.md 映射为本地 SkillDefinition。导入后你仍然可以在列表里继续编辑。</textarea>
       </label>
 
       <div class="form-actions">
@@ -2726,7 +2726,7 @@ function renderCommandWorkshopSettingsFields(config, enabledAgents, selectedAgen
             .map(
               (skill) => `
                 <option value="${escapeHtml(skill.id)}" ${skill.id === config.skillId ? "selected" : ""}>
-                  ${escapeHtml(skill.name)} / ${escapeHtml(skill.kind)}
+                  ${escapeHtml(getSkillOptionLabel(skill))}
                 </option>
               `
             )
@@ -3050,7 +3050,7 @@ function renderAgentRunnerWorkspace() {
                   .map(
                     (skill) => `
                       <option value="${escapeHtml(skill.id)}" ${skill.id === state.agentRunner.skillId ? "selected" : ""}>
-                        ${escapeHtml(skill.name)} / ${escapeHtml(skill.kind)}
+                        ${escapeHtml(getSkillOptionLabel(skill))}
                       </option>
                     `
                   )
@@ -4543,14 +4543,15 @@ async function handleSkillDefinitionSubmit(form) {
 
   const formData = new FormData(form);
   const existing = state.skillDefinitions.find((entry) => entry.id === state.extensionsEditor.entryId);
+  const handlerRef = String(formData.get("handlerRef") ?? "").trim();
   const skill = {
     id: state.extensionsEditor.entryId ?? `skill_${Date.now()}`,
     name: String(formData.get("name") ?? "").trim(),
     description: String(formData.get("description") ?? "").trim(),
-    tags: normalizeTagList(formData.get("tags")),
-    kind: String(formData.get("skillKind") ?? "prompt"),
+    tags: [],
+    kind: handlerRef || existing?.kind === "workflow" ? "workflow" : "prompt",
     promptTemplate: String(formData.get("promptTemplate") ?? "").trim(),
-    handlerRef: String(formData.get("handlerRef") ?? "").trim(),
+    handlerRef,
     source: existing?.source ?? { type: "manual" },
     enabled: state.extensionsEditor.mode === "edit"
       ? existing?.enabled ?? true

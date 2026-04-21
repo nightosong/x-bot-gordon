@@ -1,5 +1,5 @@
 import path from "node:path";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 
 import { resolveFromRoot } from "../../shared/src/index.js";
@@ -62,8 +62,8 @@ function getSkillDefinitionsFilePath(): string {
   return resolveFromRoot("data", "workbench", "skills.json");
 }
 
-function getGithubSkillCacheDirectoryPath(): string {
-  return resolveFromRoot("data", "workbench", "github-skills");
+function getSkillsRootDirectoryPath(): string {
+  return resolveFromRoot("skills");
 }
 
 function getMcpServersFilePath(): string {
@@ -90,8 +90,36 @@ function encodeGithubPath(value: string): string {
     .join("/");
 }
 
-function sanitizeFileSegment(value: string): string {
-  return value.trim().replace(/[^a-zA-Z0-9._-]+/g, "_");
+function sanitizeSkillFolderName(value: string): string {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return normalized || "skill";
+}
+
+async function pathExists(targetPath: string): Promise<boolean> {
+  try {
+    await access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function buildSkillLocalDirectory(folderName: string): string {
+  return path.join(getSkillsRootDirectoryPath(), folderName);
+}
+
+function escapeFrontmatterValue(value: string): string {
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+function isPathInsideDirectory(basePath: string, targetPath: string): boolean {
+  const relative = path.relative(basePath, targetPath);
+  return !relative.startsWith("..") && !path.isAbsolute(relative);
 }
 
 function sanitizeRelativePath(relativePath: string): string {
@@ -221,22 +249,6 @@ function inferImportedSkillKind(markdown: string, metadata: Record<string, strin
   return "prompt";
 }
 
-function inferImportedSkillTags(skillPath: string, metadata: Record<string, string>): string[] {
-  if (metadata.tags?.trim()) {
-    return metadata.tags
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean);
-  }
-
-  return skillPath
-    .split("/")
-    .map((segment) => segment.trim())
-    .filter(Boolean)
-    .slice(-2)
-    .filter((segment) => segment !== "SKILL.md");
-}
-
 function inferImportedSkillHandlerRef(metadata: Record<string, string>): string {
   const handlerRef = metadata.handlerRef?.trim() || metadata.handler?.trim() || metadata.entrypoint?.trim();
   return handlerRef ?? "";
@@ -246,20 +258,35 @@ function getGithubSkillRootPath(skillFilePath: string): string {
   return skillFilePath.endsWith("SKILL.md") ? skillFilePath.slice(0, -"SKILL.md".length).replace(/\/+$/, "") : skillFilePath;
 }
 
-function buildGithubSkillLocalDirectory(repo: string, ref: string, skillRootPath: string): string {
-  const [owner, repository] = repo.split("/");
-  const basePath = [
-    getGithubSkillCacheDirectoryPath(),
-    sanitizeFileSegment(owner || "github"),
-    sanitizeFileSegment(repository || "skill"),
-    sanitizeFileSegment(ref || "main")
-  ];
-  const skillSegments = skillRootPath
-    .split("/")
-    .filter(Boolean)
-    .map((segment) => sanitizeFileSegment(segment));
+async function resolveAvailableSkillLocalDirectory(
+  preferredSkillName: string,
+  currentSkills: SkillDefinition[],
+  ignoreSkillId?: string
+): Promise<string> {
+  const preferredFolderName = sanitizeSkillFolderName(preferredSkillName);
+  const occupiedPaths = new Set(
+    currentSkills
+      .filter((entry) => entry.id !== ignoreSkillId)
+      .map((entry) => entry.source?.localPath?.trim())
+      .filter((entry): entry is string => Boolean(entry))
+  );
 
-  return path.join(...basePath, ...skillSegments);
+  for (let index = 0; index < 999; index += 1) {
+    const suffix = index === 0 ? "" : `-${index + 1}`;
+    const candidatePath = buildSkillLocalDirectory(`${preferredFolderName}${suffix}`);
+
+    if (occupiedPaths.has(candidatePath)) {
+      continue;
+    }
+
+    if (await pathExists(candidatePath)) {
+      continue;
+    }
+
+    return candidatePath;
+  }
+
+  return buildSkillLocalDirectory(`${preferredFolderName}-${Date.now()}`);
 }
 
 function toPosixRelativePath(basePath: string, targetPath: string): string {
@@ -302,8 +329,12 @@ async function fetchGithubFileContent(downloadUrl: string): Promise<string> {
   return response.text();
 }
 
-async function mirrorGithubSkillDirectory(repo: string, ref: string, skillRootPath: string): Promise<string> {
-  const localDirectory = buildGithubSkillLocalDirectory(repo, ref, skillRootPath);
+async function mirrorGithubSkillDirectory(
+  repo: string,
+  ref: string,
+  skillRootPath: string,
+  localDirectory: string
+): Promise<string> {
   const filesToWrite: Array<{ relativePath: string; content: string }> = [];
 
   const walkDirectory = async (directoryPath: string): Promise<void> => {
@@ -419,7 +450,7 @@ function buildImportedSkillDefinition(markdown: string, source: {
     id: `skill_${randomUUID()}`,
     name: inferredName,
     description,
-    tags: inferImportedSkillTags(source.path, metadata),
+    tags: [],
     kind: inferImportedSkillKind(body, metadata),
     promptTemplate: body.trim(),
     handlerRef: inferImportedSkillHandlerRef(metadata) || `github:${source.repo}/${source.ref}/${source.path}`,
@@ -434,6 +465,62 @@ function buildImportedSkillDefinition(markdown: string, source: {
     },
     enabled: true,
     updatedAt: timestamp
+  };
+}
+
+async function resolveSkillLocalDirectory(
+  skill: SkillDefinition,
+  currentSkills: SkillDefinition[],
+  existingSkill?: SkillDefinition
+): Promise<string> {
+  const existingLocalPath = existingSkill?.source?.localPath?.trim();
+
+  if (existingLocalPath) {
+    return existingLocalPath;
+  }
+
+  const sourceLocalPath = skill.source?.localPath?.trim();
+
+  if (sourceLocalPath) {
+    return sourceLocalPath;
+  }
+
+  return resolveAvailableSkillLocalDirectory(skill.name, currentSkills, skill.id);
+}
+
+function serializeSkillDefinitionMarkdown(skill: SkillDefinition): string {
+  const lines = [
+    "---",
+    `name: ${escapeFrontmatterValue(skill.name.trim() || "Untitled Skill")}`,
+    `description: ${escapeFrontmatterValue(skill.description.trim())}`
+  ];
+  const handlerRef = skill.handlerRef?.trim();
+
+  if (handlerRef) {
+    lines.push(`handlerRef: ${escapeFrontmatterValue(handlerRef)}`);
+  }
+
+  lines.push("---", "", skill.promptTemplate.trim());
+  return `${lines.join("\n").trim()}\n`;
+}
+
+async function materializeSkillDirectory(
+  skill: SkillDefinition,
+  currentSkills: SkillDefinition[],
+  existingSkill?: SkillDefinition
+): Promise<SkillDefinition> {
+  const localDirectory = await resolveSkillLocalDirectory(skill, currentSkills, existingSkill);
+
+  await mkdir(localDirectory, { recursive: true });
+  await writeFile(path.join(localDirectory, "SKILL.md"), serializeSkillDefinitionMarkdown(skill), "utf8");
+
+  return {
+    ...skill,
+    source: {
+      type: skill.source?.type ?? "manual",
+      ...(skill.source ?? {}),
+      localPath: localDirectory
+    }
   };
 }
 
@@ -1165,13 +1252,15 @@ export async function upsertSkillDefinition(skill: SkillDefinition): Promise<Ski
   }
 
   const current = sortByUpdatedAtDescending(await readWorkbenchCollection<SkillDefinition>(getSkillDefinitionsFilePath()));
+  const existingSkill = current.find((entry) => entry.id === skill.id);
+  const materializedSkill = await materializeSkillDirectory(skill, current, existingSkill);
   const existingIndex = current.findIndex((entry) => entry.id === skill.id);
   const nextSkills = [...current];
 
   if (existingIndex >= 0) {
-    nextSkills[existingIndex] = skill;
+    nextSkills[existingIndex] = materializedSkill;
   } else {
-    nextSkills.unshift(skill);
+    nextSkills.unshift(materializedSkill);
   }
 
   await writeWorkbenchCollection(getSkillDefinitionsFilePath(), sortByUpdatedAtDescending(nextSkills));
@@ -1181,11 +1270,6 @@ export async function upsertSkillDefinition(skill: SkillDefinition): Promise<Ski
 export async function importSkillDefinitionFromGithub(request: GithubSkillImportRequest): Promise<SkillDefinition[]> {
   const fetched = await fetchGithubSkillMarkdown(request);
   const skillRootPath = getGithubSkillRootPath(fetched.path);
-  const localPath = await mirrorGithubSkillDirectory(fetched.repo, fetched.ref, skillRootPath);
-  const importedSkill = buildImportedSkillDefinition(fetched.markdown, {
-    ...fetched,
-    localPath
-  });
   const current = sortByUpdatedAtDescending(await readWorkbenchCollection<SkillDefinition>(getSkillDefinitionsFilePath()));
   const existingIndex = current.findIndex(
     (entry) =>
@@ -1194,6 +1278,21 @@ export async function importSkillDefinitionFromGithub(request: GithubSkillImport
       entry.source.ref === fetched.ref &&
       entry.source.path === fetched.path
   );
+  const existingSkill = existingIndex >= 0 ? current[existingIndex] : undefined;
+  const importedPreview = buildImportedSkillDefinition(fetched.markdown, {
+    ...fetched,
+    localPath: existingSkill?.source?.localPath?.trim() || ""
+  });
+  const localPath =
+    existingSkill?.source?.localPath?.trim() ||
+    (await resolveAvailableSkillLocalDirectory(importedPreview.name, current, existingSkill?.id));
+
+  await mirrorGithubSkillDirectory(fetched.repo, fetched.ref, skillRootPath, localPath);
+
+  const importedSkill = buildImportedSkillDefinition(fetched.markdown, {
+    ...fetched,
+    localPath
+  });
   const nextSkills = [...current];
 
   if (existingIndex >= 0) {
@@ -1240,8 +1339,10 @@ export async function deleteSkillDefinition(skillId: string): Promise<SkillDefin
   const target = current.find((skill) => skill.id === skillId);
   const nextSkills = current.filter((skill) => skill.id !== skillId);
 
-  if (target?.source?.type === "github" && target.source.localPath?.trim()) {
-    await rm(target.source.localPath, { recursive: true, force: true });
+  const localPath = target?.source?.localPath?.trim();
+
+  if (localPath && isPathInsideDirectory(getSkillsRootDirectoryPath(), localPath)) {
+    await rm(localPath, { recursive: true, force: true });
   }
 
   await writeWorkbenchCollection(getSkillDefinitionsFilePath(), nextSkills);

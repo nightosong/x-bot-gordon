@@ -10,8 +10,15 @@
 
 目录约定：
 
-- `builtins/`：系统内置 Agent、Skill 的默认提示词
+- `builtins/agents/`：系统内置 Agent 的默认提示词
 - `workbench/`：任务推进、周报、命令工坊等工作台级提示词
+
+补充说明：
+
+- 真正的 Skill 资产现在统一放在仓库根目录 `skills/`
+- `skills/` 下的每一个子文件夹都视为一个独立 Skill
+- 系统内置 Skill、用户手动新增 Skill、GitHub 导入 Skill 共享同一层目录结构
+- Skill 的来源与其他元数据继续保存在工作台配置里，不再通过 `skills/` 下的分层目录区分
 
 命名约定：
 

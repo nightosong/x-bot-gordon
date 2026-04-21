@@ -4,9 +4,12 @@ import { resolveFromRoot } from "../../shared/src/index.js";
 
 const PROMPT_ASSET_PATHS = {
   builtinAgentGordonSystem: ["prompts", "builtins", "agents", "gordon.system.md"],
-  builtinSkillPlanPrompt: ["prompts", "builtins", "skills", "plan.prompt.md"],
-  builtinSkillCodePrompt: ["prompts", "builtins", "skills", "code.prompt.md"],
-  builtinSkillReviewPrompt: ["prompts", "builtins", "skills", "review.prompt.md"],
+  builtinSkillPlanPrompt: ["skills", "plan", "SKILL.md"],
+  builtinSkillCodePrompt: ["skills", "code", "SKILL.md"],
+  builtinSkillReviewPrompt: ["skills", "review", "SKILL.md"],
+  builtinSkillKarpathyPrompt: ["skills", "karpathy-guidelines", "SKILL.md"],
+  builtinSkillSelfImprovementPrompt: ["skills", "self-improvement", "SKILL.md"],
+  builtinSkillDeepResearchPrompt: ["skills", "deep-research", "SKILL.md"],
   weeklyRewriteItemSystem: ["prompts", "workbench", "weekly", "rewrite-item.system.md"],
   weeklyReportGenerateSystem: ["prompts", "workbench", "weekly", "report-generate.system.md"],
   weeklyReportTemplateDefault: ["prompts", "workbench", "weekly", "report-template.default.md"],
@@ -18,7 +21,9 @@ export type PromptAssetId = keyof typeof PROMPT_ASSET_PATHS;
 const promptAssetCache = new Map<PromptAssetId, string>();
 
 function normalizePromptMarkdown(markdown: string): string {
-  return markdown.replace(/\r\n?/g, "\n").trim();
+  const normalized = markdown.replace(/\r\n?/g, "\n").trim();
+  const frontmatterMatch = normalized.match(/^---\s*\n[\s\S]*?\n---\s*\n?([\s\S]*)$/);
+  return (frontmatterMatch?.[1] ?? normalized).trim();
 }
 
 export function resolvePromptAssetPath(promptId: PromptAssetId): string {

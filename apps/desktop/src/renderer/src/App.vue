@@ -937,7 +937,7 @@
                               <select v-model="ui.command.form.skillId" class="field-input" :disabled="!commandSelectedAgent">
                                 <option value="">通用模式</option>
                                 <option v-for="skill in commandRunnableSkills" :key="skill.id" :value="skill.id">
-                                  {{ skill.name }} / {{ skill.kind }}
+                                  {{ getSkillOptionLabel(skill) }}
                                 </option>
                               </select>
                             </label>
@@ -1249,9 +1249,9 @@
                               </div>
 
                               <div>
-                                <p class="model-card-title">{{ skill.name }}</p>
+                                <p class="model-card-title">{{ getSkillDisplayName(skill) }}</p>
                                 <p class="model-card-meta">
-                                  {{ skill.kind === "workflow" ? "Workflow Skill" : "Prompt Skill" }} / {{ getSkillSourceLabel(skill) }}
+                                  {{ getSkillDisplayName(skill) !== skill.name ? `${skill.name} / ` : "" }}{{ getSkillSourceLabel(skill) }}
                                 </p>
                               </div>
                             </div>
@@ -1298,9 +1298,7 @@
                           <div class="extension-tag-row">
                             <span v-if="isBuiltinWorkbenchItem(skill.id)" class="pill">默认能力</span>
                             <span class="pill pill-neutral">{{ getSkillSourceLabel(skill) }}</span>
-                            <span v-if="getSkillLocalMirrorDetail(skill)" class="pill">已镜像到本地</span>
-                            <span v-for="tag in skill.tags" :key="tag" class="pill pill-neutral">{{ tag }}</span>
-                            <span v-if="!skill.tags.length" class="pill pill-neutral">未设置标签</span>
+                            <span v-if="getSkillLocalMirrorDetail(skill)" class="pill">本地目录</span>
                           </div>
                         </article>
                       </div>
@@ -1454,7 +1452,7 @@
                                     type="checkbox"
                                     :value="skill.id"
                                   />
-                                  <span>{{ skill.name }} / {{ skill.kind === "workflow" ? "Workflow" : "Prompt" }}</span>
+                                  <span>{{ getSkillOptionLabel(skill) }}</span>
                                 </label>
                               </div>
                               <div v-else class="model-empty">
@@ -1483,15 +1481,12 @@
                           <template v-else-if="ui.extensions.editor.kind === 'skill'">
                             <label class="field">
                               <span class="field-label">Skill 名称</span>
-                              <input v-model="ui.extensions.editor.values.name" class="field-input" placeholder="例如：周报生成" required />
-                            </label>
-
-                            <label class="field">
-                              <span class="field-label">Skill 类型</span>
-                              <select v-model="ui.extensions.editor.values.skillKind" class="field-input">
-                                <option value="prompt">prompt</option>
-                                <option value="workflow">workflow</option>
-                              </select>
+                              <input
+                                v-model="ui.extensions.editor.values.name"
+                                class="field-input"
+                                placeholder="例如：karpathy-guidelines"
+                                required
+                              />
                             </label>
 
                             <label class="field field-full">
@@ -1501,15 +1496,6 @@
                                 class="field-textarea"
                                 placeholder="描述这个 Skill 适用于哪些场景"
                               ></textarea>
-                            </label>
-
-                            <label class="field field-full">
-                              <span class="field-label">标签</span>
-                              <input
-                                v-model="ui.extensions.editor.values.tags"
-                                class="field-input"
-                                placeholder="例如：weekly-report, writing, internal"
-                              />
                             </label>
 
                             <label class="field field-full">
@@ -1534,7 +1520,7 @@
                             <label class="field field-full">
                               <span class="field-label">协议约定</span>
                               <textarea class="field-textarea" readonly>
-Workflow handler 会在 Skill 本地目录下执行，并通过 stdin 接收 JSON。当前协议版本为 gordon-skill/v1；stdout 推荐返回 {"protocolVersion":"gordon-skill/v1","mode":"context|final","content":"..."}。
+如果 Skill 目录里存在可执行 handler，Gordon 会自动按 handler 模式执行；否则默认按 prompt 模式处理。当前协议版本为 gordon-skill/v1；stdout 推荐返回 {"protocolVersion":"gordon-skill/v1","mode":"context|final","content":"..."}。
                               </textarea>
                             </label>
                           </template>
@@ -1568,7 +1554,7 @@ Workflow handler 会在 Skill 本地目录下执行，并通过 stdin 接收 JSO
                             <label class="field field-full">
                               <span class="field-label">说明</span>
                               <textarea class="field-textarea" readonly>
-当前会从 GitHub 读取整个 Skill 目录，镜像到 Gordon 本地缓存，并把 SKILL.md 映射为本地 SkillDefinition。导入后你仍然可以在列表里继续编辑。
+当前会从 GitHub 读取整个 Skill 目录，镜像到 Gordon 的 `skills/` 本地 Skill 目录，并把 SKILL.md 映射为本地 SkillDefinition。导入后你仍然可以在列表里继续编辑。
                               </textarea>
                             </label>
                           </template>
@@ -1680,7 +1666,7 @@ Workflow handler 会在 Skill 本地目录下执行，并通过 stdin 接收 JSO
                             <select v-model="ui.extensions.runner.skillId" class="field-input">
                               <option value="">不指定 Skill，直接按 Agent 角色执行</option>
                               <option v-for="skill in runnerRunnableSkills" :key="skill.id" :value="skill.id">
-                                {{ skill.name }} / {{ skill.kind }}
+                                {{ getSkillOptionLabel(skill) }}
                               </option>
                             </select>
                           </label>
@@ -1899,9 +1885,11 @@ import {
   createWeeklyTaskDraft,
   formatLocalDateTime,
   getProviderMeta,
+  getSkillDisplayName,
   getWeeklyProgressCompletionRate,
   getWeeklyProgressStatusMeta,
   getSkillLocalMirrorDetail,
+  getSkillOptionLabel,
   getSkillSourceDetail,
   getSkillSourceLabel,
   getWeeklyProgressMetrics,
@@ -2096,8 +2084,6 @@ function createExtensionEditorState(kind = "agent", entry = null) {
       values: {
         name: entry?.name ?? "",
         description: entry?.description ?? "",
-        tags: (entry?.tags ?? []).join(", "),
-        skillKind: entry?.kind ?? "prompt",
         promptTemplate: entry?.promptTemplate ?? "",
         handlerRef: entry?.handlerRef ?? ""
       }
@@ -3955,14 +3941,15 @@ async function handleExtensionEditorSave() {
       });
     } else if (ui.extensions.editor.kind === "skill") {
       const existing = workbench.skillDefinitions.find((entry) => entry.id === ui.extensions.editor.entryId);
+      const handlerRef = ui.extensions.editor.values.handlerRef.trim();
       await desktopApi.upsertSkillDefinition({
         id: ui.extensions.editor.entryId ?? `skill_${Date.now()}`,
         name: ui.extensions.editor.values.name.trim(),
         description: ui.extensions.editor.values.description.trim(),
-        tags: normalizeTagList(ui.extensions.editor.values.tags),
-        kind: ui.extensions.editor.values.skillKind,
+        tags: [],
+        kind: handlerRef || existing?.kind === "workflow" ? "workflow" : "prompt",
         promptTemplate: ui.extensions.editor.values.promptTemplate.trim(),
-        handlerRef: ui.extensions.editor.values.handlerRef.trim(),
+        handlerRef,
         source: existing?.source ?? { type: "manual" },
         enabled: existing?.enabled ?? true,
         updatedAt: new Date().toISOString()

@@ -1069,7 +1069,7 @@ function buildSystemPrompt(agent: AgentProfile, skill: SkillDefinition | null, a
 
   if (skill) {
     sections.push(
-      `当前指定 Skill：${skill.name}\nSkill 类型：${skill.kind}\nSkill 说明：${skill.description || "无"}\nSkill 模板：\n${skill.promptTemplate.trim()}`
+      `当前指定 Skill：${skill.name}\nSkill 说明：${skill.description || "无"}\nSkill 模板：\n${skill.promptTemplate.trim()}`
     );
   }
 
@@ -1409,13 +1409,7 @@ export async function runAgent(request: AgentRunRequest): Promise<AgentRunLog> {
   ];
 
   if (selectedSkill) {
-    steps.push(
-      createRunStep(
-        "skill_selected",
-        "已附加 Skill",
-        `${selectedSkill.name} / ${selectedSkill.kind === "workflow" ? "workflow" : "prompt"}`
-      )
-    );
+    steps.push(createRunStep("skill_selected", "已附加 Skill", selectedSkill.name));
   }
 
   if (authorizedMcpServers.length) {

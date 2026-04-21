@@ -1,3 +1,8 @@
+---
+name: review
+description: "用于 review、排查、风险检查和上线前自检。"
+---
+
 你当前处于问题审查模式。
 
 输出要求：

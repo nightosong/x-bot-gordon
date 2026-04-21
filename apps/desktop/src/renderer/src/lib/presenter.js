@@ -171,6 +171,14 @@ export const EXTENSION_TABS = [
 
 export const BUILTIN_GORDON_AGENT_ID = "builtin:agent:gordon";
 export const BUILTIN_WORKBENCH_ID_PREFIX = "builtin:";
+export const SKILL_DISPLAY_NAME_MAP = {
+  plan: "任务拆解",
+  code: "代码助手",
+  review: "问题审查",
+  "karpathy-guidelines": "Karpathy 准则",
+  "self-improvement": "自我改进",
+  "deep-research": "深度研究"
+};
 
 export function getProviderMeta(providerKind) {
   return PROVIDER_META[providerKind] ?? PROVIDER_META.openai_like;
@@ -301,6 +309,17 @@ export function isBuiltinWorkbenchItem(entryId) {
   return String(entryId ?? "").startsWith(BUILTIN_WORKBENCH_ID_PREFIX);
 }
 
+export function getSkillDisplayName(skillOrName) {
+  const rawName = typeof skillOrName === "string" ? skillOrName : String(skillOrName?.name ?? "");
+  return SKILL_DISPLAY_NAME_MAP[rawName] ?? rawName;
+}
+
+export function getSkillOptionLabel(skill) {
+  const rawName = String(skill?.name ?? "");
+  const displayName = getSkillDisplayName(rawName);
+  return displayName && displayName !== rawName ? `${displayName} / ${rawName}` : rawName;
+}
+
 export function getSkillSourceLabel(skill) {
   if (isBuiltinWorkbenchItem(skill?.id)) {
     return "内置";
@@ -310,7 +329,7 @@ export function getSkillSourceLabel(skill) {
     return "GitHub";
   }
 
-  return "手工定义";
+  return skill?.source?.localPath?.trim() ? "本地 Skill" : "手工定义";
 }
 
 export function getSkillSourceDetail(skill) {
@@ -325,11 +344,7 @@ export function getSkillSourceDetail(skill) {
 }
 
 export function getSkillLocalMirrorDetail(skill) {
-  if (skill?.source?.type !== "github") {
-    return "";
-  }
-
-  return skill.source.localPath?.trim() || "";
+  return skill?.source?.localPath?.trim() || "";
 }
 
 export function normalizeWeeklyProgressItemStatus(status) {
