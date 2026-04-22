@@ -648,10 +648,21 @@
                               </div>
                               <p class="weekly-report-feedback" :class="`is-${weeklyReportFeedbackTone}`">{{ weeklyReportFeedbackText }}</p>
 
-                              <label class="field field-full">
+                              <label class="field field-full weekly-report-output-field">
+                                <button
+                                  type="button"
+                                  class="model-icon-button weekly-report-copy-button"
+                                  :class="{ 'is-copied': ui.weekly.reportCopyState === 'copied' }"
+                                  :disabled="ui.weekly.isGeneratingReport || !weeklyCanCopyReportOutput"
+                                  :title="weeklyReportCopyButtonLabel"
+                                  :aria-label="weeklyReportCopyButtonLabel"
+                                  @click="handleWeeklyReportOutputCopy"
+                                >
+                                  <span class="weekly-report-run-icon" v-html="renderActionIcon(weeklyReportCopyIconKind)"></span>
+                                </button>
                                 <textarea
                                   v-model="weeklyReportOutputContent"
-                                  class="field-textarea weekly-textarea weekly-textarea-report"
+                                  class="field-textarea weekly-textarea weekly-textarea-report weekly-report-output-textarea"
                                   :readonly="ui.weekly.isGeneratingReport"
                                   :class="{ 'is-readonly': ui.weekly.isGeneratingReport }"
                                   :placeholder="weeklyReportOutputPlaceholder"
@@ -2011,47 +2022,71 @@ const FEATURE_PLACEHOLDERS = {
 
 const ACTION_ICONS = {
   edit: `
-    <svg viewBox="0 0 20 20" class="action-icon" aria-hidden="true">
-      <path d="M13.9 3.1a2.1 2.1 0 0 1 3 3l-8.6 8.6-3.8.8.8-3.8 8.6-8.6Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" />
-      <path d="m12.6 4.4 3 3" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" />
+    <svg viewBox="0 0 24 24" class="action-icon" aria-hidden="true">
+      <path d="M4 20h4.2L18.4 9.8a2.2 2.2 0 0 0 0-3.1l-1.1-1.1a2.2 2.2 0 0 0-3.1 0L4 15.8V20Z" fill="currentColor" opacity="0.14" />
+      <path d="M13.5 6.5 17.5 10.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
+      <path d="M4 20h4.2L18.4 9.8a2.2 2.2 0 0 0 0-3.1l-1.1-1.1a2.2 2.2 0 0 0-3.1 0L4 15.8V20Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
     </svg>
   `,
   play: `
-    <svg viewBox="0 0 20 20" class="action-icon" aria-hidden="true">
-      <path d="M7 5.5 14.5 10 7 14.5Z" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.5" />
+    <svg viewBox="0 0 24 24" class="action-icon" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" fill="currentColor" opacity="0.12" />
+      <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8" />
+      <path d="m10 8.8 5.8 3.2-5.8 3.2Z" fill="currentColor" opacity="0.9" />
     </svg>
   `,
   gear: `
-    <svg viewBox="0 0 20 20" class="action-icon" aria-hidden="true">
-      <circle cx="10" cy="10" r="2.6" fill="none" stroke="currentColor" stroke-width="1.5" />
-      <path d="M10 2.7v2.1M10 15.2v2.1M17.3 10h-2.1M4.8 10H2.7M15.2 4.8l-1.5 1.5M6.3 13.7l-1.5 1.5M15.2 15.2l-1.5-1.5M6.3 6.3 4.8 4.8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5" />
+    <svg viewBox="0 0 24 24" class="action-icon" aria-hidden="true">
+      <path d="M10.2 3.8h3.6l.6 2a6.9 6.9 0 0 1 1.5.9l2-.6 1.8 3.1-1.5 1.4c.1.4.2.9.2 1.4s-.1 1-.2 1.4l1.5 1.4-1.8 3.1-2-.6a6.9 6.9 0 0 1-1.5.9l-.6 2h-3.6l-.6-2a6.9 6.9 0 0 1-1.5-.9l-2 .6-1.8-3.1 1.5-1.4A6.6 6.6 0 0 1 5.5 12c0-.5.1-1 .2-1.4L4.2 9.2 6 6.1l2 .6a6.9 6.9 0 0 1 1.5-.9l.7-2Z" fill="currentColor" opacity="0.12" />
+      <path d="M10.2 3.8h3.6l.6 2a6.9 6.9 0 0 1 1.5.9l2-.6 1.8 3.1-1.5 1.4c.1.4.2.9.2 1.4s-.1 1-.2 1.4l1.5 1.4-1.8 3.1-2-.6a6.9 6.9 0 0 1-1.5.9l-.6 2h-3.6l-.6-2a6.9 6.9 0 0 1-1.5-.9l-2 .6-1.8-3.1 1.5-1.4A6.6 6.6 0 0 1 5.5 12c0-.5.1-1 .2-1.4L4.2 9.2 6 6.1l2 .6a6.9 6.9 0 0 1 1.5-.9l.7-2Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
+      <circle cx="12" cy="12" r="2.8" fill="none" stroke="currentColor" stroke-width="1.8" />
     </svg>
   `,
   return: `
-    <svg viewBox="0 0 20 20" class="action-icon" aria-hidden="true">
-      <path d="M8.8 4.8 4.6 9l4.2 4.2" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" />
-      <path d="M5 9h6.6c2.4 0 4.4 2 4.4 4.4v1.8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" />
+    <svg viewBox="0 0 24 24" class="action-icon" aria-hidden="true">
+      <path d="M8 7 4 11l4 4" fill="currentColor" opacity="0.16" />
+      <path d="M8 7 4 11l4 4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
+      <path d="M5 11h8a7 7 0 0 1 7 7" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
     </svg>
   `,
   enter: `
-    <svg viewBox="0 0 20 20" class="action-icon" aria-hidden="true">
-      <path d="M15.5 4.5v4.2a3 3 0 0 1-3 3H5.2" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" />
-      <path d="m8.4 8.7-3.2 3.2 3.2 3.2" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" />
+    <svg viewBox="0 0 24 24" class="action-icon" aria-hidden="true">
+      <path d="M14.5 3.8H18a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2h-3.5" fill="currentColor" opacity="0.1" />
+      <path d="M14.5 3.8H18a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2h-3.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
+      <path d="M4 12h11" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" />
+      <path d="m10 7 5 5-5 5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
     </svg>
   `,
   jump: `
-    <svg viewBox="0 0 20 20" class="action-icon" aria-hidden="true">
-      <path d="M5 14.5V6.8A1.8 1.8 0 0 1 6.8 5h6.6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" />
-      <path d="M10.7 3.9H15v4.3" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" />
-      <path d="m8.9 11.1 6.1-6.1" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" />
+    <svg viewBox="0 0 24 24" class="action-icon" aria-hidden="true">
+      <path d="M6 7.5a1.5 1.5 0 0 1 1.5-1.5h6.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
+      <path d="M6 10v7a1.5 1.5 0 0 0 1.5 1.5h9A1.5 1.5 0 0 0 18 17v-4.5" fill="currentColor" opacity="0.1" />
+      <path d="M6 10v7a1.5 1.5 0 0 0 1.5 1.5h9A1.5 1.5 0 0 0 18 17v-4.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
+      <path d="M13 5.5H19V11.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
+      <path d="m10 14 9-9" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" />
     </svg>
   `,
   delete: `
-    <svg viewBox="0 0 20 20" class="action-icon" aria-hidden="true">
-      <path d="M4.5 5.5h11" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5" />
-      <path d="M7.5 5.5V4a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" />
-      <path d="m6.2 5.5.7 9.2a1 1 0 0 0 1 .9h4.2a1 1 0 0 0 1-.9l.7-9.2" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" />
-      <path d="M8.5 8.5v4.2M11.5 8.5v4.2" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5" />
+    <svg viewBox="0 0 24 24" class="action-icon" aria-hidden="true">
+      <path d="M8 8.5h8l-.8 10.2a1.6 1.6 0 0 1-1.6 1.5h-3.2a1.6 1.6 0 0 1-1.6-1.5L8 8.5Z" fill="currentColor" opacity="0.12" />
+      <path d="M4.5 6.5h15" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" />
+      <path d="M9.5 6.5V5a1.5 1.5 0 0 1 1.5-1.5h2a1.5 1.5 0 0 1 1.5 1.5v1.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
+      <path d="m8 8.5.8 10.2a1.6 1.6 0 0 0 1.6 1.5h3.2a1.6 1.6 0 0 0 1.6-1.5L16 8.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
+      <path d="M10.5 11v5M13.5 11v5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" />
+    </svg>
+  `,
+  copy: `
+    <svg viewBox="0 0 24 24" class="action-icon" aria-hidden="true">
+      <rect x="9" y="8" width="10" height="12" rx="2" fill="currentColor" opacity="0.12" />
+      <rect x="9" y="8" width="10" height="12" rx="2" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.8" />
+      <path d="M6 15H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
+    </svg>
+  `,
+  check: `
+    <svg viewBox="0 0 24 24" class="action-icon" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" fill="currentColor" opacity="0.12" />
+      <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8" />
+      <path d="m8.5 12.2 2.5 2.5 4.8-5.2" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" />
     </svg>
   `
 };
@@ -2071,6 +2106,7 @@ let splineApplicationPromise = null;
 let weeklyAutosaveTimer = null;
 let weeklySavedSnapshot = "";
 let weeklyAutosaveInFlight = false;
+let weeklyReportCopyTimer = null;
 
 function createEmptyModelSettings() {
   return {
@@ -2107,6 +2143,7 @@ function createWeeklyState() {
     reportingMode: "weekly",
     reportFeedbackText: "",
     reportFeedbackTone: "neutral",
+    reportCopyState: "idle",
     isGeneratingReport: false,
     generatingReportKind: null
   };
@@ -2439,10 +2476,12 @@ const weeklyReportOutputContent = computed({
 
     if (weeklyIsWeeklyReportMode.value) {
       ui.weekly.draft.generatedReport = String(value ?? "");
+      resetWeeklyReportCopyState();
       return;
     }
 
     ui.weekly.draft.generatedDailyReport = String(value ?? "");
+    resetWeeklyReportCopyState();
   }
 });
 const weeklyActiveReportIsGenerating = computed(
@@ -2464,6 +2503,15 @@ const weeklyReportFeedbackTone = computed(() => {
   const tone = String(ui.weekly.reportFeedbackTone ?? "").trim();
   return tone || "neutral";
 });
+const weeklyCanCopyReportOutput = computed(() => Boolean(String(weeklyReportOutputContent.value ?? "").trim()));
+const weeklyReportCopyIconKind = computed(() => (ui.weekly.reportCopyState === "copied" ? "check" : "copy"));
+const weeklyReportCopyButtonLabel = computed(() =>
+  ui.weekly.reportCopyState === "copied"
+    ? `${weeklyReportModeLabel.value}已复制`
+    : weeklyCanCopyReportOutput.value
+      ? `复制${weeklyReportModeLabel.value}`
+      : `当前没有可复制的${weeklyReportModeLabel.value}内容`
+);
 const weeklyListOverviewCards = computed(() => {
   const record = weeklyFocusRecord.value;
   const metrics = weeklyFocusMetrics.value;
@@ -2579,6 +2627,27 @@ function clearWeeklyReportFeedback() {
   ui.weekly.reportFeedbackTone = "neutral";
 }
 
+function clearWeeklyReportCopyTimer() {
+  if (weeklyReportCopyTimer) {
+    clearTimeout(weeklyReportCopyTimer);
+    weeklyReportCopyTimer = null;
+  }
+}
+
+function resetWeeklyReportCopyState() {
+  clearWeeklyReportCopyTimer();
+  ui.weekly.reportCopyState = "idle";
+}
+
+function markWeeklyReportCopied() {
+  clearWeeklyReportCopyTimer();
+  ui.weekly.reportCopyState = "copied";
+  weeklyReportCopyTimer = setTimeout(() => {
+    ui.weekly.reportCopyState = "idle";
+    weeklyReportCopyTimer = null;
+  }, 1600);
+}
+
 function setWeeklyReportFeedback(text, tone = "neutral") {
   ui.weekly.reportFeedbackText = String(text ?? "").trim();
   ui.weekly.reportFeedbackTone = tone;
@@ -2591,6 +2660,7 @@ function setWeeklyReportingMode(mode) {
 
   ui.weekly.reportingMode = mode;
   clearWeeklyReportFeedback();
+  resetWeeklyReportCopyState();
 }
 
 function getWeeklyTaskChildren(task) {
@@ -2898,9 +2968,14 @@ function focusWeeklyTaskInput(taskId) {
   nextTick(() => {
     const input = document.querySelector(`[data-weekly-task-input="${taskId}"]`);
 
-    if (input instanceof HTMLInputElement) {
+    if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) {
       input.focus();
       input.select();
+      return;
+    }
+
+    if (input instanceof HTMLButtonElement) {
+      input.click();
     }
   });
 }
@@ -3241,6 +3316,7 @@ function syncWeeklyEditorState() {
     ui.weekly.draft = null;
     weeklyTaskRewriteIds.value = [];
     clearWeeklyReportFeedback();
+    resetWeeklyReportCopyState();
     ui.weekly.isGeneratingReport = false;
     ui.weekly.generatingReportKind = null;
     markWeeklyDraftSaved(null);
@@ -3254,6 +3330,7 @@ function syncWeeklyEditorState() {
   ui.weekly.collapsedProjectIds = [];
   weeklyTaskRewriteIds.value = [];
   clearWeeklyReportFeedback();
+  resetWeeklyReportCopyState();
   ui.weekly.isGeneratingReport = false;
   ui.weekly.generatingReportKind = null;
   markWeeklyDraftSaved(ui.weekly.draft);
@@ -3471,6 +3548,7 @@ function closeWeeklyEditor() {
   ui.weekly.collapsedProjectIds = [];
   ui.weekly.editorView = "projects";
   clearWeeklyReportFeedback();
+  resetWeeklyReportCopyState();
   weeklyTaskRewriteIds.value = [];
   ui.weekly.isGeneratingReport = false;
   ui.weekly.generatingReportKind = null;
@@ -3843,6 +3921,7 @@ async function handleWeeklyDailyReportGeneration() {
   }
 
   try {
+    resetWeeklyReportCopyState();
     ui.weekly.isGeneratingReport = true;
     ui.weekly.generatingReportKind = "daily";
     if (document.activeElement instanceof HTMLElement) {
@@ -3869,6 +3948,7 @@ async function handleWeeklyDailyReportGeneration() {
       content
     });
     ui.weekly.draft.generatedDailyReport = result.text;
+    resetWeeklyReportCopyState();
     setWeeklyReportFeedback(`日报已生成（${result.profileLabel}）。`, "success");
     setStatus(`日报已生成（${result.profileLabel}）。`, "success");
   } catch (error) {
@@ -3907,6 +3987,7 @@ async function handleWeeklyReportGeneration() {
   }
 
   try {
+    resetWeeklyReportCopyState();
     ui.weekly.isGeneratingReport = true;
     ui.weekly.generatingReportKind = "weekly";
     if (document.activeElement instanceof HTMLElement) {
@@ -3920,6 +4001,7 @@ async function handleWeeklyReportGeneration() {
       reportTemplate: sanitizedDraft.reportTemplate
     });
     ui.weekly.draft.generatedReport = result.text;
+    resetWeeklyReportCopyState();
     setWeeklyReportFeedback(`周报已生成（${result.profileLabel}）。`, "success");
     setStatus(`周报已生成（${result.profileLabel}）。`, "success");
   } catch (error) {
@@ -3929,6 +4011,21 @@ async function handleWeeklyReportGeneration() {
   } finally {
     ui.weekly.isGeneratingReport = false;
     ui.weekly.generatingReportKind = null;
+  }
+}
+
+async function handleWeeklyReportOutputCopy() {
+  if (ui.weekly.isGeneratingReport) {
+    return;
+  }
+
+  try {
+    await copyTextToClipboard(weeklyReportOutputContent.value);
+    markWeeklyReportCopied();
+    setStatus(`${weeklyReportModeLabel.value}已复制。`, "success");
+  } catch (error) {
+    resetWeeklyReportCopyState();
+    setStatus(`复制失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
   }
 }
 

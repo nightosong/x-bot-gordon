@@ -1016,6 +1016,7 @@ canvas {
   width: 16px;
   height: 16px;
   display: block;
+  overflow: visible;
 }
 
 .model-status-toggle {
@@ -2253,6 +2254,44 @@ canvas {
   flex: 0 0 auto;
 }
 
+.weekly-report-copy-button {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 30px;
+  height: 30px;
+  z-index: 1;
+  border: 0;
+  background: transparent;
+  color: rgba(247, 243, 235, 0.46);
+  box-shadow: none;
+  backdrop-filter: none;
+  transform: none;
+}
+
+.weekly-report-copy-button:hover {
+  transform: none;
+  border-color: transparent;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(247, 243, 235, 0.86);
+}
+
+.weekly-report-copy-button.is-copied {
+  background: rgba(92, 225, 194, 0.08);
+  color: #7ce7d7;
+}
+
+.weekly-report-copy-button:disabled {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.weekly-report-copy-button .action-icon {
+  width: 17px;
+  height: 17px;
+}
+
 .weekly-report-run-button.is-loading {
   border-color: rgba(92, 225, 194, 0.22);
   background: rgba(92, 225, 194, 0.1);
@@ -2272,7 +2311,9 @@ canvas {
 
 .weekly-textarea {
   min-height: 220px;
-  line-height: 1.7;
+  font-size: 12.5px;
+  line-height: 1.58;
+  letter-spacing: 0.01em;
   font-family: "SFMono-Regular", "SF Mono", "Consolas", "Liberation Mono", monospace;
   white-space: pre-wrap;
 }
@@ -2284,10 +2325,20 @@ canvas {
 
 .weekly-textarea-secondary {
   min-height: 140px;
+  font-size: 12px;
 }
 
 .weekly-textarea-report {
   min-height: 320px;
+  font-size: 12.5px;
+}
+
+.weekly-report-output-field {
+  position: relative;
+}
+
+.weekly-report-output-textarea {
+  padding-right: 56px;
 }
 
 .weekly-project-stack {
@@ -2388,6 +2439,11 @@ canvas {
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 12px;
   background: rgba(5, 10, 18, 0.42);
+}
+
+.weekly-task-card.is-completed {
+  border-color: rgba(175, 186, 202, 0.12);
+  background: rgba(11, 16, 24, 0.34);
 }
 
 .weekly-task-card.is-busy {
@@ -2508,6 +2564,77 @@ canvas {
 
 .weekly-task-title-input {
   min-width: 0;
+}
+
+.weekly-task-title-display {
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  padding: 4px 2px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(247, 243, 235, 0.92);
+  font-family: inherit;
+  font-weight: 500;
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  outline: none;
+  cursor: text;
+  transition: background 180ms ease, color 180ms ease;
+}
+
+.weekly-task-title-display.is-placeholder {
+  color: rgba(247, 243, 235, 0.42);
+}
+
+.weekly-task-title-display:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.weekly-task-title-display:focus-visible {
+  background: rgba(92, 225, 194, 0.06);
+  box-shadow: 0 0 0 2px rgba(92, 225, 194, 0.12);
+}
+
+.weekly-task-title-display:disabled {
+  cursor: progress;
+}
+
+.weekly-task-title-editor {
+  min-height: 40px;
+  max-height: 148px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.5;
+}
+
+.weekly-task-title-editor::placeholder {
+  color: rgba(247, 243, 235, 0.4);
+}
+
+.weekly-task-card.is-completed .weekly-task-title-display,
+.weekly-task-card.is-completed .weekly-task-title-input {
+  color: rgba(201, 209, 221, 0.62);
+  text-decoration-line: line-through;
+  text-decoration-color: rgba(201, 209, 221, 0.44);
+  text-decoration-thickness: 1.4px;
+  text-decoration-skip-ink: none;
+}
+
+.weekly-task-card.is-completed .weekly-task-title-display.is-placeholder,
+.weekly-task-card.is-completed .weekly-task-title-input::placeholder {
+  color: rgba(201, 209, 221, 0.38);
+}
+
+.weekly-task-card.is-completed .weekly-task-title-display.is-placeholder {
+  text-decoration: none;
 }
 
 .weekly-task-children {
@@ -2634,21 +2761,21 @@ canvas {
 }
 
 .weekly-task-index-button.is-planned {
-  border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(247, 243, 235, 0.78);
+  border-color: rgba(96, 188, 255, 0.32);
+  background: rgba(96, 188, 255, 0.18);
+  color: #ddf2ff;
 }
 
 .weekly-task-index-button.is-in-progress {
-  border-color: rgba(99, 164, 255, 0.24);
-  background: rgba(99, 164, 255, 0.14);
-  color: #cfe1ff;
+  border-color: rgba(78, 224, 151, 0.32);
+  background: rgba(78, 224, 151, 0.18);
+  color: #ddffea;
 }
 
 .weekly-task-index-button.is-completed {
-  border-color: rgba(88, 206, 130, 0.24);
-  background: rgba(88, 206, 130, 0.14);
-  color: #cbf4d7;
+  border-color: rgba(183, 194, 208, 0.26);
+  background: rgba(183, 194, 208, 0.16);
+  color: #dde3eb;
 }
 
 .weekly-task-index-button.is-blocked {
@@ -2658,15 +2785,15 @@ canvas {
 }
 
 .weekly-task-status-swatch.is-planned {
-  background: rgba(247, 243, 235, 0.62);
+  background: #60bcff;
 }
 
 .weekly-task-status-swatch.is-in-progress {
-  background: #63a4ff;
+  background: #4ee097;
 }
 
 .weekly-task-status-swatch.is-completed {
-  background: #58ce82;
+  background: #b7c2d0;
 }
 
 .weekly-task-status-swatch.is-blocked {

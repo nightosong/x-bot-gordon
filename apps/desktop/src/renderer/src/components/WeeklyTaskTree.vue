@@ -4,9 +4,9 @@
       v-for="(task, taskIndex) in tasks"
       :key="task.id"
       class="weekly-task-card"
-      :class="{ 'is-busy': isTaskRewriting(task.id) }"
+      :class="{ 'is-busy': isTaskRewriting(task.id), 'is-completed': task.status === 'completed' }"
     >
-      <div class="weekly-task-row">
+      <div class="weekly-task-row" :class="{ 'is-completed': task.status === 'completed' }">
         <details v-if="!isTaskRewriting(task.id)" class="weekly-task-status-menu">
           <summary
             class="weekly-task-index-button"
@@ -34,15 +34,32 @@
           <span class="weekly-task-spinner"></span>
         </span>
 
-        <input
+        <button
+          v-if="!isEditingTask(task.id)"
+          type="button"
+          class="weekly-task-title-display"
+          :class="{ 'is-placeholder': !String(task.title ?? '').trim() }"
+          :data-weekly-task-input="task.id"
+          :title="String(task.title ?? '').trim()"
+          :disabled="isTaskRewriting(task.id)"
+          @click="activateTaskEditor(task.id)"
+        >
+          {{ String(task.title ?? '').trim() || "输入任务名称" }}
+        </button>
+
+        <textarea
+          v-else
+          :ref="(element) => setTaskTitleInputRef(task.id, element)"
           v-model="task.title"
-          class="field-input weekly-compact-input weekly-task-title-input"
-          type="text"
+          class="field-textarea weekly-compact-input weekly-task-title-input weekly-task-title-editor"
           :data-weekly-task-input="task.id"
           placeholder="输入任务名称"
           :disabled="isTaskRewriting(task.id)"
-          @input="emit('touch-task', { projectId, taskId: task.id })"
-        />
+          rows="1"
+          @input="handleTaskTitleInput(task.id, $event)"
+          @blur="deactivateTaskEditor(task.id)"
+          @keydown.esc.prevent="deactivateTaskEditor(task.id)"
+        ></textarea>
 
         <button
           type="button"
@@ -97,7 +114,7 @@
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { computed, nextTick, ref } from "vue";
 
 defineOptions({
   name: "WeeklyTaskTree"
@@ -133,6 +150,8 @@ const props = defineProps({
 const emit = defineEmits(["add-child", "remove-task", "set-status", "touch-task", "optimize-task"]);
 
 const statusEntries = computed(() => Object.entries(props.statusMeta ?? {}));
+const activeEditorId = ref(null);
+const taskTitleInputRefs = new Map();
 
 function getTaskChildren(task) {
   return Array.isArray(task?.children) ? task.children : [];
@@ -140,6 +159,60 @@ function getTaskChildren(task) {
 
 function isTaskRewriting(taskId) {
   return props.rewritingIds.includes(taskId);
+}
+
+function isEditingTask(taskId) {
+  return activeEditorId.value === taskId;
+}
+
+function setTaskTitleInputRef(taskId, element) {
+  if (element instanceof HTMLTextAreaElement) {
+    taskTitleInputRefs.set(taskId, element);
+    return;
+  }
+
+  taskTitleInputRefs.delete(taskId);
+}
+
+function activateTaskEditor(taskId) {
+  if (isTaskRewriting(taskId)) {
+    return;
+  }
+
+  activeEditorId.value = taskId;
+  nextTick(() => {
+    const input = taskTitleInputRefs.get(taskId);
+
+    if (!(input instanceof HTMLTextAreaElement)) {
+      return;
+    }
+
+    resizeTaskTitleEditor(input);
+    input.focus();
+    const cursor = input.value.length;
+    input.setSelectionRange(cursor, cursor);
+  });
+}
+
+function deactivateTaskEditor(taskId) {
+  if (activeEditorId.value === taskId) {
+    activeEditorId.value = null;
+  }
+}
+
+function handleTaskTitleInput(taskId, event) {
+  const input = event?.target;
+
+  if (input instanceof HTMLTextAreaElement) {
+    resizeTaskTitleEditor(input);
+  }
+
+  emit("touch-task", { projectId: props.projectId, taskId });
+}
+
+function resizeTaskTitleEditor(input) {
+  input.style.height = "0px";
+  input.style.height = `${Math.min(Math.max(input.scrollHeight, 40), 148)}px`;
 }
 
 function getTaskIndexLabel(taskIndex) {
