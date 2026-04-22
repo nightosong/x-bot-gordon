@@ -3947,7 +3947,7 @@ async function handleWeeklyDailyReportGeneration() {
       weekTitle: activeWeeklyRecord.value.title,
       content
     });
-    ui.weekly.draft.generatedDailyReport = result.text;
+    ui.weekly.draft.generatedDailyReport = normalizeMarkdownForClipboard(result.text);
     resetWeeklyReportCopyState();
     setWeeklyReportFeedback(`日报已生成（${result.profileLabel}）。`, "success");
     setStatus(`日报已生成（${result.profileLabel}）。`, "success");
@@ -4000,7 +4000,7 @@ async function handleWeeklyReportGeneration() {
       content: sanitizedDraft.content,
       reportTemplate: sanitizedDraft.reportTemplate
     });
-    ui.weekly.draft.generatedReport = result.text;
+    ui.weekly.draft.generatedReport = normalizeMarkdownForClipboard(result.text);
     resetWeeklyReportCopyState();
     setWeeklyReportFeedback(`周报已生成（${result.profileLabel}）。`, "success");
     setStatus(`周报已生成（${result.profileLabel}）。`, "success");
@@ -4020,9 +4020,15 @@ async function handleWeeklyReportOutputCopy() {
   }
 
   try {
-    await copyTextToClipboard(weeklyReportOutputContent.value);
+    const normalizedText = normalizeMarkdownForClipboard(weeklyReportOutputContent.value);
+
+    if (normalizedText !== weeklyReportOutputContent.value) {
+      weeklyReportOutputContent.value = normalizedText;
+    }
+
+    await copyTextToClipboard(normalizedText);
     markWeeklyReportCopied();
-    setStatus(`${weeklyReportModeLabel.value}已复制。`, "success");
+    setStatus(`${weeklyReportModeLabel.value}已清洗并复制，可直接粘贴到飞书。`, "success");
   } catch (error) {
     resetWeeklyReportCopyState();
     setStatus(`复制失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
@@ -4680,6 +4686,71 @@ async function copyTextToClipboard(value) {
   if (!copied) {
     throw new Error("当前环境不支持剪贴板复制");
   }
+}
+
+function normalizeMarkdownForClipboard(value) {
+  const oddSpacePattern = /[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g;
+  const zeroWidthPattern = /[\u200B-\u200D\u2060\uFEFF]/g;
+  const bulletLikePattern = /^[ \t]*[•●▪◦‣・·]\s+/;
+  const statusSuffixPattern = /(?:（|\()(已完成|进行中|待开始|受阻)(?:）|\))\s*$/;
+
+  const normalizedLines = String(value ?? "")
+    .replace(/\r\n?/g, "\n")
+    .replace(zeroWidthPattern, "")
+    .replace(oddSpacePattern, " ")
+    .replace(/\t/g, "    ")
+    .replace(/((?:（|\()(?:已完成|进行中|待开始|受阻)(?:）|\)))(?=\\?[*+-]\s+)/g, "$1\n")
+    .replace(/[ ]{2,}(?=(?:\\?[*+-]|\d+[.)])\s+)/g, "\n")
+    .split("\n")
+    .map((line) => {
+      let normalizedLine = line.replace(/[ ]+$/g, "");
+
+      normalizedLine = normalizedLine.replace(/^([ ]*)\\([*+-])\s+/, "$1$2 ");
+
+      if (bulletLikePattern.test(normalizedLine)) {
+        normalizedLine = normalizedLine.replace(/^([ ]*)[•●▪◦‣・·]\s+/, "$1* ");
+      }
+
+      normalizedLine = normalizedLine.replace(/^([ ]*)([*+-])\s+/, "$1$2 ");
+      normalizedLine = normalizedLine.replace(/^([ ]*)(\d+)[\.\)]\s+/, "$1$2. ");
+      normalizedLine = normalizedLine.replace(/^(#{1,6})([^\s#])/, "$1 $2");
+      normalizedLine = normalizedLine.replace(/^([ ]*)>([^\s>])/, "$1> $2");
+
+      return normalizedLine;
+    });
+
+  const repairedLines = [];
+  let hasActiveProject = false;
+
+  for (const line of normalizedLines) {
+    if (!line.trim()) {
+      if (repairedLines[repairedLines.length - 1] !== "") {
+        repairedLines.push("");
+      }
+
+      continue;
+    }
+
+    const bulletMatch = line.match(/^(\s*)\*\s+(.*)$/);
+
+    if (!bulletMatch) {
+      repairedLines.push(line);
+      continue;
+    }
+
+    const [, indent, rawContent] = bulletMatch;
+    const content = rawContent.trim();
+
+    if (!indent && statusSuffixPattern.test(content) && hasActiveProject) {
+      repairedLines.push(`    * ${content}`);
+      continue;
+    }
+
+    repairedLines.push(`${indent ? "    " : ""}* ${content}`);
+    hasActiveProject = !indent && !statusSuffixPattern.test(content);
+  }
+
+  return repairedLines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 async function handleRichTextClick(event) {
