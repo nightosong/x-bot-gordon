@@ -30,6 +30,7 @@ import {
   upsertModelProfile,
   upsertSkillDefinition
 } from "../../../packages/workbench/src/index.js";
+import type { AgentRunProgressEvent } from "../../../packages/shared/src/index.js";
 import { generateDailyProgressReport, generateWeeklyProgressReport, invokeActiveModel, rewriteWeeklyProgressItem } from "./ai.js";
 
 const currentFilePath = fileURLToPath(import.meta.url);
@@ -84,7 +85,15 @@ app.whenReady().then(async () => {
     toggleAgentProfileStatus(profileId)
   );
   ipcMain.handle("gordon:agent-profiles:delete", async (_event, profileId: string) => deleteAgentProfile(profileId));
-  ipcMain.handle("gordon:agent:run", async (_event, request) => runAgent(request));
+  ipcMain.handle("gordon:agent:run", async (event, request) =>
+    runAgent(request, {
+      onProgress: (payload: AgentRunProgressEvent) => {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send("gordon:agent:progress", payload);
+        }
+      }
+    })
+  );
   ipcMain.handle("gordon:command-workshop:list", async () => listCommandWorkshopSessions());
   ipcMain.handle("gordon:command-workshop:upsert", async (_event, session) => upsertCommandWorkshopSession(session));
   ipcMain.handle("gordon:command-workshop:delete", async (_event, sessionId: string) =>

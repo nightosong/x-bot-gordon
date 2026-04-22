@@ -2143,8 +2143,13 @@ canvas {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 8px;
   min-width: 0;
+}
+
+.weekly-report-inline-toggle {
+  min-height: 28px;
 }
 
 .weekly-report-mode-tabs {

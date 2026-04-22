@@ -302,6 +302,7 @@ export interface AgentRunRequest {
   mcpServerId?: string;
   mcpToolName?: string;
   mcpArguments?: Record<string, unknown>;
+  progressEventId?: string;
 }
 
 export interface AgentRunStep {
@@ -347,6 +348,25 @@ export interface AgentRunLog extends ModelTextResponse {
   mcpArguments?: Record<string, unknown>;
   mcpResultText: string | null;
   mcpCalls?: AgentMcpCallRecord[];
+  stopReason?: string;
+  steps: AgentRunStep[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentRunProgressEvent {
+  progressEventId: string;
+  phase: "running" | "completed" | "failed";
+  statusText: string;
+  text?: string;
+  profileLabel: string | null;
+  model: string | null;
+  skillName: string | null;
+  autoSelectedMcp: boolean;
+  mcpServerName: string | null;
+  mcpToolName: string | null;
+  mcpResultText: string | null;
+  mcpCalls: AgentMcpCallRecord[];
   stopReason?: string;
   steps: AgentRunStep[];
   createdAt: string;

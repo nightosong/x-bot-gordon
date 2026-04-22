@@ -600,7 +600,13 @@
                                       删除模板
                                     </button>
                                   </template>
-                                  <span v-else class="weekly-report-mode-meta">自动提取今天更新的叶子任务</span>
+                                  <template v-else>
+                                    <label class="command-inline-toggle weekly-report-inline-toggle">
+                                      <span class="command-inline-toggle-label">使用大模型优化</span>
+                                      <input v-model="ui.weekly.dailyReportUseModelOptimization" type="checkbox" />
+                                    </label>
+                                    <span class="weekly-report-mode-meta">先按原任务树生成，再按需交给模型润色</span>
+                                  </template>
                                 </div>
                               </div>
 
@@ -988,13 +994,117 @@
                           <article v-if="ui.command.isRunning" class="command-message is-assistant is-pending">
                             <div class="command-message-head">
                               <span class="command-message-role">{{ resolveAgentName(ui.command.form.agentProfileId) }}</span>
-                              <span class="command-message-time">处理中</span>
+                              <span class="command-message-time">{{ ui.command.liveProgress?.updatedAt ? formatLocalDateTime(ui.command.liveProgress.updatedAt) : "处理中" }}</span>
                             </div>
 
                             <div
                               class="command-message-body command-rich-text"
-                              v-html="renderRichText('正在读取上下文并规划执行步骤，请稍等片刻。')"
+                              v-html="renderRichText(ui.command.liveProgress?.statusText || '正在读取上下文并规划执行步骤，请稍等片刻。')"
                             ></div>
+
+                            <details v-if="ui.command.liveProgress?.artifact" class="command-artifact-panel" open>
+                              <summary>{{ getCommandArtifactSummary(ui.command.liveProgress.artifact) }}</summary>
+
+                              <div class="command-artifact-body">
+                                <div class="extension-tag-row command-artifact-tag-row">
+                                  <span v-if="ui.command.liveProgress.artifact.profileLabel" class="pill pill-neutral">{{ ui.command.liveProgress.artifact.profileLabel }}</span>
+                                  <span v-if="ui.command.liveProgress.artifact.model" class="pill pill-neutral">{{ ui.command.liveProgress.artifact.model }}</span>
+                                  <span v-if="ui.command.liveProgress.artifact.skillName" class="pill">{{ ui.command.liveProgress.artifact.skillName }}</span>
+                                  <span v-if="ui.command.liveProgress.artifact.autoSelectedMcp" class="pill">自动选 MCP</span>
+                                  <span v-if="ui.command.liveProgress.artifact.mcpServerName" class="pill pill-neutral">{{ ui.command.liveProgress.artifact.mcpServerName }}</span>
+                                  <span v-if="ui.command.liveProgress.artifact.mcpToolName" class="pill pill-neutral">{{ ui.command.liveProgress.artifact.mcpToolName }}</span>
+                                </div>
+
+                                <div v-if="ui.command.liveProgress.artifact.mcpResultText || ui.command.liveProgress.artifact.stopReason" class="command-artifact-inline-list">
+                                  <div v-if="ui.command.liveProgress.artifact.mcpResultText" class="command-artifact-inline-row">
+                                    <span class="command-artifact-inline-label">MCP 汇总</span>
+                                    <p
+                                      class="command-artifact-inline-copy"
+                                      :title="getCommandArtifactInlineText(ui.command.liveProgress.artifact.mcpResultText)"
+                                    >
+                                      {{ getCommandArtifactInlineText(ui.command.liveProgress.artifact.mcpResultText) }}
+                                    </p>
+                                  </div>
+
+                                  <div v-if="ui.command.liveProgress.artifact.stopReason" class="command-artifact-inline-row">
+                                    <span class="command-artifact-inline-label">停止原因</span>
+                                    <p
+                                      class="command-artifact-inline-copy"
+                                      :title="getCommandArtifactInlineText(ui.command.liveProgress.artifact.stopReason)"
+                                    >
+                                      {{ getCommandArtifactInlineText(ui.command.liveProgress.artifact.stopReason) }}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div class="command-artifact-section">
+                                  <div class="command-artifact-section-head">
+                                    <span class="command-artifact-section-title">执行步骤</span>
+                                    <span class="pill pill-neutral command-artifact-section-count">
+                                      {{ ui.command.liveProgress.artifact.steps?.length ?? 0 }}
+                                    </span>
+                                  </div>
+
+                                  <div v-if="ui.command.liveProgress.artifact.steps?.length" class="command-artifact-chain">
+                                    <article v-for="step in ui.command.liveProgress.artifact.steps" :key="step.id" class="command-artifact-chain-item">
+                                      <span class="command-artifact-chain-rail" aria-hidden="true">
+                                        <span class="command-artifact-chain-bead"></span>
+                                      </span>
+
+                                      <div class="command-artifact-chain-main">
+                                        <p class="command-artifact-chain-title" :title="step.title">{{ step.title }}</p>
+                                        <p
+                                          v-if="getCommandArtifactStepSecondary(step)"
+                                          class="command-artifact-chain-secondary"
+                                          :title="getCommandArtifactStepSecondary(step)"
+                                        >
+                                          {{ getCommandArtifactStepSecondary(step) }}
+                                        </p>
+                                      </div>
+
+                                      <span class="command-artifact-chain-time">{{ formatLocalDateTime(step.createdAt) }}</span>
+                                    </article>
+                                  </div>
+                                  <p v-else class="model-empty-copy">本次运行还没有步骤记录。</p>
+                                </div>
+
+                                <div v-if="ui.command.liveProgress.artifact.mcpCalls?.length" class="command-artifact-section">
+                                  <div class="command-artifact-section-head">
+                                    <span class="command-artifact-section-title">MCP 调用</span>
+                                    <span class="pill pill-neutral command-artifact-section-count">
+                                      {{ ui.command.liveProgress.artifact.mcpCalls.length }}
+                                    </span>
+                                  </div>
+
+                                  <div class="command-artifact-chain">
+                                    <article
+                                      v-for="call in ui.command.liveProgress.artifact.mcpCalls"
+                                      :key="`${call.createdAt}-${call.serverName}-${call.toolName}-${call.round}`"
+                                      class="command-artifact-chain-item is-mcp"
+                                    >
+                                      <span class="command-artifact-chain-rail" aria-hidden="true">
+                                        <span class="command-artifact-chain-bead"></span>
+                                      </span>
+
+                                      <div class="command-artifact-chain-main">
+                                        <p class="command-artifact-chain-title" :title="getCommandArtifactCallTitle(call)">
+                                          {{ getCommandArtifactCallTitle(call) }}
+                                        </p>
+                                        <p
+                                          v-if="getCommandArtifactCallSecondary(call)"
+                                          class="command-artifact-chain-secondary"
+                                          :title="getCommandArtifactCallSecondary(call)"
+                                        >
+                                          {{ getCommandArtifactCallSecondary(call) }}
+                                        </p>
+                                      </div>
+
+                                      <span class="command-artifact-chain-time">{{ formatLocalDateTime(call.createdAt) }}</span>
+                                    </article>
+                                  </div>
+                                </div>
+                              </div>
+                            </details>
                           </article>
                         </div>
                       </div>
@@ -1099,7 +1209,9 @@
                               :disabled="!commandSelectedAgent || ui.command.isRunning"
                               required
                               autofocus
-                              @keydown.enter.exact.prevent="handleCommandSubmit"
+                              @compositionstart="handleCommandInputCompositionStart"
+                              @compositionend="handleCommandInputCompositionEnd"
+                              @keydown.enter.exact="handleCommandInputEnterKeydown"
                             ></textarea>
 
                             <button
@@ -2146,6 +2258,7 @@ let weeklyAutosaveTimer = null;
 let weeklySavedSnapshot = "";
 let weeklyAutosaveInFlight = false;
 let weeklyReportCopyTimer = null;
+let agentProgressListenerId = null;
 
 function createEmptyModelSettings() {
   return {
@@ -2184,6 +2297,7 @@ function createWeeklyState() {
     reportFeedbackText: "",
     reportFeedbackTone: "neutral",
     reportCopyState: "idle",
+    dailyReportUseModelOptimization: false,
     isGeneratingReport: false,
     generatingReportKind: null
   };
@@ -2198,6 +2312,22 @@ function createCommandDraft(agentProfileId = "") {
     mcpToolName: "",
     mcpArgumentsText: "{}"
   };
+}
+
+function buildCommandWorkshopLiveArtifact(progress) {
+  return buildCommandWorkshopArtifact({
+    profileLabel: progress?.profileLabel ?? "",
+    model: progress?.model ?? "",
+    skillName: progress?.skillName ?? null,
+    autoSelectedMcp: Boolean(progress?.autoSelectedMcp),
+    mcpServerName: progress?.mcpServerName ?? null,
+    mcpToolName: progress?.mcpToolName ?? null,
+    mcpResultText: progress?.mcpResultText ?? null,
+    mcpCalls: [...(progress?.mcpCalls ?? [])],
+    stopReason: progress?.stopReason ?? "",
+    steps: [...(progress?.steps ?? [])],
+    createdAt: progress?.createdAt ?? new Date().toISOString()
+  });
 }
 
 function createExtensionEditorState(kind = "agent", entry = null) {
@@ -2403,10 +2533,13 @@ const ui = reactive({
     view: "list",
     composerView: "input",
     activeSessionId: null,
+    activeProgressEventId: null,
     form: createCommandDraft(),
     draftInput: "",
     availableMcpTools: [],
-    isRunning: false
+    isRunning: false,
+    isInputComposing: false,
+    liveProgress: null
   },
   extensions: createExtensionsState()
 });
@@ -2538,7 +2671,11 @@ const weeklyReportFeedbackText = computed(() => {
     return customText;
   }
 
-  return weeklyIsWeeklyReportMode.value ? "按当前模板生成周报输出。" : "仅提取今天有更新的叶子任务。";
+  return weeklyIsWeeklyReportMode.value
+    ? "按当前模板生成周报输出。"
+    : ui.weekly.dailyReportUseModelOptimization
+      ? "先提取今天更新的任务树，再交给大模型做轻量润色；若层级校验失败会回退基础稿。"
+      : "仅提取今天有更新的任务树，并严格保留原父子层级。";
 });
 const weeklyReportFeedbackTone = computed(() => {
   const tone = String(ui.weekly.reportFeedbackTone ?? "").trim();
@@ -2792,6 +2929,30 @@ function getDailyReportDateTitle(referenceDate = new Date()) {
   }).format(date);
 }
 
+function filterWeeklyTasksToUpdatedBranches(tasks = [], todayKey = getLocalDateKey(new Date())) {
+  const filtered = [];
+
+  for (const task of Array.isArray(tasks) ? tasks : []) {
+    const children = getWeeklyTaskChildren(task);
+    const filteredChildren = filterWeeklyTasksToUpdatedBranches(children, todayKey);
+    const title = String(task?.title ?? "").trim();
+    const isUpdatedLeaf = !children.length && Boolean(title) && getLocalDateKey(task?.updatedAt) === todayKey;
+
+    if (!isUpdatedLeaf && !filteredChildren.length) {
+      continue;
+    }
+
+    filtered.push({
+      ...task,
+      title,
+      detail: String(task?.detail ?? "").trim(),
+      children: filteredChildren
+    });
+  }
+
+  return filtered;
+}
+
 function collectTodayUpdatedLeafTasks(projects = [], referenceDate = new Date()) {
   const todayKey = getLocalDateKey(referenceDate);
   const entries = [];
@@ -2831,6 +2992,72 @@ function collectTodayUpdatedLeafTasks(projects = [], referenceDate = new Date())
   return entries;
 }
 
+function serializeDailyReportTaskLines(tasks = [], depth = 1, todayKey = getLocalDateKey(new Date())) {
+  const lines = [];
+
+  for (const task of Array.isArray(tasks) ? tasks : []) {
+    const indent = "    ".repeat(depth);
+    const statusLabel = getWeeklyProgressStatusMeta(task?.status).label;
+    const title = String(task?.title ?? "").trim() || "未命名任务";
+
+    lines.push(`${indent}* ${title}（${statusLabel}）`);
+
+    const children = getWeeklyTaskChildren(task);
+
+    if (children.length) {
+      lines.push(...serializeDailyReportTaskLines(children, depth + 1, todayKey));
+    }
+  }
+
+  return lines;
+}
+
+function buildDailyReportMarkdown(record, referenceDate = new Date()) {
+  const todayKey = getLocalDateKey(referenceDate);
+  const entries = collectTodayUpdatedLeafTasks(record?.projects ?? [], referenceDate);
+
+  if (!entries.length) {
+    return {
+      entries,
+      markdown: ""
+    };
+  }
+
+  const lines = [];
+
+  for (const project of Array.isArray(record?.projects) ? record.projects : []) {
+    const projectTitle = String(project?.title ?? "").trim() || "未命名项目";
+    const filteredTasks = filterWeeklyTasksToUpdatedBranches(project?.tasks ?? [], todayKey);
+
+    if (!filteredTasks.length) {
+      continue;
+    }
+
+    lines.push(`* ${projectTitle}`);
+    lines.push(...serializeDailyReportTaskLines(filteredTasks, 1, todayKey));
+    lines.push("");
+  }
+
+  return {
+    entries,
+    markdown: lines.join("\n").trim()
+  };
+}
+
+function extractMarkdownListDepthSignature(value) {
+  return String(value ?? "")
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.match(/^(\s*)[*+-]\s+/))
+    .filter(Boolean)
+    .map((match) => Math.round((match?.[1]?.length ?? 0) / 4))
+    .join(",");
+}
+
+function hasMatchingMarkdownHierarchy(sourceMarkdown, candidateMarkdown) {
+  return extractMarkdownListDepthSignature(sourceMarkdown) === extractMarkdownListDepthSignature(candidateMarkdown);
+}
+
 function buildDailyReportSourceContent(record) {
   const entries = collectTodayUpdatedLeafTasks(record?.projects ?? []);
 
@@ -2841,35 +3068,26 @@ function buildDailyReportSourceContent(record) {
     };
   }
 
-  const groupedEntries = new Map();
-
-  entries.forEach((entry) => {
-    if (!groupedEntries.has(entry.projectTitle)) {
-      groupedEntries.set(entry.projectTitle, []);
-    }
-
-    groupedEntries.get(entry.projectTitle).push(entry);
-  });
-
+  const todayKey = getLocalDateKey(new Date());
   const lines = [];
 
-  groupedEntries.forEach((projectEntries, projectTitle) => {
-    lines.push(`项目：${projectTitle}`);
-    projectEntries.forEach((entry) => {
-      lines.push(`- 任务路径：${entry.taskPath}`);
-      lines.push(`  任务内容：${entry.title}`);
-      lines.push(`  当前状态：${entry.statusLabel}`);
+  for (const project of Array.isArray(record?.projects) ? record.projects : []) {
+    const projectTitle = String(project?.title ?? "").trim() || "未命名项目";
+    const filteredTasks = filterWeeklyTasksToUpdatedBranches(project?.tasks ?? [], todayKey);
 
-      if (entry.createdAt) {
-        lines.push(`  创建时间：${formatLocalDateTime(entry.createdAt)}`);
-      }
+    if (!filteredTasks.length) {
+      continue;
+    }
 
-      if (entry.updatedAt) {
-        lines.push(`  更新时间：${formatLocalDateTime(entry.updatedAt)}`);
-      }
-    });
+    lines.push(`* ${projectTitle}`);
+
+    if (String(project?.note ?? "").trim()) {
+      lines.push(...String(project.note).split("\n").map((line) => `    * 项目备注：${line.trim()}`));
+    }
+
+    lines.push(...serializeDailyReportTaskLines(filteredTasks, 1, todayKey));
     lines.push("");
-  });
+  }
 
   return {
     entries,
@@ -3959,7 +4177,7 @@ async function handleWeeklyActiveReportGeneration() {
 }
 
 async function handleWeeklyDailyReportGeneration() {
-  if (!desktopApi || !ui.weekly.draft || !activeWeeklyRecord.value) {
+  if (!ui.weekly.draft || !activeWeeklyRecord.value) {
     setWeeklyReportFeedback("当前周报表单尚未就绪，暂无法生成日报。", "danger");
     setStatus("当前周报表单尚未就绪，暂无法生成日报。", "danger");
     return;
@@ -3979,27 +4197,51 @@ async function handleWeeklyDailyReportGeneration() {
     setWeeklyReportFeedback("正在整理今日日报...", "neutral");
     setStatus("正在整理今日日报...", "neutral");
     const sanitizedDraft = sanitizeWeeklyProgressRecord(ui.weekly.draft);
-    const { entries, content } = buildDailyReportSourceContent(sanitizedDraft);
+    const { entries, markdown } = buildDailyReportMarkdown(sanitizedDraft);
 
-    if (!entries.length || !content) {
+    if (!entries.length || !markdown) {
       setWeeklyReportFeedback(`今天（${getDailyReportDateTitle()}）还没有检测到更新的子任务记录。`, "warning");
       setStatus(`今天（${getDailyReportDateTitle()}）还没有检测到更新的子任务记录。`, "warning");
       return;
     }
 
-    if (typeof desktopApi.generateDailyProgressReport !== "function") {
-      throw new Error("当前版本尚未接通日报生成能力，请重启应用后重试");
+    const baseMarkdown = normalizeMarkdownForClipboard(markdown);
+    let finalMarkdown = baseMarkdown;
+    let feedbackText = "日报已按原任务层级生成。";
+    let feedbackTone = "success";
+
+    if (ui.weekly.dailyReportUseModelOptimization) {
+      if (!desktopApi || typeof desktopApi.generateDailyProgressReport !== "function") {
+        feedbackText = "当前版本尚未接通日报优化能力，已回退为原任务层级稿。";
+        feedbackTone = "warning";
+      } else {
+        try {
+          const result = await desktopApi.generateDailyProgressReport({
+            dateTitle: getDailyReportDateTitle(),
+            weekTitle: activeWeeklyRecord.value.title,
+            content: baseMarkdown
+          });
+          const optimizedMarkdown = normalizeMarkdownForClipboard(result.text);
+
+          if (optimizedMarkdown && hasMatchingMarkdownHierarchy(baseMarkdown, optimizedMarkdown)) {
+            finalMarkdown = optimizedMarkdown;
+            feedbackText = `日报已完成大模型优化（${result.profileLabel}）。`;
+          } else {
+            feedbackText = `大模型优化未通过层级校验，已回退为原任务层级稿（${result.profileLabel}）。`;
+            feedbackTone = "warning";
+          }
+        } catch (error) {
+          console.error("Failed to optimize daily report", error);
+          feedbackText = `大模型优化失败，已回退为原任务层级稿：${error instanceof Error ? error.message : "未知错误"}`;
+          feedbackTone = "warning";
+        }
+      }
     }
 
-    const result = await desktopApi.generateDailyProgressReport({
-      dateTitle: getDailyReportDateTitle(),
-      weekTitle: activeWeeklyRecord.value.title,
-      content
-    });
-    ui.weekly.draft.generatedDailyReport = normalizeMarkdownForClipboard(result.text);
+    ui.weekly.draft.generatedDailyReport = finalMarkdown;
     resetWeeklyReportCopyState();
-    setWeeklyReportFeedback(`日报已生成（${result.profileLabel}）。`, "success");
-    setStatus(`日报已生成（${result.profileLabel}）。`, "success");
+    setWeeklyReportFeedback(feedbackText, feedbackTone);
+    setStatus(feedbackText, feedbackTone);
   } catch (error) {
     console.error("Failed to generate daily report", error);
     setWeeklyReportFeedback(`日报生成失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
@@ -4114,9 +4356,11 @@ function beginNewCommandSession() {
   ui.command.view = "chat";
   ui.command.composerView = "input";
   ui.command.activeSessionId = null;
+  ui.command.activeProgressEventId = null;
   ui.command.form = normalizeCommandWorkshopConfig(ui.command.form);
   ui.command.draftInput = "";
   ui.command.availableMcpTools = [];
+  ui.command.liveProgress = null;
   focusCommandInput();
 }
 
@@ -4136,9 +4380,11 @@ function openCommandSession(sessionId) {
   ui.command.view = "chat";
   ui.command.composerView = "input";
   ui.command.activeSessionId = session.id;
+  ui.command.activeProgressEventId = null;
   ui.command.form = normalizeCommandWorkshopConfig(session);
   ui.command.availableMcpTools = [];
   ui.command.draftInput = "";
+  ui.command.liveProgress = null;
   scrollCommandToBottom();
 }
 
@@ -4188,6 +4434,38 @@ function handleCommandServerChange() {
     mcpToolName: ""
   });
   ui.command.availableMcpTools = [];
+}
+
+function handleCommandInputCompositionStart() {
+  ui.command.isInputComposing = true;
+}
+
+function handleCommandInputCompositionEnd() {
+  ui.command.isInputComposing = false;
+}
+
+function handleCommandInputEnterKeydown(event) {
+  if (event.isComposing || ui.command.isInputComposing || event.key === "Process" || event.keyCode === 229) {
+    return;
+  }
+
+  event.preventDefault();
+  void handleCommandSubmit();
+}
+
+function handleAgentRunProgress(payload) {
+  if (!payload?.progressEventId || payload.progressEventId !== ui.command.activeProgressEventId) {
+    return;
+  }
+
+  ui.command.liveProgress = {
+    progressEventId: payload.progressEventId,
+    phase: payload.phase ?? "running",
+    statusText: payload.statusText || "正在执行中",
+    updatedAt: payload.updatedAt ?? new Date().toISOString(),
+    artifact: buildCommandWorkshopLiveArtifact(payload)
+  };
+  scrollCommandToBottom();
 }
 
 async function handleCommandLoadMcpTools() {
@@ -4282,6 +4560,7 @@ async function handleCommandSubmit() {
   const activeSession = activeCommandSession.value;
   const sessionId = activeSession?.id ?? `command_session_${Date.now()}`;
   const startedAt = new Date().toISOString();
+  const progressEventId = `command_progress_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const baseMessages = [...(activeSession?.messages ?? [])];
   const userMessage = {
     id: `command_message_${Date.now()}`,
@@ -4306,6 +4585,27 @@ async function handleCommandSubmit() {
 
   upsertCommandWorkshopSessionState(pendingSession);
   ui.command.isRunning = true;
+  ui.command.isInputComposing = false;
+  ui.command.activeProgressEventId = progressEventId;
+  ui.command.liveProgress = {
+    progressEventId,
+    phase: "running",
+    statusText: `命令工坊正在运行 Agent「${agent.name}」...`,
+    updatedAt: startedAt,
+    artifact: buildCommandWorkshopLiveArtifact({
+      profileLabel: "",
+      model: "",
+      skillName: ui.command.form.skillId ? getSkillById(ui.command.form.skillId)?.name ?? null : null,
+      autoSelectedMcp: Boolean(ui.command.form.autoSelectMcp),
+      mcpServerName: ui.command.form.mcpServerId ? getMcpServerById(ui.command.form.mcpServerId)?.name ?? null : null,
+      mcpToolName: ui.command.form.mcpToolName || null,
+      mcpResultText: "",
+      mcpCalls: [],
+      stopReason: "",
+      steps: [],
+      createdAt: startedAt
+    })
+  };
   ui.command.view = "chat";
   ui.command.draftInput = "";
   scrollCommandToBottom();
@@ -4316,6 +4616,7 @@ async function handleCommandSubmit() {
       agentProfileId: agent.id,
       userInput,
       conversationMessages: buildConversationMessagesForAgentRun(baseMessages),
+      progressEventId,
       ...(ui.command.form.skillId ? { skillId: ui.command.form.skillId } : {}),
       ...(ui.command.form.autoSelectMcp ? { autoSelectMcp: true } : {}),
       ...(ui.command.form.mcpServerId ? { mcpServerId: ui.command.form.mcpServerId } : {}),
@@ -4347,6 +4648,8 @@ async function handleCommandSubmit() {
     ui.command.activeSessionId = completedSession.id;
     workbench.agentRunLogs = [result, ...workbench.agentRunLogs.filter((log) => log.id !== result.id)];
     ui.command.isRunning = false;
+    ui.command.activeProgressEventId = null;
+    ui.command.liveProgress = null;
     setStatus(`命令工坊已完成本轮响应（${result.profileLabel}）。`, "success");
     scrollCommandToBottom();
   } catch (error) {
@@ -4376,6 +4679,8 @@ async function handleCommandSubmit() {
     }
 
     ui.command.isRunning = false;
+    ui.command.activeProgressEventId = null;
+    ui.command.liveProgress = null;
     setStatus(`命令工坊运行失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
     scrollCommandToBottom();
   }
@@ -4742,6 +5047,15 @@ function normalizeMarkdownForClipboard(value) {
   const zeroWidthPattern = /[\u200B-\u200D\u2060\uFEFF]/g;
   const bulletLikePattern = /^[ \t]*[•●▪◦‣・·]\s+/;
   const statusSuffixPattern = /(?:（|\()(已完成|进行中|待开始|受阻)(?:）|\))\s*$/;
+  const normalizeListIndent = (indent) => {
+    const width = String(indent ?? "").length;
+
+    if (!width) {
+      return "";
+    }
+
+    return "    ".repeat(Math.max(1, Math.round(width / 4)));
+  };
 
   const normalizedLines = String(value ?? "")
     .replace(/\r\n?/g, "\n")
@@ -4749,7 +5063,7 @@ function normalizeMarkdownForClipboard(value) {
     .replace(oddSpacePattern, " ")
     .replace(/\t/g, "    ")
     .replace(/((?:（|\()(?:已完成|进行中|待开始|受阻)(?:）|\)))(?=\\?[*+-]\s+)/g, "$1\n")
-    .replace(/[ ]{2,}(?=(?:\\?[*+-]|\d+[.)])\s+)/g, "\n")
+    .replace(/([^\n])[ ]{2,}(?=(?:\\?[*+-]|\d+[.)])\s+)/g, "$1\n")
     .split("\n")
     .map((line) => {
       let normalizedLine = line.replace(/[ ]+$/g, "");
@@ -4795,7 +5109,7 @@ function normalizeMarkdownForClipboard(value) {
       continue;
     }
 
-    repairedLines.push(`${indent ? "    " : ""}* ${content}`);
+    repairedLines.push(`${normalizeListIndent(indent)}* ${content}`);
     hasActiveProject = !indent && !statusSuffixPattern.test(content);
   }
 
@@ -5108,6 +5422,10 @@ watch(
 );
 
 onMounted(async () => {
+  if (desktopApi?.onAgentRunProgress) {
+    agentProgressListenerId = desktopApi.onAgentRunProgress(handleAgentRunProgress);
+  }
+
   await bootstrapWorkbench();
   ui.command.form = normalizeCommandWorkshopConfig(ui.command.form);
   await nextTick();
@@ -5115,6 +5433,11 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  if (agentProgressListenerId && desktopApi?.offAgentRunProgress) {
+    desktopApi.offAgentRunProgress(agentProgressListenerId);
+    agentProgressListenerId = null;
+  }
+
   clearWeeklyAutosaveTimer();
   disposeRobotRuntime();
   document.body.classList.remove("load-error");

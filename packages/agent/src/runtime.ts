@@ -15,6 +15,7 @@ import type {
   AgentMcpCallRecord,
   AgentProfile,
   AgentRunLog,
+  AgentRunProgressEvent,
   AgentRunRequest,
   AgentRunStep,
   McpServerConfig,
@@ -98,6 +99,11 @@ interface ExecuteMcpToolCallOptions {
     serverName: string;
     toolName: string;
   };
+  reportProgress?: () => void;
+}
+
+interface RunAgentOptions {
+  onProgress?: (payload: AgentRunProgressEvent) => void;
 }
 
 function createRunStep(type: AgentRunStep["type"], title: string, detail: string): AgentRunStep {
@@ -380,7 +386,8 @@ async function executeSkillHandler(
   conversationMessages: ModelMessage[],
   mcpResultText: string | null,
   mcpCalls: AgentMcpCallRecord[],
-  steps: AgentRunStep[]
+  steps: AgentRunStep[],
+  reportProgress?: () => void
 ): Promise<SkillExecutionResult | null> {
   if (skill.kind !== "workflow") {
     return null;
@@ -396,12 +403,14 @@ async function executeSkillHandler(
         `${skill.name} 未找到可执行 handler，回退为 prompt 模板模式`
       )
     );
+    reportProgress?.();
     return null;
   }
 
   steps.push(
     createRunStep("skill_handler_started", "开始执行 Skill Handler", `${skill.name} / ${handlerPath}`)
   );
+  reportProgress?.();
 
   const requestId = `skill_handler_${randomUUID()}`;
   const payload: SkillHandlerRequestPayload = {
@@ -500,6 +509,7 @@ async function executeSkillHandler(
       `${skill.name} / ${result.mode === "final" ? "直接产出最终结果" : "产出补充上下文"}`
     )
   );
+  reportProgress?.();
 
   return result;
 }
@@ -1141,13 +1151,15 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
     autoSelected,
     steps,
     repairContext,
-    fallbackFrom
+    fallbackFrom,
+    reportProgress
   } = options;
 
   steps.push(
     createRunStep("mcp_server_selected", `已选择 MCP Server（第 ${round} 轮）`, server.name),
     createRunStep("mcp_tool_selected", `已选择 MCP 工具（第 ${round} 轮）`, toolName)
   );
+  reportProgress?.();
 
   let currentArguments = toolArguments ?? {};
   let lastErrorMessage = "";
@@ -1189,6 +1201,7 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
           `${toolName} / ${repaired.reason}`
         )
       );
+      reportProgress?.();
       return true;
     } catch {
       return false;
@@ -1222,6 +1235,7 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
             `${toolName} / ${classified.message} / 第 ${attempt} 次尝试`
           )
         );
+        reportProgress?.();
 
         return {
           round,
@@ -1256,6 +1270,7 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
           `${toolResult.toolName} / 第 ${attempt} 次尝试`
         )
       );
+      reportProgress?.();
 
       return {
         round,
@@ -1295,6 +1310,7 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
             `${toolName} / 第 ${attempt} 次失败：${classified.message} / ${delayMs}ms 后重试`
           )
         );
+        reportProgress?.();
         await sleep(delayMs);
         continue;
       }
@@ -1312,6 +1328,7 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
           `${toolName} / ${classified.message} / 已尝试 ${attempt} 次`
         )
       );
+      reportProgress?.();
 
       return {
         round,
@@ -1366,7 +1383,61 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
   };
 }
 
-export async function runAgent(request: AgentRunRequest): Promise<AgentRunLog> {
+function sanitizeForIpc<T>(value: T): T {
+  const visited = new WeakSet<object>();
+
+  function normalize(input: unknown): unknown {
+    if (input === null || input === undefined) {
+      return input;
+    }
+
+    if (typeof input === "string" || typeof input === "number" || typeof input === "boolean") {
+      return input;
+    }
+
+    if (typeof input === "bigint") {
+      return input.toString();
+    }
+
+    if (input instanceof Date) {
+      return input.toISOString();
+    }
+
+    if (input instanceof Error) {
+      return {
+        name: input.name,
+        message: input.message,
+        stack: input.stack ?? ""
+      };
+    }
+
+    if (Array.isArray(input)) {
+      return input.map((item) => normalize(item));
+    }
+
+    if (typeof input !== "object") {
+      return String(input);
+    }
+
+    if (visited.has(input)) {
+      return "[Circular]";
+    }
+
+    visited.add(input);
+
+    const output: Record<string, unknown> = {};
+
+    for (const [key, entryValue] of Object.entries(input)) {
+      output[key] = normalize(entryValue);
+    }
+
+    return output;
+  }
+
+  return normalize(value) as T;
+}
+
+export async function runAgent(request: AgentRunRequest, options: RunAgentOptions = {}): Promise<AgentRunLog> {
   const userInput = request.userInput.trim();
 
   if (!userInput) {
@@ -1403,30 +1474,69 @@ export async function runAgent(request: AgentRunRequest): Promise<AgentRunLog> {
   const selectedSkill = resolveSkillForRun(agent, skillDefinitions, request.skillId);
   const authorizedMcpServers = resolveAuthorizedMcpServers(agent, mcpServers);
   let selectedMcpServer = resolveMcpSelection(agent, authorizedMcpServers, request);
-  const steps: AgentRunStep[] = [
-    createRunStep("agent_selected", "已加载 Agent", `${agent.name} / ${agent.mode}`),
-    createRunStep("model_selected", "已绑定模型", `${modelProfile.displayName} / ${modelProfile.model}`)
-  ];
-
-  if (selectedSkill) {
-    steps.push(createRunStep("skill_selected", "已附加 Skill", selectedSkill.name));
-  }
-
-  if (authorizedMcpServers.length) {
-    steps.push(
-      createRunStep(
-        "mcp_authorized",
-        "检测到已授权 MCP",
-        `本轮作为上下文保留，尚未真实调用：${authorizedMcpServers.map((server) => server.name).join("、")}`
-      )
-    );
-  }
-
   const mcpCalls: AgentMcpCallRecord[] = [];
   let actualMcpToolName: string | null = request.mcpToolName?.trim() || null;
   let actualMcpArguments: Record<string, unknown> | undefined = request.mcpArguments;
   let autoSelectedMcp = false;
   let stopReason: string | null = null;
+  const steps: AgentRunStep[] = [];
+  const progressCreatedAt = new Date().toISOString();
+
+  const emitProgress = (overrides: Partial<AgentRunProgressEvent> = {}): void => {
+    if (!request.progressEventId || !options.onProgress) {
+      return;
+    }
+
+    const latestStep = steps[steps.length - 1];
+    const defaultStatusText =
+      stopReason?.trim() ||
+      latestStep?.detail?.trim() ||
+      latestStep?.title?.trim() ||
+      "正在执行中";
+
+    options.onProgress(
+      sanitizeForIpc({
+        progressEventId: request.progressEventId,
+        phase: overrides.phase ?? "running",
+        statusText: overrides.statusText ?? defaultStatusText,
+        ...(overrides.text ? { text: overrides.text } : {}),
+        profileLabel: overrides.profileLabel ?? modelProfile.displayName ?? null,
+        model: overrides.model ?? modelProfile.model ?? null,
+        skillName: overrides.skillName ?? selectedSkill?.name ?? null,
+        autoSelectedMcp: overrides.autoSelectedMcp ?? autoSelectedMcp,
+        mcpServerName: overrides.mcpServerName ?? selectedMcpServer?.name ?? null,
+        mcpToolName: overrides.mcpToolName ?? actualMcpToolName,
+        mcpResultText: overrides.mcpResultText ?? buildCombinedMcpResultText(mcpCalls),
+        mcpCalls: overrides.mcpCalls ?? [...mcpCalls],
+        ...(overrides.stopReason ?? stopReason ? { stopReason: overrides.stopReason ?? stopReason ?? "" } : {}),
+        steps: overrides.steps ?? [...steps],
+        createdAt: overrides.createdAt ?? progressCreatedAt,
+        updatedAt: overrides.updatedAt ?? new Date().toISOString()
+      }) as AgentRunProgressEvent
+    );
+  };
+
+  const pushStep = (type: AgentRunStep["type"], title: string, detail: string): AgentRunStep => {
+    const step = createRunStep(type, title, detail);
+    steps.push(step);
+    emitProgress();
+    return step;
+  };
+
+  pushStep("agent_selected", "已加载 Agent", `${agent.name} / ${agent.mode}`);
+  pushStep("model_selected", "已绑定模型", `${modelProfile.displayName} / ${modelProfile.model}`);
+
+  if (selectedSkill) {
+    pushStep("skill_selected", "已附加 Skill", selectedSkill.name);
+  }
+
+  if (authorizedMcpServers.length) {
+    pushStep(
+      "mcp_authorized",
+      "检测到已授权 MCP",
+      `本轮作为上下文保留，尚未真实调用：${authorizedMcpServers.map((server) => server.name).join("、")}`
+    );
+  }
 
   if (selectedMcpServer && actualMcpToolName) {
     const toolName = actualMcpToolName?.trim();
@@ -1452,6 +1562,7 @@ export async function runAgent(request: AgentRunRequest): Promise<AgentRunLog> {
         round: 1,
         autoSelected: false,
         steps,
+        reportProgress: () => emitProgress(),
         repairContext: {
           modelProfile,
           agent,
@@ -1465,6 +1576,7 @@ export async function runAgent(request: AgentRunRequest): Promise<AgentRunLog> {
     stopReason = mcpCalls[mcpCalls.length - 1]?.isError
       ? "手动指定的 MCP 工具调用失败，已停止继续编排"
       : "手动指定 MCP 工具已完成";
+    emitProgress();
   }
 
   if (!actualMcpToolName && request.autoSelectMcp && authorizedMcpServers.length) {
@@ -1474,17 +1586,15 @@ export async function runAgent(request: AgentRunRequest): Promise<AgentRunLog> {
       candidateTools = await collectCandidateMcpTools(candidateServers);
     } catch (error) {
       stopReason = `MCP 工具发现失败：${error instanceof Error ? error.message : "未知错误"}`;
-      steps.push(createRunStep("mcp_auto_stopped", "MCP 自动编排停止", stopReason));
+      pushStep("mcp_auto_stopped", "MCP 自动编排停止", stopReason);
     }
     let consecutiveFailures = 0;
 
     for (let round = 1; round <= MAX_AUTO_MCP_ROUNDS && candidateTools.length; round += 1) {
-      steps.push(
-        createRunStep(
-          "mcp_auto_planning",
-          `正在规划 MCP 工具（第 ${round} 轮）`,
-          `从 ${candidateServers.length} 个 MCP Server 的可用工具中自动选择`
-        )
+      pushStep(
+        "mcp_auto_planning",
+        `正在规划 MCP 工具（第 ${round} 轮）`,
+        `从 ${candidateServers.length} 个 MCP Server 的可用工具中自动选择`
       );
 
       let plannedSelection;
@@ -1500,17 +1610,15 @@ export async function runAgent(request: AgentRunRequest): Promise<AgentRunLog> {
         );
       } catch (error) {
         stopReason = `MCP 规划失败：${error instanceof Error ? error.message : "未知错误"}`;
-        steps.push(createRunStep("mcp_auto_stopped", `MCP 自动编排停止（第 ${round} 轮）`, stopReason));
+        pushStep("mcp_auto_stopped", `MCP 自动编排停止（第 ${round} 轮）`, stopReason);
         break;
       }
 
-      steps.push(
-        createRunStep("mcp_auto_planning", `MCP 规划结果（第 ${round} 轮）`, plannedSelection.reason)
-      );
+      pushStep("mcp_auto_planning", `MCP 规划结果（第 ${round} 轮）`, plannedSelection.reason);
 
       if (!plannedSelection.shouldCall || !plannedSelection.serverId || !plannedSelection.toolName) {
         stopReason = plannedSelection.reason || "模型判断无需继续调用 MCP 工具";
-        steps.push(createRunStep("mcp_auto_stopped", `MCP 自动编排停止（第 ${round} 轮）`, stopReason));
+        pushStep("mcp_auto_stopped", `MCP 自动编排停止（第 ${round} 轮）`, stopReason);
         break;
       }
 
@@ -1523,13 +1631,7 @@ export async function runAgent(request: AgentRunRequest): Promise<AgentRunLog> {
 
       if (duplicateCall) {
         stopReason = "触发重复调用保护，自动编排已停止";
-        steps.push(
-          createRunStep(
-            "mcp_auto_stopped",
-            `跳过重复 MCP 调用（第 ${round} 轮）`,
-            stopReason
-          )
-        );
+        pushStep("mcp_auto_stopped", `跳过重复 MCP 调用（第 ${round} 轮）`, stopReason);
         break;
       }
 
@@ -1554,6 +1656,7 @@ export async function runAgent(request: AgentRunRequest): Promise<AgentRunLog> {
         round,
         autoSelected: true,
         steps,
+        reportProgress: () => emitProgress(),
         repairContext: {
           modelProfile,
           agent,
@@ -1563,17 +1666,16 @@ export async function runAgent(request: AgentRunRequest): Promise<AgentRunLog> {
       });
       mcpCalls.push(callRecord);
       actualMcpArguments = callRecord.arguments;
+      emitProgress();
 
       if (callRecord.isError) {
         const fallbackCandidateTools = buildFallbackCandidateTools(candidateTools, callRecord, mcpCalls);
 
         if (fallbackCandidateTools.length) {
-          steps.push(
-            createRunStep(
-              "mcp_fallback_planned",
-              `正在规划 fallback tool（第 ${round} 轮）`,
-              `${callRecord.toolName} 调用失败后，尝试在 ${fallbackCandidateTools.length} 个候选中寻找替代方案`
-            )
+          pushStep(
+            "mcp_fallback_planned",
+            `正在规划 fallback tool（第 ${round} 轮）`,
+            `${callRecord.toolName} 调用失败后，尝试在 ${fallbackCandidateTools.length} 个候选中寻找替代方案`
           );
 
           try {
@@ -1587,13 +1689,7 @@ export async function runAgent(request: AgentRunRequest): Promise<AgentRunLog> {
               round
             );
 
-            steps.push(
-              createRunStep(
-                "mcp_fallback_planned",
-                `fallback 规划结果（第 ${round} 轮）`,
-                fallbackPlan.reason
-              )
-            );
+            pushStep("mcp_fallback_planned", `fallback 规划结果（第 ${round} 轮）`, fallbackPlan.reason);
 
             if (
               fallbackPlan.shouldFallback &&
@@ -1608,12 +1704,10 @@ export async function runAgent(request: AgentRunRequest): Promise<AgentRunLog> {
               const fallbackTool = findCandidateTool(candidateTools, fallbackPlan.serverId, fallbackPlan.toolName);
 
               if (fallbackServer && fallbackTool) {
-                steps.push(
-                  createRunStep(
-                    "mcp_fallback_selected",
-                    `fallback tool 已接管（第 ${round} 轮）`,
-                    `${callRecord.serverName} / ${callRecord.toolName} -> ${fallbackServer.name} / ${fallbackTool.name}`
-                  )
+                pushStep(
+                  "mcp_fallback_selected",
+                  `fallback tool 已接管（第 ${round} 轮）`,
+                  `${callRecord.serverName} / ${callRecord.toolName} -> ${fallbackServer.name} / ${fallbackTool.name}`
                 );
 
                 selectedMcpServer = fallbackServer;
@@ -1628,6 +1722,7 @@ export async function runAgent(request: AgentRunRequest): Promise<AgentRunLog> {
                   round,
                   autoSelected: true,
                   steps,
+                  reportProgress: () => emitProgress(),
                   repairContext: {
                     modelProfile,
                     agent,
@@ -1642,6 +1737,7 @@ export async function runAgent(request: AgentRunRequest): Promise<AgentRunLog> {
                 mcpCalls.push(fallbackRecord);
                 actualMcpToolName = fallbackRecord.toolName;
                 actualMcpArguments = fallbackRecord.arguments;
+                emitProgress();
 
                 if (fallbackRecord.isError) {
                   consecutiveFailures += 1;
@@ -1656,12 +1752,10 @@ export async function runAgent(request: AgentRunRequest): Promise<AgentRunLog> {
             }
           } catch (error) {
             consecutiveFailures += 1;
-            steps.push(
-              createRunStep(
-                "mcp_fallback_planned",
-                `fallback 规划失败（第 ${round} 轮）`,
-                `fallback 规划异常：${error instanceof Error ? error.message : "未知错误"}`
-              )
+            pushStep(
+              "mcp_fallback_planned",
+              `fallback 规划失败（第 ${round} 轮）`,
+              `fallback 规划异常：${error instanceof Error ? error.message : "未知错误"}`
             );
           }
         } else {
@@ -1670,9 +1764,7 @@ export async function runAgent(request: AgentRunRequest): Promise<AgentRunLog> {
 
         if (consecutiveFailures >= MAX_CONSECUTIVE_AUTO_MCP_FAILURES) {
           stopReason = `连续 ${MAX_CONSECUTIVE_AUTO_MCP_FAILURES} 轮 MCP 调用失败，自动编排已停止`;
-          steps.push(
-            createRunStep("mcp_auto_stopped", `MCP 自动编排停止（第 ${round} 轮）`, stopReason)
-          );
+          pushStep("mcp_auto_stopped", `MCP 自动编排停止（第 ${round} 轮）`, stopReason);
           break;
         }
       } else {
@@ -1681,13 +1773,13 @@ export async function runAgent(request: AgentRunRequest): Promise<AgentRunLog> {
 
       if (round === MAX_AUTO_MCP_ROUNDS) {
         stopReason = `达到最大自动编排轮次（${MAX_AUTO_MCP_ROUNDS} 轮）`;
-        steps.push(createRunStep("mcp_auto_stopped", `MCP 自动编排停止（第 ${round} 轮）`, stopReason));
+        pushStep("mcp_auto_stopped", `MCP 自动编排停止（第 ${round} 轮）`, stopReason);
       }
     }
 
     if (!candidateTools.length && !stopReason) {
       stopReason = "未发现可用 MCP 工具，自动编排已停止";
-      steps.push(createRunStep("mcp_auto_stopped", "MCP 自动编排停止", stopReason));
+      pushStep("mcp_auto_stopped", "MCP 自动编排停止", stopReason);
     }
   }
 
@@ -1709,7 +1801,8 @@ export async function runAgent(request: AgentRunRequest): Promise<AgentRunLog> {
         conversationMessages,
         mcpResultText,
         mcpCalls,
-        steps
+        steps,
+        () => emitProgress()
       );
 
       if (skillExecution?.content) {
@@ -1719,16 +1812,18 @@ export async function runAgent(request: AgentRunRequest): Promise<AgentRunLog> {
       if (skillExecution?.mode === "final") {
         skillFinalOutput = true;
       }
+
+      emitProgress();
     } catch (error) {
-      steps.push(
-        createRunStep(
-          "skill_handler_failed",
-          "Skill Handler 执行失败",
-          error instanceof Error ? error.message : "未知错误"
-        )
+      pushStep(
+        "skill_handler_failed",
+        "Skill Handler 执行失败",
+        error instanceof Error ? error.message : "未知错误"
       );
     }
   }
+
+  emitProgress({ statusText: skillFinalOutput ? "Skill 已直接产出结果，正在整理输出..." : "正在生成最终回复..." });
 
   const response = skillFinalOutput
     ? {
@@ -1761,19 +1856,17 @@ ${mcpResultText}`
       });
 
   if (!skillFinalOutput) {
-    steps.push(createRunStep("model_invoked", "模型调用完成", `${response.profileLabel} / ${response.model}`));
+    pushStep("model_invoked", "模型调用完成", `${response.profileLabel} / ${response.model}`);
   }
 
-  steps.push(
-    createRunStep(
-      "completed",
-      "运行完成",
-      skillFinalOutput
-        ? `Skill「${selectedSkill?.name ?? "workflow"}」已直接产出最终结果`
-        : selectedSkill
-          ? `输出已结合 Skill「${selectedSkill.name}」生成`
-          : "输出已直接生成"
-    )
+  pushStep(
+    "completed",
+    "运行完成",
+    skillFinalOutput
+      ? `Skill「${selectedSkill?.name ?? "workflow"}」已直接产出最终结果`
+      : selectedSkill
+        ? `输出已结合 Skill「${selectedSkill.name}」生成`
+        : "输出已直接生成"
   );
 
   const timestamp = new Date().toISOString();
@@ -1800,6 +1893,19 @@ ${mcpResultText}`
     ...response
   };
 
-  await appendAgentRunLog(log);
-  return log;
+  const safeLog = sanitizeForIpc(log);
+  emitProgress({
+    phase: "completed",
+    statusText: safeLog.text || "运行完成",
+    text: safeLog.text,
+    profileLabel: safeLog.profileLabel,
+    model: safeLog.model,
+    mcpResultText: safeLog.mcpResultText,
+    mcpCalls: [...(safeLog.mcpCalls ?? [])],
+    stopReason: safeLog.stopReason ?? "",
+    steps: [...safeLog.steps],
+    updatedAt: safeLog.updatedAt
+  });
+  await appendAgentRunLog(safeLog);
+  return safeLog;
 }

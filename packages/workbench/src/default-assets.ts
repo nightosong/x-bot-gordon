@@ -135,7 +135,7 @@ export function getBuiltinMcpServers(): McpServerConfig[] {
     {
       id: BUILTIN_WORKSPACE_MCP_ID,
       name: "Workspace Tools",
-      description: "内置工作区工具，支持列目录、读文件和全文搜索。",
+      description: "内置工作区工具，支持基础文件操作、路径管理、工作区搜索与联网搜索。",
       transport: "stdio",
       command: `/usr/bin/env node ${shellEscape(scriptPath)}`,
       env: {

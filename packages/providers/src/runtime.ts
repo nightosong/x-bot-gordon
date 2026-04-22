@@ -15,6 +15,53 @@ function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, "");
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function getNestedValue(value: unknown, path: Array<string | number>): unknown {
+  let current: unknown = value;
+
+  for (const segment of path) {
+    if (typeof segment === "number") {
+      if (!Array.isArray(current) || segment < 0 || segment >= current.length) {
+        return undefined;
+      }
+
+      current = current[segment];
+      continue;
+    }
+
+    if (!isRecord(current) || !(segment in current)) {
+      return undefined;
+    }
+
+    current = current[segment];
+  }
+
+  return current;
+}
+
+function readTextValue(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (isRecord(value) && typeof value.value === "string") {
+    return value.value;
+  }
+
+  return "";
+}
+
+function readTextField(content: Record<string, unknown>, key: string): string {
+  if (!(key in content)) {
+    return "";
+  }
+
+  return parseOpenAiMessageContent(content[key]).trim();
+}
+
 function getSystemPrompt(messages: ModelMessage[]): string | null {
   const systemMessages = messages.filter((message) => message.role === "system").map((message) => message.content.trim());
   const joined = systemMessages.filter(Boolean).join("\n\n");
@@ -33,6 +80,31 @@ function parseOpenAiMessageContent(content: unknown): string {
     return content;
   }
 
+  if (isRecord(content)) {
+    for (const key of [
+      "text",
+      "output_text",
+      "content",
+      "parts",
+      "messages",
+      "message",
+      "response",
+      "answer",
+      "completion",
+      "reasoning_content",
+      "reasoning",
+      "summary"
+    ]) {
+      const text = readTextField(content, key);
+
+      if (text) {
+        return text;
+      }
+    }
+
+    return "";
+  }
+
   if (Array.isArray(content)) {
     return content
       .map((item) => {
@@ -40,8 +112,22 @@ function parseOpenAiMessageContent(content: unknown): string {
           return item;
         }
 
-        if (item && typeof item === "object" && "text" in item && typeof item.text === "string") {
-          return item.text;
+        if (isRecord(item)) {
+          const text = readTextValue(item.text);
+
+          if (text) {
+            return text;
+          }
+
+          const outputText = readTextValue(item.output_text);
+
+          if (outputText) {
+            return outputText;
+          }
+
+          if ("content" in item) {
+            return parseOpenAiMessageContent(item.content);
+          }
         }
 
         return "";
@@ -51,6 +137,159 @@ function parseOpenAiMessageContent(content: unknown): string {
   }
 
   return "";
+}
+
+function extractOpenAiCompatibleText(payload: unknown): string {
+  const directCandidates = [
+    getNestedValue(payload, ["choices", 0, "message", "content"]),
+    getNestedValue(payload, ["choices", 0, "message", "text"]),
+    getNestedValue(payload, ["choices", 0, "message", "output_text"]),
+    getNestedValue(payload, ["choices", 0, "message", "parts"]),
+    getNestedValue(payload, ["choices", 0, "message", "response"]),
+    getNestedValue(payload, ["choices", 0, "message", "answer"]),
+    getNestedValue(payload, ["choices", 0, "message", "completion"]),
+    getNestedValue(payload, ["choices", 0, "message", "reasoning_content"]),
+    getNestedValue(payload, ["choices", 0, "message", "reasoning"]),
+    getNestedValue(payload, ["choices", 0, "text"]),
+    getNestedValue(payload, ["choices", 0, "delta", "content"]),
+    getNestedValue(payload, ["choices", 0, "delta", "text"]),
+    getNestedValue(payload, ["output_text"]),
+    getNestedValue(payload, ["content"]),
+    getNestedValue(payload, ["output", 0, "content"]),
+    getNestedValue(payload, ["output", 0, "text"]),
+    getNestedValue(payload, ["response"]),
+    getNestedValue(payload, ["answer"])
+  ];
+
+  for (const candidate of directCandidates) {
+    const text = parseOpenAiMessageContent(candidate).trim();
+
+    if (text) {
+      return text;
+    }
+  }
+
+  const choices = getNestedValue(payload, ["choices"]);
+
+  if (Array.isArray(choices)) {
+    for (const choice of choices) {
+      const text = parseOpenAiMessageContent(getNestedValue(choice, ["message", "content"])).trim()
+        || parseOpenAiMessageContent(getNestedValue(choice, ["text"])).trim();
+
+      if (text) {
+        return text;
+      }
+    }
+  }
+
+  const outputs = getNestedValue(payload, ["output"]);
+
+  if (Array.isArray(outputs)) {
+    for (const output of outputs) {
+      const text = parseOpenAiMessageContent(getNestedValue(output, ["content"])).trim()
+        || parseOpenAiMessageContent(getNestedValue(output, ["text"])).trim();
+
+      if (text) {
+        return text;
+      }
+    }
+  }
+
+  return "";
+}
+
+function sanitizeUrlForLogging(value: string): string {
+  try {
+    const url = new URL(value);
+    url.username = "";
+    url.password = "";
+    url.search = "";
+    url.hash = "";
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return value.replace(/\?.*$/, "");
+  }
+}
+
+function buildLogPreview(value: unknown, depth = 0): unknown {
+  if (typeof value === "string") {
+    return value.length > 400 ? `${value.slice(0, 400)}…[truncated ${value.length - 400} chars]` : value;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean" || value === null) {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    const items = value.slice(0, 6).map((item) => buildLogPreview(item, depth + 1));
+    return value.length > 6 ? [...items, `...(${value.length - 6} more items)`] : items;
+  }
+
+  if (!isRecord(value)) {
+    return typeof value;
+  }
+
+  if (depth >= 4) {
+    return `[Object keys: ${Object.keys(value).slice(0, 8).join(", ")}]`;
+  }
+
+  const preview: Record<string, unknown> = {};
+  const entries = Object.entries(value);
+
+  for (const [key, entryValue] of entries.slice(0, 12)) {
+    if (/(authorization|api[-_]?key|token|secret|password)/i.test(key)) {
+      preview[key] = "[REDACTED]";
+      continue;
+    }
+
+    preview[key] = buildLogPreview(entryValue, depth + 1);
+  }
+
+  if (entries.length > 12) {
+    preview.__truncatedKeys = `${entries.length - 12} more keys`;
+  }
+
+  return preview;
+}
+
+function buildMissingTextReason(payload: unknown): string | null {
+  const finishReason = getNestedValue(payload, ["choices", 0, "finish_reason"]);
+
+  if (typeof finishReason === "string" && finishReason.trim()) {
+    return `finish_reason=${finishReason.trim()}`;
+  }
+
+  const refusal = parseOpenAiMessageContent(getNestedValue(payload, ["choices", 0, "message", "refusal"])).trim();
+
+  if (refusal) {
+    return "模型返回了 refusal，但没有正文内容";
+  }
+
+  if (Array.isArray(getNestedValue(payload, ["choices", 0, "message", "tool_calls"]))) {
+    return "模型返回了 tool_calls，但没有正文内容";
+  }
+
+  return null;
+}
+
+function logMissingOpenAiStyleText(
+  profile: ModelProfile,
+  endpoint: string,
+  payload: unknown
+): void {
+  const reason = buildMissingTextReason(payload);
+  const payloadPreview = buildLogPreview(payload);
+
+  console.error("[providers] OpenAI-style response missing usable text", {
+    provider: profile.provider,
+    profileId: profile.id,
+    profileLabel: profile.displayName,
+    model: profile.model,
+    endpoint: sanitizeUrlForLogging(endpoint),
+    ...(reason ? { reason } : {}),
+    payloadPreview,
+    payloadPreviewJson: JSON.stringify(payloadPreview, null, 2)
+  });
 }
 
 function extractErrorMessage(payload: unknown): string | null {
@@ -150,10 +389,12 @@ async function invokeOpenAiCompatible(profile: ModelProfile, request: ModelTextR
       };
     }>;
   };
-  const text = parseOpenAiMessageContent(payload.choices?.[0]?.message?.content).trim();
+  const text = extractOpenAiCompatibleText(payload).trim();
 
   if (!text) {
-    throw new Error("模型没有返回可用文本内容");
+    logMissingOpenAiStyleText(profile, endpoint, payload);
+    const reason = buildMissingTextReason(payload);
+    throw new Error(reason ? `模型没有返回可用文本内容（${reason}）` : "模型没有返回可用文本内容");
   }
 
   return {
@@ -193,10 +434,12 @@ async function invokeAzure(profile: ModelProfile, request: ModelTextRequest): Pr
       };
     }>;
   };
-  const text = parseOpenAiMessageContent(payload.choices?.[0]?.message?.content).trim();
+  const text = extractOpenAiCompatibleText(payload).trim();
 
   if (!text) {
-    throw new Error("模型没有返回可用文本内容");
+    logMissingOpenAiStyleText(profile, buildAzureEndpoint(profile), payload);
+    const reason = buildMissingTextReason(payload);
+    throw new Error(reason ? `模型没有返回可用文本内容（${reason}）` : "模型没有返回可用文本内容");
   }
 
   return {

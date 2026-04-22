@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 
 import type {
   AgentProfile,
+  AgentRunProgressEvent,
   AgentRunRequest,
   CommandWorkshopSession,
   DailyReportGenerateRequest,
@@ -16,6 +17,9 @@ import type {
   WeeklyProgressRewriteRequest,
   WeeklyReportGenerateRequest
 } from "../../../packages/shared/src/index.js";
+
+let progressListenerIdSeed = 0;
+const agentRunProgressListeners = new Map<string, (_event: Electron.IpcRendererEvent, payload: AgentRunProgressEvent) => void>();
 
 contextBridge.exposeInMainWorld("gordonDesktop", {
   bootstrap: () => ipcRenderer.invoke("gordon:bootstrap"),
@@ -43,6 +47,23 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
   toggleAgentProfileStatus: (profileId: string) => ipcRenderer.invoke("gordon:agent-profiles:toggle-status", profileId),
   deleteAgentProfile: (profileId: string) => ipcRenderer.invoke("gordon:agent-profiles:delete", profileId),
   runAgent: (request: AgentRunRequest) => ipcRenderer.invoke("gordon:agent:run", request),
+  onAgentRunProgress: (listener: (payload: AgentRunProgressEvent) => void): string => {
+    const listenerId = `agent_progress_listener_${Date.now()}_${progressListenerIdSeed++}`;
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: AgentRunProgressEvent) => listener(payload);
+    agentRunProgressListeners.set(listenerId, wrapped);
+    ipcRenderer.on("gordon:agent:progress", wrapped);
+    return listenerId;
+  },
+  offAgentRunProgress: (listenerId: string): void => {
+    const wrapped = agentRunProgressListeners.get(listenerId);
+
+    if (!wrapped) {
+      return;
+    }
+
+    ipcRenderer.removeListener("gordon:agent:progress", wrapped);
+    agentRunProgressListeners.delete(listenerId);
+  },
   listCommandWorkshopSessions: (): Promise<CommandWorkshopSession[]> => ipcRenderer.invoke("gordon:command-workshop:list"),
   upsertCommandWorkshopSession: (session: CommandWorkshopSession): Promise<CommandWorkshopSession[]> =>
     ipcRenderer.invoke("gordon:command-workshop:upsert", session),
