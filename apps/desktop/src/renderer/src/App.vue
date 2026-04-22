@@ -633,18 +633,42 @@
 
                               <div class="weekly-report-output-head">
                                 <span class="field-label">{{ weeklyReportOutputLabel }}</span>
-                                <button
-                                  type="button"
-                                  class="model-icon-button weekly-report-run-button"
-                                  :class="{ 'is-loading': weeklyActiveReportIsGenerating }"
-                                  :disabled="ui.weekly.isGeneratingReport"
-                                  :title="weeklyReportRunButtonLabel"
-                                  :aria-label="weeklyReportRunButtonLabel"
-                                  @click="handleWeeklyActiveReportGeneration"
-                                >
-                                  <span v-if="weeklyActiveReportIsGenerating" class="weekly-task-spinner" aria-hidden="true"></span>
-                                  <span v-else class="weekly-report-run-icon" v-html="renderActionIcon('play')"></span>
-                                </button>
+                                <div class="weekly-report-output-head-actions">
+                                  <div class="weekly-report-output-tabs" role="tablist" aria-label="输出视图">
+                                    <button
+                                      type="button"
+                                      class="weekly-report-output-tab"
+                                      :class="{ 'is-active': weeklyReportOutputMode === 'preview' }"
+                                      :aria-selected="weeklyReportOutputMode === 'preview' ? 'true' : 'false'"
+                                      :disabled="ui.weekly.isGeneratingReport"
+                                      @click="setWeeklyReportOutputMode('preview')"
+                                    >
+                                      预览
+                                    </button>
+                                    <button
+                                      type="button"
+                                      class="weekly-report-output-tab"
+                                      :class="{ 'is-active': weeklyReportOutputMode === 'edit' }"
+                                      :aria-selected="weeklyReportOutputMode === 'edit' ? 'true' : 'false'"
+                                      :disabled="ui.weekly.isGeneratingReport"
+                                      @click="setWeeklyReportOutputMode('edit')"
+                                    >
+                                      编辑
+                                    </button>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    class="model-icon-button weekly-report-run-button"
+                                    :class="{ 'is-loading': weeklyActiveReportIsGenerating }"
+                                    :disabled="ui.weekly.isGeneratingReport"
+                                    :title="weeklyReportRunButtonLabel"
+                                    :aria-label="weeklyReportRunButtonLabel"
+                                    @click="handleWeeklyActiveReportGeneration"
+                                  >
+                                    <span v-if="weeklyActiveReportIsGenerating" class="weekly-task-spinner" aria-hidden="true"></span>
+                                    <span v-else class="weekly-report-run-icon" v-html="renderActionIcon('play')"></span>
+                                  </button>
+                                </div>
                               </div>
                               <p class="weekly-report-feedback" :class="`is-${weeklyReportFeedbackTone}`">{{ weeklyReportFeedbackText }}</p>
 
@@ -660,13 +684,28 @@
                                 >
                                   <span class="weekly-report-run-icon" v-html="renderActionIcon(weeklyReportCopyIconKind)"></span>
                                 </button>
+                                <div
+                                  v-if="weeklyCanCopyReportOutput && weeklyReportOutputMode === 'preview'"
+                                  class="field-textarea weekly-textarea weekly-textarea-report weekly-report-output-textarea weekly-report-rendered command-rich-text"
+                                  :class="{ 'is-readonly': ui.weekly.isGeneratingReport }"
+                                  v-html="weeklyRenderedReportOutputHtml"
+                                  @click="handleRichTextClick"
+                                ></div>
                                 <textarea
+                                  v-else-if="weeklyReportOutputMode === 'edit'"
                                   v-model="weeklyReportOutputContent"
                                   class="field-textarea weekly-textarea weekly-textarea-report weekly-report-output-textarea"
                                   :readonly="ui.weekly.isGeneratingReport"
                                   :class="{ 'is-readonly': ui.weekly.isGeneratingReport }"
                                   :placeholder="weeklyReportOutputPlaceholder"
                                 ></textarea>
+                                <div
+                                  v-else
+                                  class="field-textarea weekly-textarea weekly-textarea-report weekly-report-output-textarea weekly-report-rendered is-placeholder"
+                                  :class="{ 'is-readonly': ui.weekly.isGeneratingReport }"
+                                >
+                                  <p class="weekly-report-placeholder-copy">{{ weeklyReportOutputPlaceholder }}</p>
+                                </div>
                               </label>
                             </section>
 
@@ -2141,6 +2180,7 @@ function createWeeklyState() {
     collapsedProjectIds: [],
     editorView: "projects",
     reportingMode: "weekly",
+    reportOutputMode: "preview",
     reportFeedbackText: "",
     reportFeedbackTone: "neutral",
     reportCopyState: "idle",
@@ -2462,6 +2502,7 @@ const weeklyReportGuideContent = computed({
   }
 });
 const weeklyReportOutputLabel = computed(() => (weeklyIsWeeklyReportMode.value ? "发送给领导的周报" : "今日日报"));
+const weeklyReportOutputMode = computed(() => ui.weekly.reportOutputMode === "edit" ? "edit" : "preview");
 const weeklyReportOutputPlaceholder = computed(() =>
   weeklyIsWeeklyReportMode.value
     ? "点击右上角执行按钮后，会在这里填充周报结果，确认后再保存"
@@ -2504,6 +2545,8 @@ const weeklyReportFeedbackTone = computed(() => {
   return tone || "neutral";
 });
 const weeklyCanCopyReportOutput = computed(() => Boolean(String(weeklyReportOutputContent.value ?? "").trim()));
+const weeklyNormalizedReportOutputContent = computed(() => normalizeMarkdownForClipboard(weeklyReportOutputContent.value));
+const weeklyRenderedReportOutputHtml = computed(() => renderRichText(weeklyNormalizedReportOutputContent.value));
 const weeklyReportCopyIconKind = computed(() => (ui.weekly.reportCopyState === "copied" ? "check" : "copy"));
 const weeklyReportCopyButtonLabel = computed(() =>
   ui.weekly.reportCopyState === "copied"
@@ -2661,6 +2704,10 @@ function setWeeklyReportingMode(mode) {
   ui.weekly.reportingMode = mode;
   clearWeeklyReportFeedback();
   resetWeeklyReportCopyState();
+}
+
+function setWeeklyReportOutputMode(mode) {
+  ui.weekly.reportOutputMode = mode === "edit" ? "edit" : "preview";
 }
 
 function getWeeklyTaskChildren(task) {
@@ -3328,6 +3375,7 @@ function syncWeeklyEditorState() {
   ui.weekly.draft?.projects?.forEach((project) => syncWeeklyProjectStatus(project));
   syncWeeklySelectedReportTemplate(ui.weekly.draft);
   ui.weekly.collapsedProjectIds = [];
+  ui.weekly.reportOutputMode = "preview";
   weeklyTaskRewriteIds.value = [];
   clearWeeklyReportFeedback();
   resetWeeklyReportCopyState();
@@ -3547,6 +3595,7 @@ function closeWeeklyEditor() {
   ui.weekly.draft = null;
   ui.weekly.collapsedProjectIds = [];
   ui.weekly.editorView = "projects";
+  ui.weekly.reportOutputMode = "preview";
   clearWeeklyReportFeedback();
   resetWeeklyReportCopyState();
   weeklyTaskRewriteIds.value = [];

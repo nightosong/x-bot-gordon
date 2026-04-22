@@ -846,6 +846,99 @@ function renderCodeBlock(code, languageLabel = "") {
   `;
 }
 
+function getListLineMeta(line) {
+  const match = String(line ?? "").match(/^(\s*)([*+-]|\d+\.)\s+(.*)$/);
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    indent: match[1].replace(/\t/g, "    ").length,
+    ordered: /\d+\./.test(match[2]),
+    text: match[3]
+  };
+}
+
+function parseListBlock(lines, startIndex, baseIndent = null) {
+  let index = startIndex;
+  let ordered = null;
+  const items = [];
+
+  while (index < lines.length) {
+    const line = lines[index];
+
+    if (!line.trim()) {
+      index += 1;
+      continue;
+    }
+
+    const meta = getListLineMeta(line);
+
+    if (!meta) {
+      break;
+    }
+
+    if (baseIndent === null) {
+      baseIndent = meta.indent;
+    }
+
+    if (meta.indent < baseIndent) {
+      break;
+    }
+
+    if (meta.indent > baseIndent) {
+      if (!items.length) {
+        index += 1;
+        continue;
+      }
+
+      const nested = parseListBlock(lines, index, meta.indent);
+      items[items.length - 1].children.push(nested.list);
+      index = nested.index;
+      continue;
+    }
+
+    if (ordered === null) {
+      ordered = meta.ordered;
+    }
+
+    if (meta.ordered !== ordered) {
+      break;
+    }
+
+    items.push({
+      text: meta.text,
+      children: []
+    });
+    index += 1;
+  }
+
+  return {
+    list: {
+      ordered: Boolean(ordered),
+      items
+    },
+    index
+  };
+}
+
+function renderListTree(list) {
+  const tagName = list?.ordered ? "ol" : "ul";
+  const items = Array.isArray(list?.items) ? list.items : [];
+
+  return `
+    <${tagName} class="command-rich-list">
+      ${items
+        .map((item) => {
+          const children = Array.isArray(item.children) ? item.children.map((child) => renderListTree(child)).join("") : "";
+          return `<li>${formatInlineText(item.text)}${children}</li>`;
+        })
+        .join("")}
+    </${tagName}>
+  `;
+}
+
 export function renderRichText(content) {
   const normalized = String(content ?? "").replace(/\r\n?/g, "\n");
 
@@ -860,10 +953,9 @@ export function renderRichText(content) {
   const isCodeFenceLine = (line) => /^```/.test(line.trim());
   const isHeadingLine = (line) => /^(#{1,3})\s+/.test(line);
   const isQuoteLine = (line) => /^>\s?/.test(line);
-  const isUnorderedListLine = (line) => /^[-*+]\s+/.test(line);
-  const isOrderedListLine = (line) => /^\d+\.\s+/.test(line);
+  const isListLine = (line) => Boolean(getListLineMeta(line));
   const isBoundaryLine = (line) =>
-    !line.trim() || isCodeFenceLine(line) || isHeadingLine(line) || isQuoteLine(line) || isUnorderedListLine(line) || isOrderedListLine(line);
+    !line.trim() || isCodeFenceLine(line) || isHeadingLine(line) || isQuoteLine(line) || isListLine(line);
 
   while (index < lines.length) {
     const line = lines[index];
@@ -913,22 +1005,10 @@ export function renderRichText(content) {
       continue;
     }
 
-    if (isUnorderedListLine(line) || isOrderedListLine(line)) {
-      const isOrdered = isOrderedListLine(line);
-      const tagName = isOrdered ? "ol" : "ul";
-      const items = [];
-
-      while (
-        index < lines.length &&
-        lines[index].trim() &&
-        (isOrdered ? isOrderedListLine(lines[index]) : isUnorderedListLine(lines[index]))
-      ) {
-        const itemText = lines[index].replace(isOrdered ? /^\d+\.\s+/ : /^[-*+]\s+/, "");
-        items.push(`<li>${formatInlineText(itemText)}</li>`);
-        index += 1;
-      }
-
-      blocks.push(`<${tagName} class="command-rich-list">${items.join("")}</${tagName}>`);
+    if (isListLine(line)) {
+      const parsed = parseListBlock(lines, index);
+      blocks.push(renderListTree(parsed.list));
+      index = parsed.index;
       continue;
     }
 

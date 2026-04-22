@@ -2225,6 +2225,48 @@ canvas {
   gap: 12px;
 }
 
+.weekly-report-output-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.weekly-report-output-tabs {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.weekly-report-output-tab {
+  min-height: 26px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(247, 243, 235, 0.6);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  transition: background 180ms ease, color 180ms ease;
+}
+
+.weekly-report-output-tab:hover {
+  color: rgba(247, 243, 235, 0.86);
+}
+
+.weekly-report-output-tab.is-active {
+  background: rgba(92, 225, 194, 0.14);
+  color: #bcf8ea;
+}
+
+.weekly-report-output-tab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .weekly-report-feedback {
   margin: -2px 0 0;
   font-size: 12px;
@@ -2339,6 +2381,46 @@ canvas {
 
 .weekly-report-output-textarea {
   padding-right: 56px;
+}
+
+.weekly-report-rendered {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  overflow: auto;
+}
+
+.weekly-report-rendered.command-rich-text {
+  gap: 6px;
+}
+
+.weekly-report-rendered .command-rich-paragraph {
+  color: rgba(247, 243, 235, 0.9);
+}
+
+.weekly-report-rendered .command-rich-list {
+  gap: 2px;
+  padding-left: 18px;
+}
+
+.weekly-report-rendered .command-rich-list .command-rich-list {
+  margin-top: 2px;
+  padding-left: 16px;
+}
+
+.weekly-report-rendered .command-rich-list li {
+  line-height: 1.5;
+}
+
+.weekly-report-rendered.is-placeholder {
+  align-items: start;
+}
+
+.weekly-report-placeholder-copy {
+  margin: 0;
+  color: rgba(247, 243, 235, 0.36);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .weekly-project-stack {
