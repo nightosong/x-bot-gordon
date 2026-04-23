@@ -692,7 +692,7 @@
                                 </button>
                                 <div
                                   v-if="weeklyCanCopyReportOutput && weeklyReportOutputMode === 'preview'"
-                                  class="field-textarea weekly-textarea weekly-textarea-report weekly-report-output-textarea weekly-report-rendered command-rich-text"
+                                  class="weekly-report-output-preview weekly-report-output-textarea weekly-report-rendered command-rich-text"
                                   :class="{ 'is-readonly': ui.weekly.isGeneratingReport }"
                                   v-html="weeklyRenderedReportOutputHtml"
                                   @click="handleRichTextClick"
@@ -707,7 +707,7 @@
                                 ></textarea>
                                 <div
                                   v-else
-                                  class="field-textarea weekly-textarea weekly-textarea-report weekly-report-output-textarea weekly-report-rendered is-placeholder"
+                                  class="weekly-report-output-preview weekly-report-output-placeholder weekly-report-output-textarea weekly-report-rendered is-placeholder"
                                   :class="{ 'is-readonly': ui.weekly.isGeneratingReport }"
                                 >
                                   <p class="weekly-report-placeholder-copy">{{ weeklyReportOutputPlaceholder }}</p>
@@ -2087,6 +2087,7 @@ import {
   formatLocalDateTime,
   getProviderMeta,
   getSkillDisplayName,
+  getMarkdownListLineMeta,
   getWeeklyProgressCompletionRate,
   getWeeklyProgressStatusMeta,
   getSkillLocalMirrorDetail,
@@ -3048,9 +3049,9 @@ function extractMarkdownListDepthSignature(value) {
   return String(value ?? "")
     .replace(/\r\n?/g, "\n")
     .split("\n")
-    .map((line) => line.match(/^(\s*)[*+-]\s+/))
+    .map((line) => getMarkdownListLineMeta(line))
     .filter(Boolean)
-    .map((match) => Math.round((match?.[1]?.length ?? 0) / 4))
+    .map((meta) => Math.round((meta?.nestingIndent ?? 0) / 4))
     .join(",");
 }
 
@@ -5047,8 +5048,8 @@ function normalizeMarkdownForClipboard(value) {
   const zeroWidthPattern = /[\u200B-\u200D\u2060\uFEFF]/g;
   const bulletLikePattern = /^[ \t]*[•●▪◦‣・·]\s+/;
   const statusSuffixPattern = /(?:（|\()(已完成|进行中|待开始|受阻)(?:）|\))\s*$/;
-  const normalizeListIndent = (indent) => {
-    const width = String(indent ?? "").length;
+  const normalizeListIndent = (indentWidth = 0) => {
+    const width = Number.isFinite(indentWidth) ? Number(indentWidth) : 0;
 
     if (!width) {
       return "";
@@ -5063,7 +5064,7 @@ function normalizeMarkdownForClipboard(value) {
     .replace(oddSpacePattern, " ")
     .replace(/\t/g, "    ")
     .replace(/((?:（|\()(?:已完成|进行中|待开始|受阻)(?:）|\)))(?=\\?[*+-]\s+)/g, "$1\n")
-    .replace(/([^\n])[ ]{2,}(?=(?:\\?[*+-]|\d+[.)])\s+)/g, "$1\n")
+    .replace(/(\S)[ ]{2,}(?=(?:\\?[*+-]|\d+(?:\.\d+)*\.?|\d+\))\s+)/g, "$1\n")
     .split("\n")
     .map((line) => {
       let normalizedLine = line.replace(/[ ]+$/g, "");
@@ -5079,14 +5080,35 @@ function normalizeMarkdownForClipboard(value) {
       normalizedLine = normalizedLine.replace(/^(#{1,6})([^\s#])/, "$1 $2");
       normalizedLine = normalizedLine.replace(/^([ ]*)>([^\s>])/, "$1> $2");
 
+      const listMeta = getMarkdownListLineMeta(normalizedLine);
+
+      if (listMeta?.ordered) {
+        normalizedLine = `${normalizeListIndent(listMeta.nestingIndent)}${listMeta.marker} ${listMeta.text.trim()}`;
+      }
+
       return normalizedLine;
     });
 
   const repairedLines = [];
   let hasActiveProject = false;
 
-  for (const line of normalizedLines) {
+  for (let index = 0; index < normalizedLines.length; index += 1) {
+    const line = normalizedLines[index];
+
     if (!line.trim()) {
+      const previousNonEmptyLine = [...repairedLines].reverse().find((item) => item.trim());
+      const nextNonEmptyLine = normalizedLines.slice(index + 1).find((item) => item.trim());
+      const isBlankLineInsideListBlock = Boolean(
+        previousNonEmptyLine &&
+          nextNonEmptyLine &&
+          getMarkdownListLineMeta(previousNonEmptyLine) &&
+          getMarkdownListLineMeta(nextNonEmptyLine)
+      );
+
+      if (isBlankLineInsideListBlock) {
+        continue;
+      }
+
       if (repairedLines[repairedLines.length - 1] !== "") {
         repairedLines.push("");
       }
@@ -5094,23 +5116,28 @@ function normalizeMarkdownForClipboard(value) {
       continue;
     }
 
-    const bulletMatch = line.match(/^(\s*)\*\s+(.*)$/);
+    const listMeta = getMarkdownListLineMeta(line);
 
-    if (!bulletMatch) {
+    if (!listMeta) {
       repairedLines.push(line);
       continue;
     }
 
-    const [, indent, rawContent] = bulletMatch;
-    const content = rawContent.trim();
+    const content = listMeta.text.trim();
 
-    if (!indent && statusSuffixPattern.test(content) && hasActiveProject) {
+    if (!listMeta.ordered && !listMeta.nestingIndent && statusSuffixPattern.test(content) && hasActiveProject) {
       repairedLines.push(`    * ${content}`);
       continue;
     }
 
-    repairedLines.push(`${normalizeListIndent(indent)}* ${content}`);
-    hasActiveProject = !indent && !statusSuffixPattern.test(content);
+    if (listMeta.ordered) {
+      repairedLines.push(`${normalizeListIndent(listMeta.nestingIndent)}${listMeta.marker} ${content}`);
+      hasActiveProject = !listMeta.nestingIndent;
+      continue;
+    }
+
+    repairedLines.push(`${normalizeListIndent(listMeta.nestingIndent)}* ${content}`);
+    hasActiveProject = !listMeta.nestingIndent && !statusSuffixPattern.test(content);
   }
 
   return repairedLines.join("\n").replace(/\n{3,}/g, "\n\n").trim();

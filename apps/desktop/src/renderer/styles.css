@@ -2388,15 +2388,24 @@ canvas {
   padding-right: 56px;
 }
 
+.weekly-report-output-preview {
+  font-size: 12px;
+}
+
 .weekly-report-rendered {
   display: grid;
   align-content: start;
   gap: 6px;
   overflow: auto;
+  font-size: 12px;
 }
 
 .weekly-report-rendered.command-rich-text {
   gap: 6px;
+}
+
+.weekly-report-rendered .command-rich-heading {
+  font-size: 13px;
 }
 
 .weekly-report-rendered .command-rich-paragraph {

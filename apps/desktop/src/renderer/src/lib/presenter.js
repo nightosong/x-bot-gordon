@@ -846,16 +846,58 @@ function renderCodeBlock(code, languageLabel = "") {
   `;
 }
 
-function getListLineMeta(line) {
-  const match = String(line ?? "").match(/^(\s*)([*+-]|\d+\.)\s+(.*)$/);
+function parseOrderedListMarker(markerToken) {
+  const rawToken = String(markerToken ?? "").trim();
+
+  if (!rawToken) {
+    return null;
+  }
+
+  const normalizedToken = rawToken.endsWith(")") ? `${rawToken.slice(0, -1)}.` : rawToken;
+  const markerCore = normalizedToken.endsWith(".") ? normalizedToken.slice(0, -1) : normalizedToken;
+
+  if (!/^\d+(?:\.\d+)*$/.test(markerCore)) {
+    return null;
+  }
+
+  const segments = markerCore.split(".").filter(Boolean);
+
+  if (!segments.length) {
+    return null;
+  }
+
+  return {
+    core: markerCore,
+    display: segments.length > 1 ? markerCore : `${segments[0]}.`,
+    outlineDepth: Math.max(0, segments.length - 1)
+  };
+}
+
+export function getMarkdownListLineMeta(line) {
+  const match = String(line ?? "").match(/^(\s*)([*+-]|\d+(?:\.\d+)*\.?|\d+\))\s+(.*)$/);
 
   if (!match) {
     return null;
   }
 
+  const indentWidth = match[1].replace(/\t/g, "    ").length;
+  const orderedMeta = parseOrderedListMarker(match[2]);
+
+  if (orderedMeta) {
+    return {
+      indent: indentWidth,
+      nestingIndent: Math.max(indentWidth, orderedMeta.outlineDepth * 4),
+      ordered: true,
+      marker: orderedMeta.display,
+      text: match[3]
+    };
+  }
+
   return {
-    indent: match[1].replace(/\t/g, "    ").length,
-    ordered: /\d+\./.test(match[2]),
+    indent: indentWidth,
+    nestingIndent: indentWidth,
+    ordered: false,
+    marker: match[2],
     text: match[3]
   };
 }
@@ -873,27 +915,27 @@ function parseListBlock(lines, startIndex, baseIndent = null) {
       continue;
     }
 
-    const meta = getListLineMeta(line);
+    const meta = getMarkdownListLineMeta(line);
 
     if (!meta) {
       break;
     }
 
     if (baseIndent === null) {
-      baseIndent = meta.indent;
+      baseIndent = meta.nestingIndent;
     }
 
-    if (meta.indent < baseIndent) {
+    if (meta.nestingIndent < baseIndent) {
       break;
     }
 
-    if (meta.indent > baseIndent) {
+    if (meta.nestingIndent > baseIndent) {
       if (!items.length) {
         index += 1;
         continue;
       }
 
-      const nested = parseListBlock(lines, index, meta.indent);
+      const nested = parseListBlock(lines, index, meta.nestingIndent);
       items[items.length - 1].children.push(nested.list);
       index = nested.index;
       continue;
@@ -908,6 +950,7 @@ function parseListBlock(lines, startIndex, baseIndent = null) {
     }
 
     items.push({
+      marker: meta.ordered ? meta.marker : null,
       text: meta.text,
       children: []
     });
@@ -923,16 +966,25 @@ function parseListBlock(lines, startIndex, baseIndent = null) {
   };
 }
 
-function renderListTree(list) {
+function renderListTree(list, depth = 0) {
   const tagName = list?.ordered ? "ol" : "ul";
   const items = Array.isArray(list?.items) ? list.items : [];
+  const useExplicitMarkers = Boolean(list?.ordered);
 
   return `
-    <${tagName} class="command-rich-list">
+    <${tagName} class="command-rich-list command-rich-list-depth-${depth}"${
+      useExplicitMarkers ? ' style="list-style: none; padding-left: 22px;"' : ""
+    }>
       ${items
         .map((item) => {
-          const children = Array.isArray(item.children) ? item.children.map((child) => renderListTree(child)).join("") : "";
-          return `<li>${formatInlineText(item.text)}${children}</li>`;
+          const hasChildren = Array.isArray(item.children) && item.children.length > 0;
+          const children = hasChildren ? item.children.map((child) => renderListTree(child, depth + 1)).join("") : "";
+          const marker = useExplicitMarkers && item.marker ? `<span class="command-rich-list-marker">${escapeHtml(item.marker)}</span> ` : "";
+          return `
+            <li class="command-rich-list-item command-rich-list-item-depth-${depth}${hasChildren ? " has-children" : ""}">
+              <span class="command-rich-list-item-content">${marker}${formatInlineText(item.text)}</span>${children}
+            </li>
+          `;
         })
         .join("")}
     </${tagName}>
@@ -953,7 +1005,7 @@ export function renderRichText(content) {
   const isCodeFenceLine = (line) => /^```/.test(line.trim());
   const isHeadingLine = (line) => /^(#{1,3})\s+/.test(line);
   const isQuoteLine = (line) => /^>\s?/.test(line);
-  const isListLine = (line) => Boolean(getListLineMeta(line));
+  const isListLine = (line) => Boolean(getMarkdownListLineMeta(line));
   const isBoundaryLine = (line) =>
     !line.trim() || isCodeFenceLine(line) || isHeadingLine(line) || isQuoteLine(line) || isListLine(line);
 

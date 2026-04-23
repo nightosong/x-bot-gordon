@@ -1190,31 +1190,139 @@ img {
   background: rgba(255, 255, 255, 0.42);
 }
 
-.rich-text {
+.rich-text,
+.command-rich-text {
   display: grid;
   gap: 10px;
 }
 
-.rich-heading {
+.rich-heading,
+.command-rich-heading {
   margin: 0;
   font-family: "Avenir Next Condensed", "Avenir Next", sans-serif;
   color: var(--text);
 }
 
-.rich-quote {
+.rich-quote,
+.command-rich-quote {
   margin: 0;
   padding-left: 16px;
   border-left: 3px solid rgba(79, 136, 223, 0.28);
   color: var(--text-soft);
 }
 
-.rich-list {
+.rich-list,
+.command-rich-list {
   margin: 0;
   padding-left: 22px;
   color: var(--text-soft);
 }
 
-.rich-paragraph {
+.command-rich-list ul,
+.command-rich-list ol {
+  margin: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 22px;
+}
+
+.command-rich-list li {
+  margin: 0;
+  padding: 0;
+}
+
+.command-rich-list-item {
+  margin: 0;
+  padding: 0;
+  line-height: 1.5;
+}
+
+.command-rich-list-item-content {
+  display: inline;
+  margin: 0;
+  line-height: inherit;
+}
+
+.command-rich-text > .command-rich-list > .command-rich-list-item + .command-rich-list-item {
+  margin-top: 10px;
+}
+
+.command-rich-list li > .command-rich-list {
+  margin: 0 !important;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.command-rich-list li > ul,
+.command-rich-list li > ol {
+  margin: 0 !important;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.command-rich-list .command-rich-list > .command-rich-list-item + .command-rich-list-item {
+  margin-top: 2px;
+}
+
+.weekly-report-rendered .command-rich-list-item.has-children > .command-rich-list {
+  margin-top: -2px !important;
+}
+
+.weekly-report-rendered > .command-rich-list > .command-rich-list-item.has-children > .command-rich-list {
+  margin-top: 6px !important;
+}
+
+.weekly-report-output-preview {
+  width: 100%;
+  min-height: 120px;
+  padding: 13px 14px;
+  border: 1px solid rgba(16, 35, 55, 0.1);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--text);
+  font-size: 8px;
+}
+
+.weekly-report-output-placeholder {
+  display: flex;
+  align-items: flex-start;
+}
+
+.weekly-report-rendered {
+  line-height: 1.58;
+}
+
+.weekly-report-rendered > .command-rich-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.weekly-report-rendered .command-rich-list {
+  color: var(--text);
+}
+
+.weekly-report-rendered .command-rich-list-item {
+  line-height: 1.42;
+}
+
+.weekly-report-rendered .command-rich-list-item-content {
+  display: inline;
+}
+
+.weekly-report-rendered > .command-rich-list > .command-rich-list-item + .command-rich-list-item {
+  margin-top: 10px;
+}
+
+.weekly-report-rendered .command-rich-list .command-rich-list > .command-rich-list-item + .command-rich-list-item {
+  margin-top: 2px;
+}
+
+.command-rich-list-marker {
+  color: var(--text);
+}
+
+.rich-paragraph,
+.command-rich-paragraph {
   margin: 0;
   color: var(--text);
   line-height: 1.72;
