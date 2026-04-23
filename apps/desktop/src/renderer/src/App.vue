@@ -155,36 +155,26 @@
                           <div class="model-card-actions model-card-actions-inline">
                             <div v-if="hasModelBalanceQuery(profile)" class="model-balance-widget">
                               <div class="model-balance-widget-head">
+                                <span class="model-balance-time">
+                                  {{
+                                    isModelBalanceRefreshing(profile.id)
+                                      ? "查询中..."
+                                      : getModelBalanceSnapshot(profile)?.queriedAt
+                                        ? `更新于 ${formatLocalDateTime(getModelBalanceSnapshot(profile).queriedAt)}`
+                                        : "未查询"
+                                  }}
+                                </span>
                                 <button
                                   type="button"
-                                  class="model-balance-refresh-trigger"
+                                  class="model-icon-button model-balance-refresh-button"
+                                  :class="{ 'is-loading': isModelBalanceRefreshing(profile.id) }"
                                   :disabled="isModelBalanceRefreshing(profile.id)"
-                                  @click="handleModelBalanceRefresh(profile)"
-                                >
-                                  <span class="model-balance-time">
-                                    {{
-                                      isModelBalanceRefreshing(profile.id)
-                                        ? "查询中..."
-                                        : getModelBalanceSnapshot(profile)?.queriedAt
-                                          ? `更新于 ${formatLocalDateTime(getModelBalanceSnapshot(profile).queriedAt)}`
-                                          : "未查询"
-                                    }}
-                                  </span>
-                                  <span
-                                    class="model-icon-button model-balance-refresh-button"
-                                    :class="{ 'is-loading': isModelBalanceRefreshing(profile.id) }"
-                                    :aria-label="`刷新 ${profile.displayName} 的余额`"
-                                    title="刷新余额"
-                                    v-html="renderActionIcon('refresh')"
-                                  ></span>
-                                </button>
+                                  :aria-label="`刷新 ${profile.displayName} 的余额`"
+                                  title="刷新余额"
+                                  @click.stop="handleModelBalanceRefresh(profile)"
+                                  v-html="renderActionIcon('refresh')"
+                                ></button>
                               </div>
-
-                              <p v-if="getModelBalanceFeedback(profile)" class="model-balance-feedback" :class="`is-${getModelBalanceFeedback(profile).tone}`">
-                                {{
-                                  getModelBalanceFeedback(profile).text
-                                }}
-                              </p>
 
                               <p v-if="getModelBalanceSnapshot(profile)" class="model-balance-widget-copy">
                                 <span class="model-balance-used">已使用：{{ formatBalanceNumber(getModelBalanceSnapshot(profile).used) }}</span>
