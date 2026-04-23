@@ -2389,7 +2389,19 @@ canvas {
 }
 
 .weekly-report-output-preview {
+  width: 100%;
+  min-height: 320px;
+  padding: 12px 14px;
+  border: 1px solid rgba(247, 243, 235, 0.1);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
   font-size: 12px;
+}
+
+.weekly-report-output-preview.is-readonly {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .weekly-report-rendered {
@@ -2427,6 +2439,7 @@ canvas {
 }
 
 .weekly-report-rendered.is-placeholder {
+  display: flex;
   align-items: start;
 }
 
