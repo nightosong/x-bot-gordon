@@ -32,6 +32,7 @@ import {
 } from "../../../packages/workbench/src/index.js";
 import type { AgentRunProgressEvent } from "../../../packages/shared/src/index.js";
 import { generateDailyProgressReport, generateWeeklyProgressReport, invokeActiveModel, rewriteWeeklyProgressItem } from "./ai.js";
+import { queryModelBalance } from "./model-balance.js";
 
 const currentFilePath = fileURLToPath(import.meta.url);
 const currentDir = path.dirname(currentFilePath);
@@ -68,6 +69,7 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("gordon:model-settings:delete", async (_event, profileId: string) => deleteModelProfile(profileId));
   ipcMain.handle("gordon:model:invoke-text", async (_event, request) => invokeActiveModel(request));
+  ipcMain.handle("gordon:model:query-balance", async (_event, request) => queryModelBalance(request));
   ipcMain.handle("gordon:skills:list", async () => listSkillDefinitions());
   ipcMain.handle("gordon:skills:upsert", async (_event, skill) => upsertSkillDefinition(skill));
   ipcMain.handle("gordon:skills:import-from-github", async (_event, request) => importSkillDefinitionFromGithub(request));

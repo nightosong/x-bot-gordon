@@ -10,10 +10,16 @@ import type {
   DatabaseConnectionItem,
   GithubSkillImportRequest,
   McpServerConfig,
+  ModelBalanceSnapshot,
   ModelProfile,
   ModelSettings,
   SkillKind,
   SkillDefinition,
+  WorkflowLibraryItem,
+  WorkflowProtocolDefinition,
+  WorkflowRecord,
+  WorkflowRequestStep,
+  WorkflowVariableBinding,
   WeeklyProgressItemStatus,
   WeeklyProgressProjectItem,
   WeeklyProgressRecord,
@@ -56,6 +62,14 @@ function getWeeklyProgressFilePath(): string {
 
 function getWorkbenchDirectoryPath(): string {
   return resolveFromRoot("data", "workbench");
+}
+
+function getWorkflowLibraryFilePath(): string {
+  return resolveFromRoot("data", "workbench", "workflow-library.json");
+}
+
+function getLegacyEfficiencyToolsFilePath(): string {
+  return resolveFromRoot("data", "workbench", "efficiency-tools.json");
 }
 
 function getSkillDefinitionsFilePath(): string {
@@ -1233,6 +1247,29 @@ export async function upsertModelProfile(profile: ModelProfile): Promise<ModelSe
   return nextSettings;
 }
 
+export async function saveModelProfileBalanceSnapshot(
+  profileId: string,
+  balanceSnapshot: ModelBalanceSnapshot | null
+): Promise<ModelSettings> {
+  const current = await listModelSettings();
+  const nextProfiles = current.profiles.map((profile) =>
+    profile.id === profileId
+      ? {
+          ...profile,
+          balanceSnapshot
+        }
+      : profile
+  );
+
+  const nextSettings: ModelSettings = {
+    profiles: nextProfiles,
+    activeProfileId: current.activeProfileId
+  };
+
+  await saveModelSettings(nextSettings);
+  return nextSettings;
+}
+
 export async function activateModelProfile(profileId: string): Promise<ModelSettings> {
   const current = await listModelSettings();
 
@@ -1326,6 +1363,178 @@ async function writeWorkbenchCollection<T>(filePath: string, items: T[]): Promis
 
 function sortByUpdatedAtDescending<T extends { updatedAt: string }>(items: T[]): T[] {
   return [...items].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+}
+
+function createWorkflowVariableBinding(
+  overrides: Partial<WorkflowVariableBinding> & Pick<WorkflowVariableBinding, "name" | "source" | "placeholder" | "summary">
+): WorkflowVariableBinding {
+  return {
+    name: overrides.name,
+    source: overrides.source,
+    placeholder: overrides.placeholder,
+    summary: overrides.summary,
+    required: overrides.required ?? true,
+    ...(overrides.sourceStepId ? { sourceStepId: overrides.sourceStepId } : {}),
+    ...(overrides.path ? { path: overrides.path } : {})
+  };
+}
+
+function extractCurlMethod(curl: string): string {
+  const explicitMethod = curl.match(/--request\s+['"]?([A-Z]+)['"]?/i)?.[1];
+
+  if (explicitMethod) {
+    return explicitMethod.toUpperCase();
+  }
+
+  return curl.includes("--data") || curl.includes("--data-raw") ? "POST" : "GET";
+}
+
+function extractCurlUrl(curl: string): string {
+  const urlMatch = curl.match(/curl(?:\s+--location)?\s+['"]([^'"]+)['"]/i);
+  return urlMatch?.[1] ?? "";
+}
+
+function extractCurlPlaceholders(curl: string): string[] {
+  return Array.from(new Set(Array.from(curl.matchAll(/\$\{([A-Za-z0-9_]+)\}/g)).map((match) => match[1])));
+}
+
+function normalizeLegacyWorkflowProtocol(protocol: Record<string, unknown> | undefined): WorkflowProtocolDefinition {
+  const pollIntervalMs = Number(protocol?.pollIntervalMs ?? 0);
+  const maxAttempts = Number(protocol?.maxAttempts ?? 1);
+
+  return {
+    mode: maxAttempts > 1 ? "polling" : pollIntervalMs > 0 ? "sequential" : "single",
+    initialWaitMs: Number(protocol?.initialWaitMs ?? 0),
+    pollIntervalMs,
+    maxAttempts,
+    timeoutMs: Math.max(Number(protocol?.timeoutMs ?? 0), pollIntervalMs * maxAttempts),
+    ...(protocol?.statusRequestId ? { statusStepId: String(protocol.statusRequestId) } : {}),
+    ...(protocol?.resultRequestId ? { resultStepId: String(protocol.resultRequestId) } : {}),
+    ...(protocol?.completionPath ? { completionPath: String(protocol.completionPath) } : {}),
+    successValues: protocol?.completionSuccessValue ? [String(protocol.completionSuccessValue)] : [],
+    ...(protocol?.resultPath ? { resultPath: String(protocol.resultPath) } : {}),
+    note: String(protocol?.note ?? "")
+  };
+}
+
+function normalizeLegacyWorkflowStep(
+  request: Record<string, unknown>,
+  protocol: Record<string, unknown> | undefined,
+  requestIndex: number
+): WorkflowRequestStep {
+  const curl = String(request.curl ?? "");
+  const placeholders = extractCurlPlaceholders(curl);
+  const taskIdPath = String(protocol?.taskIdPath ?? "").trim();
+  const isSubmitRequest = String(protocol?.submitRequestId ?? "") === String(request.id ?? "");
+  const consumes = placeholders.map((name) => {
+    const isTaskId = name === "task_id" && taskIdPath;
+
+    return createWorkflowVariableBinding({
+      name,
+      source: isTaskId ? "response" : "manual",
+      placeholder: `\${${name}}`,
+      summary: isTaskId ? "来自上一步返回结果的任务标识" : "执行前手工填入或从环境变量注入",
+      ...(isTaskId
+        ? {
+            sourceStepId: String(protocol?.submitRequestId ?? ""),
+            path: taskIdPath
+          }
+        : {})
+    });
+  });
+  const produces =
+    isSubmitRequest && taskIdPath
+      ? [
+          createWorkflowVariableBinding({
+            name: "task_id",
+            source: "response",
+            placeholder: "${task_id}",
+            summary: "从提交接口响应中提取异步任务 ID",
+            sourceStepId: String(request.id ?? ""),
+            path: taskIdPath
+          })
+        ]
+      : [];
+
+  return {
+    id: String(request.id ?? `workflow_step_${requestIndex + 1}`),
+    name: String(request.name ?? `步骤 ${requestIndex + 1}`),
+    summary: String(request.summary ?? ""),
+    method: extractCurlMethod(curl),
+    url: extractCurlUrl(curl),
+    curl,
+    waitBeforeMs: requestIndex === 0 ? 0 : Number(protocol?.pollIntervalMs ?? 0),
+    responseFieldHints: Array.isArray(request.responseFieldHints) ? request.responseFieldHints.map((entry) => String(entry)) : [],
+    consumes,
+    produces
+  };
+}
+
+function normalizeLegacyApiWorkflowRecord(bundle: Record<string, unknown>): WorkflowRecord {
+  const protocol = (bundle.protocol ?? {}) as Record<string, unknown>;
+  const requests = Array.isArray(bundle.requests) ? bundle.requests : [];
+  const steps = requests.map((request, index) => normalizeLegacyWorkflowStep(request as Record<string, unknown>, protocol, index));
+  const taskIdProducer = steps.flatMap((step) => step.produces).find((binding) => binding.name === "task_id");
+  const manualBindings = steps
+    .flatMap((step) => step.consumes)
+    .filter((binding) => binding.source === "manual");
+  const sharedVariables = [
+    ...manualBindings,
+    ...(taskIdProducer ? [taskIdProducer] : [])
+  ].filter(
+    (binding, index, collection) =>
+      collection.findIndex((candidate) => candidate.name === binding.name && candidate.source === binding.source) === index
+  );
+
+  return {
+    id: String(bundle.id ?? `workflow_record_${randomUUID()}`),
+    name: String(bundle.name ?? "未命名工作流"),
+    summary: String(bundle.summary ?? ""),
+    scenario: String(bundle.summary ?? "接口测试流程复用"),
+    tags: Array.isArray(bundle.tags) ? bundle.tags.map((entry) => String(entry)) : [],
+    updatedAt: String(bundle.updatedAt ?? new Date().toISOString()),
+    notes: String(protocol.note ?? ""),
+    sharedVariables,
+    steps,
+    protocol: normalizeLegacyWorkflowProtocol(protocol)
+  };
+}
+
+function normalizeLegacyWorkflowLibrary(legacyEntries: unknown[]): WorkflowLibraryItem[] {
+  return legacyEntries
+    .map((entry) => entry as Record<string, unknown>)
+    .filter((entry) => entry.kind === "api-suite")
+    .map((entry) => ({
+      id: `workflow_${String(entry.id ?? randomUUID())}`,
+      kind: "api-test" as const,
+      title: "接口测试工作流",
+      summary: String(entry.summary ?? ""),
+      description: String(entry.description ?? ""),
+      tags: Array.isArray(entry.tags) ? entry.tags.map((tag) => String(tag)) : [],
+      status: String(entry.status ?? "active") === "draft" ? "draft" : "active",
+      usageCount: Number(entry.usageCount ?? 0),
+      createdAt: String(entry.createdAt ?? new Date().toISOString()),
+      updatedAt: String(entry.updatedAt ?? new Date().toISOString()),
+      ...(entry.lastUsedAt ? { lastUsedAt: String(entry.lastUsedAt) } : {}),
+      records: Array.isArray(entry.bundles)
+        ? entry.bundles.map((bundle) => normalizeLegacyApiWorkflowRecord(bundle as Record<string, unknown>))
+        : []
+    }));
+}
+
+export async function listWorkflowLibrary(): Promise<WorkflowLibraryItem[]> {
+  const filePath = getWorkflowLibraryFilePath();
+
+  try {
+    return sortByUpdatedAtDescending(await readWorkbenchCollection<WorkflowLibraryItem>(filePath));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw error;
+    }
+  }
+
+  const legacyEntries = await readWorkbenchCollection<unknown>(getLegacyEfficiencyToolsFilePath());
+  return sortByUpdatedAtDescending(normalizeLegacyWorkflowLibrary(legacyEntries));
 }
 
 export async function listSkillDefinitions(): Promise<SkillDefinition[]> {

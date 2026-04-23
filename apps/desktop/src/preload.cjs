@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
   toggleModelProfileStatus: (profileId) => ipcRenderer.invoke("gordon:model-settings:toggle-status", profileId),
   deleteModelProfile: (profileId) => ipcRenderer.invoke("gordon:model-settings:delete", profileId),
   invokeModelText: (request) => ipcRenderer.invoke("gordon:model:invoke-text", request),
+  queryModelBalance: (request) => ipcRenderer.invoke("gordon:model:query-balance", request),
   listSkillDefinitions: () => ipcRenderer.invoke("gordon:skills:list"),
   upsertSkillDefinition: (skill) => ipcRenderer.invoke("gordon:skills:upsert", skill),
   importSkillDefinitionFromGithub: (request) => ipcRenderer.invoke("gordon:skills:import-from-github", request),

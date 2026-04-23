@@ -16,6 +16,10 @@ export type ProviderKind =
   | "openai_like";
 export type WeeklyProgressStatus = "active" | "archived";
 export type WeeklyProgressItemStatus = "planned" | "in_progress" | "completed" | "blocked";
+export type WorkflowLibraryItemKind = "api-test";
+export type WorkflowLibraryItemStatus = "active" | "draft";
+export type WorkflowVariableSource = "manual" | "response";
+export type WorkflowProtocolMode = "single" | "sequential" | "polling";
 export type ModelModality =
   | "text"
   | "vision"
@@ -179,6 +183,71 @@ export interface DatabaseConnectionItem {
   notes: string;
 }
 
+export interface WorkflowVariableBinding {
+  name: string;
+  source: WorkflowVariableSource;
+  placeholder: string;
+  summary: string;
+  required: boolean;
+  sourceStepId?: string;
+  path?: string;
+}
+
+export interface WorkflowRequestStep {
+  id: string;
+  name: string;
+  summary: string;
+  method: string;
+  url: string;
+  curl: string;
+  waitBeforeMs: number;
+  responseFieldHints: string[];
+  consumes: WorkflowVariableBinding[];
+  produces: WorkflowVariableBinding[];
+}
+
+export interface WorkflowProtocolDefinition {
+  mode: WorkflowProtocolMode;
+  initialWaitMs: number;
+  pollIntervalMs: number;
+  maxAttempts: number;
+  timeoutMs: number;
+  statusStepId?: string;
+  resultStepId?: string;
+  completionPath?: string;
+  successValues: string[];
+  resultPath?: string;
+  note: string;
+}
+
+export interface WorkflowRecord {
+  id: string;
+  name: string;
+  summary: string;
+  scenario: string;
+  tags: string[];
+  updatedAt: string;
+  notes?: string;
+  sharedVariables: WorkflowVariableBinding[];
+  steps: WorkflowRequestStep[];
+  protocol: WorkflowProtocolDefinition;
+}
+
+export interface WorkflowLibraryItem {
+  id: string;
+  kind: WorkflowLibraryItemKind;
+  title: string;
+  summary: string;
+  description: string;
+  tags: string[];
+  status: WorkflowLibraryItemStatus;
+  usageCount: number;
+  createdAt: string;
+  updatedAt: string;
+  lastUsedAt?: string;
+  records: WorkflowRecord[];
+}
+
 export interface ModelProfile {
   id: string;
   provider: ProviderKind;
@@ -190,12 +259,23 @@ export interface ModelProfile {
   project?: string;
   location?: string;
   notes?: string;
+  balanceQueryCode?: string;
+  balanceSnapshot?: ModelBalanceSnapshot | null;
   updatedAt: string;
 }
 
 export interface ModelSettings {
   profiles: ModelProfile[];
   activeProfileId: string | null;
+}
+
+export interface ModelBalanceSnapshot {
+  planName?: string;
+  remaining: number;
+  used: number;
+  total?: number | null;
+  unit: string;
+  queriedAt: string;
 }
 
 export interface SkillDefinition {
@@ -330,6 +410,11 @@ export interface ModelTextResponse {
   profileId: string;
   profileLabel: string;
   provider: ProviderKind;
+}
+
+export interface ModelBalanceQueryRequest {
+  profile: ModelProfile;
+  persistResult?: boolean;
 }
 
 export interface AgentRunLog extends ModelTextResponse {
@@ -485,6 +570,7 @@ export interface WorkbenchSnapshot {
   tasks: WorkTask[];
   weeklyProgress: WeeklyProgressRecord[];
   databaseConnections: DatabaseConnectionItem[];
+  workflowLibrary: WorkflowLibraryItem[];
   skillDefinitions: SkillDefinition[];
   mcpServers: McpServerConfig[];
   agentProfiles: AgentProfile[];

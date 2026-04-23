@@ -153,6 +153,49 @@
                           </div>
 
                           <div class="model-card-actions model-card-actions-inline">
+                            <div v-if="hasModelBalanceQuery(profile)" class="model-balance-widget">
+                              <div class="model-balance-widget-head">
+                                <button
+                                  type="button"
+                                  class="model-balance-refresh-trigger"
+                                  :disabled="isModelBalanceRefreshing(profile.id)"
+                                  @click="handleModelBalanceRefresh(profile)"
+                                >
+                                  <span class="model-balance-time">
+                                    {{
+                                      isModelBalanceRefreshing(profile.id)
+                                        ? "查询中..."
+                                        : getModelBalanceSnapshot(profile)?.queriedAt
+                                          ? `更新于 ${formatLocalDateTime(getModelBalanceSnapshot(profile).queriedAt)}`
+                                          : "未查询"
+                                    }}
+                                  </span>
+                                  <span
+                                    class="model-icon-button model-balance-refresh-button"
+                                    :class="{ 'is-loading': isModelBalanceRefreshing(profile.id) }"
+                                    :aria-label="`刷新 ${profile.displayName} 的余额`"
+                                    title="刷新余额"
+                                    v-html="renderActionIcon('refresh')"
+                                  ></span>
+                                </button>
+                              </div>
+
+                              <p v-if="getModelBalanceFeedback(profile)" class="model-balance-feedback" :class="`is-${getModelBalanceFeedback(profile).tone}`">
+                                {{
+                                  getModelBalanceFeedback(profile).text
+                                }}
+                              </p>
+
+                              <p v-if="getModelBalanceSnapshot(profile)" class="model-balance-widget-copy">
+                                <span class="model-balance-used">已使用：{{ formatBalanceNumber(getModelBalanceSnapshot(profile).used) }}</span>
+                                <span class="model-balance-remaining">
+                                  剩余：{{ formatBalanceNumber(getModelBalanceSnapshot(profile).remaining) }} {{ getModelBalanceSnapshot(profile).unit }}
+                                </span>
+                              </p>
+
+                              <p v-else class="model-balance-widget-placeholder">点击刷新查询余额</p>
+                            </div>
+
                             <span v-if="workbench.modelSettings.activeProfileId === profile.id" class="model-priority-tag">优先使用</span>
 
                             <button
@@ -290,6 +333,69 @@
                             />
                           </label>
                         </template>
+
+                        <div class="field field-full">
+                          <div class="balance-field-head">
+                            <span class="field-label">余额查询提取器代码</span>
+                            <div class="balance-field-actions">
+                              <button type="button" class="model-action-secondary" @click="fillModelBalanceQueryTemplate">填充示例</button>
+                              <button
+                                type="button"
+                                class="model-action-secondary"
+                                :disabled="ui.modelManagement.editor.isBalanceQuerying"
+                                @click="handleModelEditorBalanceQuery"
+                              >
+                                {{ ui.modelManagement.editor.isBalanceQuerying ? "查询中..." : "立即查询余额" }}
+                              </button>
+                            </div>
+                          </div>
+
+                          <textarea
+                            v-model="ui.modelManagement.editor.values.balanceQueryCode"
+                            class="field-textarea model-balance-code-textarea"
+                            placeholder="({ request: { url: 'https://xxxxx', method: 'GET' }, extractor: function (raw) { return { remaining: 0, used: 0, unit: 'USD' }; } });"
+                          ></textarea>
+
+                          <p class="field-hint">
+                            支持 `cc-switch` 风格协议；`request.url` 直接写在代码里即可，`API Key` 模板变量
+                            <code v-pre>{{apiKey}}</code>
+                            会在查询时自动注入。
+                          </p>
+
+                          <div class="model-balance-preview" :class="{ 'is-error': ui.modelManagement.editor.balanceQueryError }">
+                            <div class="model-balance-widget-head">
+                              <span class="model-balance-time">
+                                {{
+                                  ui.modelManagement.editor.balanceQueryResult?.queriedAt
+                                    ? `最近查询 ${formatLocalDateTime(ui.modelManagement.editor.balanceQueryResult.queriedAt)}`
+                                    : "结果预览"
+                                }}
+                              </span>
+                              <span
+                                v-if="ui.modelManagement.editor.balanceQueryResult?.planName"
+                                class="pill pill-neutral model-balance-plan-tag"
+                              >
+                                {{ ui.modelManagement.editor.balanceQueryResult.planName }}
+                              </span>
+                            </div>
+
+                            <p v-if="ui.modelManagement.editor.balanceQueryError" class="model-balance-preview-copy is-error">
+                              {{ ui.modelManagement.editor.balanceQueryError }}
+                            </p>
+
+                            <p v-else-if="ui.modelManagement.editor.balanceQueryResult" class="model-balance-widget-copy">
+                              <span class="model-balance-used">
+                                已使用：{{ formatBalanceNumber(ui.modelManagement.editor.balanceQueryResult.used) }}
+                              </span>
+                              <span class="model-balance-remaining">
+                                剩余：{{ formatBalanceNumber(ui.modelManagement.editor.balanceQueryResult.remaining) }}
+                                {{ ui.modelManagement.editor.balanceQueryResult.unit }}
+                              </span>
+                            </p>
+
+                            <p v-else class="model-balance-widget-placeholder">填好代码后，可以直接在这里试跑并预览余额结果。</p>
+                          </div>
+                        </div>
 
                         <div class="field field-full">
                           <span class="field-label">热门模型参考</span>
@@ -809,6 +915,319 @@
                       </form>
                     </div>
                   </section>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <template v-else-if="activeFeature === FEATURE_WORKFLOW_LIBRARY">
+            <div
+              class="workspace-stage workflow-library-stage"
+              :class="ui.workflow.view === 'detail' ? 'workspace-stage-flush' : 'workspace-stage-scroll'"
+            >
+              <div class="workflow-library-shell" :class="{ 'workflow-library-shell-detail': ui.workflow.view === 'detail' }">
+                <template v-if="ui.workflow.view === 'library'">
+                  <section class="models-hero workflow-library-hero">
+                    <div>
+                      <p class="feature-kicker">workflow</p>
+                      <p class="models-title">工作流库</p>
+                    </div>
+
+                    <div class="workflow-library-hero-side">
+                      <span class="status-pill">{{ workflowLibraryCards.length }} 个 workflow</span>
+                    </div>
+                  </section>
+
+                  <section class="model-section workflow-library-index-section">
+                    <div class="model-section-head">
+                      <div>
+                        <p class="feature-kicker">Library</p>
+                        <p class="model-section-title">全部工作流卡片</p>
+                      </div>
+
+                      <div class="model-section-actions">
+                        <span class="pill pill-neutral">一行 3 个</span>
+                        <span class="pill pill-neutral">当前 {{ workflowLibraryCards.length }} 张</span>
+                      </div>
+                    </div>
+
+                    <div v-if="workflowLibraryCards.length" class="workflow-library-card-grid">
+                      <article
+                        v-for="entry in workflowLibraryCards"
+                        :key="entry.id"
+                        class="workflow-library-card"
+                        role="button"
+                        tabindex="0"
+                        :aria-label="`打开 ${entry.title}`"
+                        @click="openWorkflowCard(entry.id)"
+                        @keydown.enter.prevent="openWorkflowCard(entry.id)"
+                        @keydown.space.prevent="openWorkflowCard(entry.id)"
+                      >
+                        <div class="workflow-library-card-top">
+                          <div class="workflow-library-card-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" class="workflow-library-card-icon-svg">
+                              <rect x="4.5" y="5.5" width="6.5" height="5.5" rx="1.6" fill="currentColor" opacity="0.2"></rect>
+                              <rect x="13" y="5.5" width="6.5" height="5.5" rx="1.6" fill="currentColor" opacity="0.12"></rect>
+                              <rect x="8.8" y="13" width="6.5" height="5.5" rx="1.6" fill="currentColor" opacity="0.18"></rect>
+                              <path d="M11 8.2h2M9.6 15.6h4.8M8.6 11.6l2.2 1.8M15.2 11.6l-2.2 1.8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"></path>
+                            </svg>
+                          </div>
+
+                          <span class="pill">{{ getWorkflowCardCountLabel(entry) }}</span>
+                        </div>
+
+                        <div class="workflow-library-card-body">
+                          <p class="workflow-library-card-title">{{ entry.title }}</p>
+                        </div>
+
+                        <div class="extension-tag-row workflow-library-card-tags">
+                          <span v-for="tag in entry.tags.slice(0, 3)" :key="tag" class="pill pill-neutral">{{ tag }}</span>
+                        </div>
+                      </article>
+                    </div>
+
+                    <div v-else class="model-empty">
+                      <p class="model-empty-copy">当前还没有 workflow 卡片，后续可以继续在本地仓储里补充更多工作流。</p>
+                    </div>
+                  </section>
+                </template>
+
+                <div v-else class="workflow-library-detail-shell">
+                  <section class="workflow-library-detail-head">
+                    <div class="workflow-library-detail-head-side">
+                      <button
+                        type="button"
+                        class="model-icon-button weekly-back-button"
+                        aria-label="返回工作流库"
+                        title="返回工作流库"
+                        @click="backToWorkflowLibrary"
+                        v-html="renderActionIcon('return')"
+                      ></button>
+                    </div>
+
+                    <div class="workflow-library-detail-head-center">
+                      <p class="feature-kicker">workflow</p>
+                      <p class="workflow-library-detail-title">{{ activeWorkflowCard?.title ?? "工作流库" }}</p>
+                    </div>
+
+                    <div class="workflow-library-detail-head-side workflow-library-detail-head-side-end">
+                      <span class="status-pill">{{ activeWorkflowMetrics.recordCount }} 条记录</span>
+                    </div>
+                  </section>
+
+                  <div class="workflow-library-detail-layout">
+                    <aside class="workflow-library-record-rail">
+                      <section class="workflow-library-rail-card workflow-library-rail-card-hero">
+                        <p class="feature-kicker">Current</p>
+                        <p class="workflow-library-rail-title">{{ activeWorkflowCard?.title ?? "未选择卡片" }}</p>
+
+                        <div class="extension-tag-row">
+                          <span v-for="tag in activeWorkflowCard?.tags ?? []" :key="tag" class="pill pill-neutral">{{ tag }}</span>
+                        </div>
+                      </section>
+
+                      <section class="workflow-library-rail-card">
+                        <div class="model-section-head workflow-library-rail-head">
+                          <div>
+                            <p class="feature-kicker">Records</p>
+                            <p class="model-section-title">历史工作记录</p>
+                          </div>
+                        </div>
+
+                        <div v-if="activeWorkflowRecords.length" class="workflow-library-record-list">
+                          <button
+                            v-for="record in activeWorkflowRecords"
+                            :key="record.id"
+                            type="button"
+                            class="workflow-library-record-card"
+                            :class="{ 'is-active': activeWorkflowRecord?.id === record.id }"
+                            @click="openWorkflowRecord(record.id)"
+                          >
+                            <div class="workflow-library-record-topline">
+                              <p class="workflow-library-record-title">{{ record.name }}</p>
+                              <span class="pill pill-neutral">{{ record.steps.length }} 步</span>
+                            </div>
+                            <div class="workflow-library-record-meta">
+                              <span>{{ formatLocalDateTime(record.updatedAt) }}</span>
+                            </div>
+                          </button>
+                        </div>
+
+                        <div v-else class="model-empty">
+                          <p class="model-empty-copy">当前卡片还没有历史记录。</p>
+                        </div>
+                      </section>
+                    </aside>
+
+                    <section class="workflow-library-main-stage">
+                      <template v-if="activeWorkflowRecord">
+                        <section class="workflow-library-main-card workflow-library-main-card-hero">
+                          <div class="workflow-library-main-card-head">
+                            <div>
+                              <p class="feature-kicker">Record</p>
+                              <p class="workflow-library-record-hero-title">{{ activeWorkflowRecord.name }}</p>
+                            </div>
+
+                            <div class="model-section-actions">
+                              <span class="pill">{{ activeWorkflowRecord.steps.length }} 个请求</span>
+                              <span class="pill pill-neutral">{{ activeWorkflowRecord.protocol.mode }}</span>
+                              <span class="pill pill-neutral">最长 {{ formatDurationMs(activeWorkflowMetrics.timeoutMs) }}</span>
+                            </div>
+                          </div>
+
+                          <div class="workflow-library-metric-row">
+                            <article class="workflow-library-metric-card">
+                              <span class="workflow-library-metric-label">协议概览</span>
+                              <strong>{{ getWorkflowProtocolSummary(activeWorkflowProtocol) }}</strong>
+                            </article>
+                            <article class="workflow-library-metric-card">
+                              <span class="workflow-library-metric-label">共享变量</span>
+                              <strong>{{ activeWorkflowMetrics.variableCount }} 个</strong>
+                            </article>
+                            <article class="workflow-library-metric-card">
+                              <span class="workflow-library-metric-label">结果路径</span>
+                              <strong>{{ activeWorkflowProtocol?.resultPath || "按步骤字段判断" }}</strong>
+                            </article>
+                          </div>
+                        </section>
+
+                        <div class="workflow-library-main-grid">
+                          <section class="workflow-library-main-card">
+                            <div class="workflow-library-main-card-head">
+                              <div>
+                                <p class="feature-kicker">Protocol</p>
+                                <p class="model-section-title">执行协议</p>
+                              </div>
+                            </div>
+
+                            <div class="workflow-library-protocol-list">
+                              <article class="workflow-library-protocol-item">
+                                <span class="workflow-library-protocol-label">模式</span>
+                                <strong>{{ activeWorkflowProtocol?.mode ?? "single" }}</strong>
+                              </article>
+                              <article class="workflow-library-protocol-item">
+                                <span class="workflow-library-protocol-label">初始等待</span>
+                                <strong>{{ formatDurationMs(activeWorkflowProtocol?.initialWaitMs ?? 0) }}</strong>
+                              </article>
+                              <article class="workflow-library-protocol-item">
+                                <span class="workflow-library-protocol-label">轮询间隔</span>
+                                <strong>{{ formatDurationMs(activeWorkflowProtocol?.pollIntervalMs ?? 0) }}</strong>
+                              </article>
+                              <article class="workflow-library-protocol-item">
+                                <span class="workflow-library-protocol-label">最大轮次</span>
+                                <strong>{{ activeWorkflowProtocol?.maxAttempts ?? 1 }}</strong>
+                              </article>
+                              <article class="workflow-library-protocol-item">
+                                <span class="workflow-library-protocol-label">完成判断</span>
+                                <strong>{{ activeWorkflowProtocol?.completionPath || "同步返回" }}</strong>
+                              </article>
+                              <article class="workflow-library-protocol-item">
+                                <span class="workflow-library-protocol-label">成功值</span>
+                                <strong>{{ activeWorkflowProtocol?.successValues?.join(" / ") || "直接成功" }}</strong>
+                              </article>
+                            </div>
+                          </section>
+
+                          <section class="workflow-library-main-card">
+                            <div class="workflow-library-main-card-head">
+                              <div>
+                                <p class="feature-kicker">Bindings</p>
+                                <p class="model-section-title">变量与提取</p>
+                              </div>
+                            </div>
+
+                            <div v-if="activeWorkflowRecord.sharedVariables.length" class="workflow-library-binding-list">
+                              <article
+                                v-for="binding in activeWorkflowRecord.sharedVariables"
+                                :key="`${binding.source}-${binding.name}`"
+                                class="workflow-library-binding-item"
+                              >
+                                <div class="workflow-library-binding-top">
+                                  <p class="workflow-library-binding-name">{{ binding.name }}</p>
+                                  <span class="pill" :class="binding.source === 'response' ? '' : 'pill-neutral'">
+                                    {{ binding.source === "response" ? "响应提取" : "手工填写" }}
+                                  </span>
+                                </div>
+                                <p class="workflow-library-binding-meta">{{ binding.placeholder }}{{ binding.path ? ` / ${binding.path}` : "" }}</p>
+                              </article>
+                            </div>
+
+                            <div v-else class="model-empty">
+                              <p class="model-empty-copy">当前记录没有额外变量绑定。</p>
+                            </div>
+                          </section>
+                        </div>
+
+                        <section class="workflow-library-main-card workflow-library-step-stage">
+                          <div class="workflow-library-main-card-head">
+                            <div>
+                              <p class="feature-kicker">Steps</p>
+                              <p class="model-section-title">请求步骤</p>
+                            </div>
+                          </div>
+
+                          <div class="workflow-library-step-list">
+                            <article v-for="(step, index) in activeWorkflowSteps" :key="step.id" class="workflow-library-step-card">
+                              <div class="workflow-library-step-head">
+                                <div class="workflow-library-step-head-main">
+                                  <span class="workflow-library-step-order">{{ index + 1 }}</span>
+                                  <div>
+                                    <p class="workflow-library-step-title">{{ step.name }}</p>
+                                  </div>
+                                </div>
+
+                                <div class="model-section-actions workflow-library-step-actions">
+                                  <span class="pill">{{ step.method }}</span>
+                                  <span v-if="step.waitBeforeMs" class="pill pill-neutral">前置等待 {{ formatDurationMs(step.waitBeforeMs) }}</span>
+                                  <button
+                                    type="button"
+                                    class="model-icon-button"
+                                    :title="ui.workflow.copiedStepId === step.id ? '已复制' : '复制 curl'"
+                                    :aria-label="ui.workflow.copiedStepId === step.id ? '已复制' : '复制 curl'"
+                                    @click="handleWorkflowCurlCopy(step)"
+                                    v-html="renderActionIcon(ui.workflow.copiedStepId === step.id ? 'check' : 'copy')"
+                                  ></button>
+                                </div>
+                              </div>
+
+                              <div class="workflow-library-step-meta">
+                                <p class="workflow-library-step-url">{{ step.url }}</p>
+                                <div class="extension-tag-row">
+                                  <span v-for="hint in step.responseFieldHints" :key="hint" class="pill pill-neutral">{{ hint }}</span>
+                                </div>
+                              </div>
+
+                              <div class="workflow-library-step-binding-grid">
+                                <div class="workflow-library-step-binding-box">
+                                  <span class="workflow-library-step-binding-label">消费变量</span>
+                                  <p v-if="step.consumes.length" class="workflow-library-step-binding-copy">
+                                    {{ step.consumes.map((item) => item.name).join(" / ") }}
+                                  </p>
+                                  <p v-else class="workflow-library-step-binding-copy">无</p>
+                                </div>
+
+                                <div class="workflow-library-step-binding-box">
+                                  <span class="workflow-library-step-binding-label">产出变量</span>
+                                  <p v-if="step.produces.length" class="workflow-library-step-binding-copy">
+                                    {{ step.produces.map((item) => `${item.name}${item.path ? ` ← ${item.path}` : ""}`).join(" / ") }}
+                                  </p>
+                                  <p v-else class="workflow-library-step-binding-copy">无</p>
+                                </div>
+                              </div>
+
+                              <div class="workflow-library-code-shell">
+                                <pre class="workflow-library-code-block"><code>{{ step.curl }}</code></pre>
+                              </div>
+                            </article>
+                          </div>
+                        </section>
+                      </template>
+
+                      <div v-else class="model-empty">
+                        <p class="model-empty-copy">当前 workflow 还没有可打开的历史记录。</p>
+                      </div>
+                    </section>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2109,7 +2528,7 @@ import {
 const FEATURE_HOME = "home";
 const FEATURE_MARKETPLACE = "marketplace";
 const FEATURE_TASKS = "tasks";
-const FEATURE_EFFICIENCY = "efficiency";
+const FEATURE_WORKFLOW_LIBRARY = "workflow-library";
 const FEATURE_COMMAND_WORKSHOP = "command-workshop";
 const FEATURE_MODEL_MANAGEMENT = "model-management";
 const FEATURE_EXTENSIONS_MANAGEMENT = "extensions-management";
@@ -2134,9 +2553,9 @@ const FEATURE_ENTRIES = [
     tier: "default"
   },
   {
-    id: FEATURE_EFFICIENCY,
-    kicker: "Efficiency",
-    title: "效率工具",
+    id: FEATURE_WORKFLOW_LIBRARY,
+    kicker: "workflow",
+    title: "工作流库",
     tier: "wide"
   },
   {
@@ -2164,10 +2583,6 @@ const FEATURE_PLACEHOLDERS = {
   [FEATURE_MARKETPLACE]: {
     title: "应用广场",
     description: "这里会继续承接应用发现、工具接入和能力分发。"
-  },
-  [FEATURE_EFFICIENCY]: {
-    title: "效率工具",
-    description: "这里会继续承接日报生成、文案改写与效率辅助能力。"
   }
 };
 
@@ -2191,6 +2606,26 @@ const ACTION_ICONS = {
       <path d="M10.2 3.8h3.6l.6 2a6.9 6.9 0 0 1 1.5.9l2-.6 1.8 3.1-1.5 1.4c.1.4.2.9.2 1.4s-.1 1-.2 1.4l1.5 1.4-1.8 3.1-2-.6a6.9 6.9 0 0 1-1.5.9l-.6 2h-3.6l-.6-2a6.9 6.9 0 0 1-1.5-.9l-2 .6-1.8-3.1 1.5-1.4A6.6 6.6 0 0 1 5.5 12c0-.5.1-1 .2-1.4L4.2 9.2 6 6.1l2 .6a6.9 6.9 0 0 1 1.5-.9l.7-2Z" fill="currentColor" opacity="0.12" />
       <path d="M10.2 3.8h3.6l.6 2a6.9 6.9 0 0 1 1.5.9l2-.6 1.8 3.1-1.5 1.4c.1.4.2.9.2 1.4s-.1 1-.2 1.4l1.5 1.4-1.8 3.1-2-.6a6.9 6.9 0 0 1-1.5.9l-.6 2h-3.6l-.6-2a6.9 6.9 0 0 1-1.5-.9l-2 .6-1.8-3.1 1.5-1.4A6.6 6.6 0 0 1 5.5 12c0-.5.1-1 .2-1.4L4.2 9.2 6 6.1l2 .6a6.9 6.9 0 0 1 1.5-.9l.7-2Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
       <circle cx="12" cy="12" r="2.8" fill="none" stroke="currentColor" stroke-width="1.8" />
+    </svg>
+  `,
+  refresh: `
+    <svg viewBox="0 0 24 24" class="action-icon" aria-hidden="true">
+      <path
+        d="M16.023 9.348h4.992V4.356M2.977 14.652H7.97v4.992"
+        fill="none"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="1.8"
+      />
+      <path
+        d="M20.864 9A9 9 0 0 0 6.343 5.343L2.977 8.709M3.136 15A9 9 0 0 0 17.657 18.657l3.366-3.366"
+        fill="none"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="1.8"
+      />
     </svg>
   `,
   return: `
@@ -2250,6 +2685,31 @@ const DAILY_REPORT_GUIDE_COPY = [
   "更新范围包括：修改任务内容、修改任务状态。",
   "输出结果会按项目归组，仅保留今天推进过的任务清单。"
 ].join("\n");
+const MODEL_BALANCE_QUERY_TEMPLATE = [
+  "({",
+  "  request: {",
+  "    url: \"https://xxxxx\",",
+  "    method: \"GET\",",
+  "    headers: {",
+  "      Authorization: \"Bearer {{apiKey}}\",",
+  "      \"User-Agent\": \"cc-switch/1.0\",",
+  "    },",
+  "  },",
+  "  extractor: function (raw) {",
+  "    const response = typeof raw === \"string\" ? JSON.parse(raw) : raw || {};",
+  "",
+  "    const data = response.resp_data || {};",
+  "",
+  "    return {",
+  "      planName: data.team || \"unknown\",",
+  "      remaining: data.money || 0,",
+  "      used: 1000 - data.money,",
+  "      total: 1000,",
+  "      unit: \"USD\",",
+  "    };",
+  "  },",
+  "});"
+].join("\n");
 
 const desktopApi = window.gordonDesktop ?? null;
 let splineApplicationClass = null;
@@ -2280,8 +2740,13 @@ function createModelEditorState(provider = "openai", profile = null) {
       organization: profile?.organization ?? "",
       project: profile?.project ?? "",
       location: profile?.location ?? "",
-      notes: profile?.notes ?? ""
-    }
+      notes: profile?.notes ?? "",
+      balanceQueryCode: profile?.balanceQueryCode ?? ""
+    },
+    balanceQueryResult: profile?.balanceSnapshot ?? null,
+    balanceQueryError: "",
+    isBalanceQuerying: false,
+    lastBalanceQueryCode: profile?.balanceQueryCode ?? ""
   };
 }
 
@@ -2311,6 +2776,15 @@ function createCommandDraft(agentProfileId = "") {
     mcpServerId: "",
     mcpToolName: "",
     mcpArgumentsText: "{}"
+  };
+}
+
+function createWorkflowState() {
+  return {
+    view: "library",
+    activeCardId: null,
+    activeRecordId: null,
+    copiedStepId: null
   };
 }
 
@@ -2516,11 +2990,18 @@ const workbench = reactive({
   snapshot: null,
   modelSettings: createEmptyModelSettings(),
   weeklyProgress: [],
+  workflowLibrary: [],
   skillDefinitions: [],
   mcpServers: [],
   agentProfiles: [],
   agentRunLogs: [],
   commandSessions: []
+});
+
+const modelBalanceRuntime = reactive({
+  loadingByProfileId: {},
+  snapshotByProfileId: {},
+  feedbackByProfileId: {}
 });
 
 const ui = reactive({
@@ -2529,6 +3010,7 @@ const ui = reactive({
     editor: createModelEditorState("openai")
   },
   weekly: createWeeklyState(),
+  workflow: createWorkflowState(),
   command: {
     view: "list",
     composerView: "input",
@@ -2554,6 +3036,7 @@ const robotRuntimeState = {
 const isWorkspaceImmersive = computed(
   () =>
     (activeFeature.value === FEATURE_TASKS && ui.weekly.view === "editor") ||
+    (activeFeature.value === FEATURE_WORKFLOW_LIBRARY && ui.workflow.view === "detail") ||
     (activeFeature.value === FEATURE_COMMAND_WORKSHOP && ui.command.view === "chat")
 );
 
@@ -2582,6 +3065,121 @@ const enabledMcpServers = computed(() => workbench.mcpServers.filter((server) =>
 
 const modelEditorFields = computed(() => getProviderFields(ui.modelManagement.editor.provider));
 
+function hasModelBalanceQuery(profile) {
+  return Boolean(String(profile?.balanceQueryCode ?? "").trim());
+}
+
+function formatBalanceNumber(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric.toFixed(2) : "--";
+}
+
+function getModelBalanceSnapshot(profile) {
+  return modelBalanceRuntime.snapshotByProfileId[profile?.id] ?? profile?.balanceSnapshot ?? null;
+}
+
+function getModelBalanceFeedback(profile) {
+  return modelBalanceRuntime.feedbackByProfileId[profile?.id] ?? null;
+}
+
+function isModelBalanceRefreshing(profileId) {
+  return Boolean(modelBalanceRuntime.loadingByProfileId[profileId]);
+}
+
+function setModelBalanceRefreshing(profileId, shouldRefresh) {
+  modelBalanceRuntime.loadingByProfileId[profileId] = shouldRefresh;
+}
+
+function syncModelBalanceRuntimeFromProfiles(profiles = []) {
+  const profileIds = new Set((Array.isArray(profiles) ? profiles : []).map((profile) => profile.id));
+
+  Object.keys(modelBalanceRuntime.snapshotByProfileId).forEach((profileId) => {
+    if (!profileIds.has(profileId)) {
+      delete modelBalanceRuntime.snapshotByProfileId[profileId];
+    }
+  });
+
+  Object.keys(modelBalanceRuntime.loadingByProfileId).forEach((profileId) => {
+    if (!profileIds.has(profileId)) {
+      delete modelBalanceRuntime.loadingByProfileId[profileId];
+    }
+  });
+
+  Object.keys(modelBalanceRuntime.feedbackByProfileId).forEach((profileId) => {
+    if (!profileIds.has(profileId)) {
+      delete modelBalanceRuntime.feedbackByProfileId[profileId];
+    }
+  });
+
+  (Array.isArray(profiles) ? profiles : []).forEach((profile) => {
+    modelBalanceRuntime.snapshotByProfileId[profile.id] = profile.balanceSnapshot ?? null;
+  });
+}
+
+function setModelBalanceFeedback(profileId, text, tone = "neutral") {
+  modelBalanceRuntime.feedbackByProfileId[profileId] = {
+    text: String(text ?? "").trim(),
+    tone
+  };
+}
+
+function toPlainModelProfile(profile) {
+  return {
+    id: String(profile?.id ?? ""),
+    provider: profile?.provider,
+    displayName: String(profile?.displayName ?? ""),
+    model: String(profile?.model ?? ""),
+    apiKey: String(profile?.apiKey ?? ""),
+    baseUrl: String(profile?.baseUrl ?? ""),
+    organization: String(profile?.organization ?? ""),
+    project: String(profile?.project ?? ""),
+    location: String(profile?.location ?? ""),
+    notes: String(profile?.notes ?? ""),
+    balanceQueryCode: String(profile?.balanceQueryCode ?? ""),
+    updatedAt: String(profile?.updatedAt ?? "")
+  };
+}
+
+function applyModelBalanceSnapshot(profileId, balanceSnapshot) {
+  modelBalanceRuntime.snapshotByProfileId[profileId] = balanceSnapshot;
+  workbench.modelSettings.profiles = workbench.modelSettings.profiles.map((profile) =>
+    profile.id === profileId
+      ? {
+          ...profile,
+          balanceSnapshot
+        }
+      : profile
+  );
+
+  if (ui.modelManagement.editor.profileId === profileId) {
+    ui.modelManagement.editor.balanceQueryResult = balanceSnapshot;
+    ui.modelManagement.editor.balanceQueryError = "";
+    ui.modelManagement.editor.lastBalanceQueryCode = ui.modelManagement.editor.values.balanceQueryCode.trim();
+  }
+}
+
+function buildModelEditorPayload() {
+  const balanceQueryCode = ui.modelManagement.editor.values.balanceQueryCode.trim();
+  const shouldReuseBalanceSnapshot =
+    balanceQueryCode && balanceQueryCode === String(ui.modelManagement.editor.lastBalanceQueryCode ?? "").trim();
+
+  return {
+    id: ui.modelManagement.editor.profileId ?? `model_${Date.now()}`,
+    provider: ui.modelManagement.editor.provider,
+    displayName: ui.modelManagement.editor.values.displayName.trim(),
+    model: ui.modelManagement.editor.values.model.trim(),
+    apiKey: ui.modelManagement.editor.values.apiKey.trim(),
+    baseUrl: ui.modelManagement.editor.values.baseUrl.trim(),
+    organization: ui.modelManagement.editor.values.organization.trim(),
+    project: ui.modelManagement.editor.values.project.trim(),
+    location: ui.modelManagement.editor.values.location.trim(),
+    notes: ui.modelManagement.editor.values.notes.trim(),
+    balanceQueryCode,
+    balanceSnapshot: shouldReuseBalanceSnapshot ? ui.modelManagement.editor.balanceQueryResult ?? null : null,
+    updatedAt: new Date().toISOString()
+  };
+}
+
 const activeWeeklyRecord = computed(() =>
   workbench.weeklyProgress.find((record) => record.id === ui.weekly.activeRecordId) ?? null
 );
@@ -2592,6 +3190,16 @@ const weeklyFocusRecord = computed(
 const weeklyFocusMetrics = computed(() => getWeeklyProgressMetrics(weeklyFocusRecord.value ?? { projects: [] }));
 const weeklyFocusCompletionRate = computed(() => getWeeklyProgressCompletionRate(weeklyFocusRecord.value ?? { projects: [] }));
 const weeklyDraft = computed(() => ui.weekly.draft);
+const workflowLibraryCards = computed(() => [...workbench.workflowLibrary]);
+const activeWorkflowCard = computed(
+  () => workflowLibraryCards.value.find((entry) => entry.id === ui.workflow.activeCardId) ?? workflowLibraryCards.value[0] ?? null
+);
+const activeWorkflowRecords = computed(() => activeWorkflowCard.value?.records ?? []);
+const activeWorkflowRecord = computed(
+  () => activeWorkflowRecords.value.find((record) => record.id === ui.workflow.activeRecordId) ?? activeWorkflowRecords.value[0] ?? null
+);
+const activeWorkflowProtocol = computed(() => activeWorkflowRecord.value?.protocol ?? null);
+const activeWorkflowSteps = computed(() => activeWorkflowRecord.value?.steps ?? []);
 const weeklyReportTemplates = computed(() => (Array.isArray(ui.weekly.draft?.reportTemplates) ? ui.weekly.draft.reportTemplates : []));
 const weeklyIsWeeklyReportMode = computed(() => ui.weekly.reportingMode !== "daily");
 const weeklyReportModeLabel = computed(() => (weeklyIsWeeklyReportMode.value ? "周报" : "日报"));
@@ -2724,6 +3332,12 @@ const weeklyListOverviewCards = computed(() => {
   ];
 });
 const weeklyDraftInsights = computed(() => buildWeeklyDraftInsights(ui.weekly.draft));
+const activeWorkflowMetrics = computed(() => ({
+  recordCount: activeWorkflowCard.value?.records?.length ?? 0,
+  stepCount: activeWorkflowRecord.value?.steps?.length ?? 0,
+  variableCount: activeWorkflowRecord.value?.sharedVariables?.length ?? 0,
+  timeoutMs: getWorkflowTimeoutMs(activeWorkflowRecord.value?.protocol)
+}));
 
 const activeCommandSession = computed(() =>
   workbench.commandSessions.find((session) => session.id === ui.command.activeSessionId) ?? null
@@ -2771,6 +3385,60 @@ const runnerLatestResult = computed(() => ui.extensions.runner.result ?? runnerR
 function setStatus(text, tone = "neutral") {
   status.text = text;
   status.tone = tone;
+}
+
+function formatDurationMs(value) {
+  const duration = Number(value ?? 0);
+
+  if (duration <= 0) {
+    return "0s";
+  }
+
+  if (duration < 1000) {
+    return `${duration}ms`;
+  }
+
+  if (duration < 60_000) {
+    return `${Math.round(duration / 1000)}s`;
+  }
+
+  if (duration < 3_600_000) {
+    const minutes = Math.floor(duration / 60_000);
+    const seconds = Math.round((duration % 60_000) / 1000);
+    return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  }
+
+  const hours = Math.floor(duration / 3_600_000);
+  const minutes = Math.round((duration % 3_600_000) / 60_000);
+  return minutes ? `${hours}h ${minutes}m` : `${hours}h`;
+}
+
+function getWorkflowTimeoutMs(protocol) {
+  if (!protocol) {
+    return 0;
+  }
+
+  return Math.max(Number(protocol.timeoutMs ?? 0), Number(protocol.initialWaitMs ?? 0) + Number(protocol.pollIntervalMs ?? 0) * Number(protocol.maxAttempts ?? 0));
+}
+
+function getWorkflowProtocolSummary(protocol) {
+  if (!protocol) {
+    return "暂无协议";
+  }
+
+  if (protocol.mode === "polling") {
+    return `先等 ${formatDurationMs(protocol.initialWaitMs)}，再每 ${formatDurationMs(protocol.pollIntervalMs)} 轮询，最长 ${formatDurationMs(getWorkflowTimeoutMs(protocol))}`;
+  }
+
+  if (protocol.mode === "sequential") {
+    return "按固定顺序串行执行";
+  }
+
+  return "单次同步调用";
+}
+
+function getWorkflowCardCountLabel(entry) {
+  return `${entry?.records?.length ?? 0} 条记录`;
 }
 
 function clearWeeklyAutosaveTimer() {
@@ -3614,7 +4282,9 @@ function syncWeeklyEditorState() {
 function applyWorkbenchSnapshot(snapshot, modelSettings) {
   workbench.snapshot = snapshot;
   workbench.modelSettings = modelSettings;
+  syncModelBalanceRuntimeFromProfiles(modelSettings?.profiles ?? []);
   workbench.weeklyProgress = [...(snapshot?.weeklyProgress ?? [])];
+  workbench.workflowLibrary = [...(snapshot?.workflowLibrary ?? [])];
   workbench.skillDefinitions = [...(snapshot?.skillDefinitions ?? [])];
   workbench.mcpServers = [...(snapshot?.mcpServers ?? [])];
   workbench.agentProfiles = [...(snapshot?.agentProfiles ?? [])];
@@ -3629,6 +4299,8 @@ function applyWorkbenchSnapshot(snapshot, modelSettings) {
   if (ui.weekly.view === "editor") {
     syncWeeklyEditorState();
   }
+
+  syncWorkflowSelection();
 
   if (workbench.commandSessions.length) {
     const nextSession =
@@ -3684,6 +4356,11 @@ function setActiveFeature(featureId) {
     closeWeeklyEditor();
   }
 
+  if (featureId === FEATURE_WORKFLOW_LIBRARY) {
+    ui.workflow.view = "library";
+    syncWorkflowSelection();
+  }
+
   if (featureId === FEATURE_COMMAND_WORKSHOP) {
     ui.command.form = normalizeCommandWorkshopConfig(ui.command.form);
     ui.command.view = workbench.commandSessions.length ? "list" : "chat";
@@ -3699,6 +4376,53 @@ function setActiveFeature(featureId) {
 
 function handleFeatureSelect(featureId) {
   setActiveFeature(featureId);
+}
+
+function syncWorkflowSelection() {
+  if (!workbench.workflowLibrary.length) {
+    ui.workflow.activeCardId = null;
+    ui.workflow.activeRecordId = null;
+    ui.workflow.copiedStepId = null;
+    return;
+  }
+
+  const nextCard =
+    workbench.workflowLibrary.find((entry) => entry.id === ui.workflow.activeCardId) ?? workbench.workflowLibrary[0];
+  ui.workflow.activeCardId = nextCard?.id ?? null;
+
+  const nextRecord = nextCard?.records?.find((record) => record.id === ui.workflow.activeRecordId) ?? nextCard?.records?.[0] ?? null;
+  ui.workflow.activeRecordId = nextRecord?.id ?? null;
+  ui.workflow.copiedStepId = null;
+}
+
+function openWorkflowCard(cardId) {
+  activeFeature.value = FEATURE_WORKFLOW_LIBRARY;
+  ui.workflow.view = "detail";
+  ui.workflow.activeCardId = cardId;
+  const card = workbench.workflowLibrary.find((entry) => entry.id === cardId);
+  ui.workflow.activeRecordId = card?.records?.[0]?.id ?? null;
+  ui.workflow.copiedStepId = null;
+}
+
+function backToWorkflowLibrary() {
+  ui.workflow.view = "library";
+  syncWorkflowSelection();
+}
+
+function openWorkflowRecord(recordId) {
+  ui.workflow.activeRecordId = recordId;
+  ui.workflow.copiedStepId = null;
+}
+
+async function handleWorkflowCurlCopy(step) {
+  try {
+    await copyTextToClipboard(step?.curl ?? "");
+    ui.workflow.copiedStepId = step?.id ?? null;
+    setStatus(`已复制「${step?.name ?? "当前步骤"}」的 curl。`, "success");
+  } catch (error) {
+    console.error("Failed to copy workflow curl", error);
+    setStatus(`复制 curl 失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+  }
 }
 
 function openModelCreatePicker() {
@@ -3723,6 +4447,51 @@ function backModelManagement() {
   ui.modelManagement.editor = createModelEditorState("openai");
 }
 
+function fillModelBalanceQueryTemplate() {
+  ui.modelManagement.editor.values.balanceQueryCode = MODEL_BALANCE_QUERY_TEMPLATE;
+  ui.modelManagement.editor.balanceQueryError = "";
+  ui.modelManagement.editor.balanceQueryResult = null;
+  ui.modelManagement.editor.lastBalanceQueryCode = "";
+}
+
+async function handleModelEditorBalanceQuery() {
+  if (!desktopApi?.queryModelBalance) {
+    setStatus("桌面桥接未就绪，暂无法执行余额查询。", "danger");
+    return;
+  }
+
+  const payload = buildModelEditorPayload();
+
+  if (!payload.apiKey) {
+    setStatus("请先填写 API Key，再执行余额查询。", "warning");
+    return;
+  }
+
+  if (!payload.balanceQueryCode) {
+    setStatus("请先填写余额查询提取器代码。", "warning");
+    return;
+  }
+
+  ui.modelManagement.editor.isBalanceQuerying = true;
+  ui.modelManagement.editor.balanceQueryError = "";
+
+  try {
+    const balanceSnapshot = await desktopApi.queryModelBalance({
+      profile: payload,
+      persistResult: false
+    });
+    ui.modelManagement.editor.balanceQueryResult = balanceSnapshot;
+    ui.modelManagement.editor.lastBalanceQueryCode = payload.balanceQueryCode;
+    setStatus("余额查询成功。", "success");
+  } catch (error) {
+    console.error("Failed to query model balance in editor", error);
+    ui.modelManagement.editor.balanceQueryError = error instanceof Error ? error.message : "未知错误";
+    setStatus(`余额查询失败：${ui.modelManagement.editor.balanceQueryError}`, "danger");
+  } finally {
+    ui.modelManagement.editor.isBalanceQuerying = false;
+  }
+}
+
 async function handleModelEditorSave() {
   if (!desktopApi) {
     setStatus("桌面桥接未就绪，暂无法保存模型配置。", "danger");
@@ -3738,19 +4507,7 @@ async function handleModelEditorSave() {
     return;
   }
 
-  const payload = {
-    id: ui.modelManagement.editor.profileId ?? `model_${Date.now()}`,
-    provider: ui.modelManagement.editor.provider,
-    displayName: ui.modelManagement.editor.values.displayName.trim(),
-    model: ui.modelManagement.editor.values.model.trim(),
-    apiKey: ui.modelManagement.editor.values.apiKey.trim(),
-    baseUrl: ui.modelManagement.editor.values.baseUrl.trim(),
-    organization: ui.modelManagement.editor.values.organization.trim(),
-    project: ui.modelManagement.editor.values.project.trim(),
-    location: ui.modelManagement.editor.values.location.trim(),
-    notes: ui.modelManagement.editor.values.notes.trim(),
-    updatedAt: new Date().toISOString()
-  };
+  const payload = buildModelEditorPayload();
 
   try {
     await desktopApi.upsertModelProfile(payload);
@@ -3760,6 +4517,49 @@ async function handleModelEditorSave() {
   } catch (error) {
     console.error("Failed to save model profile", error);
     setStatus(`模型配置保存失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+  }
+}
+
+async function handleModelBalanceRefresh(profile) {
+  if (!desktopApi?.queryModelBalance) {
+    setModelBalanceFeedback(profile?.id, "桥接未就绪，列表按钮未拿到查询能力。", "danger");
+    setStatus("桌面桥接未就绪，暂无法执行余额查询。", "danger");
+    return;
+  }
+
+  if (!hasModelBalanceQuery(profile)) {
+    setModelBalanceFeedback(profile?.id, "当前模型没有配置余额查询代码。", "warning");
+    setStatus("当前模型还没有配置余额查询提取器代码。", "warning");
+    return;
+  }
+
+  const profilePayload = toPlainModelProfile(profile);
+  setModelBalanceFeedback(profile.id, "已点击，准备发起余额查询...", "neutral");
+  setStatus(`正在刷新 ${profile.displayName} 的余额...`, "neutral");
+  setModelBalanceRefreshing(profile.id, true);
+  await nextTick();
+
+  try {
+    setModelBalanceFeedback(profile.id, "请求已发出，等待接口返回...", "neutral");
+    const balanceSnapshot = await desktopApi.queryModelBalance({
+      profile: profilePayload,
+      persistResult: true
+    });
+    applyModelBalanceSnapshot(profile.id, balanceSnapshot);
+    setModelBalanceFeedback(profile.id, "余额刷新成功。", "success");
+    setStatus(`已刷新 ${profile.displayName} 的余额。`, "success");
+  } catch (error) {
+    console.error("Failed to refresh model balance", error);
+    setModelBalanceFeedback(profile.id, error instanceof Error ? error.message : "余额刷新失败。", "danger");
+    setStatus(`余额刷新失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+  } finally {
+    setModelBalanceRefreshing(profile.id, false);
+  }
+
+  try {
+    await refreshWorkbenchSnapshot();
+  } catch (error) {
+    console.error("Failed to sync refreshed model balance snapshot", error);
   }
 }
 

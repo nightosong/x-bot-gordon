@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from "electron";
 
 import type {
   AgentProfile,
+  ModelBalanceQueryRequest,
+  ModelBalanceSnapshot,
   AgentRunProgressEvent,
   AgentRunRequest,
   CommandWorkshopSession,
@@ -29,6 +31,8 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
   toggleModelProfileStatus: (profileId: string) => ipcRenderer.invoke("gordon:model-settings:toggle-status", profileId),
   deleteModelProfile: (profileId: string) => ipcRenderer.invoke("gordon:model-settings:delete", profileId),
   invokeModelText: (request: ModelTextRequest) => ipcRenderer.invoke("gordon:model:invoke-text", request),
+  queryModelBalance: (request: ModelBalanceQueryRequest): Promise<ModelBalanceSnapshot> =>
+    ipcRenderer.invoke("gordon:model:query-balance", request),
   listSkillDefinitions: () => ipcRenderer.invoke("gordon:skills:list"),
   upsertSkillDefinition: (skill: SkillDefinition) => ipcRenderer.invoke("gordon:skills:upsert", skill),
   importSkillDefinitionFromGithub: (request: GithubSkillImportRequest) =>
