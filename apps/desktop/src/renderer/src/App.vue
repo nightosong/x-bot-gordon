@@ -605,7 +605,6 @@
                                       <span class="command-inline-toggle-label">使用大模型优化</span>
                                       <input v-model="ui.weekly.dailyReportUseModelOptimization" type="checkbox" />
                                     </label>
-                                    <span class="weekly-report-mode-meta">先按原任务树生成，再按需交给模型润色</span>
                                   </template>
                                 </div>
                               </div>
@@ -2635,7 +2634,7 @@ const weeklyReportGuideContent = computed({
     weeklySelectedReportTemplateContent.value = value;
   }
 });
-const weeklyReportOutputLabel = computed(() => (weeklyIsWeeklyReportMode.value ? "发送给领导的周报" : "今日日报"));
+const weeklyReportOutputLabel = computed(() => (weeklyIsWeeklyReportMode.value ? "发送给领导的周报" : getDailyReportHeadingTitle()));
 const weeklyReportOutputMode = computed(() => ui.weekly.reportOutputMode === "edit" ? "edit" : "preview");
 const weeklyReportOutputPlaceholder = computed(() =>
   weeklyIsWeeklyReportMode.value
@@ -2928,6 +2927,15 @@ function getDailyReportDateTitle(referenceDate = new Date()) {
     day: "2-digit",
     weekday: "short"
   }).format(date);
+}
+
+function getDailyReportHeadingTitle(referenceDate = new Date()) {
+  const date = referenceDate instanceof Date ? referenceDate : new Date(referenceDate);
+  const year = String(date.getFullYear());
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}/${month}/${day} 日报`;
 }
 
 function filterWeeklyTasksToUpdatedBranches(tasks = [], todayKey = getLocalDateKey(new Date())) {

@@ -1006,6 +1006,60 @@ function buildWeeklyProgressContent(projects: WeeklyProgressProjectItem[]): stri
     .trim();
 }
 
+function shouldCarryForwardWeeklyTaskStatus(status: WeeklyProgressItemStatus): boolean {
+  return status === "in_progress" || status === "blocked";
+}
+
+function cloneWeeklyProgressTaskForCarryForward(task: WeeklyProgressTaskItem): WeeklyProgressTaskItem | null {
+  const filteredChildren = getWeeklyTaskChildren(task)
+    .map((child) => cloneWeeklyProgressTaskForCarryForward(child as WeeklyProgressTaskItem))
+    .filter((child): child is WeeklyProgressTaskItem => Boolean(child));
+  const shouldCarryCurrentTask = shouldCarryForwardWeeklyTaskStatus(task.status);
+
+  if (!shouldCarryCurrentTask && !filteredChildren.length) {
+    return null;
+  }
+
+  const nextStatus =
+    filteredChildren.length && task.status !== "blocked"
+      ? "in_progress"
+      : task.status;
+
+  return createWeeklyProgressTaskItem({
+    title: task.title,
+    detail: task.detail,
+    status: nextStatus,
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt,
+    children: filteredChildren
+  });
+}
+
+function buildCarryForwardProjectsFromWeeklyRecord(record: WeeklyProgressRecord | null | undefined): WeeklyProgressProjectItem[] {
+  if (!record) {
+    return [];
+  }
+
+  return (Array.isArray(record.projects) ? record.projects : [])
+    .map((project) => {
+      const carriedTasks = (Array.isArray(project.tasks) ? project.tasks : [])
+        .map((task) => cloneWeeklyProgressTaskForCarryForward(task))
+        .filter((task): task is WeeklyProgressTaskItem => Boolean(task));
+
+      if (!carriedTasks.length) {
+        return null;
+      }
+
+      return createWeeklyProgressProjectItem({
+        title: project.title,
+        note: project.note,
+        status: deriveWeeklyProgressProjectStatus(carriedTasks),
+        tasks: carriedTasks
+      });
+    })
+    .filter((project): project is WeeklyProgressProjectItem => Boolean(project));
+}
+
 function sortWeeklyProgress(records: WeeklyProgressRecord[]): WeeklyProgressRecord[] {
   return [...records].sort(
     (left, right) => right.weekKey.localeCompare(left.weekKey) || right.updatedAt.localeCompare(left.updatedAt)
@@ -1035,7 +1089,7 @@ function normalizeWeeklyProgressRecord(record: WeeklyProgressRecord): WeeklyProg
   };
 }
 
-function createWeeklyProgressRecord(referenceDate = new Date()): WeeklyProgressRecord {
+function createWeeklyProgressRecord(referenceDate = new Date(), projects: WeeklyProgressProjectItem[] = []): WeeklyProgressRecord {
   const range = getWeekRange(referenceDate);
   const timestamp = new Date().toISOString();
 
@@ -1045,8 +1099,8 @@ function createWeeklyProgressRecord(referenceDate = new Date()): WeeklyProgressR
     title: range.title,
     startDate: range.startDate,
     endDate: range.endDate,
-    content: "",
-    projects: [],
+    content: buildWeeklyProgressContent(projects),
+    projects,
     reportTemplates: [createDefaultWeeklyReportTemplateItem()],
     selectedReportTemplateId: DEFAULT_WEEKLY_REPORT_TEMPLATE_ID,
     reportTemplate: DEFAULT_WEEKLY_REPORT_TEMPLATE,
@@ -1102,7 +1156,11 @@ async function ensureWeeklyProgressRecords(): Promise<WeeklyProgressRecord[]> {
   });
 
   if (!normalizedRecords.some((record) => record.weekKey === currentRange.weekKey)) {
-    normalizedRecords.unshift(createWeeklyProgressRecord());
+    const previousRecord =
+      sortWeeklyProgress(normalizedRecords).find((record) => record.weekKey < currentRange.weekKey) ?? null;
+    const carriedProjects = buildCarryForwardProjectsFromWeeklyRecord(previousRecord);
+
+    normalizedRecords.unshift(createWeeklyProgressRecord(new Date(), carriedProjects));
     changed = true;
   }
 
