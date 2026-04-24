@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, screen } from "electron";
+import { app, BrowserWindow, ipcMain, nativeImage, screen } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -36,6 +36,9 @@ import { queryModelBalance } from "./model-balance.js";
 
 const currentFilePath = fileURLToPath(import.meta.url);
 const currentDir = path.dirname(currentFilePath);
+const desktopAssetDir = path.resolve(currentDir, "..", "assets");
+const appIconFileName = process.platform === "win32" ? "gordon.ico" : "gordon.icns";
+const appIconPath = path.join(desktopAssetDir, appIconFileName);
 
 async function createMainWindow(): Promise<void> {
   const { width: workAreaWidth, height: workAreaHeight } = screen.getPrimaryDisplay().workAreaSize;
@@ -48,6 +51,7 @@ async function createMainWindow(): Promise<void> {
     minWidth: 1080,
     minHeight: 720,
     title: "Gordon Work Assistant",
+    icon: appIconPath,
     webPreferences: {
       preload: path.join(currentDir, "preload.cjs"),
       contextIsolation: true
@@ -58,6 +62,14 @@ async function createMainWindow(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
+  if (process.platform === "darwin" && app.dock) {
+    const dockIcon = nativeImage.createFromPath(appIconPath);
+
+    if (!dockIcon.isEmpty()) {
+      app.dock.setIcon(dockIcon);
+    }
+  }
+
   ipcMain.handle("gordon:bootstrap", async () => buildWorkbenchSnapshot());
   ipcMain.handle("gordon:model-settings:list", async () => listModelSettings());
   ipcMain.handle("gordon:model-settings:upsert", async (_event, profile) => upsertModelProfile(profile));
