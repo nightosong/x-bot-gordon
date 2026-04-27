@@ -921,9 +921,9 @@
           <template v-else-if="activeFeature === FEATURE_WORKFLOW_LIBRARY">
             <div
               class="workspace-stage workflow-library-stage"
-              :class="ui.workflow.view === 'detail' ? 'workspace-stage-flush' : 'workspace-stage-scroll'"
+              :class="ui.workflow.view !== 'library' ? 'workspace-stage-flush' : 'workspace-stage-scroll'"
             >
-              <div class="workflow-library-shell" :class="{ 'workflow-library-shell-detail': ui.workflow.view === 'detail' }">
+              <div class="workflow-library-shell" :class="{ 'workflow-library-shell-detail': ui.workflow.view !== 'library' }">
                 <template v-if="ui.workflow.view === 'library'">
                   <section class="models-hero workflow-library-hero">
                     <div>
@@ -940,11 +940,10 @@
                     <div class="model-section-head">
                       <div>
                         <p class="feature-kicker">Library</p>
-                        <p class="model-section-title">全部工作流卡片</p>
+                        <p class="model-section-title">工作流</p>
                       </div>
 
                       <div class="model-section-actions">
-                        <span class="pill pill-neutral">一行 3 个</span>
                         <span class="pill pill-neutral">当前 {{ workflowLibraryCards.length }} 张</span>
                       </div>
                     </div>
@@ -961,25 +960,14 @@
                         @keydown.enter.prevent="openWorkflowCard(entry.id)"
                         @keydown.space.prevent="openWorkflowCard(entry.id)"
                       >
-                        <div class="workflow-library-card-top">
-                          <div class="workflow-library-card-icon" aria-hidden="true">
-                            <svg viewBox="0 0 24 24" class="workflow-library-card-icon-svg">
-                              <rect x="4.5" y="5.5" width="6.5" height="5.5" rx="1.6" fill="currentColor" opacity="0.2"></rect>
-                              <rect x="13" y="5.5" width="6.5" height="5.5" rx="1.6" fill="currentColor" opacity="0.12"></rect>
-                              <rect x="8.8" y="13" width="6.5" height="5.5" rx="1.6" fill="currentColor" opacity="0.18"></rect>
-                              <path d="M11 8.2h2M9.6 15.6h4.8M8.6 11.6l2.2 1.8M15.2 11.6l-2.2 1.8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"></path>
-                            </svg>
-                          </div>
-
-                          <span class="pill">{{ getWorkflowCardCountLabel(entry) }}</span>
-                        </div>
-
                         <div class="workflow-library-card-body">
                           <p class="workflow-library-card-title">{{ entry.title }}</p>
+                          <p class="workflow-library-card-description">{{ entry.summary || entry.description }}</p>
+                          <p class="workflow-library-card-subtitle">{{ getWorkflowCardCountLabel(entry) }}</p>
                         </div>
 
                         <div class="extension-tag-row workflow-library-card-tags">
-                          <span v-for="tag in entry.tags.slice(0, 3)" :key="tag" class="pill pill-neutral">{{ tag }}</span>
+                          <span v-for="tag in entry.tags.slice(0, 2)" :key="tag" class="pill pill-neutral">{{ tag }}</span>
                         </div>
                       </article>
                     </div>
@@ -996,9 +984,9 @@
                       <button
                         type="button"
                         class="model-icon-button weekly-back-button"
-                        aria-label="返回工作流库"
-                        title="返回工作流库"
-                        @click="backToWorkflowLibrary"
+                        aria-label="返回"
+                        title="返回"
+                        @click="handleWorkflowBack"
                       >
                         <GIcon name="return" />
                       </button>
@@ -1006,64 +994,179 @@
 
                     <div class="workflow-library-detail-head-center">
                       <p class="feature-kicker">workflow</p>
-                      <p class="workflow-library-detail-title">{{ activeWorkflowCard?.title ?? "工作流库" }}</p>
+                      <p class="workflow-library-detail-title">{{ workflowDetailTitle }}</p>
                     </div>
 
                     <div class="workflow-library-detail-head-side workflow-library-detail-head-side-end">
-                      <span class="status-pill">{{ activeWorkflowMetrics.recordCount }} 条记录</span>
+                      <span v-if="ui.workflow.view === 'list'" class="status-pill">{{ filteredWorkflowRecords.length }} 条记录</span>
+                      <button
+                        v-if="ui.workflow.view === 'list'"
+                        type="button"
+                        class="model-icon-button"
+                        aria-label="新建工作流"
+                        title="新建工作流"
+                        @click="openWorkflowRecordEditor()"
+                      >
+                        <GIcon name="add" />
+                      </button>
+                      <template v-else-if="ui.workflow.view === 'run' && activeWorkflowRecord">
+                        <button
+                          type="button"
+                          class="model-icon-button"
+                          aria-label="编辑工作流"
+                          title="编辑工作流"
+                          @click="openWorkflowRecordEditor(activeWorkflowRecord)"
+                        >
+                          <GIcon name="edit" />
+                        </button>
+                        <button
+                          type="button"
+                          class="model-icon-button"
+                          :aria-label="ui.workflow.isRunning ? '执行中' : '执行工作流'"
+                          :title="ui.workflow.isRunning ? '执行中' : '执行工作流'"
+                          :disabled="ui.workflow.isRunning"
+                          @click="runActiveWorkflowRecord"
+                        >
+                          <GIcon :name="ui.workflow.isRunning ? 'loading' : 'play'" :spin="ui.workflow.isRunning" />
+                        </button>
+                      </template>
                     </div>
                   </section>
 
-                  <div class="workflow-library-detail-layout">
-                    <aside class="workflow-library-record-rail">
-                      <section class="workflow-library-rail-card workflow-library-rail-card-hero">
-                        <p class="feature-kicker">Current</p>
-                        <p class="workflow-library-rail-title">{{ activeWorkflowCard?.title ?? "未选择卡片" }}</p>
-
-                        <div class="extension-tag-row">
-                          <span v-for="tag in activeWorkflowCard?.tags ?? []" :key="tag" class="pill pill-neutral">{{ tag }}</span>
-                        </div>
+                  <section class="workflow-library-main-stage">
+                    <template v-if="ui.workflow.view === 'list'">
+                      <section class="workflow-library-main-card workflow-library-list-toolbar">
+                        <label class="field workflow-library-search-field">
+                          <span class="field-label">搜索</span>
+                          <input v-model="ui.workflow.searchQuery" class="field-input" placeholder="搜索名称、场景、标签或 curl" />
+                        </label>
                       </section>
 
-                      <section class="workflow-library-rail-card">
-                        <div class="model-section-head workflow-library-rail-head">
-                          <div>
-                            <p class="feature-kicker">Records</p>
-                            <p class="model-section-title">历史工作记录</p>
+                      <div v-if="filteredWorkflowRecords.length" class="workflow-library-record-grid">
+                        <article
+                          v-for="record in filteredWorkflowRecords"
+                          :key="record.id"
+                          class="workflow-library-record-tile"
+                          role="button"
+                          tabindex="0"
+                          @click="openWorkflowRecord(record.id)"
+                          @keydown.enter.prevent="openWorkflowRecord(record.id)"
+                          @keydown.space.prevent="openWorkflowRecord(record.id)"
+                        >
+                          <div class="workflow-library-record-topline">
+                            <p class="workflow-library-record-title">{{ record.name }}</p>
+                            <span class="pill pill-neutral">{{ record.steps.length }} 步</span>
                           </div>
+                          <p class="workflow-library-record-scenario">{{ record.scenario || record.summary }}</p>
+                          <div class="workflow-library-record-meta">
+                            <span>{{ formatLocalDateTime(record.updatedAt) }}</span>
+                            <span>{{ record.protocol.mode }}</span>
+                          </div>
+                          <div class="model-section-actions workflow-library-record-actions">
+                            <button
+                              type="button"
+                              class="model-icon-button"
+                              aria-label="编辑工作流"
+                              title="编辑工作流"
+                              @click.stop="openWorkflowRecordEditor(record)"
+                            >
+                              <GIcon name="edit" />
+                            </button>
+                            <button
+                              type="button"
+                              class="model-icon-button model-action-danger"
+                              aria-label="删除工作流"
+                              title="删除工作流"
+                              @click.stop="deleteWorkflowRecord(record.id)"
+                            >
+                              <GIcon name="delete" />
+                            </button>
+                          </div>
+                        </article>
+                      </div>
+
+                      <div v-else class="model-empty">
+                        <p class="model-empty-copy">没有匹配的工作流。</p>
+                      </div>
+                    </template>
+
+                    <form
+                      v-else-if="ui.workflow.view === 'editor'"
+                      class="workflow-library-main-card workflow-library-compose-card"
+                      @submit.prevent="saveWorkflowRecord"
+                    >
+                      <div class="workflow-library-main-card-head">
+                        <div>
+                          <p class="feature-kicker">Curl Config</p>
+                          <p class="model-section-title">{{ ui.workflow.editingRecordId ? "编辑工作流" : "新建工作流" }}</p>
                         </div>
 
-                        <div v-if="activeWorkflowRecords.length" class="workflow-library-record-list">
-                          <button
-                            v-for="record in activeWorkflowRecords"
-                            :key="record.id"
-                            type="button"
-                            class="workflow-library-record-card"
-                            :class="{ 'is-active': activeWorkflowRecord?.id === record.id }"
-                            @click="openWorkflowRecord(record.id)"
-                          >
-                            <div class="workflow-library-record-topline">
-                              <p class="workflow-library-record-title">{{ record.name }}</p>
-                              <span class="pill pill-neutral">{{ record.steps.length }} 步</span>
-                            </div>
-                            <div class="workflow-library-record-meta">
-                              <span>{{ formatLocalDateTime(record.updatedAt) }}</span>
-                            </div>
+                        <div class="model-section-actions">
+                          <button type="button" class="model-action-secondary" @click="handleWorkflowBack">取消</button>
+                          <button type="submit" class="model-action" :disabled="ui.workflow.isSavingRecord">
+                            <GIcon :name="ui.workflow.isSavingRecord ? 'loading' : 'check'" :spin="ui.workflow.isSavingRecord" />
+                            保存
                           </button>
                         </div>
+                      </div>
 
-                        <div v-else class="model-empty">
-                          <p class="model-empty-copy">当前卡片还没有历史记录。</p>
-                        </div>
-                      </section>
-                    </aside>
+                      <div class="model-form workflow-library-compose-form">
+                        <label class="field">
+                          <span class="field-label">工作流名称</span>
+                          <input v-model="ui.workflow.recordDraft.name" class="field-input" placeholder="例如：视频生成异步测试" />
+                        </label>
 
-                    <section class="workflow-library-main-stage">
-                      <template v-if="activeWorkflowRecord">
+                        <label class="field">
+                          <span class="field-label">场景</span>
+                          <input v-model="ui.workflow.recordDraft.scenario" class="field-input" placeholder="例如：提交任务 -> 轮询状态 -> 获取结果" />
+                        </label>
+
+                        <label class="field">
+                          <span class="field-label">连接协议</span>
+                          <select v-model="ui.workflow.recordDraft.mode" class="field-input">
+                            <option value="single">single</option>
+                            <option value="sequential">sequential</option>
+                            <option value="polling">polling</option>
+                          </select>
+                        </label>
+
+                        <label class="field">
+                          <span class="field-label">标签</span>
+                          <input v-model="ui.workflow.recordDraft.tagsText" class="field-input" placeholder="curl, API, polling" />
+                        </label>
+
+                        <label class="field">
+                          <span class="field-label">轮询间隔 ms</span>
+                          <input v-model="ui.workflow.recordDraft.pollIntervalMs" class="field-input" inputmode="numeric" placeholder="3000" />
+                        </label>
+
+                        <label class="field">
+                          <span class="field-label">最大轮次</span>
+                          <input v-model="ui.workflow.recordDraft.maxAttempts" class="field-input" inputmode="numeric" placeholder="20" />
+                        </label>
+
+                        <label class="field field-full">
+                          <span class="field-label">多个 curl</span>
+                          <textarea
+                            v-model="ui.workflow.recordDraft.curlText"
+                            class="field-textarea workflow-library-curl-textarea"
+                            rows="14"
+                            placeholder="粘贴一段或多段 curl；多段可用空行、--- 或 ### 分隔。"
+                          ></textarea>
+                        </label>
+
+                        <label class="field field-full">
+                          <span class="field-label">备注</span>
+                          <textarea v-model="ui.workflow.recordDraft.notes" class="field-textarea" rows="3" placeholder="可记录变量提取、结果路径或注意事项"></textarea>
+                        </label>
+                      </div>
+                    </form>
+
+                    <template v-else-if="ui.workflow.view === 'run' && activeWorkflowRecord">
                         <section class="workflow-library-main-card workflow-library-main-card-hero">
                           <div class="workflow-library-main-card-head">
                             <div>
-                              <p class="feature-kicker">Record</p>
+                              <p class="feature-kicker">Run</p>
                               <p class="workflow-library-record-hero-title">{{ activeWorkflowRecord.name }}</p>
                             </div>
 
@@ -1087,6 +1190,27 @@
                               <span class="workflow-library-metric-label">结果路径</span>
                               <strong>{{ activeWorkflowProtocol?.resultPath || "按步骤字段判断" }}</strong>
                             </article>
+                          </div>
+                        </section>
+
+                        <section class="workflow-library-main-card">
+                          <div class="workflow-library-main-card-head">
+                            <div>
+                              <p class="feature-kicker">Status</p>
+                              <p class="model-section-title">执行状态</p>
+                            </div>
+                            <span class="status-pill" :class="workflowRunStatusTone">{{ workflowRunStatusLabel }}</span>
+                          </div>
+
+                          <div v-if="ui.workflow.runResult" class="workflow-library-run-result-list">
+                            <article v-for="stepResult in ui.workflow.runResult.steps" :key="stepResult.stepId" class="workflow-library-protocol-item">
+                              <span class="workflow-library-protocol-label">{{ stepResult.name }}</span>
+                              <strong>{{ stepResult.status }} / exit {{ stepResult.exitCode ?? "--" }}</strong>
+                              <pre class="workflow-library-result-output">{{ stepResult.stdout || stepResult.stderr || "无输出" }}</pre>
+                            </article>
+                          </div>
+                          <div v-else class="model-empty">
+                            <p class="model-empty-copy">点击右上角执行后，这里展示每个 curl 的状态和输出。</p>
                           </div>
                         </section>
 
@@ -1222,12 +1346,7 @@
                           </div>
                         </section>
                       </template>
-
-                      <div v-else class="model-empty">
-                        <p class="model-empty-copy">当前 workflow 还没有可打开的历史记录。</p>
-                      </div>
-                    </section>
-                  </div>
+                  </section>
                 </div>
               </div>
             </div>
@@ -2583,12 +2702,10 @@ const HOME_SETTINGS_ITEMS = [
   {
     id: FEATURE_MODEL_MANAGEMENT,
     title: "模型管理",
-    copy: "配置优先模型与供应商"
   },
   {
     id: FEATURE_EXTENSIONS_MANAGEMENT,
     title: "能力拓展",
-    copy: "管理 Agent、Skill 与 MCP"
   }
 ];
 
@@ -2706,7 +2823,26 @@ function createWorkflowState() {
     view: "library",
     activeCardId: null,
     activeRecordId: null,
-    copiedStepId: null
+    copiedStepId: null,
+    searchQuery: "",
+    editingRecordId: null,
+    isRunning: false,
+    runResult: null,
+    isSavingRecord: false,
+    recordDraft: createWorkflowRecordDraft()
+  };
+}
+
+function createWorkflowRecordDraft() {
+  return {
+    name: "",
+    scenario: "",
+    mode: "single",
+    tagsText: "curl, API",
+    pollIntervalMs: "3000",
+    maxAttempts: "20",
+    curlText: "",
+    notes: ""
   };
 }
 
@@ -2958,7 +3094,7 @@ const robotRuntimeState = {
 const isWorkspaceImmersive = computed(
   () =>
     (activeFeature.value === FEATURE_TASKS && ui.weekly.view === "editor") ||
-    (activeFeature.value === FEATURE_WORKFLOW_LIBRARY && ui.workflow.view === "detail") ||
+    (activeFeature.value === FEATURE_WORKFLOW_LIBRARY && ui.workflow.view !== "library") ||
     (activeFeature.value === FEATURE_COMMAND_WORKSHOP && ui.command.view === "chat")
 );
 
@@ -3122,6 +3258,60 @@ const activeWorkflowRecord = computed(
 );
 const activeWorkflowProtocol = computed(() => activeWorkflowRecord.value?.protocol ?? null);
 const activeWorkflowSteps = computed(() => activeWorkflowRecord.value?.steps ?? []);
+const filteredWorkflowRecords = computed(() => {
+  const query = String(ui.workflow.searchQuery ?? "").trim().toLowerCase();
+
+  if (!query) {
+    return activeWorkflowRecords.value;
+  }
+
+  return activeWorkflowRecords.value.filter((record) =>
+    [
+      record.name,
+      record.summary,
+      record.scenario,
+      record.notes,
+      record.tags?.join(" "),
+      record.steps?.map((step) => `${step.name} ${step.url} ${step.curl}`).join(" ")
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(query)
+  );
+});
+const workflowDetailTitle = computed(() => {
+  if (ui.workflow.view === "editor") {
+    return ui.workflow.editingRecordId ? "编辑工作流" : "新建工作流";
+  }
+
+  if (ui.workflow.view === "run") {
+    return activeWorkflowRecord.value?.name ?? "执行工作流";
+  }
+
+  return activeWorkflowCard.value?.title ?? "工作流库";
+});
+const workflowRunStatusLabel = computed(() => {
+  if (ui.workflow.isRunning) {
+    return "执行中";
+  }
+
+  if (!ui.workflow.runResult) {
+    return "待执行";
+  }
+
+  return ui.workflow.runResult.status === "success" ? "执行成功" : "执行失败";
+});
+const workflowRunStatusTone = computed(() => {
+  if (ui.workflow.isRunning) {
+    return "is-warning";
+  }
+
+  if (!ui.workflow.runResult) {
+    return "";
+  }
+
+  return ui.workflow.runResult.status === "success" ? "is-success" : "is-danger";
+});
 const weeklyReportTemplates = computed(() => (Array.isArray(ui.weekly.draft?.reportTemplates) ? ui.weekly.draft.reportTemplates : []));
 const weeklyIsWeeklyReportMode = computed(() => ui.weekly.reportingMode !== "daily");
 const weeklyReportModeLabel = computed(() => (weeklyIsWeeklyReportMode.value ? "周报" : "日报"));
@@ -3361,6 +3551,146 @@ function getWorkflowProtocolSummary(protocol) {
 
 function getWorkflowCardCountLabel(entry) {
   return `${entry?.records?.length ?? 0} 条记录`;
+}
+
+function createLocalId(prefix) {
+  return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
+}
+
+function parseNumberInput(value, fallback) {
+  const numeric = Number(String(value ?? "").trim());
+  return Number.isFinite(numeric) && numeric >= 0 ? numeric : fallback;
+}
+
+function extractCurlMethod(curl) {
+  const explicitMethod = curl.match(/--request\s+['"]?([A-Z]+)['"]?/i)?.[1];
+
+  if (explicitMethod) {
+    return explicitMethod.toUpperCase();
+  }
+
+  return /--data(?:-raw|-binary)?\b/i.test(curl) ? "POST" : "GET";
+}
+
+function extractCurlUrl(curl) {
+  return curl.match(/curl(?:\s+--location)?\s+['"]([^'"]+)['"]/i)?.[1] ?? "";
+}
+
+function extractCurlPlaceholders(curl) {
+  return Array.from(new Set(Array.from(curl.matchAll(/\$\{([A-Za-z0-9_]+)\}/g)).map((match) => match[1])));
+}
+
+function splitWorkflowCurlBlocks(curlText) {
+  const normalized = String(curlText ?? "").replace(/\r\n/g, "\n").trim();
+
+  if (!normalized) {
+    return [];
+  }
+
+  const explicitBlocks = normalized
+    .split(/\n\s*(?:---+|###)\s*\n/g)
+    .map((block) => block.trim())
+    .filter(Boolean);
+
+  if (explicitBlocks.length > 1) {
+    return explicitBlocks;
+  }
+
+  return normalized
+    .split(/\n{2,}(?=\s*curl\b)/i)
+    .map((block) => block.trim())
+    .filter(Boolean);
+}
+
+function createWorkflowRecordDraftFromRecord(record) {
+  return {
+    name: record?.name ?? "",
+    scenario: record?.scenario ?? record?.summary ?? "",
+    mode: record?.protocol?.mode ?? "single",
+    tagsText: (record?.tags ?? []).join(", "),
+    pollIntervalMs: String(record?.protocol?.pollIntervalMs ?? 3000),
+    maxAttempts: String(record?.protocol?.maxAttempts ?? 20),
+    curlText: (record?.steps ?? []).map((step) => step.curl).join("\n\n---\n\n"),
+    notes: record?.notes ?? record?.protocol?.note ?? ""
+  };
+}
+
+function buildWorkflowRecordFromDraft(draft, existingRecord = null) {
+  const now = new Date().toISOString();
+  const curlBlocks = splitWorkflowCurlBlocks(draft.curlText);
+
+  if (!String(draft.name ?? "").trim()) {
+    throw new Error("请填写记录名称");
+  }
+
+  if (!curlBlocks.length) {
+    throw new Error("请粘贴至少一段 curl");
+  }
+
+  const mode = ["single", "sequential", "polling"].includes(draft.mode) ? draft.mode : "single";
+  const pollIntervalMs = parseNumberInput(draft.pollIntervalMs, 3000);
+  const maxAttempts = parseNumberInput(draft.maxAttempts, 20);
+  const tags = String(draft.tagsText ?? "")
+    .split(/[,，\s]+/)
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+  const sharedNames = new Set();
+
+  const steps = curlBlocks.map((curl, index) => {
+    const placeholders = extractCurlPlaceholders(curl);
+    const existingStep = existingRecord?.steps?.[index] ?? null;
+    placeholders.forEach((name) => sharedNames.add(name));
+
+    return {
+      id: existingStep?.id ?? createLocalId("workflow_step"),
+      name: existingStep?.name ?? (curlBlocks.length > 1 ? `请求 ${index + 1}` : "请求"),
+      summary: existingStep?.summary ?? "",
+      method: extractCurlMethod(curl),
+      url: extractCurlUrl(curl),
+      curl,
+      waitBeforeMs: existingStep?.waitBeforeMs ?? 0,
+      responseFieldHints: existingStep?.responseFieldHints ?? [],
+      consumes: placeholders.map((name) => ({
+        name,
+        source: "manual",
+        placeholder: `\${${name}}`,
+        summary: "curl 占位变量",
+        required: true
+      })),
+      produces: []
+    };
+  });
+
+  return {
+    id: existingRecord?.id ?? createLocalId("workflow_record"),
+    name: String(draft.name ?? "").trim(),
+    summary: String(draft.scenario ?? "").trim() || "curl 接口测试工作流",
+    scenario: String(draft.scenario ?? "").trim() || "curl 接口测试",
+    tags,
+    updatedAt: now,
+    notes: String(draft.notes ?? "").trim(),
+    sharedVariables: Array.from(sharedNames).map((name) => ({
+      name,
+      source: "manual",
+      placeholder: `\${${name}}`,
+      summary: "curl 占位变量",
+      required: true
+    })),
+    steps,
+    protocol: {
+      mode,
+      initialWaitMs: 0,
+      pollIntervalMs: mode === "polling" ? pollIntervalMs : 0,
+      maxAttempts: mode === "polling" ? maxAttempts : 1,
+      timeoutMs: mode === "polling" ? pollIntervalMs * maxAttempts : 0,
+      statusStepId: mode === "polling" ? steps.at(-1)?.id : undefined,
+      resultStepId: steps.at(-1)?.id,
+      completionPath: "",
+      successValues: [],
+      resultPath: "",
+      note: String(draft.notes ?? "").trim()
+    }
+  };
 }
 
 function clearWeeklyAutosaveTimer() {
@@ -4315,21 +4645,128 @@ function syncWorkflowSelection() {
 
 function openWorkflowCard(cardId) {
   activeFeature.value = FEATURE_WORKFLOW_LIBRARY;
-  ui.workflow.view = "detail";
+  ui.workflow.view = "list";
   ui.workflow.activeCardId = cardId;
   const card = workbench.workflowLibrary.find((entry) => entry.id === cardId);
   ui.workflow.activeRecordId = card?.records?.[0]?.id ?? null;
   ui.workflow.copiedStepId = null;
+  ui.workflow.searchQuery = "";
+  ui.workflow.runResult = null;
+}
+
+function handleWorkflowBack() {
+  if (ui.workflow.view === "run" || ui.workflow.view === "editor") {
+    ui.workflow.view = "list";
+    ui.workflow.editingRecordId = null;
+    ui.workflow.recordDraft = createWorkflowRecordDraft();
+    return;
+  }
+
+  backToWorkflowLibrary();
 }
 
 function backToWorkflowLibrary() {
   ui.workflow.view = "library";
+  ui.workflow.editingRecordId = null;
+  ui.workflow.runResult = null;
   syncWorkflowSelection();
 }
 
 function openWorkflowRecord(recordId) {
   ui.workflow.activeRecordId = recordId;
   ui.workflow.copiedStepId = null;
+  ui.workflow.runResult = null;
+  ui.workflow.view = "run";
+}
+
+function openWorkflowRecordEditor(record = null) {
+  ui.workflow.editingRecordId = record?.id ?? null;
+  ui.workflow.recordDraft = record ? createWorkflowRecordDraftFromRecord(record) : createWorkflowRecordDraft();
+  ui.workflow.view = "editor";
+}
+
+async function saveWorkflowRecord() {
+  const card = activeWorkflowCard.value;
+
+  if (!desktopApi?.upsertWorkflowLibraryItem || !card) {
+    setStatus("工作流仓储未就绪，暂时无法保存 curl。", "danger");
+    return;
+  }
+
+  try {
+    ui.workflow.isSavingRecord = true;
+    const existingRecord = card.records?.find((record) => record.id === ui.workflow.editingRecordId) ?? null;
+    const nextRecord = buildWorkflowRecordFromDraft(ui.workflow.recordDraft, existingRecord);
+    const nextRecords = existingRecord
+      ? (card.records ?? []).map((record) => (record.id === existingRecord.id ? nextRecord : record))
+      : [nextRecord, ...(card.records ?? [])];
+    const nextCard = {
+      ...card,
+      usageCount: Number(card.usageCount ?? 0) + (existingRecord ? 0 : 1),
+      updatedAt: nextRecord.updatedAt,
+      lastUsedAt: nextRecord.updatedAt,
+      records: nextRecords
+    };
+
+    workbench.workflowLibrary = await desktopApi.upsertWorkflowLibraryItem(nextCard);
+    ui.workflow.activeCardId = nextCard.id;
+    ui.workflow.activeRecordId = nextRecord.id;
+    ui.workflow.copiedStepId = null;
+    ui.workflow.editingRecordId = null;
+    ui.workflow.recordDraft = createWorkflowRecordDraft();
+    ui.workflow.view = "run";
+    setStatus(`已保存「${nextRecord.name}」工作流。`, "success");
+  } catch (error) {
+    console.error("Failed to save workflow record", error);
+    setStatus(`保存工作流失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+  } finally {
+    ui.workflow.isSavingRecord = false;
+  }
+}
+
+async function deleteWorkflowRecord(recordId) {
+  const card = activeWorkflowCard.value;
+
+  if (!desktopApi?.upsertWorkflowLibraryItem || !card) {
+    setStatus("工作流仓储未就绪，暂时无法删除。", "danger");
+    return;
+  }
+
+  const nextCard = {
+    ...card,
+    updatedAt: new Date().toISOString(),
+    records: (card.records ?? []).filter((record) => record.id !== recordId)
+  };
+
+  try {
+    workbench.workflowLibrary = await desktopApi.upsertWorkflowLibraryItem(nextCard);
+    ui.workflow.activeRecordId = nextCard.records[0]?.id ?? null;
+    ui.workflow.runResult = null;
+    setStatus("已删除工作流。", "success");
+  } catch (error) {
+    console.error("Failed to delete workflow record", error);
+    setStatus(`删除工作流失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+  }
+}
+
+async function runActiveWorkflowRecord() {
+  if (!desktopApi?.runWorkflowRecord || !activeWorkflowRecord.value) {
+    setStatus("工作流执行桥接未就绪。", "danger");
+    return;
+  }
+
+  try {
+    ui.workflow.isRunning = true;
+    ui.workflow.runResult = null;
+    const result = await desktopApi.runWorkflowRecord(activeWorkflowRecord.value);
+    ui.workflow.runResult = result;
+    setStatus(result?.status === "success" ? "工作流执行成功。" : "工作流执行失败，请查看输出。", result?.status === "success" ? "success" : "danger");
+  } catch (error) {
+    console.error("Failed to run workflow record", error);
+    setStatus(`执行工作流失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+  } finally {
+    ui.workflow.isRunning = false;
+  }
 }
 
 async function handleWorkflowCurlCopy(step) {

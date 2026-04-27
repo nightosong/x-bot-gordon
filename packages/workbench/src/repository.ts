@@ -1537,6 +1537,21 @@ export async function listWorkflowLibrary(): Promise<WorkflowLibraryItem[]> {
   return sortByUpdatedAtDescending(normalizeLegacyWorkflowLibrary(legacyEntries));
 }
 
+export async function upsertWorkflowLibraryItem(item: WorkflowLibraryItem): Promise<WorkflowLibraryItem[]> {
+  const current = await listWorkflowLibrary();
+  const existingIndex = current.findIndex((entry) => entry.id === item.id);
+  const nextItems = [...current];
+
+  if (existingIndex >= 0) {
+    nextItems[existingIndex] = item;
+  } else {
+    nextItems.unshift(item);
+  }
+
+  await writeWorkbenchCollection(getWorkflowLibraryFilePath(), sortByUpdatedAtDescending(nextItems));
+  return listWorkflowLibrary();
+}
+
 export async function listSkillDefinitions(): Promise<SkillDefinition[]> {
   const userSkills = sortByUpdatedAtDescending(await readWorkbenchCollection<SkillDefinition>(getSkillDefinitionsFilePath()));
   return mergeBuiltinEntries(getBuiltinSkillDefinitions(), userSkills);

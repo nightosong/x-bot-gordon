@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, nativeImage, screen } from "electron";
+import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -26,6 +27,7 @@ import {
   toggleSkillDefinitionStatus,
   upsertAgentProfile,
   upsertCommandWorkshopSession,
+  upsertWorkflowLibraryItem,
   upsertMcpServer,
   upsertModelProfile,
   upsertSkillDefinition
@@ -39,6 +41,154 @@ const currentDir = path.dirname(currentFilePath);
 const desktopAssetDir = path.resolve(currentDir, "..", "assets");
 const appIconFileName = process.platform === "win32" ? "gordon.ico" : "gordon.icns";
 const appIconPath = path.join(desktopAssetDir, appIconFileName);
+
+function splitCurlCommand(command: string): string[] {
+  const normalized = String(command ?? "").replace(/\\\r?\n/g, " ").trim();
+  const args: string[] = [];
+  let current = "";
+  let quote: "'" | "\"" | null = null;
+  let escaping = false;
+
+  for (const char of normalized) {
+    if (escaping) {
+      current += char;
+      escaping = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      escaping = true;
+      continue;
+    }
+
+    if (quote) {
+      if (char === quote) {
+        quote = null;
+      } else {
+        current += char;
+      }
+      continue;
+    }
+
+    if (char === "'" || char === "\"") {
+      quote = char;
+      continue;
+    }
+
+    if (/\s/.test(char)) {
+      if (current) {
+        args.push(current);
+        current = "";
+      }
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (current) {
+    args.push(current);
+  }
+
+  return args;
+}
+
+function runCurlStep(step: { id?: string; name?: string; curl?: string }, timeoutMs = 120_000) {
+  return new Promise((resolve) => {
+    const startedAt = new Date().toISOString();
+    const parts = splitCurlCommand(String(step?.curl ?? ""));
+
+    if (parts[0] !== "curl") {
+      resolve({
+        stepId: step?.id ?? "",
+        name: step?.name ?? "",
+        status: "failed",
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        exitCode: null,
+        stdout: "",
+        stderr: "仅支持以 curl 开头的命令"
+      });
+      return;
+    }
+
+    const child = spawn("curl", parts.slice(1), { shell: false });
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!settled) {
+        child.kill("SIGTERM");
+      }
+    }, timeoutMs);
+
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on("error", (error) => {
+      settled = true;
+      clearTimeout(timer);
+      resolve({
+        stepId: step?.id ?? "",
+        name: step?.name ?? "",
+        status: "failed",
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        exitCode: null,
+        stdout,
+        stderr: error.message
+      });
+    });
+
+    child.on("close", (exitCode) => {
+      settled = true;
+      clearTimeout(timer);
+      resolve({
+        stepId: step?.id ?? "",
+        name: step?.name ?? "",
+        status: exitCode === 0 ? "success" : "failed",
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        exitCode,
+        stdout,
+        stderr
+      });
+    });
+  });
+}
+
+async function runWorkflowRecord(record: { steps?: Array<{ id?: string; name?: string; curl?: string; waitBeforeMs?: number }> }) {
+  const startedAt = new Date().toISOString();
+  const steps = Array.isArray(record?.steps) ? record.steps : [];
+  const results = [];
+
+  for (const step of steps) {
+    const waitBeforeMs = Number(step?.waitBeforeMs ?? 0);
+
+    if (waitBeforeMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, waitBeforeMs));
+    }
+
+    const result = await runCurlStep(step);
+    results.push(result);
+
+    if ((result as { status?: string }).status !== "success") {
+      break;
+    }
+  }
+
+  return {
+    status: results.every((result) => (result as { status?: string }).status === "success") ? "success" : "failed",
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    steps: results
+  };
+}
 
 async function createMainWindow(): Promise<void> {
   const { width: workAreaWidth, height: workAreaHeight } = screen.getPrimaryDisplay().workAreaSize;
@@ -113,6 +263,8 @@ app.whenReady().then(async () => {
   ipcMain.handle("gordon:command-workshop:delete", async (_event, sessionId: string) =>
     deleteCommandWorkshopSession(sessionId)
   );
+  ipcMain.handle("gordon:workflow-library:upsert", async (_event, item) => upsertWorkflowLibraryItem(item));
+  ipcMain.handle("gordon:workflow-library:run-record", async (_event, record) => runWorkflowRecord(record));
   ipcMain.handle("gordon:weekly-progress:list", async () => listWeeklyProgress());
   ipcMain.handle("gordon:weekly-progress:save", async (_event, record) => saveWeeklyProgress(record));
   ipcMain.handle("gordon:weekly-progress:delete", async (_event, recordId: string) => deleteWeeklyProgress(recordId));

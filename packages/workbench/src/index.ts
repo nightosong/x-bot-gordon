@@ -29,6 +29,7 @@ export {
   toggleSkillDefinitionStatus,
   upsertAgentProfile,
   upsertCommandWorkshopSession,
+  upsertWorkflowLibraryItem,
   upsertMcpServer,
   upsertModelProfile,
   upsertSkillDefinition

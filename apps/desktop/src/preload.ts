@@ -15,6 +15,7 @@ import type {
   ModelProfile,
   ModelTextRequest,
   SkillDefinition,
+  WorkflowLibraryItem,
   WeeklyProgressRecord,
   WeeklyProgressRewriteRequest,
   WeeklyReportGenerateRequest
@@ -73,6 +74,10 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
     ipcRenderer.invoke("gordon:command-workshop:upsert", session),
   deleteCommandWorkshopSession: (sessionId: string): Promise<CommandWorkshopSession[]> =>
     ipcRenderer.invoke("gordon:command-workshop:delete", sessionId),
+  upsertWorkflowLibraryItem: (item: WorkflowLibraryItem): Promise<WorkflowLibraryItem[]> =>
+    ipcRenderer.invoke("gordon:workflow-library:upsert", item),
+  runWorkflowRecord: (record: WorkflowLibraryItem["records"][number]) =>
+    ipcRenderer.invoke("gordon:workflow-library:run-record", record),
   listWeeklyProgress: () => ipcRenderer.invoke("gordon:weekly-progress:list"),
   saveWeeklyProgress: (record: WeeklyProgressRecord) => ipcRenderer.invoke("gordon:weekly-progress:save", record),
   deleteWeeklyProgress: (recordId: string) => ipcRenderer.invoke("gordon:weekly-progress:delete", recordId),

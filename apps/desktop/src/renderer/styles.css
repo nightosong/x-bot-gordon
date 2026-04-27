@@ -3264,18 +3264,21 @@ canvas {
 
 .workflow-library-card {
   display: grid;
-  gap: 10px;
-  align-content: space-between;
-  min-height: 136px;
-  padding: 14px;
+  grid-template-rows: 1fr auto;
+  align-items: start;
+  gap: 12px;
+  aspect-ratio: 1.618 / 1;
+  min-height: 0;
+  padding: 14px 16px;
   border: 1px solid var(--line);
-  border-radius: 18px;
+  border-radius: 16px;
   background:
     radial-gradient(circle at top right, rgba(92, 225, 194, 0.14), transparent 34%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
     rgba(255, 255, 255, 0.03);
   color: var(--text);
   text-align: left;
+  cursor: pointer;
   transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
 }
 
@@ -3289,7 +3292,6 @@ canvas {
     rgba(255, 255, 255, 0.04);
 }
 
-.workflow-library-card-top,
 .workflow-library-card-meta,
 .workflow-library-step-head,
 .workflow-library-main-card-head,
@@ -3302,26 +3304,10 @@ canvas {
   gap: 12px;
 }
 
-.workflow-library-card-icon {
-  width: 38px;
-  height: 38px;
-  display: grid;
-  place-items: center;
-  border-radius: 14px;
-  border: 1px solid rgba(92, 225, 194, 0.18);
-  background: rgba(92, 225, 194, 0.08);
-  color: #bcf8ea;
-}
-
-.workflow-library-card-icon-svg {
-  width: 20px;
-  height: 20px;
-  display: block;
-}
-
 .workflow-library-card-body {
   display: grid;
-  gap: 4px;
+  gap: 5px;
+  min-width: 0;
 }
 
 .workflow-library-card-title,
@@ -3337,6 +3323,28 @@ canvas {
 
 .workflow-library-card-title {
   font-size: 16px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workflow-library-card-subtitle {
+  margin: 0;
+  color: rgba(247, 243, 235, 0.68);
+  font-size: 12px;
+}
+
+.workflow-library-card-description {
+  display: -webkit-box;
+  min-height: 38px;
+  margin: 0;
+  overflow: hidden;
+  color: rgba(247, 243, 235, 0.72);
+  font-size: 12.5px;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .workflow-library-card-meta {
@@ -3352,8 +3360,10 @@ canvas {
 }
 
 .workflow-library-card-tags {
-  align-self: end;
+  grid-column: 1 / -1;
+  justify-content: flex-end;
   min-height: 26px;
+  flex-wrap: nowrap;
 }
 
 .workflow-library-detail-shell {
@@ -3372,9 +3382,10 @@ canvas {
 }
 
 .workflow-library-detail-head-side {
-  width: 44px;
+  width: auto;
   display: flex;
   align-items: center;
+  gap: 10px;
 }
 
 .workflow-library-detail-head-side-end {
@@ -3395,7 +3406,7 @@ canvas {
 
 .workflow-library-detail-layout {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 0;
   min-height: 0;
   height: 100%;
@@ -3403,11 +3414,12 @@ canvas {
 
 .workflow-library-record-rail {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: stretch;
   gap: 12px;
   min-height: 0;
-  padding: 16px;
-  border-right: 1px solid var(--line);
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.02);
 }
 
@@ -3419,10 +3431,11 @@ canvas {
 }
 
 .workflow-library-rail-card {
-  padding: 16px;
+  padding: 14px;
 }
 
 .workflow-library-rail-card-hero {
+  min-width: 220px;
   background:
     linear-gradient(135deg, rgba(92, 225, 194, 0.08), rgba(124, 173, 255, 0.04)),
     rgba(255, 255, 255, 0.03);
@@ -3433,16 +3446,17 @@ canvas {
 }
 
 .workflow-library-record-list {
-  display: grid;
+  display: flex;
   gap: 10px;
   min-height: 0;
   overflow: auto;
-  padding-right: 4px;
+  padding: 0 2px 2px 0;
 }
 
 .workflow-library-record-card {
   display: grid;
   gap: 8px;
+  flex: 0 0 240px;
   padding: 14px;
   border: 1px solid rgba(247, 243, 235, 0.08);
   border-radius: 16px;
@@ -3476,15 +3490,120 @@ canvas {
 .workflow-library-main-stage {
   min-height: 0;
   overflow: auto;
-  padding: 16px;
+  padding: 18px;
   display: grid;
   gap: 12px;
+  align-content: start;
 }
 
 .workflow-library-main-card {
   display: grid;
   gap: 12px;
   padding: 16px;
+}
+
+.workflow-library-compose-card .model-action,
+.workflow-library-detail-head .model-action,
+.workflow-library-compose-card .model-action-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.workflow-library-compose-form {
+  align-items: start;
+}
+
+.workflow-library-list-toolbar {
+  padding: 14px;
+}
+
+.workflow-library-search-field {
+  max-width: 520px;
+}
+
+.workflow-library-record-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.workflow-library-record-tile {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  text-align: left;
+  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+}
+
+.workflow-library-record-tile:hover {
+  transform: translateY(-1px);
+  border-color: rgba(92, 225, 194, 0.24);
+  background: rgba(92, 225, 194, 0.07);
+}
+
+.workflow-library-record-scenario {
+  min-height: 20px;
+  margin: 0;
+  color: rgba(247, 243, 235, 0.7);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.workflow-library-record-actions {
+  justify-content: flex-end;
+}
+
+.model-action-danger {
+  border-color: rgba(255, 126, 107, 0.2);
+  color: #ffc8bd;
+}
+
+.workflow-library-curl-textarea {
+  min-height: 280px;
+  font-family: "SF Mono", "Menlo", "Monaco", monospace;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.workflow-library-run-result-list {
+  display: grid;
+  gap: 10px;
+}
+
+.workflow-library-result-output {
+  max-height: 220px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #e6fff8;
+  font-family: "SF Mono", "Menlo", "Monaco", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.status-pill.is-success {
+  border-color: rgba(92, 225, 194, 0.2);
+  background: rgba(92, 225, 194, 0.12);
+  color: #bcf8ea;
+}
+
+.status-pill.is-warning {
+  border-color: rgba(245, 200, 107, 0.24);
+  background: rgba(245, 200, 107, 0.12);
+  color: #ffe6b0;
+}
+
+.status-pill.is-danger {
+  border-color: rgba(255, 126, 107, 0.24);
+  background: rgba(255, 126, 107, 0.12);
+  color: #ffc8bd;
 }
 
 .workflow-library-main-card-hero {
@@ -4688,6 +4807,7 @@ canvas {
   }
 
   .workflow-library-card-grid,
+  .workflow-library-record-grid,
   .workflow-library-metric-row,
   .workflow-library-step-binding-grid,
   .workflow-library-detail-layout {
@@ -4703,8 +4823,13 @@ canvas {
   }
 
   .workflow-library-record-rail {
+    grid-template-columns: 1fr;
     border-right: 0;
     border-bottom: 1px solid var(--line);
+  }
+
+  .workflow-library-record-card {
+    flex-basis: 220px;
   }
 
   .weekly-hero,
@@ -4948,7 +5073,8 @@ canvas {
 }
 
 @media (max-width: 760px) {
-  .workflow-library-card-grid {
+  .workflow-library-card-grid,
+  .workflow-library-record-grid {
     grid-template-columns: 1fr;
   }
 }
