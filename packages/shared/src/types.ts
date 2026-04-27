@@ -50,6 +50,9 @@ export type AgentRunStepType =
   | "mcp_args_repaired"
   | "mcp_fallback_planned"
   | "mcp_fallback_selected"
+  | "workspace_permission_requested"
+  | "workspace_permission_granted"
+  | "workspace_permission_denied"
   | "mcp_server_selected"
   | "mcp_tool_selected"
   | "mcp_tool_called"
@@ -529,6 +532,7 @@ export interface McpToolCallRequest {
   serverId: string;
   toolName: string;
   arguments?: Record<string, unknown>;
+  workspaceAllowedRoots?: string[];
 }
 
 export interface McpToolCallResult {

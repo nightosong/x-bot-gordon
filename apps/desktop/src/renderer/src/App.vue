@@ -1430,14 +1430,14 @@
                                   <span class="pill pill-neutral">{{ message.artifact.profileLabel }}</span>
                                   <span class="pill pill-neutral">{{ message.artifact.model }}</span>
                                   <span v-if="message.artifact.skillName" class="pill">{{ message.artifact.skillName }}</span>
-                                  <span v-if="message.artifact.autoSelectedMcp" class="pill">自动选 MCP</span>
+                                  <span v-if="message.artifact.autoSelectedMcp" class="pill">自动选工具</span>
                                   <span v-if="message.artifact.mcpServerName" class="pill pill-neutral">{{ message.artifact.mcpServerName }}</span>
                                   <span v-if="message.artifact.mcpToolName" class="pill pill-neutral">{{ message.artifact.mcpToolName }}</span>
                                 </div>
 
                                 <div v-if="message.artifact.mcpResultText || message.artifact.stopReason" class="command-artifact-inline-list">
                                   <div v-if="message.artifact.mcpResultText" class="command-artifact-inline-row">
-                                    <span class="command-artifact-inline-label">MCP 汇总</span>
+                                    <span class="command-artifact-inline-label">工具结果</span>
                                     <p
                                       class="command-artifact-inline-copy"
                                       :title="getCommandArtifactInlineText(message.artifact.mcpResultText)"
@@ -1490,7 +1490,7 @@
 
                                 <div v-if="message.artifact.mcpCalls?.length" class="command-artifact-section">
                                   <div class="command-artifact-section-head">
-                                    <span class="command-artifact-section-title">MCP 调用</span>
+                                    <span class="command-artifact-section-title">工具调用</span>
                                     <span class="pill pill-neutral command-artifact-section-count">
                                       {{ message.artifact.mcpCalls.length }}
                                     </span>
@@ -1549,14 +1549,14 @@
                                   <span v-if="ui.command.liveProgress.artifact.profileLabel" class="pill pill-neutral">{{ ui.command.liveProgress.artifact.profileLabel }}</span>
                                   <span v-if="ui.command.liveProgress.artifact.model" class="pill pill-neutral">{{ ui.command.liveProgress.artifact.model }}</span>
                                   <span v-if="ui.command.liveProgress.artifact.skillName" class="pill">{{ ui.command.liveProgress.artifact.skillName }}</span>
-                                  <span v-if="ui.command.liveProgress.artifact.autoSelectedMcp" class="pill">自动选 MCP</span>
+                                  <span v-if="ui.command.liveProgress.artifact.autoSelectedMcp" class="pill">自动选工具</span>
                                   <span v-if="ui.command.liveProgress.artifact.mcpServerName" class="pill pill-neutral">{{ ui.command.liveProgress.artifact.mcpServerName }}</span>
                                   <span v-if="ui.command.liveProgress.artifact.mcpToolName" class="pill pill-neutral">{{ ui.command.liveProgress.artifact.mcpToolName }}</span>
                                 </div>
 
                                 <div v-if="ui.command.liveProgress.artifact.mcpResultText || ui.command.liveProgress.artifact.stopReason" class="command-artifact-inline-list">
                                   <div v-if="ui.command.liveProgress.artifact.mcpResultText" class="command-artifact-inline-row">
-                                    <span class="command-artifact-inline-label">MCP 汇总</span>
+                                    <span class="command-artifact-inline-label">工具结果</span>
                                     <p
                                       class="command-artifact-inline-copy"
                                       :title="getCommandArtifactInlineText(ui.command.liveProgress.artifact.mcpResultText)"
@@ -1609,7 +1609,7 @@
 
                                 <div v-if="ui.command.liveProgress.artifact.mcpCalls?.length" class="command-artifact-section">
                                   <div class="command-artifact-section-head">
-                                    <span class="command-artifact-section-title">MCP 调用</span>
+                                    <span class="command-artifact-section-title">工具调用</span>
                                     <span class="pill pill-neutral command-artifact-section-count">
                                       {{ ui.command.liveProgress.artifact.mcpCalls.length }}
                                     </span>
@@ -1686,9 +1686,9 @@
                             </label>
 
                             <label class="field command-settings-cell">
-                              <span class="field-label">MCP Server</span>
+                              <span class="field-label">工具服务</span>
                               <select v-model="ui.command.form.mcpServerId" class="field-input" :disabled="!commandSelectedAgent" @change="handleCommandServerChange">
-                                <option value="">不指定 MCP Server</option>
+                                <option value="">不指定工具服务</option>
                                 <option v-for="server in commandAuthorizedServers" :key="server.id" :value="server.id">
                                   {{ server.name }} / {{ server.transport.toUpperCase() }}
                                 </option>
@@ -1696,7 +1696,7 @@
                             </label>
 
                             <div class="field command-settings-tool-field">
-                              <span class="field-label">MCP 工具</span>
+                              <span class="field-label">工具</span>
                               <div class="command-settings-tool-row">
                                 <select v-model="ui.command.form.mcpToolName" class="field-input" :disabled="!ui.command.form.mcpServerId">
                                   <option value="">不指定工具</option>
@@ -1710,7 +1710,7 @@
                             </div>
 
                             <label class="field command-settings-json-field">
-                              <span class="field-label">MCP 参数 JSON</span>
+                              <span class="field-label">工具参数 JSON</span>
                               <textarea
                                 v-model="ui.command.form.mcpArgumentsText"
                                 rows="2"
@@ -2422,9 +2422,9 @@
                           </label>
 
                           <label class="field field-full">
-                            <span class="field-label">本次附加 MCP Server</span>
+                            <span class="field-label">本次附加工具服务</span>
                             <select v-model="ui.extensions.runner.mcpServerId" class="field-input" @change="handleRunnerServerChange">
-                              <option value="">不调用 MCP 工具</option>
+                              <option value="">不调用工具</option>
                               <option v-for="server in runnerAuthorizedServers" :key="server.id" :value="server.id">
                                 {{ server.name }} / {{ server.transport.toUpperCase() }}
                               </option>
@@ -2433,12 +2433,12 @@
 
                           <label class="extension-selection-item field-full">
                             <input v-model="ui.extensions.runner.autoSelectMcp" type="checkbox" />
-                            <span>未手动指定 MCP tool 时，允许 Agent 自动选择工具</span>
+                            <span>未手动指定工具时，允许 Agent 自动选择工具</span>
                           </label>
 
                           <div class="field field-full">
                             <div class="weekly-inline-actions weekly-inline-actions-spread">
-                              <span class="field-label">MCP 工具</span>
+                              <span class="field-label">工具</span>
                               <button type="button" class="model-action-secondary" @click="handleRunnerLoadMcpTools">读取工具</button>
                             </div>
 
@@ -2451,7 +2451,7 @@
                           </div>
 
                           <label class="field field-full">
-                            <span class="field-label">MCP 参数 JSON</span>
+                            <span class="field-label">工具参数 JSON</span>
                             <textarea
                               v-model="ui.extensions.runner.mcpArgumentsText"
                               class="field-textarea extension-textarea-md"
@@ -2486,7 +2486,7 @@
 
                         <div v-if="runnerLatestResult" class="extension-tag-row">
                           <span class="pill pill-neutral">{{ runnerLatestResult.profileLabel }}</span>
-                          <span v-if="runnerLatestResult.autoSelectedMcp" class="pill">自动选 MCP</span>
+                          <span v-if="runnerLatestResult.autoSelectedMcp" class="pill">自动选工具</span>
                         </div>
                       </div>
 
@@ -2503,7 +2503,7 @@
                           </label>
 
                           <label v-if="runnerLatestResult.mcpResultText" class="field field-full">
-                            <span class="field-label">MCP 汇总结果</span>
+                            <span class="field-label">工具汇总结果</span>
                             <textarea class="field-textarea extension-textarea-md" readonly>{{ runnerLatestResult.mcpResultText }}</textarea>
                           </label>
 
@@ -2513,7 +2513,7 @@
                           </label>
 
                           <div class="field field-full">
-                            <span class="field-label">MCP 调用明细</span>
+                            <span class="field-label">工具调用明细</span>
                             <div v-if="runnerLatestResult.mcpCalls?.length" class="agent-run-step-list">
                               <article
                                 v-for="call in runnerLatestResult.mcpCalls"
@@ -2536,7 +2536,7 @@
                                 <textarea class="field-textarea extension-textarea-md" readonly>{{ call.resultText }}</textarea>
                               </article>
                             </div>
-                            <p v-else class="model-empty-copy">本次运行没有发生 MCP 调用。</p>
+                            <p v-else class="model-empty-copy">本次运行没有发生工具调用。</p>
                           </div>
 
                           <div class="field field-full">
@@ -2586,10 +2586,10 @@
                           <p class="model-card-copy">{{ truncateText(log.userInput.slice(0, 120) || "无输入内容", 120) }}</p>
 
                           <div v-if="log.mcpToolName" class="extension-tag-row">
-                            <span v-if="log.autoSelectedMcp" class="pill">自动选 MCP</span>
-                            <span class="pill pill-neutral">{{ log.mcpServerName ?? "MCP" }}</span>
+                            <span v-if="log.autoSelectedMcp" class="pill">自动选工具</span>
+                            <span class="pill pill-neutral">{{ log.mcpServerName ?? "工具服务" }}</span>
                             <span class="pill pill-neutral">{{ log.mcpToolName }}</span>
-                            <span v-if="(log.mcpCalls?.length ?? 0) > 1" class="pill pill-neutral">{{ log.mcpCalls.length }} 轮 MCP</span>
+                            <span v-if="(log.mcpCalls?.length ?? 0) > 1" class="pill pill-neutral">{{ log.mcpCalls.length }} 轮工具</span>
                             <span v-if="log.stopReason" class="pill pill-neutral">{{ log.stopReason }}</span>
                           </div>
                         </article>
@@ -2615,6 +2615,69 @@
         </section>
       </section>
     </main>
+
+    <Transition name="gordon-dialog-fade">
+      <div v-if="ui.dialog.open" class="gordon-dialog-backdrop" @click.self="handleGordonDialogBackdrop">
+        <section
+          class="gordon-dialog"
+          :class="[`is-${ui.dialog.tone}`, `is-${ui.dialog.kind}`]"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="ui.dialog.title"
+        >
+          <div class="gordon-dialog-head">
+            <div class="gordon-dialog-mark" aria-hidden="true">
+              <GIcon :name="ui.dialog.tone === 'danger' ? 'delete' : ui.dialog.kind === 'confirm' ? 'settings' : 'more'" />
+            </div>
+
+            <div>
+              <p class="gordon-dialog-kicker">
+                {{ ui.dialog.kind === "confirm" ? "Confirm" : ui.dialog.kind === "input" ? "Input" : "Notice" }}
+              </p>
+              <h2 class="gordon-dialog-title">{{ ui.dialog.title }}</h2>
+            </div>
+          </div>
+
+          <p v-if="ui.dialog.message" class="gordon-dialog-message">{{ ui.dialog.message }}</p>
+
+          <div v-if="ui.dialog.detailLines.length" class="gordon-dialog-detail">
+            <p v-for="line in ui.dialog.detailLines" :key="line">{{ line }}</p>
+          </div>
+
+          <label v-if="ui.dialog.kind === 'input'" class="gordon-dialog-field">
+            <span class="gordon-dialog-field-label">{{ ui.dialog.inputLabel }}</span>
+            <input
+              ref="gordonDialogInputRef"
+              v-model="ui.dialog.inputValue"
+              class="gordon-dialog-input"
+              type="text"
+              :placeholder="ui.dialog.inputPlaceholder"
+              @keydown.enter.prevent="resolveGordonDialog(true)"
+            />
+          </label>
+
+          <div class="gordon-dialog-actions">
+            <button
+              v-if="ui.dialog.kind !== 'alert'"
+              type="button"
+              class="gordon-dialog-button gordon-dialog-button-secondary"
+              @click="resolveGordonDialog(false)"
+            >
+              {{ ui.dialog.cancelText }}
+            </button>
+
+            <button
+              ref="gordonDialogPrimaryRef"
+              type="button"
+              class="gordon-dialog-button gordon-dialog-button-primary"
+              @click="resolveGordonDialog(true)"
+            >
+              {{ ui.dialog.confirmText }}
+            </button>
+          </div>
+        </section>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -3028,8 +3091,74 @@ function normalizeCommandWorkshopSession(session) {
   return {
     ...session,
     ...normalizeCommandWorkshopConfig(session),
-    messages: [...(session?.messages ?? [])]
+    messages: toPlainIpcData(session?.messages ?? [], [])
   };
+}
+
+function toPlainIpcData(value, fallback = value) {
+  const visited = new WeakSet();
+
+  function normalize(input) {
+    if (input === null || input === undefined) {
+      return input;
+    }
+
+    if (typeof input === "string" || typeof input === "number" || typeof input === "boolean") {
+      return input;
+    }
+
+    if (typeof input === "bigint" || typeof input === "symbol" || typeof input === "function") {
+      return String(input);
+    }
+
+    if (input instanceof Date) {
+      return input.toISOString();
+    }
+
+    if (input instanceof Error) {
+      return {
+        name: input.name,
+        message: input.message,
+        stack: input.stack ?? ""
+      };
+    }
+
+    if (Array.isArray(input)) {
+      return input.map((item) => normalize(item));
+    }
+
+    if (input instanceof Map) {
+      return Object.fromEntries(Array.from(input.entries()).map(([key, entryValue]) => [String(key), normalize(entryValue)]));
+    }
+
+    if (input instanceof Set) {
+      return Array.from(input.values()).map((item) => normalize(item));
+    }
+
+    if (typeof input !== "object") {
+      return String(input);
+    }
+
+    if (visited.has(input)) {
+      return "[Circular]";
+    }
+
+    visited.add(input);
+
+    const output = {};
+
+    for (const [key, entryValue] of Object.entries(input)) {
+      output[key] = normalize(entryValue);
+    }
+
+    return output;
+  }
+
+  try {
+    return normalize(value);
+  } catch {
+    return fallback;
+  }
 }
 
 const activeFeature = ref(FEATURE_HOME);
@@ -3037,6 +3166,8 @@ const homeSettingsMenuRef = ref(null);
 const robotCanvasRef = ref(null);
 const commandInputRef = ref(null);
 const commandMessagesRef = ref(null);
+const gordonDialogPrimaryRef = ref(null);
+const gordonDialogInputRef = ref(null);
 const weeklyTaskRewriteIds = ref([]);
 
 const status = reactive({
@@ -3069,6 +3200,7 @@ const ui = reactive({
   },
   weekly: createWeeklyState(),
   workflow: createWorkflowState(),
+  dialog: createGordonDialogState(),
   command: {
     view: "list",
     composerView: "input",
@@ -3493,6 +3625,130 @@ const runnerRunnableSkills = computed(() => getAgentRunnableSkills(ui.extensions
 const runnerAuthorizedServers = computed(() => getAuthorizedMcpServersForAgent(ui.extensions.runner.agentId));
 const runnerRecentLogs = computed(() => getRecentAgentRunLogs(ui.extensions.runner.agentId));
 const runnerLatestResult = computed(() => ui.extensions.runner.result ?? runnerRecentLogs.value[0] ?? null);
+
+function createGordonDialogState() {
+  return {
+    open: false,
+    kind: "alert",
+    tone: "neutral",
+    title: "",
+    message: "",
+    detailLines: [],
+    inputLabel: "名称",
+    inputValue: "",
+    inputPlaceholder: "",
+    confirmText: "确认",
+    cancelText: "取消",
+    resolve: null
+  };
+}
+
+function normalizeGordonDialogDetail(detail) {
+  if (Array.isArray(detail)) {
+    return detail.map((line) => String(line ?? "").trim()).filter(Boolean);
+  }
+
+  const normalized = String(detail ?? "").trim();
+  return normalized ? [normalized] : [];
+}
+
+function resetGordonDialog() {
+  Object.assign(ui.dialog, createGordonDialogState());
+}
+
+function openGordonDialog(options = {}) {
+  if (typeof ui.dialog.resolve === "function") {
+    ui.dialog.resolve(false);
+  }
+
+  return new Promise((resolve) => {
+    Object.assign(ui.dialog, {
+      ...createGordonDialogState(),
+      open: true,
+      kind: options.kind ?? "alert",
+      tone: options.tone ?? "neutral",
+      title: String(options.title ?? "Gordon"),
+      message: String(options.message ?? ""),
+      detailLines: normalizeGordonDialogDetail(options.detail),
+      inputLabel: String(options.inputLabel ?? "名称"),
+      inputValue: String(options.inputValue ?? ""),
+      inputPlaceholder: String(options.inputPlaceholder ?? ""),
+      confirmText: String(options.confirmText ?? (options.kind === "confirm" ? "确认" : "知道了")),
+      cancelText: String(options.cancelText ?? "取消"),
+      resolve
+    });
+
+    void nextTick(() => {
+      if (ui.dialog.kind === "input" && gordonDialogInputRef.value instanceof HTMLInputElement) {
+        gordonDialogInputRef.value.focus();
+        gordonDialogInputRef.value.select();
+      } else if (gordonDialogPrimaryRef.value instanceof HTMLElement) {
+        gordonDialogPrimaryRef.value.focus();
+      }
+    });
+  });
+}
+
+function showConfirmDialog(options = {}) {
+  return openGordonDialog({
+    kind: "confirm",
+    tone: options.tone ?? "warning",
+    confirmText: options.confirmText ?? "确认",
+    cancelText: options.cancelText ?? "取消",
+    ...options
+  });
+}
+
+function showAlertDialog(options = {}) {
+  return openGordonDialog({
+    kind: "alert",
+    tone: options.tone ?? "warning",
+    confirmText: options.confirmText ?? "知道了",
+    ...options
+  });
+}
+
+function showInputDialog(options = {}) {
+  return openGordonDialog({
+    kind: "input",
+    tone: options.tone ?? "neutral",
+    confirmText: options.confirmText ?? "确认",
+    cancelText: options.cancelText ?? "取消",
+    ...options
+  });
+}
+
+function resolveGordonDialog(confirmed) {
+  const resolver = ui.dialog.resolve;
+  const kind = ui.dialog.kind;
+  const inputValue = ui.dialog.inputValue;
+  resetGordonDialog();
+
+  if (typeof resolver === "function") {
+    if (kind === "alert") {
+      resolver(true);
+    } else if (kind === "input") {
+      resolver(confirmed ? inputValue : null);
+    } else {
+      resolver(Boolean(confirmed));
+    }
+  }
+}
+
+function handleGordonDialogBackdrop() {
+  if (ui.dialog.kind === "alert") {
+    resolveGordonDialog(true);
+  }
+}
+
+function handleGordonDialogKeydown(event) {
+  if (!ui.dialog.open || event.key !== "Escape") {
+    return;
+  }
+
+  event.preventDefault();
+  resolveGordonDialog(false);
+}
 
 function setStatus(text, tone = "neutral") {
   status.text = text;
@@ -4732,6 +4988,19 @@ async function deleteWorkflowRecord(recordId) {
     return;
   }
 
+  const record = card.records?.find((entry) => entry.id === recordId) ?? null;
+  const confirmed = await showConfirmDialog({
+    tone: "danger",
+    title: "删除工作流记录",
+    message: `确认删除「${record?.name ?? "当前记录"}」吗？删除后无法恢复。`,
+    confirmText: "删除",
+    cancelText: "取消"
+  });
+
+  if (!confirmed) {
+    return;
+  }
+
   const nextCard = {
     ...card,
     updatedAt: new Date().toISOString(),
@@ -4760,10 +5029,26 @@ async function runActiveWorkflowRecord() {
     ui.workflow.runResult = null;
     const result = await desktopApi.runWorkflowRecord(activeWorkflowRecord.value);
     ui.workflow.runResult = result;
-    setStatus(result?.status === "success" ? "工作流执行成功。" : "工作流执行失败，请查看输出。", result?.status === "success" ? "success" : "danger");
+    const succeeded = result?.status === "success";
+    setStatus(succeeded ? "工作流执行成功。" : "工作流执行失败，请查看输出。", succeeded ? "success" : "danger");
+
+    if (!succeeded) {
+      void showAlertDialog({
+        tone: "danger",
+        title: "工作流执行失败",
+        message: "当前工作流没有完整执行成功，请查看输出区里的步骤状态、stderr 或 exit code。",
+        confirmText: "知道了"
+      });
+    }
   } catch (error) {
     console.error("Failed to run workflow record", error);
     setStatus(`执行工作流失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+    void showAlertDialog({
+      tone: "danger",
+      title: "工作流执行异常",
+      message: error instanceof Error ? error.message : "未知错误",
+      confirmText: "知道了"
+    });
   } finally {
     ui.workflow.isRunning = false;
   }
@@ -4940,7 +5225,19 @@ async function handleModelDelete(profileId) {
 
   const profile = workbench.modelSettings.profiles.find((item) => item.id === profileId);
 
-  if (!profile || !window.confirm(`确认删除模型配置“${profile.displayName}”吗？`)) {
+  if (!profile) {
+    return;
+  }
+
+  const confirmed = await showConfirmDialog({
+    tone: "danger",
+    title: "删除模型配置",
+    message: `确认删除「${profile.displayName}」吗？删除后无法恢复。`,
+    confirmText: "删除",
+    cancelText: "取消"
+  });
+
+  if (!confirmed) {
     return;
   }
 
@@ -5196,14 +5493,22 @@ function handleWeeklyReportTemplateSelectionChange() {
   syncWeeklySelectedReportTemplate(ui.weekly.draft);
 }
 
-function addWeeklyReportTemplate() {
+async function addWeeklyReportTemplate() {
   if (!ui.weekly.draft) {
     return;
   }
 
   const baseTemplate = getWeeklySelectedReportTemplate(ui.weekly.draft);
   const defaultName = getNextWeeklyReportTemplateName(ui.weekly.draft);
-  const nextName = window.prompt("请输入模板名称", defaultName);
+  const nextName = await showInputDialog({
+    title: "新增周报模板",
+    message: "输入模板名称后会基于当前模板复制一份新模板。",
+    inputLabel: "模板名称",
+    inputValue: defaultName,
+    inputPlaceholder: "例如：项目周报",
+    confirmText: "新增",
+    cancelText: "取消"
+  });
 
   if (nextName === null) {
     return;
@@ -5223,7 +5528,7 @@ function addWeeklyReportTemplate() {
   setStatus(`已新增模板「${normalizedName}」。`, "success");
 }
 
-function removeWeeklySelectedReportTemplate() {
+async function removeWeeklySelectedReportTemplate() {
   if (!ui.weekly.draft || !weeklyCanDeleteSelectedReportTemplate.value) {
     return;
   }
@@ -5234,7 +5539,16 @@ function removeWeeklySelectedReportTemplate() {
     return;
   }
 
-  if (!window.confirm(`确认删除模板「${String(selectedTemplate.name ?? "").trim() || "未命名模板"}」吗？`)) {
+  const templateName = String(selectedTemplate.name ?? "").trim() || "未命名模板";
+  const confirmed = await showConfirmDialog({
+    tone: "danger",
+    title: "删除周报模板",
+    message: `确认删除模板「${templateName}」吗？删除后无法恢复。`,
+    confirmText: "删除",
+    cancelText: "取消"
+  });
+
+  if (!confirmed) {
     return;
   }
 
@@ -5311,7 +5625,15 @@ async function handleWeeklyDelete(recordId) {
     return;
   }
 
-  if (!window.confirm("确认删除这条周记录吗？删除后无法恢复。")) {
+  const confirmed = await showConfirmDialog({
+    tone: "danger",
+    title: "删除周记录",
+    message: "确认删除这条周记录吗？删除后无法恢复。",
+    confirmText: "删除",
+    cancelText: "取消"
+  });
+
+  if (!confirmed) {
     return;
   }
 
@@ -5559,7 +5881,19 @@ async function handleCommandSessionDelete(sessionId) {
 
   const session = workbench.commandSessions.find((entry) => entry.id === sessionId);
 
-  if (!session || !window.confirm(`确认删除会话「${session.title || "当前会话"}」吗？`)) {
+  if (!session) {
+    return;
+  }
+
+  const confirmed = await showConfirmDialog({
+    tone: "danger",
+    title: "删除命令工坊会话",
+    message: `确认删除会话「${session.title || "当前会话"}」吗？删除后无法恢复。`,
+    confirmText: "删除",
+    cancelText: "取消"
+  });
+
+  if (!confirmed) {
     return;
   }
 
@@ -5638,7 +5972,7 @@ async function handleCommandLoadMcpTools() {
   }
 
   if (!ui.command.form.mcpServerId) {
-    setStatus("请先选择一个 MCP Server，再读取工具。", "warning");
+    setStatus("请先选择一个工具服务，再读取工具。", "warning");
     return;
   }
 
@@ -5650,10 +5984,10 @@ async function handleCommandLoadMcpTools() {
       ui.command.form.mcpToolName = tools[0]?.name ?? "";
     }
 
-    setStatus(`命令工坊已读取 ${tools.length} 个 MCP 工具。`, "success");
+    setStatus(`命令工坊已读取 ${tools.length} 个工具。`, "success");
   } catch (error) {
     console.error("Failed to load command tools", error);
-    setStatus(`命令工坊 MCP 工具读取失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+    setStatus(`命令工坊工具读取失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
   }
 }
 
@@ -5698,12 +6032,12 @@ async function handleCommandSubmit() {
   }
 
   if (ui.command.form.mcpToolName && !ui.command.form.mcpServerId) {
-    setStatus("如果要指定 MCP 工具，请先选择 MCP Server。", "warning");
+    setStatus("如果要指定工具，请先选择工具服务。", "warning");
     return;
   }
 
   if (ui.command.form.mcpServerId && !ui.command.form.mcpToolName && !ui.command.form.autoSelectMcp) {
-    setStatus("已选择 MCP Server，请再选择具体工具，或开启自动 MCP。", "warning");
+    setStatus("已选择工具服务，请再选择具体工具，或开启自动工具。", "warning");
     return;
   }
 
@@ -5711,21 +6045,21 @@ async function handleCommandSubmit() {
     try {
       mcpArguments = JSON.parse(ui.command.form.mcpArgumentsText);
     } catch (error) {
-      setStatus(`MCP 参数 JSON 解析失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+      setStatus(`工具参数 JSON 解析失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
       return;
     }
 
     if (!mcpArguments || typeof mcpArguments !== "object" || Array.isArray(mcpArguments)) {
-      setStatus("MCP 参数必须是一个 JSON 对象。", "danger");
+      setStatus("工具参数必须是一个 JSON 对象。", "danger");
       return;
     }
   }
 
-  const activeSession = activeCommandSession.value;
+  const activeSession = toPlainIpcData(activeCommandSession.value, null);
   const sessionId = activeSession?.id ?? `command_session_${Date.now()}`;
   const startedAt = new Date().toISOString();
   const progressEventId = `command_progress_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const baseMessages = [...(activeSession?.messages ?? [])];
+  const baseMessages = toPlainIpcData(activeSession?.messages ?? [], []);
   const userMessage = {
     id: `command_message_${Date.now()}`,
     role: "user",
@@ -5760,7 +6094,7 @@ async function handleCommandSubmit() {
       profileLabel: "",
       model: "",
       skillName: ui.command.form.skillId ? getSkillById(ui.command.form.skillId)?.name ?? null : null,
-      autoSelectedMcp: Boolean(ui.command.form.autoSelectMcp),
+      autoSelectedMcp: false,
       mcpServerName: ui.command.form.mcpServerId ? getMcpServerById(ui.command.form.mcpServerId)?.name ?? null : null,
       mcpToolName: ui.command.form.mcpToolName || null,
       mcpResultText: "",
@@ -5776,7 +6110,7 @@ async function handleCommandSubmit() {
 
   try {
     setStatus(`命令工坊正在运行 Agent「${agent.name}」...`, "neutral");
-    const result = await desktopApi.runAgent({
+    const runRequest = toPlainIpcData({
       agentProfileId: agent.id,
       userInput,
       conversationMessages: buildConversationMessagesForAgentRun(baseMessages),
@@ -5791,6 +6125,7 @@ async function handleCommandSubmit() {
           }
         : {})
     });
+    const result = await desktopApi.runAgent(runRequest);
 
     const assistantMessage = {
       id: `command_message_${Date.now()}_assistant`,
@@ -5806,7 +6141,7 @@ async function handleCommandSubmit() {
       messages: [...pendingSession.messages, assistantMessage],
       updatedAt: result.updatedAt
     };
-    const sessions = await desktopApi.upsertCommandWorkshopSession(completedSession);
+    const sessions = await desktopApi.upsertCommandWorkshopSession(toPlainIpcData(completedSession));
 
     workbench.commandSessions = sortCommandWorkshopSessions(sessions.map((entry) => normalizeCommandWorkshopSession(entry)));
     ui.command.activeSessionId = completedSession.id;
@@ -5834,7 +6169,7 @@ async function handleCommandSubmit() {
     };
 
     try {
-      const sessions = await desktopApi.upsertCommandWorkshopSession(failedSession);
+      const sessions = await desktopApi.upsertCommandWorkshopSession(toPlainIpcData(failedSession));
       workbench.commandSessions = sortCommandWorkshopSessions(sessions.map((entry) => normalizeCommandWorkshopSession(entry)));
       ui.command.activeSessionId = failedSession.id;
     } catch (persistError) {
@@ -5846,6 +6181,13 @@ async function handleCommandSubmit() {
     ui.command.activeProgressEventId = null;
     ui.command.liveProgress = null;
     setStatus(`命令工坊运行失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+    void showAlertDialog({
+      tone: "danger",
+      title: "命令工坊运行失败",
+      message: error instanceof Error ? error.message : "未知错误",
+      detail: "失败消息已保留在当前会话中，可回到消息流查看上下文后重试。",
+      confirmText: "知道了"
+    });
     scrollCommandToBottom();
   }
 }
@@ -6021,7 +6363,19 @@ async function handleAgentDelete(profileId) {
 
   const profile = getAgentById(profileId);
 
-  if (!profile || !window.confirm(`确认删除 Agent「${profile.name}」吗？`)) {
+  if (!profile) {
+    return;
+  }
+
+  const confirmed = await showConfirmDialog({
+    tone: "danger",
+    title: "删除 Agent",
+    message: `确认删除 Agent「${profile.name}」吗？删除后无法恢复。`,
+    confirmText: "删除",
+    cancelText: "取消"
+  });
+
+  if (!confirmed) {
     return;
   }
 
@@ -6042,7 +6396,19 @@ async function handleSkillDelete(skillId) {
 
   const skill = getSkillById(skillId);
 
-  if (!skill || !window.confirm(`确认删除 Skill「${skill.name}」吗？`)) {
+  if (!skill) {
+    return;
+  }
+
+  const confirmed = await showConfirmDialog({
+    tone: "danger",
+    title: "删除 Skill",
+    message: `确认删除 Skill「${skill.name}」吗？删除后无法恢复。`,
+    confirmText: "删除",
+    cancelText: "取消"
+  });
+
+  if (!confirmed) {
     return;
   }
 
@@ -6063,7 +6429,19 @@ async function handleMcpDelete(serverId) {
 
   const server = getMcpServerById(serverId);
 
-  if (!server || !window.confirm(`确认删除 MCP Server「${server.name}」吗？`)) {
+  if (!server) {
+    return;
+  }
+
+  const confirmed = await showConfirmDialog({
+    tone: "danger",
+    title: "删除 MCP Server",
+    message: `确认删除 MCP Server「${server.name}」吗？删除后无法恢复。`,
+    confirmText: "删除",
+    cancelText: "取消"
+  });
+
+  if (!confirmed) {
     return;
   }
 
@@ -6088,7 +6466,7 @@ async function handleRunnerLoadMcpTools() {
   }
 
   if (!ui.extensions.runner.mcpServerId) {
-    setStatus("请先选择一个 MCP Server，再读取工具。", "warning");
+    setStatus("请先选择一个工具服务，再读取工具。", "warning");
     return;
   }
 
@@ -6096,10 +6474,10 @@ async function handleRunnerLoadMcpTools() {
     const tools = await desktopApi.listMcpServerTools(ui.extensions.runner.mcpServerId);
     ui.extensions.runner.availableMcpTools = tools;
     ui.extensions.runner.mcpToolName = tools[0]?.name ?? "";
-    setStatus(`已读取 ${tools.length} 个 MCP 工具。`, "success");
+    setStatus(`已读取 ${tools.length} 个工具。`, "success");
   } catch (error) {
     console.error("Failed to load runner tools", error);
-    setStatus(`MCP 工具读取失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+    setStatus(`工具读取失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
   }
 }
 
@@ -6126,12 +6504,12 @@ async function handleRunnerSubmit() {
   let mcpArguments = undefined;
 
   if (ui.extensions.runner.mcpToolName && !ui.extensions.runner.mcpServerId) {
-    setStatus("如果要调用 MCP 工具，请先选择 MCP Server。", "warning");
+    setStatus("如果要调用工具，请先选择工具服务。", "warning");
     return;
   }
 
   if (ui.extensions.runner.mcpServerId && !ui.extensions.runner.mcpToolName && !ui.extensions.runner.autoSelectMcp) {
-    setStatus("已选择 MCP Server，请再选择一个具体工具。", "warning");
+    setStatus("已选择工具服务，请再选择一个具体工具。", "warning");
     return;
   }
 
@@ -6139,12 +6517,12 @@ async function handleRunnerSubmit() {
     try {
       mcpArguments = JSON.parse(ui.extensions.runner.mcpArgumentsText);
     } catch (error) {
-      setStatus(`MCP 参数 JSON 解析失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+      setStatus(`工具参数 JSON 解析失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
       return;
     }
 
     if (!mcpArguments || typeof mcpArguments !== "object" || Array.isArray(mcpArguments)) {
-      setStatus("MCP 参数必须是一个 JSON 对象。", "danger");
+      setStatus("工具参数必须是一个 JSON 对象。", "danger");
       return;
     }
   }
@@ -6173,6 +6551,13 @@ async function handleRunnerSubmit() {
     console.error("Failed to run agent", error);
     ui.extensions.runner.isRunning = false;
     setStatus(`Agent 运行失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+    void showAlertDialog({
+      tone: "danger",
+      title: "Agent 运行失败",
+      message: error instanceof Error ? error.message : "未知错误",
+      detail: "Runner 保留当前输入，可调整 Agent、Skill 或工具配置后再次运行。",
+      confirmText: "知道了"
+    });
   }
 }
 
@@ -6338,7 +6723,7 @@ function getCommandWorkshopModeLabel(config) {
 
 function getCommandWorkshopToolModeLabel(config) {
   if (config?.mcpServerId && config?.mcpToolName) {
-    const serverName = getMcpServerById(config.mcpServerId)?.name ?? "指定 MCP";
+    const serverName = getMcpServerById(config.mcpServerId)?.name ?? "指定工具服务";
     return `${serverName} / ${config.mcpToolName}`;
   }
 
@@ -6612,6 +6997,8 @@ watch(
 );
 
 onMounted(async () => {
+  window.addEventListener("keydown", handleGordonDialogKeydown);
+
   if (desktopApi?.onAgentRunProgress) {
     agentProgressListenerId = desktopApi.onAgentRunProgress(handleAgentRunProgress);
   }
@@ -6623,6 +7010,8 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener("keydown", handleGordonDialogKeydown);
+
   if (agentProgressListenerId && desktopApi?.offAgentRunProgress) {
     desktopApi.offAgentRunProgress(agentProgressListenerId);
     agentProgressListenerId = null;

@@ -36,6 +36,10 @@ interface McpTransportClient {
   close(): Promise<void>;
 }
 
+interface McpClientOptions {
+  env?: Record<string, string>;
+}
+
 function buildInitializeParams(): Record<string, unknown> {
   return {
     protocolVersion: MCP_PROTOCOL_VERSION,
@@ -303,7 +307,7 @@ class StdioMcpClient implements McpTransportClient {
   private nextId = 1;
   private buffer = "";
 
-  constructor(server: McpServerConfig) {
+  constructor(server: McpServerConfig, options: McpClientOptions = {}) {
     if (!server.command?.trim()) {
       throw new Error("stdio 类型的 MCP Server 缺少启动命令");
     }
@@ -315,7 +319,8 @@ class StdioMcpClient implements McpTransportClient {
     this.child = spawn(this.executable, this.args, {
       env: {
         ...process.env,
-        ...server.env
+        ...server.env,
+        ...(options.env ?? {})
       },
       stdio: ["pipe", "pipe", "pipe"]
     });
@@ -449,8 +454,8 @@ class StdioMcpClient implements McpTransportClient {
   }
 }
 
-async function createMcpClient(server: McpServerConfig): Promise<McpTransportClient> {
-  const client = server.transport === "http" ? new HttpMcpClient(server) : new StdioMcpClient(server);
+async function createMcpClient(server: McpServerConfig, options: McpClientOptions = {}): Promise<McpTransportClient> {
+  const client = server.transport === "http" ? new HttpMcpClient(server) : new StdioMcpClient(server, options);
   await client.initialize();
   return client;
 }
@@ -486,8 +491,12 @@ function normalizeToolDefinitions(server: McpServerConfig, toolsPayload: unknown
   return definitions;
 }
 
-async function withMcpClient<T>(server: McpServerConfig, callback: (client: McpTransportClient) => Promise<T>): Promise<T> {
-  const client = await createMcpClient(server);
+async function withMcpClient<T>(
+  server: McpServerConfig,
+  callback: (client: McpTransportClient) => Promise<T>,
+  options: McpClientOptions = {}
+): Promise<T> {
+  const client = await createMcpClient(server, options);
 
   try {
     return await callback(client);
@@ -515,6 +524,10 @@ export async function callToolOnMcpServer(request: McpToolCallRequest): Promise<
     throw new Error("当前工具不在 MCP Server 白名单中");
   }
 
+  const workspaceAllowedRoots = Array.isArray(request.workspaceAllowedRoots)
+    ? request.workspaceAllowedRoots.map((entry) => String(entry).trim()).filter(Boolean)
+    : [];
+
   return withMcpClient(server, async (client) => {
     const result = await client.request("tools/call", {
       name: request.toolName,
@@ -538,7 +551,13 @@ export async function callToolOnMcpServer(request: McpToolCallRequest): Promise<
           ? (payload.structuredContent as Record<string, unknown>)
           : undefined
     };
-  }).catch((error) => {
+  }, workspaceAllowedRoots.length
+    ? {
+        env: {
+          GORDON_WORKSPACE_ALLOWED_ROOTS: JSON.stringify(workspaceAllowedRoots)
+        }
+      }
+    : {}).catch((error) => {
     throw new Error(`MCP 工具调用失败：${toErrorMessage(error)}`);
   });
 }

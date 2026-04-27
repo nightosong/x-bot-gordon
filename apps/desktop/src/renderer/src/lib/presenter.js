@@ -37,7 +37,7 @@ export const NAV_ITEMS = [
     label: "命令工坊",
     eyebrow: "Command Center",
     title: "命令工坊",
-    description: "围绕 Agent、Skill 与 MCP 进行多轮对话、执行和链路回看。"
+    description: "围绕 Agent、Skill 与工具上下文进行多轮对话、执行和链路回看。"
   },
   {
     id: "extensions",
@@ -177,7 +177,8 @@ export const SKILL_DISPLAY_NAME_MAP = {
   review: "问题审查",
   "karpathy-guidelines": "Karpathy 准则",
   "self-improvement": "自我改进",
-  "deep-research": "深度研究"
+  "deep-research": "深度研究",
+  "skill-creator": "Skill 创建"
 };
 
 export function getProviderMeta(providerKind) {

@@ -11,20 +11,23 @@ export const BUILTIN_REVIEW_SKILL_ID = "builtin:skill:review";
 export const BUILTIN_KARPATHY_SKILL_ID = "builtin:skill:karpathy-guidelines";
 export const BUILTIN_SELF_IMPROVEMENT_SKILL_ID = "builtin:skill:self-improvement";
 export const BUILTIN_DEEP_RESEARCH_SKILL_ID = "builtin:skill:deep-research";
+export const BUILTIN_SKILL_CREATOR_SKILL_ID = "builtin:skill:skill-creator";
 
-const BUILTIN_UPDATED_AT = "2026-04-21T09:40:00.000Z";
+const BUILTIN_UPDATED_AT = "2026-04-27T10:30:00.000Z";
 const BUILTIN_PLAN_SKILL_PATH = resolveFromRoot("skills", "plan");
 const BUILTIN_CODE_SKILL_PATH = resolveFromRoot("skills", "code");
 const BUILTIN_REVIEW_SKILL_PATH = resolveFromRoot("skills", "review");
 const BUILTIN_KARPATHY_SKILL_PATH = resolveFromRoot("skills", "karpathy-guidelines");
 const BUILTIN_SELF_IMPROVEMENT_SKILL_PATH = resolveFromRoot("skills", "self-improvement");
 const BUILTIN_DEEP_RESEARCH_SKILL_PATH = resolveFromRoot("skills", "deep-research");
+const BUILTIN_SKILL_CREATOR_SKILL_PATH = resolveFromRoot("skills", "skill-creator");
 const BUILTIN_PLAN_SKILL_PROMPT = readPromptAsset("builtinSkillPlanPrompt");
 const BUILTIN_CODE_SKILL_PROMPT = readPromptAsset("builtinSkillCodePrompt");
 const BUILTIN_REVIEW_SKILL_PROMPT = readPromptAsset("builtinSkillReviewPrompt");
 const BUILTIN_KARPATHY_SKILL_PROMPT = readPromptAsset("builtinSkillKarpathyPrompt");
 const BUILTIN_SELF_IMPROVEMENT_SKILL_PROMPT = readPromptAsset("builtinSkillSelfImprovementPrompt");
 const BUILTIN_DEEP_RESEARCH_SKILL_PROMPT = readPromptAsset("builtinSkillDeepResearchPrompt");
+const BUILTIN_SKILL_CREATOR_SKILL_PROMPT = readPromptAsset("builtinSkillCreatorPrompt");
 const BUILTIN_GORDON_AGENT_SYSTEM_PROMPT = readPromptAsset("builtinAgentGordonSystem");
 
 function shellEscape(value: string): string {
@@ -124,6 +127,20 @@ export function getBuiltinSkillDefinitions(): SkillDefinition[] {
       },
       enabled: true,
       updatedAt: BUILTIN_UPDATED_AT
+    },
+    {
+      id: BUILTIN_SKILL_CREATOR_SKILL_ID,
+      name: "skill-creator",
+      description: "创建、更新和校验 Gordon 本地 Skill 资产，并把稳定工作流沉淀到 skills/ 目录。",
+      tags: [],
+      kind: "prompt",
+      promptTemplate: BUILTIN_SKILL_CREATOR_SKILL_PROMPT,
+      source: {
+        type: "manual",
+        localPath: BUILTIN_SKILL_CREATOR_SKILL_PATH
+      },
+      enabled: true,
+      updatedAt: BUILTIN_UPDATED_AT
     }
   ];
 }
@@ -135,7 +152,7 @@ export function getBuiltinMcpServers(): McpServerConfig[] {
     {
       id: BUILTIN_WORKSPACE_MCP_ID,
       name: "Workspace Tools",
-      description: "内置工作区工具，支持基础文件操作、路径管理、工作区搜索与联网搜索。",
+      description: "内置工作区工具，支持基础文件操作、路径管理、工作区搜索、联网搜索、网页读取、文件对比与受限命令诊断。",
       transport: "stdio",
       command: `/usr/bin/env node ${shellEscape(scriptPath)}`,
       env: {

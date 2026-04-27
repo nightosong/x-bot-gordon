@@ -24,6 +24,68 @@ import type {
 let progressListenerIdSeed = 0;
 const agentRunProgressListeners = new Map<string, (_event: Electron.IpcRendererEvent, payload: AgentRunProgressEvent) => void>();
 
+function toPlainIpcData<T>(value: T): T {
+  const visited = new WeakSet<object>();
+
+  function normalize(input: unknown): unknown {
+    if (input === null || input === undefined) {
+      return input;
+    }
+
+    if (typeof input === "string" || typeof input === "number" || typeof input === "boolean") {
+      return input;
+    }
+
+    if (typeof input === "bigint" || typeof input === "symbol" || typeof input === "function") {
+      return String(input);
+    }
+
+    if (input instanceof Date) {
+      return input.toISOString();
+    }
+
+    if (input instanceof Error) {
+      return {
+        name: input.name,
+        message: input.message,
+        stack: input.stack ?? ""
+      };
+    }
+
+    if (Array.isArray(input)) {
+      return input.map((item) => normalize(item));
+    }
+
+    if (input instanceof Map) {
+      return Object.fromEntries(Array.from(input.entries()).map(([key, entryValue]) => [String(key), normalize(entryValue)]));
+    }
+
+    if (input instanceof Set) {
+      return Array.from(input.values()).map((item) => normalize(item));
+    }
+
+    if (typeof input !== "object") {
+      return String(input);
+    }
+
+    if (visited.has(input)) {
+      return "[Circular]";
+    }
+
+    visited.add(input);
+
+    const output: Record<string, unknown> = {};
+
+    for (const [key, entryValue] of Object.entries(input)) {
+      output[key] = normalize(entryValue);
+    }
+
+    return output;
+  }
+
+  return normalize(value) as T;
+}
+
 contextBridge.exposeInMainWorld("gordonDesktop", {
   bootstrap: () => ipcRenderer.invoke("gordon:bootstrap"),
   listModelSettings: () => ipcRenderer.invoke("gordon:model-settings:list"),
@@ -51,7 +113,7 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
   upsertAgentProfile: (profile: AgentProfile) => ipcRenderer.invoke("gordon:agent-profiles:upsert", profile),
   toggleAgentProfileStatus: (profileId: string) => ipcRenderer.invoke("gordon:agent-profiles:toggle-status", profileId),
   deleteAgentProfile: (profileId: string) => ipcRenderer.invoke("gordon:agent-profiles:delete", profileId),
-  runAgent: (request: AgentRunRequest) => ipcRenderer.invoke("gordon:agent:run", request),
+  runAgent: (request: AgentRunRequest) => ipcRenderer.invoke("gordon:agent:run", toPlainIpcData(request)),
   onAgentRunProgress: (listener: (payload: AgentRunProgressEvent) => void): string => {
     const listenerId = `agent_progress_listener_${Date.now()}_${progressListenerIdSeed++}`;
     const wrapped = (_event: Electron.IpcRendererEvent, payload: AgentRunProgressEvent) => listener(payload);
@@ -71,7 +133,7 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
   },
   listCommandWorkshopSessions: (): Promise<CommandWorkshopSession[]> => ipcRenderer.invoke("gordon:command-workshop:list"),
   upsertCommandWorkshopSession: (session: CommandWorkshopSession): Promise<CommandWorkshopSession[]> =>
-    ipcRenderer.invoke("gordon:command-workshop:upsert", session),
+    ipcRenderer.invoke("gordon:command-workshop:upsert", toPlainIpcData(session)),
   deleteCommandWorkshopSession: (sessionId: string): Promise<CommandWorkshopSession[]> =>
     ipcRenderer.invoke("gordon:command-workshop:delete", sessionId),
   upsertWorkflowLibraryItem: (item: WorkflowLibraryItem): Promise<WorkflowLibraryItem[]> =>

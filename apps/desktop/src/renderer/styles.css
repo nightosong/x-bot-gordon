@@ -1235,6 +1235,200 @@ canvas {
   color: #ffe6b0;
 }
 
+.gordon-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(10px);
+}
+
+.gordon-dialog {
+  width: min(420px, calc(100vw - 36px));
+  padding: 17px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.025)),
+    var(--panel);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.36);
+  backdrop-filter: blur(18px);
+}
+
+.gordon-dialog-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.gordon-dialog-mark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid rgba(92, 225, 194, 0.14);
+  background: rgba(92, 225, 194, 0.08);
+  color: #bcf8ea;
+}
+
+.gordon-dialog-mark .g-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.gordon-dialog.is-warning .gordon-dialog-mark,
+.gordon-dialog.is-danger .gordon-dialog-mark {
+  border-color: rgba(255, 141, 119, 0.18);
+  background: rgba(255, 141, 119, 0.09);
+  color: #ffc5b7;
+}
+
+.gordon-dialog-kicker {
+  margin: 0 0 4px;
+  color: rgba(247, 243, 235, 0.52);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.gordon-dialog-title {
+  margin: 0;
+  color: var(--text);
+  font-size: 17px;
+  line-height: 1.22;
+}
+
+.gordon-dialog-message {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+
+.gordon-dialog-detail,
+.gordon-dialog-field {
+  margin-top: 12px;
+}
+
+.gordon-dialog-detail {
+  display: grid;
+  gap: 6px;
+  max-height: 112px;
+  padding: 10px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--panel-soft);
+}
+
+.gordon-dialog-detail p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.gordon-dialog-field {
+  display: grid;
+  gap: 7px;
+}
+
+.gordon-dialog-field-label {
+  color: rgba(247, 243, 235, 0.62);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.gordon-dialog-input {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 11px;
+  outline: none;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font-size: 12.5px;
+}
+
+.gordon-dialog-input:focus {
+  border-color: rgba(92, 225, 194, 0.28);
+  box-shadow: 0 0 0 3px rgba(92, 225, 194, 0.08);
+}
+
+.gordon-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.gordon-dialog-button {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 700;
+  transition: transform 180ms ease, background 180ms ease, border-color 180ms ease, color 180ms ease;
+}
+
+.gordon-dialog-button:hover {
+  transform: translateY(-1px);
+}
+
+.gordon-dialog-button:focus-visible {
+  outline: 3px solid rgba(92, 225, 194, 0.12);
+  outline-offset: 2px;
+}
+
+.gordon-dialog-button-secondary {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(247, 243, 235, 0.86);
+}
+
+.gordon-dialog-button-primary {
+  border-color: rgba(92, 225, 194, 0.2);
+  background: rgba(92, 225, 194, 0.14);
+  color: #bcf8ea;
+}
+
+.gordon-dialog.is-warning .gordon-dialog-button-primary,
+.gordon-dialog.is-danger .gordon-dialog-button-primary {
+  border-color: rgba(255, 141, 119, 0.24);
+  background: rgba(255, 141, 119, 0.14);
+  color: #ffd0c6;
+}
+
+.gordon-dialog-fade-enter-active,
+.gordon-dialog-fade-leave-active {
+  transition: opacity 180ms ease;
+}
+
+.gordon-dialog-fade-enter-active .gordon-dialog,
+.gordon-dialog-fade-leave-active .gordon-dialog {
+  transition: transform 180ms ease, opacity 180ms ease;
+}
+
+.gordon-dialog-fade-enter-from,
+.gordon-dialog-fade-leave-to {
+  opacity: 0;
+}
+
+.gordon-dialog-fade-enter-from .gordon-dialog,
+.gordon-dialog-fade-leave-to .gordon-dialog {
+  opacity: 0;
+  transform: translateY(6px) scale(0.99);
+}
+
 .model-editor {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);

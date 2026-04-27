@@ -36,6 +36,8 @@ const MAX_MCP_ARGUMENT_REPAIRS = 1;
 const MAX_SKILL_HANDLER_DURATION_MS = 20_000;
 const SKILL_HANDLER_PROTOCOL_VERSION = "gordon-skill/v1";
 const MAX_CONVERSATION_CONTEXT_MESSAGES = 8;
+const BUILTIN_WORKSPACE_MCP_ID = "builtin:mcp:workspace";
+const WORKSPACE_PERMISSION_REQUIRED_PREFIX = "GORDON_PERMISSION_REQUIRED";
 const BASE_URL_REQUIRED_PROVIDERS = new Set([
   "azure",
   "openai_like",
@@ -100,10 +102,26 @@ interface ExecuteMcpToolCallOptions {
     toolName: string;
   };
   reportProgress?: () => void;
+  workspacePermission?: WorkspacePermissionRuntime;
 }
 
 interface RunAgentOptions {
   onProgress?: (payload: AgentRunProgressEvent) => void;
+  onWorkspacePermissionRequest?: (request: WorkspacePermissionRequest) => Promise<boolean>;
+}
+
+interface WorkspacePermissionRequest {
+  path: string;
+  suggestedRoot: string;
+  workspaceRoot: string;
+  serverName: string;
+  toolName: string;
+  reason: string;
+}
+
+interface WorkspacePermissionRuntime {
+  allowedRoots: Set<string>;
+  requestAccess?: (request: WorkspacePermissionRequest) => Promise<boolean>;
 }
 
 function createRunStep(type: AgentRunStep["type"], title: string, detail: string): AgentRunStep {
@@ -158,6 +176,38 @@ function resolveAuthorizedMcpServers(agent: AgentProfile, servers: McpServerConf
   return servers.filter((server) => agent.allowedMcpServerIds.includes(server.id) && server.enabled);
 }
 
+function isBuiltinWorkspaceToolsServer(server: McpServerConfig | null | undefined): boolean {
+  return server?.id === BUILTIN_WORKSPACE_MCP_ID;
+}
+
+function describeToolServer(server: McpServerConfig): string {
+  return isBuiltinWorkspaceToolsServer(server) ? `${server.name}（本地工作区工具）` : `${server.name}（外部 MCP）`;
+}
+
+function buildToolScopeText(authorizedServers: McpServerConfig[]): string {
+  if (!authorizedServers.length) {
+    return "当前未启用任何工具服务。本轮只能基于模型、会话上下文和已附加 Skill 回复，不要声称已经接入外部 MCP。";
+  }
+
+  const localTools = authorizedServers.filter((server) => isBuiltinWorkspaceToolsServer(server));
+  const externalMcpServers = authorizedServers.filter((server) => !isBuiltinWorkspaceToolsServer(server));
+  const sections = [];
+
+  if (localTools.length) {
+    sections.push(`本地工具：${localTools.map((server) => server.name).join("、")}。这是 Gordon 内置工作区工具通道，不代表用户已连接外部 MCP。`);
+  }
+
+  if (externalMcpServers.length) {
+    sections.push(`外部 MCP：${externalMcpServers.map((server) => server.name).join("、")}。仅在真实调用后才说明已调用 MCP。`);
+  } else {
+    sections.push("当前没有启用外部 MCP Server。");
+  }
+
+  sections.push("是否调用工具由任务需要决定；能直接回答时直接回答。");
+
+  return sections.join("\n");
+}
+
 function resolveMcpSelection(
   agent: AgentProfile,
   authorizedServers: McpServerConfig[],
@@ -168,13 +218,13 @@ function resolveMcpSelection(
   }
 
   if (!agent.allowedMcpServerIds.includes(request.mcpServerId)) {
-    throw new Error("当前 MCP Server 不在 Agent 的授权列表内");
+    throw new Error("当前工具服务不在 Agent 的授权列表内");
   }
 
   const server = authorizedServers.find((entry) => entry.id === request.mcpServerId);
 
   if (!server) {
-    throw new Error("指定的 MCP Server 不存在或未启用");
+    throw new Error("指定的工具服务不存在或未启用");
   }
 
   return server;
@@ -721,6 +771,43 @@ function classifyMcpError(error: unknown): McpErrorClassification {
   return classifyMcpMessage(message);
 }
 
+function parseWorkspacePermissionError(message: string): Omit<WorkspacePermissionRequest, "serverName" | "toolName" | "reason"> | null {
+  const markerIndex = message.indexOf(WORKSPACE_PERMISSION_REQUIRED_PREFIX);
+
+  if (markerIndex < 0) {
+    return null;
+  }
+
+  const rawPayload = message.slice(markerIndex + WORKSPACE_PERMISSION_REQUIRED_PREFIX.length).trim();
+
+  if (!rawPayload) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(rawPayload) as {
+      path?: unknown;
+      suggestedRoot?: unknown;
+      workspaceRoot?: unknown;
+    };
+    const targetPath = typeof parsed.path === "string" ? parsed.path.trim() : "";
+    const suggestedRoot = typeof parsed.suggestedRoot === "string" ? parsed.suggestedRoot.trim() : targetPath;
+    const workspaceRoot = typeof parsed.workspaceRoot === "string" ? parsed.workspaceRoot.trim() : "";
+
+    if (!targetPath || !suggestedRoot || !workspaceRoot) {
+      return null;
+    }
+
+    return {
+      path: targetPath,
+      suggestedRoot,
+      workspaceRoot
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function collectCandidateMcpTools(servers: McpServerConfig[]): Promise<McpToolDefinition[]> {
   const toolGroups = await Promise.all(servers.map(async (server) => listToolsFromMcpServer(server.id)));
   return toolGroups.flat();
@@ -728,7 +815,7 @@ async function collectCandidateMcpTools(servers: McpServerConfig[]): Promise<Mcp
 
 function buildMcpHistoryText(mcpCalls: AgentMcpCallRecord[]): string {
   if (!mcpCalls.length) {
-    return "暂无历史 MCP 调用。";
+    return "暂无历史工具调用。";
   }
 
   return mcpCalls
@@ -756,7 +843,7 @@ async function planMcpToolSelection(
       serverId: null,
       toolName: null,
       arguments: {},
-      reason: "未发现可用 MCP 工具"
+      reason: "未发现可用工具"
     };
   }
 
@@ -766,8 +853,8 @@ async function planMcpToolSelection(
     messages: [
       {
         role: "system",
-        content: `你是 Gordon 的 MCP 工具规划器。
-你的唯一任务是判断当前是否需要调用 MCP 工具，以及如果需要，应该调用哪一个工具。
+        content: `你是 Gordon 的工具规划器。
+你的唯一任务是判断当前是否需要调用工具，以及如果需要，应该调用哪一个工具。
 
 请严格输出 JSON，不要输出解释、标题、Markdown 或代码块之外的任何文字。
 JSON 结构必须为：
@@ -797,10 +884,10 @@ ${userInput}
 当前规划轮次：
 第 ${iteration} 轮
 
-已有 MCP 调用历史：
+已有工具调用历史：
 ${buildMcpHistoryText(mcpCalls)}
 
-可用 MCP 工具列表：
+可用工具列表：
 ${JSON.stringify(
   buildPlannerToolPayload(candidateTools),
   null,
@@ -830,7 +917,7 @@ ${JSON.stringify(
       serverId: null,
       toolName: null,
       arguments: {},
-      reason: reason || "模型判断本轮不需要调用 MCP 工具"
+      reason: reason || "模型判断本轮不需要调用工具"
     };
   }
 
@@ -842,7 +929,7 @@ ${JSON.stringify(
       serverId: null,
       toolName: null,
       arguments: {},
-      reason: "模型返回了无效 MCP 规划，已降级为不调用工具"
+      reason: "模型返回了无效工具规划，已降级为不调用工具"
     };
   }
 
@@ -851,7 +938,7 @@ ${JSON.stringify(
     serverId,
     toolName,
     arguments: argumentsObject,
-    reason: reason || "模型判断需要调用 MCP 工具"
+    reason: reason || "模型判断需要调用工具"
   };
 }
 
@@ -879,8 +966,8 @@ async function repairMcpArgumentsWithSchema(
     messages: [
       {
         role: "system",
-        content: `你是 Gordon 的 MCP 参数修复器。
-你的任务是根据工具 inputSchema、用户任务和失败原因，修复一次 MCP 工具参数。
+        content: `你是 Gordon 的工具参数修复器。
+你的任务是根据工具 inputSchema、用户任务和失败原因，修复一次工具参数。
 
 请严格输出 JSON，不要输出解释、标题、Markdown 或 JSON 之外的任何文字。
 JSON 结构必须为：
@@ -925,7 +1012,7 @@ ${stringifyArguments(currentArguments)}
 失败原因：
 ${failureReason}
 
-已有 MCP 调用历史：
+已有工具调用历史：
 ${buildMcpHistoryText(mcpCalls)}`
       }
     ]
@@ -992,8 +1079,8 @@ async function planFallbackMcpToolSelection(
     messages: [
       {
         role: "system",
-        content: `你是 Gordon 的 MCP fallback 规划器。
-当前工具调用失败后，你需要判断是否应该切换到其他 MCP 工具继续完成任务。
+        content: `你是 Gordon 的工具 fallback 规划器。
+当前工具调用失败后，你需要判断是否应该切换到其他工具继续完成任务。
 
 请严格输出 JSON，不要输出解释、标题、Markdown 或代码块之外的任何文字。
 JSON 结构必须为：
@@ -1022,14 +1109,14 @@ ${agent.name}
 用户任务：
 ${userInput}
 
-刚失败的 MCP 调用：
+刚失败的工具调用：
 server=${failedCall.serverName}
 tool=${failedCall.toolName}
 arguments=${stringifyArguments(failedCall.arguments)}
 failureKind=${failedCall.failureKind ?? "unknown"}
 failureReason=${failedCall.failureReason ?? failedCall.resultText}
 
-已有 MCP 调用历史：
+已有工具调用历史：
 ${buildMcpHistoryText(mcpCalls)}
 
 可用 fallback 工具列表：
@@ -1073,7 +1160,7 @@ ${JSON.stringify(buildPlannerToolPayload(candidateTools), null, 2)}`
 
 function buildSystemPrompt(agent: AgentProfile, skill: SkillDefinition | null, authorizedMcpServers: McpServerConfig[]): string {
   const sections = [
-    `你是 Gordon 中的一个 Agent。\nAgent 名称：${agent.name}\n执行模式：${agent.mode}`,
+    `你是 Gordon 中的一个 harness Agent。\nAgent 名称：${agent.name}\n执行模式：${agent.mode}`,
     agent.systemPrompt.trim()
   ];
 
@@ -1083,15 +1170,9 @@ function buildSystemPrompt(agent: AgentProfile, skill: SkillDefinition | null, a
     );
   }
 
-  if (authorizedMcpServers.length) {
-    sections.push(
-      `当前已授权 ${authorizedMcpServers.length} 个 MCP Server，必要时本轮可能先调用 MCP tool，再基于工具结果完成最终输出。\n已授权服务：${authorizedMcpServers
-        .map((server) => server.name)
-        .join("、")}`
-    );
-  }
+  sections.push(`工具上下文：\n${buildToolScopeText(authorizedMcpServers)}`);
 
-  sections.push("输出只返回最终结果，不要解释内部推理过程。");
+  sections.push("输出只返回最终结果，不要解释内部推理过程；不要把内置本地工具描述成用户已经接入外部 MCP。");
 
   return sections.filter(Boolean).join("\n\n");
 }
@@ -1131,7 +1212,7 @@ function buildCombinedMcpResultText(mcpCalls: AgentMcpCallRecord[]): string | nu
 
   return mcpCalls
     .map(
-      (call) => `第 ${call.round} 轮 MCP 结果
+      (call) => `第 ${call.round} 轮工具结果
 服务：${call.serverName}
 工具：${call.toolName}
 参数：${stringifyArguments(call.arguments)}
@@ -1152,12 +1233,13 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
     steps,
     repairContext,
     fallbackFrom,
-    reportProgress
+    reportProgress,
+    workspacePermission
   } = options;
 
   steps.push(
-    createRunStep("mcp_server_selected", `已选择 MCP Server（第 ${round} 轮）`, server.name),
-    createRunStep("mcp_tool_selected", `已选择 MCP 工具（第 ${round} 轮）`, toolName)
+    createRunStep("mcp_server_selected", `已选择工具服务（第 ${round} 轮）`, describeToolServer(server)),
+    createRunStep("mcp_tool_selected", `已选择工具（第 ${round} 轮）`, toolName)
   );
   reportProgress?.();
 
@@ -1168,6 +1250,88 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
   let repairCount = 0;
   let repairedFromArguments: Record<string, unknown> | undefined;
   let repairReason: string | undefined;
+
+  const buildToolCallRequest = (): Parameters<typeof callToolOnMcpServer>[0] => ({
+    serverId: server.id,
+    toolName,
+    arguments: currentArguments,
+    ...(workspacePermission?.allowedRoots.size
+      ? { workspaceAllowedRoots: Array.from(workspacePermission.allowedRoots) }
+      : {})
+  });
+
+  const requestWorkspacePermissionIfNeeded = async (
+    message: string
+  ): Promise<{ matched: boolean; granted: boolean; message: string }> => {
+    const permissionPayload = parseWorkspacePermissionError(message);
+
+    if (!permissionPayload) {
+      return {
+        matched: false,
+        granted: false,
+        message
+      };
+    }
+
+    if (workspacePermission?.allowedRoots.has(permissionPayload.suggestedRoot)) {
+      return {
+        matched: true,
+        granted: true,
+        message: ""
+      };
+    }
+
+    if (!workspacePermission?.requestAccess) {
+      return {
+        matched: true,
+        granted: false,
+        message: `需要授权访问外部路径：${permissionPayload.path}`
+      };
+    }
+
+    steps.push(
+      createRunStep(
+        "workspace_permission_requested",
+        "请求外部路径访问权限",
+        `${permissionPayload.path} / ${server.name} / ${toolName}`
+      )
+    );
+    reportProgress?.();
+
+    const granted = await workspacePermission.requestAccess({
+      ...permissionPayload,
+      serverName: server.name,
+      toolName,
+      reason: `${server.name} / ${toolName} 需要访问外部路径 ${permissionPayload.path}`
+    });
+
+    if (granted) {
+      workspacePermission.allowedRoots.add(permissionPayload.suggestedRoot);
+      steps.push(
+        createRunStep(
+          "workspace_permission_granted",
+          "外部路径访问已授权",
+          `${permissionPayload.suggestedRoot} / 将重试当前工具调用`
+        )
+      );
+      reportProgress?.();
+      return {
+        matched: true,
+        granted: true,
+        message: ""
+      };
+    }
+
+    const deniedMessage = `用户拒绝授权访问外部路径：${permissionPayload.path}`;
+    steps.push(createRunStep("workspace_permission_denied", "外部路径访问被拒绝", deniedMessage));
+    reportProgress?.();
+
+    return {
+      matched: true,
+      granted: false,
+      message: deniedMessage
+    };
+  };
 
   const tryRepairArguments = async (failureReason: string): Promise<boolean> => {
     if (!repairContext || !toolDefinition?.inputSchema || repairCount >= MAX_MCP_ARGUMENT_REPAIRS) {
@@ -1197,7 +1361,7 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
       steps.push(
         createRunStep(
           "mcp_args_repaired",
-          `MCP 参数已修复（第 ${round} 轮）`,
+          `工具参数已修复（第 ${round} 轮）`,
           `${toolName} / ${repaired.reason}`
         )
       );
@@ -1210,19 +1374,22 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
 
   for (let attempt = 1; attempt <= MAX_MCP_TOOL_ATTEMPTS; attempt += 1) {
     try {
-      const toolResult = await callToolOnMcpServer({
-        serverId: server.id,
-        toolName,
-        arguments: currentArguments
-      });
+      const toolResult = await callToolOnMcpServer(buildToolCallRequest());
 
       if (toolResult.isError) {
-        const classified = classifyMcpMessage(toolResult.contentText || "MCP 工具返回错误标记");
-        lastErrorMessage = classified.message;
+        const classified = classifyMcpMessage(toolResult.contentText || "工具返回错误标记");
+        const permissionDecision = await requestWorkspacePermissionIfNeeded(classified.message);
+
+        if (permissionDecision.granted) {
+          continue;
+        }
+
+        lastErrorMessage = permissionDecision.matched ? permissionDecision.message : classified.message;
         lastErrorCategory = classified.category;
         lastFailureKind = classified.failureKind;
+        const failureMessage = permissionDecision.matched ? permissionDecision.message : classified.message;
 
-        const repaired = await tryRepairArguments(classified.message);
+        const repaired = await tryRepairArguments(failureMessage);
 
         if (repaired) {
           continue;
@@ -1231,8 +1398,8 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
         steps.push(
           createRunStep(
             "mcp_tool_failed",
-            `MCP 工具返回错误（第 ${round} 轮）`,
-            `${toolName} / ${classified.message} / 第 ${attempt} 次尝试`
+            `工具返回错误（第 ${round} 轮）`,
+            `${toolName} / ${failureMessage} / 第 ${attempt} 次尝试`
           )
         );
         reportProgress?.();
@@ -1243,14 +1410,14 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
           serverName: server.name,
           toolName,
           arguments: currentArguments,
-          resultText: toolResult.contentText,
+          resultText: permissionDecision.matched ? `工具调用失败：${failureMessage}` : toolResult.contentText,
           isError: true,
           autoSelected,
           attemptCount: attempt,
           recovered: attempt > 1 || repairCount > 0,
           errorCategory: classified.category,
           failureKind: classified.failureKind,
-          failureReason: classified.message,
+          failureReason: failureMessage,
           ...(repairReason ? { repairReason } : {}),
           ...(repairedFromArguments ? { repairedFromArguments } : {}),
           ...(fallbackFrom
@@ -1266,7 +1433,7 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
       steps.push(
         createRunStep(
           "mcp_tool_called",
-          `MCP 工具调用完成（第 ${round} 轮）`,
+          `工具调用完成（第 ${round} 轮）`,
           `${toolResult.toolName} / 第 ${attempt} 次尝试`
         )
       );
@@ -1295,9 +1462,16 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
       };
     } catch (error) {
       const classified = classifyMcpError(error);
-      lastErrorMessage = classified.message;
+      const permissionDecision = await requestWorkspacePermissionIfNeeded(classified.message);
+
+      if (permissionDecision.granted) {
+        continue;
+      }
+
+      lastErrorMessage = permissionDecision.matched ? permissionDecision.message : classified.message;
       lastErrorCategory = classified.category;
       lastFailureKind = classified.failureKind;
+      const failureMessage = permissionDecision.matched ? permissionDecision.message : classified.message;
 
       const canRetry = classified.category === "retryable" && attempt < MAX_MCP_TOOL_ATTEMPTS;
 
@@ -1306,8 +1480,8 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
         steps.push(
           createRunStep(
             "mcp_retrying",
-            `MCP 工具准备重试（第 ${round} 轮）`,
-            `${toolName} / 第 ${attempt} 次失败：${classified.message} / ${delayMs}ms 后重试`
+            `工具准备重试（第 ${round} 轮）`,
+            `${toolName} / 第 ${attempt} 次失败：${failureMessage} / ${delayMs}ms 后重试`
           )
         );
         reportProgress?.();
@@ -1315,7 +1489,7 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
         continue;
       }
 
-      const repaired = await tryRepairArguments(classified.message);
+      const repaired = await tryRepairArguments(failureMessage);
 
       if (repaired) {
         continue;
@@ -1324,8 +1498,8 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
       steps.push(
         createRunStep(
           "mcp_tool_failed",
-          `MCP 工具调用失败（第 ${round} 轮）`,
-          `${toolName} / ${classified.message} / 已尝试 ${attempt} 次`
+          `工具调用失败（第 ${round} 轮）`,
+          `${toolName} / ${failureMessage} / 已尝试 ${attempt} 次`
         )
       );
       reportProgress?.();
@@ -1336,14 +1510,14 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
         serverName: server.name,
         toolName,
         arguments: currentArguments,
-        resultText: `MCP 调用失败：${classified.message}`,
+        resultText: `工具调用失败：${failureMessage}`,
         isError: true,
         autoSelected,
         attemptCount: attempt,
         recovered: repairCount > 0,
         errorCategory: classified.category,
         failureKind: classified.failureKind,
-        failureReason: classified.message,
+        failureReason: failureMessage,
         ...(repairReason ? { repairReason } : {}),
         ...(repairedFromArguments ? { repairedFromArguments } : {}),
         ...(fallbackFrom
@@ -1363,7 +1537,7 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
     serverName: server.name,
     toolName,
     arguments: currentArguments,
-    resultText: `MCP 调用失败：${lastErrorMessage || "未知错误"}`,
+    resultText: `工具调用失败：${lastErrorMessage || "未知错误"}`,
     isError: true,
     autoSelected,
     attemptCount: MAX_MCP_TOOL_ATTEMPTS,
@@ -1481,6 +1655,10 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
   let stopReason: string | null = null;
   const steps: AgentRunStep[] = [];
   const progressCreatedAt = new Date().toISOString();
+  const workspacePermission: WorkspacePermissionRuntime = {
+    allowedRoots: new Set<string>(),
+    requestAccess: options.onWorkspacePermissionRequest
+  };
 
   const emitProgress = (overrides: Partial<AgentRunProgressEvent> = {}): void => {
     if (!request.progressEventId || !options.onProgress) {
@@ -1531,10 +1709,11 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
   }
 
   if (authorizedMcpServers.length) {
+    const externalMcpServers = authorizedMcpServers.filter((server) => !isBuiltinWorkspaceToolsServer(server));
     pushStep(
       "mcp_authorized",
-      "检测到已授权 MCP",
-      `本轮作为上下文保留，尚未真实调用：${authorizedMcpServers.map((server) => server.name).join("、")}`
+      externalMcpServers.length ? "已加载工具上下文" : "已加载本地工具",
+      buildToolScopeText(authorizedMcpServers)
     );
   }
 
@@ -1542,7 +1721,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
     const toolName = actualMcpToolName?.trim();
 
     if (!toolName) {
-      throw new Error("已选择 MCP Server，但还没有指定工具名称");
+      throw new Error("已选择工具服务，但还没有指定工具名称");
     }
 
     let selectedToolDefinition: McpToolDefinition | undefined;
@@ -1568,14 +1747,15 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
           agent,
           userInput: contextualUserInput,
           mcpCalls
-        }
+        },
+        workspacePermission
       })
     );
     actualMcpToolName = mcpCalls[mcpCalls.length - 1]?.toolName ?? toolName;
     actualMcpArguments = mcpCalls[mcpCalls.length - 1]?.arguments;
-    stopReason = mcpCalls[mcpCalls.length - 1]?.isError
-      ? "手动指定的 MCP 工具调用失败，已停止继续编排"
-      : "手动指定 MCP 工具已完成";
+    if (mcpCalls[mcpCalls.length - 1]?.isError) {
+      stopReason = "手动指定的工具调用失败，已停止继续编排";
+    }
     emitProgress();
   }
 
@@ -1585,16 +1765,16 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
     try {
       candidateTools = await collectCandidateMcpTools(candidateServers);
     } catch (error) {
-      stopReason = `MCP 工具发现失败：${error instanceof Error ? error.message : "未知错误"}`;
-      pushStep("mcp_auto_stopped", "MCP 自动编排停止", stopReason);
+      stopReason = `工具发现失败：${error instanceof Error ? error.message : "未知错误"}`;
+      pushStep("mcp_auto_stopped", "工具编排停止", stopReason);
     }
     let consecutiveFailures = 0;
 
     for (let round = 1; round <= MAX_AUTO_MCP_ROUNDS && candidateTools.length; round += 1) {
       pushStep(
         "mcp_auto_planning",
-        `正在规划 MCP 工具（第 ${round} 轮）`,
-        `从 ${candidateServers.length} 个 MCP Server 的可用工具中自动选择`
+        `正在规划工具（第 ${round} 轮）`,
+        `从 ${candidateServers.length} 个工具服务的可用工具中自动选择`
       );
 
       let plannedSelection;
@@ -1609,16 +1789,19 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
           round
         );
       } catch (error) {
-        stopReason = `MCP 规划失败：${error instanceof Error ? error.message : "未知错误"}`;
-        pushStep("mcp_auto_stopped", `MCP 自动编排停止（第 ${round} 轮）`, stopReason);
+        stopReason = `工具规划失败：${error instanceof Error ? error.message : "未知错误"}`;
+        pushStep("mcp_auto_stopped", `工具编排停止（第 ${round} 轮）`, stopReason);
         break;
       }
 
-      pushStep("mcp_auto_planning", `MCP 规划结果（第 ${round} 轮）`, plannedSelection.reason);
+      pushStep("mcp_auto_planning", `工具规划结果（第 ${round} 轮）`, plannedSelection.reason);
 
       if (!plannedSelection.shouldCall || !plannedSelection.serverId || !plannedSelection.toolName) {
-        stopReason = plannedSelection.reason || "模型判断无需继续调用 MCP 工具";
-        pushStep("mcp_auto_stopped", `MCP 自动编排停止（第 ${round} 轮）`, stopReason);
+        pushStep(
+          "mcp_auto_stopped",
+          `工具规划完成（第 ${round} 轮）`,
+          plannedSelection.reason || "模型判断无需继续调用工具"
+        );
         break;
       }
 
@@ -1630,8 +1813,8 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
       );
 
       if (duplicateCall) {
-        stopReason = "触发重复调用保护，自动编排已停止";
-        pushStep("mcp_auto_stopped", `跳过重复 MCP 调用（第 ${round} 轮）`, stopReason);
+        stopReason = "触发重复调用保护，工具编排已停止";
+        pushStep("mcp_auto_stopped", `跳过重复工具调用（第 ${round} 轮）`, stopReason);
         break;
       }
 
@@ -1662,7 +1845,8 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
           agent,
           userInput: contextualUserInput,
           mcpCalls
-        }
+        },
+        workspacePermission
       });
       mcpCalls.push(callRecord);
       actualMcpArguments = callRecord.arguments;
@@ -1729,6 +1913,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
                     userInput: contextualUserInput,
                     mcpCalls
                   },
+                  workspacePermission,
                   fallbackFrom: {
                     serverName: callRecord.serverName,
                     toolName: callRecord.toolName
@@ -1763,8 +1948,8 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
         }
 
         if (consecutiveFailures >= MAX_CONSECUTIVE_AUTO_MCP_FAILURES) {
-          stopReason = `连续 ${MAX_CONSECUTIVE_AUTO_MCP_FAILURES} 轮 MCP 调用失败，自动编排已停止`;
-          pushStep("mcp_auto_stopped", `MCP 自动编排停止（第 ${round} 轮）`, stopReason);
+          stopReason = `连续 ${MAX_CONSECUTIVE_AUTO_MCP_FAILURES} 轮工具调用失败，自动编排已停止`;
+          pushStep("mcp_auto_stopped", `工具编排停止（第 ${round} 轮）`, stopReason);
           break;
         }
       } else {
@@ -1773,23 +1958,18 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
 
       if (round === MAX_AUTO_MCP_ROUNDS) {
         stopReason = `达到最大自动编排轮次（${MAX_AUTO_MCP_ROUNDS} 轮）`;
-        pushStep("mcp_auto_stopped", `MCP 自动编排停止（第 ${round} 轮）`, stopReason);
+        pushStep("mcp_auto_stopped", `工具编排停止（第 ${round} 轮）`, stopReason);
       }
     }
 
     if (!candidateTools.length && !stopReason) {
-      stopReason = "未发现可用 MCP 工具，自动编排已停止";
-      pushStep("mcp_auto_stopped", "MCP 自动编排停止", stopReason);
+      pushStep("mcp_auto_stopped", "工具规划完成", "未发现可用工具，已直接进入模型回复");
     }
   }
 
   const mcpResultText = buildCombinedMcpResultText(mcpCalls);
   let skillResultText: string | null = null;
   let skillFinalOutput = false;
-
-  if (!stopReason && request.autoSelectMcp && !mcpCalls.length) {
-    stopReason = "自动 MCP 已开启，但本轮没有发生工具调用";
-  }
 
   if (selectedSkill?.kind === "workflow") {
     try {
@@ -1846,7 +2026,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
             mcpResultText
               ? `${userInput}
 
-以下是本轮 MCP 工具返回结果，请结合结果继续完成任务：
+以下是本轮工具返回结果，请结合结果继续完成任务：
 ${mcpResultText}`
               : userInput,
             selectedSkill,

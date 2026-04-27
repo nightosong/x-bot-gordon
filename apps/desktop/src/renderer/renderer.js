@@ -139,6 +139,125 @@ const robotRuntimeState = {
   loadToken: 0
 };
 
+function ensureLegacyGordonDialogStyle() {
+  if (document.getElementById("legacy-gordon-dialog-style")) {
+    return;
+  }
+
+  const style = document.createElement("style");
+  style.id = "legacy-gordon-dialog-style";
+  style.textContent = `
+    .legacy-gordon-dialog-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      background: rgba(0, 0, 0, 0.22);
+      backdrop-filter: blur(10px);
+    }
+    .legacy-gordon-dialog {
+      width: min(420px, calc(100vw - 36px));
+      padding: 17px;
+      border: 1px solid rgba(151, 182, 216, 0.14);
+      border-radius: 20px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.025)), rgba(10, 19, 31, 0.92);
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.36);
+      color: #f7f3eb;
+      font-family: "Avenir Next", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      backdrop-filter: blur(18px);
+    }
+    .legacy-gordon-dialog h2 {
+      margin: 0;
+      font-size: 17px;
+      line-height: 1.22;
+    }
+    .legacy-gordon-dialog p {
+      margin: 12px 0 0;
+      color: #98a9bf;
+      font-size: 12.5px;
+      line-height: 1.65;
+    }
+    .legacy-gordon-dialog-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    .legacy-gordon-dialog button {
+      min-height: 34px;
+      padding: 0 12px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .legacy-gordon-dialog .secondary {
+      border-color: rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.06);
+      color: rgba(247, 243, 235, 0.86);
+    }
+    .legacy-gordon-dialog .primary {
+      border-color: rgba(255, 141, 119, 0.24);
+      background: rgba(255, 141, 119, 0.14);
+      color: #ffd0c6;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function showLegacyGordonConfirmDialog(options) {
+  ensureLegacyGordonDialogStyle();
+
+  return new Promise((resolve) => {
+    const backdrop = document.createElement("div");
+    const dialog = document.createElement("section");
+    const title = document.createElement("h2");
+    const message = document.createElement("p");
+    const actions = document.createElement("div");
+    const cancelButton = document.createElement("button");
+    const confirmButton = document.createElement("button");
+
+    backdrop.className = "legacy-gordon-dialog-backdrop";
+    dialog.className = "legacy-gordon-dialog";
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    actions.className = "legacy-gordon-dialog-actions";
+    cancelButton.className = "secondary";
+    confirmButton.className = "primary";
+    title.textContent = String(options?.title ?? "确认操作");
+    message.textContent = String(options?.message ?? "");
+    cancelButton.textContent = String(options?.cancelText ?? "取消");
+    confirmButton.textContent = String(options?.confirmText ?? "确认");
+    cancelButton.type = "button";
+    confirmButton.type = "button";
+
+    const settle = (confirmed) => {
+      window.removeEventListener("keydown", handleKeydown);
+      backdrop.remove();
+      resolve(Boolean(confirmed));
+    };
+    const handleKeydown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        settle(false);
+      }
+    };
+
+    cancelButton.addEventListener("click", () => settle(false), { once: true });
+    confirmButton.addEventListener("click", () => settle(true), { once: true });
+    window.addEventListener("keydown", handleKeydown);
+    actions.append(cancelButton, confirmButton);
+    dialog.append(title, message, actions);
+    backdrop.appendChild(dialog);
+    document.body.appendChild(backdrop);
+    confirmButton.focus();
+  });
+}
+
 function getDesktopApi() {
   return window.gordonDesktop ?? null;
 }
@@ -3785,7 +3904,12 @@ async function handleModelDelete(profileId) {
     return;
   }
 
-  const shouldDelete = window.confirm(`确认删除模型配置“${profile.displayName}”吗？`);
+  const shouldDelete = await showLegacyGordonConfirmDialog({
+    title: "删除模型配置",
+    message: `确认删除模型配置“${profile.displayName}”吗？删除后无法恢复。`,
+    confirmText: "删除",
+    cancelText: "取消"
+  });
 
   if (!shouldDelete) {
     return;
@@ -3890,7 +4014,14 @@ async function handleWeeklyProgressDelete(recordId) {
     return;
   }
 
-  if (!window.confirm("确认删除这条周记录吗？删除后无法恢复。")) {
+  if (
+    !(await showLegacyGordonConfirmDialog({
+      title: "删除周记录",
+      message: "确认删除这条周记录吗？删除后无法恢复。",
+      confirmText: "删除",
+      cancelText: "取消"
+    }))
+  ) {
     return;
   }
 
@@ -4310,7 +4441,14 @@ async function handleCommandWorkshopSessionDelete(sessionId) {
     return;
   }
 
-  if (!window.confirm(`确认删除会话「${session.title || "当前会话"}」吗？`)) {
+  if (
+    !(await showLegacyGordonConfirmDialog({
+      title: "删除命令工坊会话",
+      message: `确认删除会话「${session.title || "当前会话"}」吗？删除后无法恢复。`,
+      confirmText: "删除",
+      cancelText: "取消"
+    }))
+  ) {
     return;
   }
 
@@ -4840,7 +4978,18 @@ async function handleAgentDelete(profileId) {
     return;
   }
 
-  if (!profile || !window.confirm(`确认删除 Agent「${profile.name}」吗？`)) {
+  if (!profile) {
+    return;
+  }
+
+  if (
+    !(await showLegacyGordonConfirmDialog({
+      title: "删除 Agent",
+      message: `确认删除 Agent「${profile.name}」吗？删除后无法恢复。`,
+      confirmText: "删除",
+      cancelText: "取消"
+    }))
+  ) {
     return;
   }
 
@@ -4863,7 +5012,18 @@ async function handleSkillDelete(skillId) {
     return;
   }
 
-  if (!skill || !window.confirm(`确认删除 Skill「${skill.name}」吗？`)) {
+  if (!skill) {
+    return;
+  }
+
+  if (
+    !(await showLegacyGordonConfirmDialog({
+      title: "删除 Skill",
+      message: `确认删除 Skill「${skill.name}」吗？删除后无法恢复。`,
+      confirmText: "删除",
+      cancelText: "取消"
+    }))
+  ) {
     return;
   }
 
@@ -4886,7 +5046,18 @@ async function handleMcpDelete(serverId) {
     return;
   }
 
-  if (!server || !window.confirm(`确认删除 MCP Server「${server.name}」吗？`)) {
+  if (!server) {
+    return;
+  }
+
+  if (
+    !(await showLegacyGordonConfirmDialog({
+      title: "删除 MCP Server",
+      message: `确认删除 MCP Server「${server.name}」吗？删除后无法恢复。`,
+      confirmText: "删除",
+      cancelText: "取消"
+    }))
+  ) {
     return;
   }
 
