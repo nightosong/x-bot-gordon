@@ -19,12 +19,7 @@
               :class="{ 'has-active-selection': isHomeSettingsFeature(activeFeature) }"
             >
               <summary aria-label="打开设置菜单">
-                <svg class="home-settings-trigger-gear" viewBox="0 0 24 24" aria-hidden="true">
-                  <path
-                    d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.04 7.04 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.58.22-1.12.53-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22l-1.92 3.32a.5.5 0 0 0 .12.64L4.86 11c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.4 1.05.72 1.63.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54c.58-.22 1.12-.53 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"
-                    fill="currentColor"
-                  ></path>
-                </svg>
+                <GIcon name="settings" class="home-settings-trigger-gear" />
               </summary>
 
               <div class="home-settings-menu-panel">
@@ -172,8 +167,9 @@
                                   :aria-label="`刷新 ${profile.displayName} 的余额`"
                                   title="刷新余额"
                                   @click.stop="handleModelBalanceRefresh(profile)"
-                                  v-html="renderActionIcon('refresh')"
-                                ></button>
+                                >
+                                  <GIcon name="refresh" />
+                                </button>
                               </div>
 
                               <p v-if="getModelBalanceSnapshot(profile)" class="model-balance-widget-copy">
@@ -194,8 +190,9 @@
                               :aria-label="`编辑 ${profile.displayName}`"
                               title="编辑"
                               @click="openModelEditor(profile)"
-                              v-html="renderActionIcon('edit')"
-                            ></button>
+                            >
+                              <GIcon name="edit" />
+                            </button>
 
                             <button
                               type="button"
@@ -213,8 +210,9 @@
                               :aria-label="`删除 ${profile.displayName}`"
                               title="删除"
                               @click="handleModelDelete(profile.id)"
-                              v-html="renderActionIcon('delete')"
-                            ></button>
+                            >
+                              <GIcon name="delete" />
+                            </button>
                           </div>
                         </div>
 
@@ -233,8 +231,9 @@
                             aria-label="返回列表"
                             title="返回列表"
                             @click="backModelManagement"
-                            v-html="renderActionIcon('return')"
-                          ></button>
+                          >
+                            <GIcon name="return" />
+                          </button>
                         </div>
 
                         <div class="model-section-title-block model-section-title-block-centered">
@@ -288,8 +287,9 @@
                             aria-label="返回列表"
                             title="返回列表"
                             @click="backModelManagement"
-                            v-html="renderActionIcon('return')"
-                          ></button>
+                          >
+                            <GIcon name="return" />
+                          </button>
                         </div>
 
                         <div class="model-section-title-block model-section-title-block-centered">
@@ -516,8 +516,9 @@
                             :aria-label="`删除 ${record.title}`"
                             title="删除周记录"
                             @click.stop="handleWeeklyDelete(record.id)"
-                            v-html="renderActionIcon('delete')"
-                          ></button>
+                          >
+                            <GIcon name="delete" />
+                          </button>
                         </div>
                       </article>
                     </div>
@@ -535,8 +536,9 @@
                               title="返回列表"
                               :disabled="ui.weekly.isGeneratingReport"
                               @click="closeWeeklyEditor"
-                              v-html="renderActionIcon('return')"
-                            ></button>
+                            >
+                              <GIcon name="return" />
+                            </button>
                           </div>
 
                           <div class="weekly-panel-center">
@@ -615,10 +617,16 @@
                                     />
 
                                     <button type="button" class="weekly-row-action weekly-row-action-add" aria-label="新增任务" @click="addWeeklyTask(project.id)">
-                                      +
+                                      <GIcon name="add" />
                                     </button>
-                                    <button type="button" class="weekly-row-action weekly-row-action-delete" @click="removeWeeklyProject(project.id)">
-                                      删除
+                                    <button
+                                      type="button"
+                                      class="weekly-row-action weekly-row-action-delete"
+                                      aria-label="删除项目"
+                                      title="删除项目"
+                                      @click="removeWeeklyProject(project.id)"
+                                    >
+                                      <GIcon name="delete" />
                                     </button>
                                   </div>
 
@@ -767,7 +775,7 @@
                                     @click="handleWeeklyActiveReportGeneration"
                                   >
                                     <span v-if="weeklyActiveReportIsGenerating" class="weekly-task-spinner" aria-hidden="true"></span>
-                                    <span v-else class="weekly-report-run-icon" v-html="renderActionIcon('play')"></span>
+                                    <span v-else class="weekly-report-run-icon"><GIcon name="play" /></span>
                                   </button>
                                 </div>
                               </div>
@@ -783,7 +791,7 @@
                                   :aria-label="weeklyReportCopyButtonLabel"
                                   @click="handleWeeklyReportOutputCopy"
                                 >
-                                  <span class="weekly-report-run-icon" v-html="renderActionIcon(weeklyReportCopyIconKind)"></span>
+                                  <span class="weekly-report-run-icon"><GIcon :name="weeklyReportCopyIconKind" /></span>
                                 </button>
                                 <div
                                   v-if="weeklyCanCopyReportOutput && weeklyReportOutputMode === 'preview'"
@@ -991,8 +999,9 @@
                         aria-label="返回工作流库"
                         title="返回工作流库"
                         @click="backToWorkflowLibrary"
-                        v-html="renderActionIcon('return')"
-                      ></button>
+                      >
+                        <GIcon name="return" />
+                      </button>
                     </div>
 
                     <div class="workflow-library-detail-head-center">
@@ -1175,8 +1184,9 @@
                                     :title="ui.workflow.copiedStepId === step.id ? '已复制' : '复制 curl'"
                                     :aria-label="ui.workflow.copiedStepId === step.id ? '已复制' : '复制 curl'"
                                     @click="handleWorkflowCurlCopy(step)"
-                                    v-html="renderActionIcon(ui.workflow.copiedStepId === step.id ? 'check' : 'copy')"
-                                  ></button>
+                                  >
+                                    <GIcon :name="ui.workflow.copiedStepId === step.id ? 'check' : 'copy'" />
+                                  </button>
                                 </div>
                               </div>
 
@@ -1252,8 +1262,9 @@
                             aria-label="返回列表"
                             title="返回列表"
                             @click="backToCommandList"
-                            v-html="renderActionIcon('return')"
-                          ></button>
+                          >
+                            <GIcon name="return" />
+                          </button>
                         </div>
 
                         <div class="command-chat-center">
@@ -1267,8 +1278,9 @@
                             aria-label="新对话"
                             title="新对话"
                             @click="beginNewCommandSession"
-                            v-html="renderActionIcon('jump')"
-                          ></button>
+                          >
+                            <GIcon name="jump" />
+                          </button>
                         </div>
                       </div>
 
@@ -1603,8 +1615,9 @@
                                 aria-label="打开高级设置"
                                 title="高级设置"
                                 @click="ui.command.composerView = 'settings'"
-                                v-html="renderActionIcon('gear')"
-                              ></button>
+                              >
+                                <GIcon name="gear" />
+                              </button>
                             </div>
                           </div>
 
@@ -1628,8 +1641,9 @@
                               :disabled="!commandSelectedAgent || ui.command.isRunning"
                               :aria-label="ui.command.isRunning ? '处理中' : '发送消息'"
                               :title="ui.command.isRunning ? '处理中' : '发送消息'"
-                              v-html="renderActionIcon('enter')"
-                            ></button>
+                            >
+                              <GIcon name="enter" />
+                            </button>
                           </div>
                         </div>
                       </form>
@@ -1677,8 +1691,9 @@
                               :aria-label="`删除 ${session.title || '当前会话'}`"
                               title="删除会话"
                               @click.stop="handleCommandSessionDelete(session.id)"
-                              v-html="renderActionIcon('delete')"
-                            ></button>
+                            >
+                              <GIcon name="delete" />
+                            </button>
                           </article>
                         </div>
 
@@ -1783,8 +1798,9 @@
                                 :aria-label="`运行 ${agent.name}`"
                                 title="运行测试"
                                 @click="openAgentRunner(agent.id)"
-                                v-html="renderActionIcon('play')"
-                              ></button>
+                              >
+                                <GIcon name="play" />
+                              </button>
 
                               <span v-if="isBuiltinWorkbenchItem(agent.id)" class="pill pill-neutral">内置</span>
 
@@ -1795,8 +1811,9 @@
                                   :aria-label="`编辑 ${agent.name}`"
                                   title="编辑"
                                   @click="openExtensionEditor('agent', agent)"
-                                  v-html="renderActionIcon('edit')"
-                                ></button>
+                                >
+                                  <GIcon name="edit" />
+                                </button>
 
                                 <button
                                   type="button"
@@ -1814,8 +1831,9 @@
                                   :aria-label="`删除 ${agent.name}`"
                                   title="删除"
                                   @click="handleAgentDelete(agent.id)"
-                                  v-html="renderActionIcon('delete')"
-                                ></button>
+                                >
+                                  <GIcon name="delete" />
+                                </button>
                               </template>
                             </div>
                           </div>
@@ -1875,8 +1893,9 @@
                                   :aria-label="`编辑 ${skill.name}`"
                                   title="编辑"
                                   @click="openExtensionEditor('skill', skill)"
-                                  v-html="renderActionIcon('edit')"
-                                ></button>
+                                >
+                                  <GIcon name="edit" />
+                                </button>
 
                                 <button
                                   type="button"
@@ -1894,8 +1913,9 @@
                                   :aria-label="`删除 ${skill.name}`"
                                   title="删除"
                                   @click="handleSkillDelete(skill.id)"
-                                  v-html="renderActionIcon('delete')"
-                                ></button>
+                                >
+                                  <GIcon name="delete" />
+                                </button>
                               </template>
                             </div>
                           </div>
@@ -1956,8 +1976,9 @@
                                   :aria-label="`编辑 ${server.name}`"
                                   title="编辑"
                                   @click="openExtensionEditor('mcp', server)"
-                                  v-html="renderActionIcon('edit')"
-                                ></button>
+                                >
+                                  <GIcon name="edit" />
+                                </button>
 
                                 <button
                                   type="button"
@@ -1975,8 +1996,9 @@
                                   :aria-label="`删除 ${server.name}`"
                                   title="删除"
                                   @click="handleMcpDelete(server.id)"
-                                  v-html="renderActionIcon('delete')"
-                                ></button>
+                                >
+                                  <GIcon name="delete" />
+                                </button>
                               </template>
                             </div>
                           </div>
@@ -2481,6 +2503,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 
 import robotSceneUrl from "../assets/spline-backups/home-robot-scene.splinecode?url";
+import GIcon from "./components/GIcon.vue";
 import WeeklyTaskTree from "./components/WeeklyTaskTree.vue";
 import {
   BUILTIN_GORDON_AGENT_ID,
@@ -2574,97 +2597,6 @@ const FEATURE_PLACEHOLDERS = {
     title: "应用广场",
     description: "这里会继续承接应用发现、工具接入和能力分发。"
   }
-};
-
-const ACTION_ICONS = {
-  edit: `
-    <svg viewBox="0 0 24 24" class="action-icon" aria-hidden="true">
-      <path d="M4 20h4.2L18.4 9.8a2.2 2.2 0 0 0 0-3.1l-1.1-1.1a2.2 2.2 0 0 0-3.1 0L4 15.8V20Z" fill="currentColor" opacity="0.14" />
-      <path d="M13.5 6.5 17.5 10.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
-      <path d="M4 20h4.2L18.4 9.8a2.2 2.2 0 0 0 0-3.1l-1.1-1.1a2.2 2.2 0 0 0-3.1 0L4 15.8V20Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
-    </svg>
-  `,
-  play: `
-    <svg viewBox="0 0 24 24" class="action-icon" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" fill="currentColor" opacity="0.12" />
-      <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8" />
-      <path d="m10 8.8 5.8 3.2-5.8 3.2Z" fill="currentColor" opacity="0.9" />
-    </svg>
-  `,
-  gear: `
-    <svg viewBox="0 0 24 24" class="action-icon" aria-hidden="true">
-      <path d="M10.2 3.8h3.6l.6 2a6.9 6.9 0 0 1 1.5.9l2-.6 1.8 3.1-1.5 1.4c.1.4.2.9.2 1.4s-.1 1-.2 1.4l1.5 1.4-1.8 3.1-2-.6a6.9 6.9 0 0 1-1.5.9l-.6 2h-3.6l-.6-2a6.9 6.9 0 0 1-1.5-.9l-2 .6-1.8-3.1 1.5-1.4A6.6 6.6 0 0 1 5.5 12c0-.5.1-1 .2-1.4L4.2 9.2 6 6.1l2 .6a6.9 6.9 0 0 1 1.5-.9l.7-2Z" fill="currentColor" opacity="0.12" />
-      <path d="M10.2 3.8h3.6l.6 2a6.9 6.9 0 0 1 1.5.9l2-.6 1.8 3.1-1.5 1.4c.1.4.2.9.2 1.4s-.1 1-.2 1.4l1.5 1.4-1.8 3.1-2-.6a6.9 6.9 0 0 1-1.5.9l-.6 2h-3.6l-.6-2a6.9 6.9 0 0 1-1.5-.9l-2 .6-1.8-3.1 1.5-1.4A6.6 6.6 0 0 1 5.5 12c0-.5.1-1 .2-1.4L4.2 9.2 6 6.1l2 .6a6.9 6.9 0 0 1 1.5-.9l.7-2Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
-      <circle cx="12" cy="12" r="2.8" fill="none" stroke="currentColor" stroke-width="1.8" />
-    </svg>
-  `,
-  refresh: `
-    <svg viewBox="0 0 24 24" class="action-icon" aria-hidden="true">
-      <path
-        d="M16.023 9.348h4.992V4.356M2.977 14.652H7.97v4.992"
-        fill="none"
-        stroke="currentColor"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        stroke-width="1.8"
-      />
-      <path
-        d="M20.864 9A9 9 0 0 0 6.343 5.343L2.977 8.709M3.136 15A9 9 0 0 0 17.657 18.657l3.366-3.366"
-        fill="none"
-        stroke="currentColor"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        stroke-width="1.8"
-      />
-    </svg>
-  `,
-  return: `
-    <svg viewBox="0 0 24 24" class="action-icon" aria-hidden="true">
-      <path d="M8 7 4 11l4 4" fill="currentColor" opacity="0.16" />
-      <path d="M8 7 4 11l4 4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
-      <path d="M5 11h8a7 7 0 0 1 7 7" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
-    </svg>
-  `,
-  enter: `
-    <svg viewBox="0 0 24 24" class="action-icon" aria-hidden="true">
-      <path d="M14.5 3.8H18a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2h-3.5" fill="currentColor" opacity="0.1" />
-      <path d="M14.5 3.8H18a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2h-3.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
-      <path d="M4 12h11" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" />
-      <path d="m10 7 5 5-5 5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
-    </svg>
-  `,
-  jump: `
-    <svg viewBox="0 0 24 24" class="action-icon" aria-hidden="true">
-      <path d="M6 7.5a1.5 1.5 0 0 1 1.5-1.5h6.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
-      <path d="M6 10v7a1.5 1.5 0 0 0 1.5 1.5h9A1.5 1.5 0 0 0 18 17v-4.5" fill="currentColor" opacity="0.1" />
-      <path d="M6 10v7a1.5 1.5 0 0 0 1.5 1.5h9A1.5 1.5 0 0 0 18 17v-4.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
-      <path d="M13 5.5H19V11.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
-      <path d="m10 14 9-9" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" />
-    </svg>
-  `,
-  delete: `
-    <svg viewBox="0 0 24 24" class="action-icon" aria-hidden="true">
-      <path d="M8 8.5h8l-.8 10.2a1.6 1.6 0 0 1-1.6 1.5h-3.2a1.6 1.6 0 0 1-1.6-1.5L8 8.5Z" fill="currentColor" opacity="0.12" />
-      <path d="M4.5 6.5h15" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" />
-      <path d="M9.5 6.5V5a1.5 1.5 0 0 1 1.5-1.5h2a1.5 1.5 0 0 1 1.5 1.5v1.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
-      <path d="m8 8.5.8 10.2a1.6 1.6 0 0 0 1.6 1.5h3.2a1.6 1.6 0 0 0 1.6-1.5L16 8.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
-      <path d="M10.5 11v5M13.5 11v5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" />
-    </svg>
-  `,
-  copy: `
-    <svg viewBox="0 0 24 24" class="action-icon" aria-hidden="true">
-      <rect x="9" y="8" width="10" height="12" rx="2" fill="currentColor" opacity="0.12" />
-      <rect x="9" y="8" width="10" height="12" rx="2" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.8" />
-      <path d="M6 15H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
-    </svg>
-  `,
-  check: `
-    <svg viewBox="0 0 24 24" class="action-icon" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" fill="currentColor" opacity="0.12" />
-      <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8" />
-      <path d="m8.5 12.2 2.5 2.5 4.8-5.2" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" />
-    </svg>
-  `
 };
 
 const WEEKLY_RISK_KEYWORDS = ["风险", "问题", "阻塞", "受阻", "卡点", "依赖", "待协调", "延期", "等待"];
@@ -4094,10 +4026,6 @@ function buildWeeklyDraftInsights(record) {
     risks: uniqueRisks,
     nextSteps: uniqueNextSteps
   };
-}
-
-function renderActionIcon(kind) {
-  return ACTION_ICONS[kind] ?? ACTION_ICONS.delete;
 }
 
 function getFeatureCardClass(entry, index) {

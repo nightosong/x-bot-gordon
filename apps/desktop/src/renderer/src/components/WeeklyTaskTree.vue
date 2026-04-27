@@ -68,11 +68,13 @@
           :disabled="isTaskRewriting(task.id)"
           @click="emit('add-child', { projectId, taskId: task.id })"
         >
-          +
+          <GIcon name="add" />
         </button>
 
         <details class="weekly-task-action-menu" :class="{ 'is-disabled': isTaskRewriting(task.id) }">
-          <summary class="weekly-row-action weekly-row-action-more" aria-label="更多任务操作">更多</summary>
+          <summary class="weekly-row-action weekly-row-action-more" aria-label="更多任务操作" title="更多任务操作">
+            <GIcon name="more" />
+          </summary>
 
           <div class="weekly-task-action-panel">
             <button
@@ -115,6 +117,8 @@
 
 <script setup>
 import { computed, nextTick, ref } from "vue";
+
+import GIcon from "./GIcon.vue";
 
 defineOptions({
   name: "WeeklyTaskTree"

@@ -1161,6 +1161,17 @@ canvas {
   overflow: visible;
 }
 
+.g-icon {
+  flex: none;
+  stroke: currentColor;
+  vertical-align: middle;
+}
+
+.g-icon.is-spinning {
+  animation: model-balance-spin 0.9s linear infinite;
+  transform-origin: center;
+}
+
 .model-status-toggle {
   min-height: 32px;
   padding: 0 11px;
@@ -2931,8 +2942,11 @@ canvas {
 }
 
 .weekly-row-action-add {
-  font-size: 16px;
-  line-height: 1;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
   color: #bcf8ea;
   border-color: rgba(92, 225, 194, 0.18);
   background: rgba(92, 225, 194, 0.1);
@@ -2956,6 +2970,11 @@ canvas {
 }
 
 .weekly-row-action-more {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
   color: rgba(247, 243, 235, 0.82);
 }
 
@@ -3005,6 +3024,11 @@ canvas {
 }
 
 .weekly-row-action-delete {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
   color: #ffd0c6;
   border-color: rgba(255, 141, 119, 0.16);
   background: rgba(255, 141, 119, 0.08);
