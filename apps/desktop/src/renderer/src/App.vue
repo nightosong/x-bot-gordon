@@ -11,7 +11,8 @@
               <div class="brand-row">
                 <MorphingText
                   class="brand-title"
-                  :texts="BRAND_MORPHING_TEXTS"
+                  base-text="GORDON"
+                  :random-texts="BRAND_RANDOM_TEXTS"
                   aria-label="GORDON"
                 />
               </div>
@@ -2733,40 +2734,23 @@ const FEATURE_COMMAND_WORKSHOP = "command-workshop";
 const FEATURE_MODEL_MANAGEMENT = "model-management";
 const FEATURE_EXTENSIONS_MANAGEMENT = "extensions-management";
 
-const BRAND_MORPHING_TEXTS = [
-  "GORDON",
+const BRAND_RANDOM_TEXTS = [
   "WORKHARD",
-  "GORDON",
   "LIKEGORD",
-  "GORDON",
   "NICEJOB",
-  "GORDON",
   "DOMINATE",
-  "GORDON",
   "OVERMAX",
-  "GORDON",
   "LEVELUP",
-  "GORDON",
   "TOPFORM",
-  "GORDON",
   "FULLPOW",
-  "GORDON",
   "NOEXCUS",
-  "GORDON",
   "ELITE",
-  "GORDON",
   "LEGEND",
-  "GORDON",
   "MASSIVE",
-  "GORDON",
   "SHIPIT",
-  "GORDON",
   "TRYAGAIN",
-  "GORDON",
   "NEXTLVL",
-  "GORDON",
   "UPONLY",
-  "GORDON",
   "VICTORY"
 ];
 
