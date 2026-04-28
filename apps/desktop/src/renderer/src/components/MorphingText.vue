@@ -60,7 +60,7 @@ const text1Ref = ref(null);
 const text2Ref = ref(null);
 const activeRandomText = ref("");
 const filterId = `gordon-morphing-text-${Math.random().toString(36).slice(2, 10)}`;
-const MAX_FRAME_DELTA_SECONDS = 1 / 30;
+const MAX_FRAME_DELTA_SECONDS = 1 / 12;
 
 let animationFrameId = 0;
 let reducedMotionTimerId = 0;
