@@ -126,24 +126,33 @@ canvas {
   margin-bottom: 0;
 }
 
-.brand-row h1,
 .brand-title {
   margin: 0;
 }
 
-.brand-row h1,
 .brand-title {
-  font-family: "Avenir Next Condensed", "Arial Narrow", "Avenir Next", "Helvetica Neue", sans-serif;
-  font-size: clamp(40px, 4vw, 58px);
-  font-weight: 800;
-  letter-spacing: 0.14em;
+  font-family:
+    ui-rounded,
+    "SF Pro Rounded",
+    "Avenir Next Rounded",
+    "Arial Rounded MT Bold",
+    "Nunito",
+    "PingFang SC",
+    "Hiragino Maru Gothic ProN",
+    sans-serif;
+  font-size: clamp(36px, 3.35vw, 50px);
+  font-weight: 900;
+  letter-spacing: 0.055em;
+  font-optical-sizing: auto;
 }
 
 .brand-title {
   position: relative;
   display: inline-block;
-  padding: 0 0.14em 0.18em 0;
-  line-height: 0.94;
+  width: min(100%, 10.4em);
+  height: 1.08em;
+  padding: 0 0.08em 0.12em 0;
+  line-height: 1;
   text-transform: uppercase;
   color: #e6fff8;
   text-shadow:
@@ -153,29 +162,25 @@ canvas {
   filter: drop-shadow(0 0 16px rgba(92, 225, 194, 0.12));
 }
 
-.brand-title::before,
-.brand-title::after {
-  content: attr(data-text);
+.morphing-text-layer {
   position: absolute;
-  inset: 0;
+  inset: 0 auto auto 0;
+  display: inline-block;
+  width: max-content;
   pointer-events: none;
   text-transform: uppercase;
-}
-
-.brand-title::before {
-  color: rgba(255, 141, 119, 0.78);
-  transform: translate(0.04em, 0.02em);
-  opacity: 0.78;
-}
-
-.brand-title::after {
-  color: rgba(92, 225, 194, 0.86);
-  transform: translate(-0.04em, -0.02em);
-  opacity: 0.84;
+  will-change: filter, opacity;
 }
 
 .brand-row::after {
   content: none;
+}
+
+.morphing-text-filter {
+  position: fixed;
+  width: 0;
+  height: 0;
+  pointer-events: none;
 }
 
 .brand-copy,

@@ -9,7 +9,11 @@
           <div class="brand-panel-head">
             <div class="brand-lockup">
               <div class="brand-row">
-                <h1 class="brand-title" data-text="Gordon">Gordon</h1>
+                <MorphingText
+                  class="brand-title"
+                  :texts="BRAND_MORPHING_TEXTS"
+                  aria-label="GORDON"
+                />
               </div>
             </div>
 
@@ -2686,6 +2690,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 
 import robotSceneUrl from "../assets/spline-backups/home-robot-scene.splinecode?url";
 import GIcon from "./components/GIcon.vue";
+import MorphingText from "./components/MorphingText.vue";
 import WeeklyTaskTree from "./components/WeeklyTaskTree.vue";
 import {
   BUILTIN_GORDON_AGENT_ID,
@@ -2727,6 +2732,43 @@ const FEATURE_WORKFLOW_LIBRARY = "workflow-library";
 const FEATURE_COMMAND_WORKSHOP = "command-workshop";
 const FEATURE_MODEL_MANAGEMENT = "model-management";
 const FEATURE_EXTENSIONS_MANAGEMENT = "extensions-management";
+
+const BRAND_MORPHING_TEXTS = [
+  "GORDON",
+  "WORKHARD",
+  "GORDON",
+  "LIKEGORD",
+  "GORDON",
+  "NICEJOB",
+  "GORDON",
+  "DOMINATE",
+  "GORDON",
+  "OVERMAX",
+  "GORDON",
+  "LEVELUP",
+  "GORDON",
+  "TOPFORM",
+  "GORDON",
+  "FULLPOW",
+  "GORDON",
+  "NOEXCUS",
+  "GORDON",
+  "ELITE",
+  "GORDON",
+  "LEGEND",
+  "GORDON",
+  "MASSIVE",
+  "GORDON",
+  "SHIPIT",
+  "GORDON",
+  "TRYAGAIN",
+  "GORDON",
+  "NEXTLVL",
+  "GORDON",
+  "UPONLY",
+  "GORDON",
+  "VICTORY"
+];
 
 const FEATURE_ENTRIES = [
   {
