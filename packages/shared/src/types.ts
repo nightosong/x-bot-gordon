@@ -53,6 +53,9 @@ export type AgentRunStepType =
   | "workspace_permission_requested"
   | "workspace_permission_granted"
   | "workspace_permission_denied"
+  | "computer_use_permission_requested"
+  | "computer_use_permission_granted"
+  | "computer_use_permission_denied"
   | "mcp_server_selected"
   | "mcp_tool_selected"
   | "mcp_tool_called"
@@ -533,6 +536,7 @@ export interface McpToolCallRequest {
   toolName: string;
   arguments?: Record<string, unknown>;
   workspaceAllowedRoots?: string[];
+  computerUseAllowed?: boolean;
 }
 
 export interface McpToolCallResult {

@@ -527,6 +527,15 @@ export async function callToolOnMcpServer(request: McpToolCallRequest): Promise<
   const workspaceAllowedRoots = Array.isArray(request.workspaceAllowedRoots)
     ? request.workspaceAllowedRoots.map((entry) => String(entry).trim()).filter(Boolean)
     : [];
+  const toolRuntimeEnv: Record<string, string> = {};
+
+  if (workspaceAllowedRoots.length) {
+    toolRuntimeEnv.GORDON_WORKSPACE_ALLOWED_ROOTS = JSON.stringify(workspaceAllowedRoots);
+  }
+
+  if (request.computerUseAllowed) {
+    toolRuntimeEnv.GORDON_COMPUTER_USE_ALLOWED = "1";
+  }
 
   return withMcpClient(server, async (client) => {
     const result = await client.request("tools/call", {
@@ -551,11 +560,9 @@ export async function callToolOnMcpServer(request: McpToolCallRequest): Promise<
           ? (payload.structuredContent as Record<string, unknown>)
           : undefined
     };
-  }, workspaceAllowedRoots.length
+  }, Object.keys(toolRuntimeEnv).length
     ? {
-        env: {
-          GORDON_WORKSPACE_ALLOWED_ROOTS: JSON.stringify(workspaceAllowedRoots)
-        }
+        env: toolRuntimeEnv
       }
     : {}).catch((error) => {
     throw new Error(`MCP 工具调用失败：${toErrorMessage(error)}`);

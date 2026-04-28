@@ -5,6 +5,7 @@ import { readPromptAsset } from "./prompt-assets.js";
 export const BUILTIN_WORKBENCH_ID_PREFIX = "builtin:";
 export const BUILTIN_GORDON_AGENT_ID = "builtin:agent:gordon";
 export const BUILTIN_WORKSPACE_MCP_ID = "builtin:mcp:workspace";
+export const BUILTIN_COMPUTER_USE_MCP_ID = "builtin:mcp:computer-use";
 export const BUILTIN_PLAN_SKILL_ID = "builtin:skill:plan";
 export const BUILTIN_CODE_SKILL_ID = "builtin:skill:code";
 export const BUILTIN_REVIEW_SKILL_ID = "builtin:skill:review";
@@ -146,7 +147,8 @@ export function getBuiltinSkillDefinitions(): SkillDefinition[] {
 }
 
 export function getBuiltinMcpServers(): McpServerConfig[] {
-  const scriptPath = resolveFromRoot("scripts", "workspace-mcp.mjs");
+  const workspaceScriptPath = resolveFromRoot("scripts", "workspace-mcp.mjs");
+  const computerUseScriptPath = resolveFromRoot("scripts", "computer-use-mcp.mjs");
 
   return [
     {
@@ -154,10 +156,21 @@ export function getBuiltinMcpServers(): McpServerConfig[] {
       name: "Workspace Tools",
       description: "内置工作区工具，支持基础文件操作、路径管理、工作区搜索、联网搜索、网页读取、文件对比与受限命令诊断。",
       transport: "stdio",
-      command: `/usr/bin/env node ${shellEscape(scriptPath)}`,
+      command: `/usr/bin/env node ${shellEscape(workspaceScriptPath)}`,
       env: {
         GORDON_WORKSPACE_ROOT: resolveFromRoot(".")
       },
+      toolAllowlist: [],
+      enabled: true,
+      updatedAt: BUILTIN_UPDATED_AT
+    },
+    {
+      id: BUILTIN_COMPUTER_USE_MCP_ID,
+      name: "Computer Use",
+      description: "内置桌面控制工具，支持读取应用状态、打开应用/URL、点击、输入、按键和截屏；每次 Agent 运行首次调用会申请本轮授权。",
+      transport: "stdio",
+      command: `/usr/bin/env node ${shellEscape(computerUseScriptPath)}`,
+      env: {},
       toolAllowlist: [],
       enabled: true,
       updatedAt: BUILTIN_UPDATED_AT

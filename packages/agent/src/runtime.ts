@@ -37,7 +37,9 @@ const MAX_SKILL_HANDLER_DURATION_MS = 20_000;
 const SKILL_HANDLER_PROTOCOL_VERSION = "gordon-skill/v1";
 const MAX_CONVERSATION_CONTEXT_MESSAGES = 8;
 const BUILTIN_WORKSPACE_MCP_ID = "builtin:mcp:workspace";
+const BUILTIN_COMPUTER_USE_MCP_ID = "builtin:mcp:computer-use";
 const WORKSPACE_PERMISSION_REQUIRED_PREFIX = "GORDON_PERMISSION_REQUIRED";
+const COMPUTER_USE_PERMISSION_REQUIRED_PREFIX = "GORDON_COMPUTER_USE_PERMISSION_REQUIRED";
 const BASE_URL_REQUIRED_PROVIDERS = new Set([
   "azure",
   "openai_like",
@@ -103,11 +105,13 @@ interface ExecuteMcpToolCallOptions {
   };
   reportProgress?: () => void;
   workspacePermission?: WorkspacePermissionRuntime;
+  computerUsePermission?: ComputerUsePermissionRuntime;
 }
 
 interface RunAgentOptions {
   onProgress?: (payload: AgentRunProgressEvent) => void;
   onWorkspacePermissionRequest?: (request: WorkspacePermissionRequest) => Promise<boolean>;
+  onComputerUsePermissionRequest?: (request: ComputerUsePermissionRequest) => Promise<boolean>;
 }
 
 interface WorkspacePermissionRequest {
@@ -122,6 +126,18 @@ interface WorkspacePermissionRequest {
 interface WorkspacePermissionRuntime {
   allowedRoots: Set<string>;
   requestAccess?: (request: WorkspacePermissionRequest) => Promise<boolean>;
+}
+
+interface ComputerUsePermissionRequest {
+  serverName: string;
+  toolName: string;
+  action: string;
+  reason: string;
+}
+
+interface ComputerUsePermissionRuntime {
+  granted: boolean;
+  requestAccess?: (request: ComputerUsePermissionRequest) => Promise<boolean>;
 }
 
 function createRunStep(type: AgentRunStep["type"], title: string, detail: string): AgentRunStep {
@@ -180,8 +196,24 @@ function isBuiltinWorkspaceToolsServer(server: McpServerConfig | null | undefine
   return server?.id === BUILTIN_WORKSPACE_MCP_ID;
 }
 
+function isBuiltinComputerUseServer(server: McpServerConfig | null | undefined): boolean {
+  return server?.id === BUILTIN_COMPUTER_USE_MCP_ID;
+}
+
+function isBuiltinLocalToolsServer(server: McpServerConfig | null | undefined): boolean {
+  return isBuiltinWorkspaceToolsServer(server) || isBuiltinComputerUseServer(server);
+}
+
 function describeToolServer(server: McpServerConfig): string {
-  return isBuiltinWorkspaceToolsServer(server) ? `${server.name}（本地工作区工具）` : `${server.name}（外部 MCP）`;
+  if (isBuiltinWorkspaceToolsServer(server)) {
+    return `${server.name}（本地工作区工具）`;
+  }
+
+  if (isBuiltinComputerUseServer(server)) {
+    return `${server.name}（本地桌面控制工具）`;
+  }
+
+  return `${server.name}（外部 MCP）`;
 }
 
 function buildToolScopeText(authorizedServers: McpServerConfig[]): string {
@@ -189,12 +221,14 @@ function buildToolScopeText(authorizedServers: McpServerConfig[]): string {
     return "当前未启用任何工具服务。本轮只能基于模型、会话上下文和已附加 Skill 回复，不要声称已经接入外部 MCP。";
   }
 
-  const localTools = authorizedServers.filter((server) => isBuiltinWorkspaceToolsServer(server));
-  const externalMcpServers = authorizedServers.filter((server) => !isBuiltinWorkspaceToolsServer(server));
+  const localTools = authorizedServers.filter((server) => isBuiltinLocalToolsServer(server));
+  const externalMcpServers = authorizedServers.filter((server) => !isBuiltinLocalToolsServer(server));
   const sections = [];
 
   if (localTools.length) {
-    sections.push(`本地工具：${localTools.map((server) => server.name).join("、")}。这是 Gordon 内置工作区工具通道，不代表用户已连接外部 MCP。`);
+    sections.push(
+      `本地工具：${localTools.map((server) => server.name).join("、")}。这是 Gordon 内置能力通道，不代表用户已连接外部 MCP。Computer Use 会在首次读取或控制桌面前申请本轮授权。`
+    );
   }
 
   if (externalMcpServers.length) {
@@ -808,6 +842,42 @@ function parseWorkspacePermissionError(message: string): Omit<WorkspacePermissio
   }
 }
 
+function parseComputerUsePermissionError(message: string): Omit<ComputerUsePermissionRequest, "serverName"> | null {
+  const markerIndex = message.indexOf(COMPUTER_USE_PERMISSION_REQUIRED_PREFIX);
+
+  if (markerIndex < 0) {
+    return null;
+  }
+
+  const rawPayload = message.slice(markerIndex + COMPUTER_USE_PERMISSION_REQUIRED_PREFIX.length).trim();
+
+  if (!rawPayload) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(rawPayload) as {
+      toolName?: unknown;
+      action?: unknown;
+      reason?: unknown;
+    };
+    const toolName = typeof parsed.toolName === "string" && parsed.toolName.trim() ? parsed.toolName.trim() : "computer_use";
+    const action = typeof parsed.action === "string" && parsed.action.trim() ? parsed.action.trim() : "读取或控制桌面";
+    const reason =
+      typeof parsed.reason === "string" && parsed.reason.trim()
+        ? parsed.reason.trim()
+        : "需要读取或控制本机桌面，本次授权只对当前 Agent 运行生效。";
+
+    return {
+      toolName,
+      action,
+      reason
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function collectCandidateMcpTools(servers: McpServerConfig[]): Promise<McpToolDefinition[]> {
   const toolGroups = await Promise.all(servers.map(async (server) => listToolsFromMcpServer(server.id)));
   return toolGroups.flat();
@@ -1234,7 +1304,8 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
     repairContext,
     fallbackFrom,
     reportProgress,
-    workspacePermission
+    workspacePermission,
+    computerUsePermission
   } = options;
 
   steps.push(
@@ -1257,7 +1328,8 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
     arguments: currentArguments,
     ...(workspacePermission?.allowedRoots.size
       ? { workspaceAllowedRoots: Array.from(workspacePermission.allowedRoots) }
-      : {})
+      : {}),
+    ...(computerUsePermission?.granted ? { computerUseAllowed: true } : {})
   });
 
   const requestWorkspacePermissionIfNeeded = async (
@@ -1333,6 +1405,90 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
     };
   };
 
+  const requestComputerUsePermissionIfNeeded = async (
+    message: string
+  ): Promise<{ matched: boolean; granted: boolean; message: string }> => {
+    const permissionPayload = parseComputerUsePermissionError(message);
+
+    if (!permissionPayload) {
+      return {
+        matched: false,
+        granted: false,
+        message
+      };
+    }
+
+    if (computerUsePermission?.granted) {
+      return {
+        matched: true,
+        granted: true,
+        message: ""
+      };
+    }
+
+    if (!computerUsePermission?.requestAccess) {
+      return {
+        matched: true,
+        granted: false,
+        message: "需要授权使用 Computer Use 读取或控制桌面"
+      };
+    }
+
+    steps.push(
+      createRunStep(
+        "computer_use_permission_requested",
+        "请求 Computer Use 授权",
+        `${server.name} / ${permissionPayload.toolName || toolName} / ${permissionPayload.action}`
+      )
+    );
+    reportProgress?.();
+
+    const granted = await computerUsePermission.requestAccess({
+      ...permissionPayload,
+      serverName: server.name,
+      toolName: permissionPayload.toolName || toolName
+    });
+
+    if (granted) {
+      computerUsePermission.granted = true;
+      steps.push(
+        createRunStep(
+          "computer_use_permission_granted",
+          "Computer Use 已授权",
+          `${server.name} / 将重试当前工具调用`
+        )
+      );
+      reportProgress?.();
+      return {
+        matched: true,
+        granted: true,
+        message: ""
+      };
+    }
+
+    const deniedMessage = "用户拒绝授权使用 Computer Use";
+    steps.push(createRunStep("computer_use_permission_denied", "Computer Use 授权被拒绝", deniedMessage));
+    reportProgress?.();
+
+    return {
+      matched: true,
+      granted: false,
+      message: deniedMessage
+    };
+  };
+
+  const requestToolPermissionIfNeeded = async (
+    message: string
+  ): Promise<{ matched: boolean; granted: boolean; message: string }> => {
+    const workspaceDecision = await requestWorkspacePermissionIfNeeded(message);
+
+    if (workspaceDecision.matched) {
+      return workspaceDecision;
+    }
+
+    return requestComputerUsePermissionIfNeeded(message);
+  };
+
   const tryRepairArguments = async (failureReason: string): Promise<boolean> => {
     if (!repairContext || !toolDefinition?.inputSchema || repairCount >= MAX_MCP_ARGUMENT_REPAIRS) {
       return false;
@@ -1378,7 +1534,7 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
 
       if (toolResult.isError) {
         const classified = classifyMcpMessage(toolResult.contentText || "工具返回错误标记");
-        const permissionDecision = await requestWorkspacePermissionIfNeeded(classified.message);
+        const permissionDecision = await requestToolPermissionIfNeeded(classified.message);
 
         if (permissionDecision.granted) {
           continue;
@@ -1462,7 +1618,7 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
       };
     } catch (error) {
       const classified = classifyMcpError(error);
-      const permissionDecision = await requestWorkspacePermissionIfNeeded(classified.message);
+      const permissionDecision = await requestToolPermissionIfNeeded(classified.message);
 
       if (permissionDecision.granted) {
         continue;
@@ -1659,6 +1815,10 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
     allowedRoots: new Set<string>(),
     requestAccess: options.onWorkspacePermissionRequest
   };
+  const computerUsePermission: ComputerUsePermissionRuntime = {
+    granted: false,
+    requestAccess: options.onComputerUsePermissionRequest
+  };
 
   const emitProgress = (overrides: Partial<AgentRunProgressEvent> = {}): void => {
     if (!request.progressEventId || !options.onProgress) {
@@ -1709,7 +1869,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
   }
 
   if (authorizedMcpServers.length) {
-    const externalMcpServers = authorizedMcpServers.filter((server) => !isBuiltinWorkspaceToolsServer(server));
+    const externalMcpServers = authorizedMcpServers.filter((server) => !isBuiltinLocalToolsServer(server));
     pushStep(
       "mcp_authorized",
       externalMcpServers.length ? "已加载工具上下文" : "已加载本地工具",
@@ -1748,7 +1908,8 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
           userInput: contextualUserInput,
           mcpCalls
         },
-        workspacePermission
+        workspacePermission,
+        computerUsePermission
       })
     );
     actualMcpToolName = mcpCalls[mcpCalls.length - 1]?.toolName ?? toolName;
@@ -1846,7 +2007,8 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
           userInput: contextualUserInput,
           mcpCalls
         },
-        workspacePermission
+        workspacePermission,
+        computerUsePermission
       });
       mcpCalls.push(callRecord);
       actualMcpArguments = callRecord.arguments;
@@ -1914,6 +2076,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
                     mcpCalls
                   },
                   workspacePermission,
+                  computerUsePermission,
                   fallbackFrom: {
                     serverName: callRecord.serverName,
                     toolName: callRecord.toolName

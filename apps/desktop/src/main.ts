@@ -598,6 +598,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("gordon:agent-profiles:delete", async (_event, profileId: string) => deleteAgentProfile(profileId));
   ipcMain.handle("gordon:agent:run", async (event, request) => {
     const grantedWorkspaceRoots = new Set<string>();
+    let computerUseGranted = false;
 
     const result = await runAgent(toCloneableIpcValue(request), {
       onProgress: (payload: AgentRunProgressEvent) => {
@@ -631,6 +632,32 @@ app.whenReady().then(async () => {
 
         if (granted) {
           grantedWorkspaceRoots.add(permissionRequest.suggestedRoot);
+        }
+
+        return granted;
+      },
+      onComputerUsePermissionRequest: async (permissionRequest) => {
+        if (computerUseGranted) {
+          return true;
+        }
+
+        const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+        const granted = await showGordonConfirmWindow(ownerWindow, {
+          tone: "danger",
+          eyebrow: "Computer Use",
+          title: "Gordon 需要使用桌面控制",
+          message: "是否允许 Gordon 本次读取和控制你的桌面？授权只对当前这次 Agent 运行生效，后续运行会重新询问。",
+          detailLines: [
+            `动作：${permissionRequest.action}`,
+            `工具：${permissionRequest.serverName} / ${permissionRequest.toolName}`,
+            `原因：${permissionRequest.reason}`
+          ],
+          confirmText: "允许本次使用",
+          cancelText: "拒绝"
+        });
+
+        if (granted) {
+          computerUseGranted = true;
         }
 
         return granted;
