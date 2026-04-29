@@ -3689,9 +3689,9 @@ canvas {
 
 .workflow-library-main-card {
   display: grid;
-  gap: 10px;
-  padding: 14px;
-  border-radius: 18px;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 16px;
 }
 
 .workflow-library-compose-card {
@@ -3841,10 +3841,10 @@ canvas {
 .workflow-library-step-editor,
 .workflow-library-runtime-panel {
   display: grid;
-  gap: 10px;
-  padding: 11px;
+  gap: 8px;
+  padding: 9px;
   border: 1px solid rgba(247, 243, 235, 0.08);
-  border-radius: 14px;
+  border-radius: 12px;
   background:
     linear-gradient(135deg, rgba(92, 225, 194, 0.06), rgba(124, 173, 255, 0.03)),
     rgba(255, 255, 255, 0.03);
@@ -3863,8 +3863,8 @@ canvas {
 .workflow-library-inline-copy {
   margin: 2px 0 0;
   color: rgba(247, 243, 235, 0.64);
-  font-size: 11px;
-  line-height: 1.45;
+  font-size: 10.5px;
+  line-height: 1.35;
   word-break: break-all;
 }
 
@@ -3878,18 +3878,18 @@ canvas {
 .workflow-library-env-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 5px;
 }
 
 .workflow-library-env-tab {
-  min-width: 54px;
-  height: 28px;
-  padding: 0 9px;
+  min-width: 48px;
+  height: 24px;
+  padding: 0 8px;
   border: 1px solid rgba(247, 243, 235, 0.08);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.04);
   color: rgba(247, 243, 235, 0.72);
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0;
   cursor: pointer;
@@ -3929,7 +3929,7 @@ canvas {
 }
 
 .workflow-library-api-key-field {
-  max-width: 420px;
+  max-width: 360px;
 }
 
 .workflow-library-secret-input {
@@ -4029,7 +4029,7 @@ canvas {
 }
 
 .workflow-library-runtime-panel {
-  margin-top: 4px;
+  margin-top: 0;
 }
 
 .workflow-library-runtime-grid {
@@ -4038,7 +4038,7 @@ canvas {
 
 .workflow-library-runtime-cell {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -4350,14 +4350,59 @@ canvas {
 }
 
 .workflow-library-main-card-hero {
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 15px;
   background:
-    radial-gradient(circle at top right, rgba(245, 200, 107, 0.12), transparent 30%),
-    linear-gradient(135deg, rgba(92, 225, 194, 0.08), rgba(124, 173, 255, 0.04)),
+    radial-gradient(circle at top right, rgba(245, 200, 107, 0.08), transparent 28%),
+    linear-gradient(135deg, rgba(92, 225, 194, 0.06), rgba(124, 173, 255, 0.03)),
     rgba(255, 255, 255, 0.03);
 }
 
+.workflow-library-main-card-hero .workflow-library-main-card-head {
+  align-items: center;
+  gap: 8px;
+}
+
+.workflow-library-main-card-hero .feature-kicker {
+  margin-bottom: 3px;
+  font-size: 9.5px;
+}
+
+.workflow-library-main-card-hero .model-section-actions {
+  gap: 6px;
+}
+
+.workflow-library-main-card-hero .pill {
+  min-height: 22px;
+  padding: 5px 9px;
+  font-size: 10.5px;
+}
+
+.workflow-library-main-card-hero .workflow-library-runtime-panel .model-action-secondary {
+  min-height: 28px;
+  padding: 6px 9px;
+  font-size: 10.5px;
+}
+
+.workflow-library-main-card-hero .workflow-library-runtime-panel .field-label {
+  font-size: 10px;
+}
+
+.workflow-library-main-card-hero .workflow-library-runtime-panel .field-input {
+  min-height: 30px;
+  padding: 7px 34px 7px 10px;
+  font-size: 11px;
+}
+
+.workflow-library-main-card-hero .workflow-library-secret-toggle {
+  width: 23px;
+  height: 23px;
+}
+
 .workflow-library-record-hero-title {
-  font-size: 22px;
+  font-size: 18px;
+  line-height: 1.2;
 }
 
 .workflow-library-metric-row,
