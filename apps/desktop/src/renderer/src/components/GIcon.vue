@@ -28,6 +28,7 @@ import {
   Plus,
   RefreshCw,
   Settings,
+  Square,
   Trash2,
   X
 } from "lucide-vue-next";
@@ -70,7 +71,8 @@ const ICONS = {
   play: Play,
   refresh: RefreshCw,
   return: ArrowLeft,
-  settings: Settings
+  settings: Settings,
+  stop: Square
 };
 
 const iconComponent = computed(() => ICONS[props.name] ?? MoreHorizontal);

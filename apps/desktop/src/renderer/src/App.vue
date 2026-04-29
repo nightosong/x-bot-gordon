@@ -427,7 +427,7 @@
                   <div class="weekly-hero-main">
                     <div>
                       <p class="feature-kicker">Weekly Progress</p>
-                      <p class="models-title">任务推进</p>
+                      <p class="models-title">任务笔记</p>
                     </div>
                   </div>
 
@@ -548,7 +548,7 @@
 
                           <div class="weekly-panel-center">
                             <div class="weekly-panel-center-row">
-                              <div class="weekly-editor-segmented" role="tablist" aria-label="任务推进编辑视图">
+                              <div class="weekly-editor-segmented" role="tablist" aria-label="任务笔记编辑视图">
                                 <button
                                   type="button"
                                   class="weekly-editor-tab"
@@ -933,7 +933,7 @@
                   <section class="models-hero workflow-library-hero">
                     <div>
                       <p class="feature-kicker">workflow</p>
-                      <p class="models-title">工作流库</p>
+                      <p class="models-title">流程中心</p>
                     </div>
 
                     <div class="workflow-library-hero-side">
@@ -997,7 +997,6 @@
                     </div>
 
                     <div class="workflow-library-detail-head-center">
-                      <p class="feature-kicker">workflow</p>
                       <p class="workflow-library-detail-title">{{ workflowDetailTitle }}</p>
                     </div>
 
@@ -1025,13 +1024,14 @@
                         </button>
                         <button
                           type="button"
-                          class="model-icon-button"
-                          :aria-label="ui.workflow.isRunning ? '执行中' : '执行工作流'"
-                          :title="ui.workflow.isRunning ? '执行中' : '执行工作流'"
-                          :disabled="ui.workflow.isRunning"
-                          @click="runActiveWorkflowRecord"
+                          class="model-icon-button workflow-library-run-control"
+                          :class="{ 'is-interrupting': ui.workflow.isRunning }"
+                          :aria-label="workflowRunControlLabel"
+                          :title="workflowRunControlLabel"
+                          :disabled="ui.workflow.isCancelling"
+                          @click="ui.workflow.isRunning ? cancelActiveWorkflowRun() : runActiveWorkflowRecord()"
                         >
-                          <GIcon :name="ui.workflow.isRunning ? 'loading' : 'play'" :spin="ui.workflow.isRunning" />
+                          <GIcon :name="workflowRunControlIcon" :spin="ui.workflow.isCancelling" />
                         </button>
                       </template>
                     </div>
@@ -1142,7 +1142,7 @@
                           <div class="workflow-library-inline-head">
                             <div>
                               <span class="field-label">环境配置</span>
-                              <p class="workflow-library-inline-copy">请求路径共享，执行时按当前环境替换 BASE_URL。</p>
+                              <p class="workflow-library-inline-copy">请求路径共享，执行时按当前环境替换 BASE_URL 和 API_KEY。</p>
                             </div>
                             <button type="button" class="model-action-secondary" @click="addWorkflowDraftEnvironment">
                               <GIcon name="add" />
@@ -1177,6 +1177,27 @@
                                 <span class="field-label">Base URL</span>
                                 <input v-model="environment.baseUrl" class="field-input" placeholder="https://api.example.com" />
                               </label>
+                              <label class="field workflow-library-env-key-field">
+                                <span class="field-label">APIKEY</span>
+                                <span class="workflow-library-secret-input">
+                                  <input
+                                    v-model="environment.apiKey"
+                                    class="field-input"
+                                    :type="activeWorkflowApiKeyInputType"
+                                    placeholder="sk-..."
+                                    autocomplete="off"
+                                  />
+                                  <button
+                                    type="button"
+                                    class="model-icon-button workflow-library-secret-toggle"
+                                    :aria-label="ui.workflow.apiKeyVisible ? '隐藏 APIKEY' : '显示 APIKEY'"
+                                    :title="ui.workflow.apiKeyVisible ? '隐藏 APIKEY' : '显示 APIKEY'"
+                                    @click="ui.workflow.apiKeyVisible = !ui.workflow.apiKeyVisible"
+                                  >
+                                    <GIcon :name="ui.workflow.apiKeyVisible ? 'eyeOff' : 'eye'" />
+                                  </button>
+                                </span>
+                              </label>
                               <button
                                 type="button"
                                 class="model-icon-button model-action-danger workflow-library-env-remove"
@@ -1188,28 +1209,6 @@
                               </button>
                             </article>
                           </div>
-
-                          <label class="field workflow-library-api-key-field">
-                            <span class="field-label">APIKEY</span>
-                            <span class="workflow-library-secret-input">
-                              <input
-                                v-model="ui.workflow.recordDraft.apiKey"
-                                class="field-input"
-                                :type="activeWorkflowApiKeyInputType"
-                                placeholder="sk-..."
-                                autocomplete="off"
-                              />
-                              <button
-                                type="button"
-                                class="model-icon-button workflow-library-secret-toggle"
-                                :aria-label="ui.workflow.apiKeyVisible ? '隐藏 APIKEY' : '显示 APIKEY'"
-                                :title="ui.workflow.apiKeyVisible ? '隐藏 APIKEY' : '显示 APIKEY'"
-                                @click="ui.workflow.apiKeyVisible = !ui.workflow.apiKeyVisible"
-                              >
-                                <GIcon :name="ui.workflow.apiKeyVisible ? 'eyeOff' : 'eye'" />
-                              </button>
-                            </span>
-                          </label>
                         </section>
 
                         <section class="field field-full workflow-library-step-editor">
@@ -1393,7 +1392,7 @@
                                 <span class="field-label">APIKEY</span>
                                 <span class="workflow-library-secret-input">
                                   <input
-                                    :value="activeWorkflowRecord.apiKey ?? ''"
+                                    :value="activeWorkflowEnvironment?.apiKey ?? activeWorkflowRecord.apiKey ?? ''"
                                     class="field-input"
                                     :type="activeWorkflowApiKeyInputType"
                                     placeholder="sk-..."
@@ -3046,13 +3045,13 @@ const FEATURE_ENTRIES = [
   {
     id: FEATURE_TASKS,
     kicker: "Tasks",
-    title: "任务推进",
+    title: "任务笔记",
     tier: "default"
   },
   {
     id: FEATURE_WORKFLOW_LIBRARY,
     kicker: "workflow",
-    title: "工作流库",
+    title: "流程中心",
     tier: "wide"
   },
   {
@@ -3201,6 +3200,7 @@ function createWorkflowState() {
     searchQuery: "",
     editingRecordId: null,
     isRunning: false,
+    isCancelling: false,
     runResult: null,
     activeProgressEventId: null,
     expandedStepIds: [],
@@ -3209,10 +3209,11 @@ function createWorkflowState() {
   };
 }
 
-function createDefaultWorkflowEnvironments(seedBaseUrl = "") {
+function createDefaultWorkflowEnvironments(seedBaseUrl = "", seedApiKey = "") {
   return WORKFLOW_DEFAULT_ENVIRONMENTS.map((environment) => ({
     ...environment,
-    baseUrl: environment.id === "prod" ? seedBaseUrl : ""
+    baseUrl: environment.id === "prod" ? seedBaseUrl : "",
+    apiKey: environment.id === "prod" ? seedApiKey : ""
   }));
 }
 
@@ -3784,26 +3785,56 @@ const workflowDetailTitle = computed(() => {
     return activeWorkflowRecord.value?.name ?? "执行工作流";
   }
 
-  return activeWorkflowCard.value?.title ?? "工作流库";
+  return activeWorkflowCard.value?.title ?? "流程中心";
+});
+const workflowRunControlLabel = computed(() => {
+  if (ui.workflow.isCancelling) {
+    return "中断中";
+  }
+
+  return ui.workflow.isRunning ? "中断执行" : "执行工作流";
+});
+const workflowRunControlIcon = computed(() => {
+  if (ui.workflow.isCancelling) {
+    return "loading";
+  }
+
+  return ui.workflow.isRunning ? "stop" : "play";
 });
 const workflowRunStatusLabel = computed(() => {
-  if (ui.workflow.isRunning) {
-    return "执行中";
+  if (ui.workflow.isCancelling) {
+    return "中断中";
   }
 
   if (!ui.workflow.runResult) {
     return "待执行";
   }
 
+  if (ui.workflow.runResult.status === "cancelled") {
+    return "已中断";
+  }
+
+  if (ui.workflow.isRunning) {
+    return "执行中";
+  }
+
   return ui.workflow.runResult.status === "success" ? "执行成功" : "执行失败";
 });
 const workflowRunStatusTone = computed(() => {
-  if (ui.workflow.isRunning) {
-    return "is-warning";
+  if (ui.workflow.isCancelling) {
+    return "is-cancelled";
   }
 
   if (!ui.workflow.runResult) {
     return "";
+  }
+
+  if (ui.workflow.runResult.status === "cancelled") {
+    return "is-cancelled";
+  }
+
+  if (ui.workflow.isRunning) {
+    return "is-warning";
   }
 
   return ui.workflow.runResult.status === "success" ? "is-success" : "is-danger";
@@ -4179,6 +4210,10 @@ function getWorkflowStepStatusLabel(status) {
     return "成功";
   }
 
+  if (status === "cancelled") {
+    return "已中断";
+  }
+
   if (status === "failed") {
     return "失败";
   }
@@ -4195,6 +4230,10 @@ function getWorkflowStepStatusTone(status) {
     return "is-success";
   }
 
+  if (status === "cancelled") {
+    return "is-cancelled";
+  }
+
   if (status === "failed") {
     return "is-danger";
   }
@@ -4207,7 +4246,7 @@ function getWorkflowStepStatusTone(status) {
 }
 
 function getWorkflowRunCompletedCount(runResult) {
-  return (runResult?.steps ?? []).filter((step) => step.status === "success" || step.status === "failed").length;
+  return (runResult?.steps ?? []).filter((step) => ["success", "failed", "cancelled"].includes(step.status)).length;
 }
 
 function getWorkflowRunProgressPercent(runResult) {
@@ -4239,6 +4278,12 @@ function getWorkflowRunSummaryText(runResult) {
     return "等待开始执行";
   }
 
+  const cancelledStep = steps.find((step) => step.status === "cancelled");
+
+  if (runResult?.status === "cancelled" || cancelledStep) {
+    return cancelledStep ? `已中断 ${cancelledStep.name || "未命名步骤"}` : "执行已中断";
+  }
+
   const failedStep = steps.find((step) => step.status === "failed");
 
   if (failedStep) {
@@ -4260,7 +4305,7 @@ function getWorkflowRunSummaryText(runResult) {
 }
 
 function getWorkflowStepProgressPercent(stepResult) {
-  if (stepResult?.status === "success" || stepResult?.status === "failed") {
+  if (stepResult?.status === "success" || stepResult?.status === "failed" || stepResult?.status === "cancelled") {
     return 100;
   }
 
@@ -4530,18 +4575,20 @@ function extractFirstWorkflowBaseUrlFromSteps(steps) {
   );
 }
 
-function normalizeWorkflowEnvironments(recordOrEnvironments, seedBaseUrl = "") {
+function normalizeWorkflowEnvironments(recordOrEnvironments, seedBaseUrl = "", seedApiKey = "") {
   const configured = Array.isArray(recordOrEnvironments)
     ? recordOrEnvironments
     : Array.isArray(recordOrEnvironments?.environments)
       ? recordOrEnvironments.environments
       : [];
+  const legacyApiKey = !Array.isArray(recordOrEnvironments) ? String(recordOrEnvironments?.apiKey ?? seedApiKey ?? "").trim() : String(seedApiKey ?? "").trim();
   const configuredById = new Map(
     configured
       .map((environment, index) => ({
         id: String(environment?.id ?? WORKFLOW_DEFAULT_ENVIRONMENTS[index]?.id ?? `env_${index + 1}`).trim(),
         label: String(environment?.label ?? "").trim(),
-        baseUrl: String(environment?.baseUrl ?? "").trim()
+        baseUrl: String(environment?.baseUrl ?? "").trim(),
+        apiKey: String(environment?.apiKey ?? "").trim()
       }))
       .filter((environment) => environment.id)
       .map((environment) => [environment.id, environment])
@@ -4553,14 +4600,16 @@ function normalizeWorkflowEnvironments(recordOrEnvironments, seedBaseUrl = "") {
       ...environment,
       ...configuredEnvironment,
       label: configuredEnvironment?.label || environment.label,
-      baseUrl: configuredEnvironment?.baseUrl || (environment.id === "prod" ? String(seedBaseUrl ?? "").trim() : "")
+      baseUrl: configuredEnvironment?.baseUrl || (environment.id === "prod" ? String(seedBaseUrl ?? "").trim() : ""),
+      apiKey: configuredEnvironment?.apiKey || (environment.id === "prod" ? legacyApiKey : "")
     };
   });
   const custom = configured
     .map((environment, index) => ({
       id: String(environment?.id ?? `env_${index + 1}`).trim(),
       label: String(environment?.label ?? "").trim() || `ENV ${index + 1}`,
-      baseUrl: String(environment?.baseUrl ?? "").trim()
+      baseUrl: String(environment?.baseUrl ?? "").trim(),
+      apiKey: String(environment?.apiKey ?? "").trim()
     }))
     .filter((environment) => environment.id && !WORKFLOW_DEFAULT_ENVIRONMENTS.some((defaultEnvironment) => defaultEnvironment.id === environment.id));
 
@@ -4594,8 +4643,8 @@ function createWorkflowRecordDraftFromRecord(record) {
     pollIntervalMs: String(record?.protocol?.pollIntervalMs ?? 3000),
     maxAttempts: String(record?.protocol?.maxAttempts ?? 20),
     activeEnvironmentId: record?.activeEnvironmentId ?? "prod",
-    apiKey: record?.apiKey ?? "",
-    environments: normalizeWorkflowEnvironments(record, seedBaseUrl),
+    apiKey: "",
+    environments: normalizeWorkflowEnvironments(record, seedBaseUrl, record?.apiKey),
     steps: (record?.steps?.length ? record.steps : [createWorkflowStepDraft()]).map((step) =>
       createWorkflowStepDraft({
         id: step.id,
@@ -4639,12 +4688,13 @@ function buildWorkflowRecordFromDraft(draft, existingRecord = null) {
     .split(/[,，\s]+/)
     .map((tag) => tag.trim())
     .filter(Boolean);
-  const detectedApiKey = String(draft.apiKey ?? "").trim() || draftSteps.map((step) => extractCurlBearerToken(step.curl)).find(Boolean) || "";
+  const fallbackDetectedApiKey = String(draft.apiKey ?? "").trim() || draftSteps.map((step) => extractCurlBearerToken(step.curl)).find(Boolean) || "";
   const detectedBaseUrl = extractFirstWorkflowBaseUrlFromSteps(draftSteps);
-  const environments = normalizeWorkflowEnvironments(draft.environments, detectedBaseUrl);
+  const environments = normalizeWorkflowEnvironments(draft.environments, detectedBaseUrl, fallbackDetectedApiKey);
   const activeEnvironmentId = environments.some((environment) => environment.id === draft.activeEnvironmentId)
     ? draft.activeEnvironmentId
     : environments.find((environment) => environment.id === "prod")?.id ?? environments[0]?.id ?? "prod";
+  const activeEnvironmentApiKey = environments.find((environment) => environment.id === activeEnvironmentId)?.apiKey || fallbackDetectedApiKey;
   const sharedBindingsByKey = new Map();
   const priorProducerByName = new Map();
 
@@ -4661,7 +4711,7 @@ function buildWorkflowRecordFromDraft(draft, existingRecord = null) {
     const completionPath = normalizeWorkflowJsonPathInput(draftStep.completionPath);
     const successValues = parseDelimitedValues(draftStep.successValuesText);
     const failureValues = parseDelimitedValues(draftStep.failureValuesText);
-    const curlWithApiKeyPlaceholder = detectedApiKey ? normalizeCurlApiKeyPlaceholder(draftStep.curl) : draftStep.curl;
+    const curlWithApiKeyPlaceholder = fallbackDetectedApiKey ? normalizeCurlApiKeyPlaceholder(draftStep.curl) : draftStep.curl;
     const curl = detectedBaseUrl ? replaceCurlPrimaryOriginWithBasePlaceholder(curlWithApiKeyPlaceholder, detectedBaseUrl) : curlWithApiKeyPlaceholder;
     const placeholders = extractCurlPlaceholders(curl);
     const consumes = placeholders.map((name) => {
@@ -4733,14 +4783,14 @@ function buildWorkflowRecordFromDraft(draft, existingRecord = null) {
   return {
     id: existingRecord?.id ?? createLocalId("workflow_record"),
     name: String(draft.name ?? "").trim(),
-    summary: String(draft.scenario ?? "").trim() || "curl 接口测试工作流",
+    summary: String(draft.scenario ?? "").trim() || "curl 接口测试流程",
     scenario: String(draft.scenario ?? "").trim() || "curl 接口测试",
     tags,
     updatedAt: now,
     notes: String(draft.notes ?? "").trim(),
     activeEnvironmentId,
     environments,
-    apiKey: detectedApiKey,
+    apiKey: activeEnvironmentApiKey,
     sharedVariables: Array.from(sharedBindingsByKey.values()),
     steps,
     protocol: {
@@ -4783,7 +4833,8 @@ function addWorkflowDraftEnvironment() {
     {
       id: createLocalId("env"),
       label: `ENV ${nextIndex}`,
-      baseUrl: ""
+      baseUrl: "",
+      apiKey: ""
     }
   ];
 }
@@ -4811,8 +4862,11 @@ function getWorkflowRuntimeMissingFields(record) {
     missing.push("当前环境的 Base URL");
   }
 
-  if (/\$API_KEY\b|\$\{API_KEY\}|\{\{\s*API_KEY\s*\}\}/.test(curlText) && !String(record?.apiKey ?? "").trim()) {
-    missing.push("APIKEY");
+  if (
+    /\$API_KEY\b|\$\{API_KEY\}|\{\{\s*API_KEY\s*\}\}/.test(curlText) &&
+    !String(activeEnvironment?.apiKey ?? record?.apiKey ?? "").trim()
+  ) {
+    missing.push("当前环境的 APIKEY");
   }
 
   return missing;
@@ -4851,15 +4905,21 @@ function handleWorkflowRunProgress(payload) {
   }
 
   ui.workflow.runResult = toPlainIpcData(payload);
+
+  if (["success", "failed", "cancelled"].includes(payload.status)) {
+    ui.workflow.isCancelling = false;
+  }
 }
 
 function buildWorkflowRunRecord(record, progressEventId = "") {
+  const activeEnvironmentApiKey = String(activeWorkflowEnvironment.value?.apiKey ?? record?.apiKey ?? "").trim();
+
   return toPlainIpcData({
     ...record,
     progressEventId,
     activeEnvironmentId: activeWorkflowEnvironment.value?.id ?? record?.activeEnvironmentId,
     environments: activeWorkflowEnvironments.value,
-    apiKey: record?.apiKey ?? ""
+    apiKey: activeEnvironmentApiKey
   });
 }
 
@@ -4899,7 +4959,22 @@ function handleWorkflowApiKeyInput(event) {
     return;
   }
 
-  activeWorkflowRecord.value.apiKey = event.target.value;
+  const nextApiKey = event.target.value;
+  const environments = normalizeWorkflowEnvironments(activeWorkflowRecord.value);
+  const activeEnvironmentId =
+    activeWorkflowEnvironment.value?.id ??
+    activeWorkflowRecord.value.activeEnvironmentId ??
+    environments.find((environment) => environment.id === "prod")?.id ??
+    environments[0]?.id;
+
+  activeWorkflowRecord.value.environments = environments.map((environment) =>
+    environment.id === activeEnvironmentId ? { ...environment, apiKey: nextApiKey } : environment
+  );
+
+  if (activeEnvironmentId) {
+    activeWorkflowRecord.value.activeEnvironmentId = activeEnvironmentId;
+    activeWorkflowRecord.value.apiKey = nextApiKey;
+  }
 }
 
 async function selectWorkflowEnvironment(environmentId) {
@@ -4908,6 +4983,10 @@ async function selectWorkflowEnvironment(environmentId) {
   }
 
   activeWorkflowRecord.value.activeEnvironmentId = environmentId;
+  activeWorkflowRecord.value.apiKey =
+    normalizeWorkflowEnvironments(activeWorkflowRecord.value).find((environment) => environment.id === environmentId)?.apiKey ??
+    activeWorkflowRecord.value.apiKey ??
+    "";
   await persistActiveWorkflowRuntimeConfig();
 }
 
@@ -6052,6 +6131,11 @@ async function deleteWorkflowRecord(recordId) {
 }
 
 async function runActiveWorkflowRecord() {
+  if (ui.workflow.isRunning) {
+    await cancelActiveWorkflowRun();
+    return;
+  }
+
   if (!desktopApi?.runWorkflowRecord || !activeWorkflowRecord.value) {
     setStatus("工作流执行桥接未就绪。", "danger");
     return;
@@ -6075,12 +6159,20 @@ async function runActiveWorkflowRecord() {
     const runRecord = buildWorkflowRunRecord(activeWorkflowRecord.value, progressEventId);
 
     ui.workflow.isRunning = true;
+    ui.workflow.isCancelling = false;
     ui.workflow.activeProgressEventId = progressEventId;
     ui.workflow.runResult = buildWorkflowInitialRunResult(runRecord, progressEventId);
     setStatus("工作流正在执行。", "neutral");
 
     const result = await desktopApi.runWorkflowRecord(runRecord);
     ui.workflow.runResult = result;
+    const cancelled = result?.status === "cancelled";
+
+    if (cancelled) {
+      setStatus("工作流已中断。", "warning");
+      return;
+    }
+
     const succeeded = result?.status === "success";
     setStatus(succeeded ? "工作流执行成功。" : "工作流执行失败，请查看输出。", succeeded ? "success" : "danger");
 
@@ -6103,7 +6195,35 @@ async function runActiveWorkflowRecord() {
     });
   } finally {
     ui.workflow.isRunning = false;
+    ui.workflow.isCancelling = false;
     ui.workflow.activeProgressEventId = null;
+  }
+}
+
+async function cancelActiveWorkflowRun() {
+  if (!ui.workflow.isRunning || !ui.workflow.activeProgressEventId) {
+    return;
+  }
+
+  if (!desktopApi?.cancelWorkflowRecordRun) {
+    setStatus("工作流中断桥接未就绪。", "danger");
+    return;
+  }
+
+  try {
+    ui.workflow.isCancelling = true;
+    setStatus("正在中断工作流。", "warning");
+
+    const result = await desktopApi.cancelWorkflowRecordRun(ui.workflow.activeProgressEventId);
+
+    if (!result?.cancelled) {
+      ui.workflow.isCancelling = false;
+      setStatus("当前没有找到可中断的工作流执行。", "warning");
+    }
+  } catch (error) {
+    console.error("Failed to cancel workflow record run", error);
+    ui.workflow.isCancelling = false;
+    setStatus(`中断工作流失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
   }
 }
 
@@ -6659,13 +6779,13 @@ async function handleWeeklySave(options = {}) {
     }
 
     if (!silent) {
-      setStatus("任务推进内容已保存。", "success");
+      setStatus("任务笔记内容已保存。", "success");
     } else {
-      setStatus("任务推进已自动保存。", "success");
+      setStatus("任务笔记已自动保存。", "success");
     }
   } catch (error) {
     console.error("Failed to save weekly progress", error);
-    setStatus(`任务推进保存失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+    setStatus(`任务笔记保存失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
   } finally {
     if (reason === "auto") {
       weeklyAutosaveInFlight = false;
@@ -6805,8 +6925,8 @@ async function handleWeeklyReportGeneration() {
   const sanitizedDraft = sanitizeWeeklyProgressRecord(ui.weekly.draft);
 
   if (!sanitizedDraft?.content.trim()) {
-    setWeeklyReportFeedback("当前还没有项目或任务，先补充任务推进内容再生成周报。", "warning");
-    setStatus("当前还没有项目或任务，先补充任务推进内容再生成周报。", "warning");
+    setWeeklyReportFeedback("当前还没有项目或任务，先补充任务笔记内容再生成周报。", "warning");
+    setStatus("当前还没有项目或任务，先补充任务笔记内容再生成周报。", "warning");
     return;
   }
 

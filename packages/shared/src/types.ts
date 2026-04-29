@@ -226,6 +226,7 @@ export interface WorkflowEnvironmentConfig {
   id: WorkflowEnvironmentId;
   label: string;
   baseUrl: string;
+  apiKey?: string;
 }
 
 export interface WorkflowProtocolDefinition {

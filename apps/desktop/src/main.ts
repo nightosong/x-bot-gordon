@@ -60,6 +60,7 @@ type WorkflowRuntimeEnvironment = {
   id?: string;
   label?: string;
   baseUrl?: string;
+  apiKey?: string;
 };
 
 type WorkflowRuntimeVariableBinding = {
@@ -89,9 +90,12 @@ type WorkflowRuntimeRecord = {
   steps?: WorkflowRuntimeStep[];
 };
 
+type WorkflowRunStatus = "running" | "success" | "failed" | "cancelled";
+type WorkflowStepStatus = "pending" | "running" | "success" | "failed" | "cancelled";
+
 type WorkflowRunStepAttempt = {
   attempt: number;
-  status: "running" | "success" | "failed";
+  status: "running" | "success" | "failed" | "cancelled";
   startedAt: string;
   finishedAt?: string;
   exitCode: number | null;
@@ -104,7 +108,7 @@ type WorkflowRunStepResult = {
   stepId: string;
   name: string;
   mode: "once" | "polling";
-  status: "pending" | "running" | "success" | "failed";
+  status: WorkflowStepStatus;
   startedAt?: string;
   finishedAt?: string;
   exitCode: number | null;
@@ -118,7 +122,7 @@ type WorkflowRunStepResult = {
 
 type WorkflowRunProgressPayload = {
   progressEventId?: string;
-  status: "running" | "success" | "failed";
+  status: WorkflowRunStatus;
   startedAt: string;
   finishedAt?: string;
   variables: Record<string, string>;
@@ -126,6 +130,21 @@ type WorkflowRunProgressPayload = {
 };
 
 type WorkflowRunProgressEmitter = (payload: WorkflowRunProgressPayload) => void;
+
+type WorkflowActiveRunContext = {
+  controller: AbortController;
+  child: ReturnType<typeof spawn> | null;
+};
+
+const WORKFLOW_RUN_CANCELLED_MESSAGE = "执行已中断";
+const activeWorkflowRuns = new Map<string, WorkflowActiveRunContext>();
+
+class WorkflowRunCancelledError extends Error {
+  constructor() {
+    super(WORKFLOW_RUN_CANCELLED_MESSAGE);
+    this.name = "WorkflowRunCancelledError";
+  }
+}
 
 function escapeHtml(value: unknown): string {
   return String(value ?? "")
@@ -530,7 +549,7 @@ function getActiveWorkflowEnvironment(record: WorkflowRuntimeRecord): WorkflowRu
 function replaceCurlPlaceholders(curl: string, record: WorkflowRuntimeRecord, variables: Record<string, string> = {}): string {
   const activeEnvironment = getActiveWorkflowEnvironment(record);
   const baseUrl = normalizeWorkflowBaseUrl(activeEnvironment?.baseUrl);
-  const apiKey = String(record?.apiKey ?? "").trim();
+  const apiKey = String(activeEnvironment?.apiKey ?? record?.apiKey ?? "").trim();
   const replacements: Record<string, string> = {
     BASE_URL: baseUrl,
     API_KEY: apiKey,
@@ -627,6 +646,58 @@ function syncWorkflowStepResultFromAttempt(stepResult: WorkflowRunStepResult, at
   stepResult.completionValue = attempt.completionValue;
 }
 
+function appendWorkflowStderr(current: string, message: string): string {
+  if (!message) {
+    return current;
+  }
+
+  if (current.split(/\r?\n/).includes(message)) {
+    return current;
+  }
+
+  return [current, message].filter(Boolean).join("\n");
+}
+
+function markWorkflowStepCancelled(stepResult: WorkflowRunStepResult, message = WORKFLOW_RUN_CANCELLED_MESSAGE): void {
+  stepResult.status = "cancelled";
+  stepResult.finishedAt = stepResult.finishedAt ?? new Date().toISOString();
+  stepResult.stderr = appendWorkflowStderr(stepResult.stderr, message);
+}
+
+function markActiveWorkflowStepCancelled(results: WorkflowRunStepResult[]): void {
+  const activeStep =
+    results.find((step) => step.status === "running") ??
+    results.find((step) => step.status === "pending");
+
+  if (!activeStep || activeStep.status === "success" || activeStep.status === "failed" || activeStep.status === "cancelled") {
+    return;
+  }
+
+  markWorkflowStepCancelled(activeStep);
+}
+
+function isWorkflowRunCancelledError(error: unknown): boolean {
+  return error instanceof WorkflowRunCancelledError;
+}
+
+function throwIfWorkflowRunCancelled(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new WorkflowRunCancelledError();
+  }
+}
+
+function terminateWorkflowChild(child: ReturnType<typeof spawn> | null): void {
+  if (!child || child.killed) {
+    return;
+  }
+
+  try {
+    child.kill("SIGTERM");
+  } catch {
+    // Process may have already exited between progress updates and the cancel request.
+  }
+}
+
 function normalizeWorkflowCompareValue(value: unknown): string {
   return normalizeWorkflowVariableValue(value).trim().toLowerCase();
 }
@@ -639,8 +710,27 @@ function getWorkflowConfiguredValues(values: unknown, fallback: string[]): strin
   return normalized.length ? normalized : fallback;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new WorkflowRunCancelledError());
+      return;
+    }
+
+    let timer: ReturnType<typeof setTimeout>;
+
+    const handleAbort = () => {
+      clearTimeout(timer);
+      reject(new WorkflowRunCancelledError());
+    };
+
+    timer = setTimeout(() => {
+      signal?.removeEventListener("abort", handleAbort);
+      resolve();
+    }, Math.max(0, ms));
+
+    signal?.addEventListener("abort", handleAbort, { once: true });
+  });
 }
 
 function runCurlAttempt(
@@ -649,36 +739,64 @@ function runCurlAttempt(
   variables: Record<string, string>,
   attempt: WorkflowRunStepAttempt,
   onUpdate: () => void,
-  timeoutMs = 120_000
+  timeoutMs = 120_000,
+  signal?: AbortSignal,
+  activeRun?: WorkflowActiveRunContext
 ): Promise<WorkflowRunStepAttempt> {
   return new Promise((resolve) => {
     const { parts, unresolvedVariables } = buildWorkflowCurlInvocation(step, record, variables);
+    let settled = false;
+    let timedOut = false;
+    let child: ReturnType<typeof spawn> | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let handleAbort: () => void = () => undefined;
 
-    const settle = (status: "success" | "failed", exitCode: number | null, stderrSuffix = "") => {
+    const cleanup = () => {
+      if (timer) {
+        clearTimeout(timer);
+      }
+
+      signal?.removeEventListener("abort", handleAbort);
+
+      if (activeRun?.child === child) {
+        activeRun.child = null;
+      }
+    };
+
+    const settle = (status: "success" | "failed" | "cancelled", exitCode: number | null, stderrSuffix = "") => {
       if (settled) {
         return;
       }
 
       settled = true;
-      clearTimeout(timer);
+      cleanup();
       attempt.status = status;
       attempt.finishedAt = new Date().toISOString();
       attempt.exitCode = exitCode;
 
       if (stderrSuffix) {
-        attempt.stderr = [attempt.stderr, stderrSuffix].filter(Boolean).join("\n");
+        attempt.stderr = appendWorkflowStderr(attempt.stderr, stderrSuffix);
       }
 
       onUpdate();
       resolve(attempt);
     };
 
-    let settled = false;
-    let timedOut = false;
-    let child: ReturnType<typeof spawn> | null = null;
-    const timer = setTimeout(() => {
+    handleAbort = () => {
+      terminateWorkflowChild(child);
+      settle("cancelled", null, WORKFLOW_RUN_CANCELLED_MESSAGE);
+    };
+
+    if (signal?.aborted) {
+      settle("cancelled", null, WORKFLOW_RUN_CANCELLED_MESSAGE);
+      return;
+    }
+
+    signal?.addEventListener("abort", handleAbort, { once: true });
+
+    timer = setTimeout(() => {
       timedOut = true;
-      child?.kill("SIGTERM");
+      terminateWorkflowChild(child);
       settle("failed", null, `curl 执行超时（${timeoutMs}ms）`);
     }, timeoutMs);
 
@@ -692,7 +810,15 @@ function runCurlAttempt(
       return;
     }
 
-    child = spawn("curl", parts.slice(1), { shell: false });
+    try {
+      child = spawn("curl", parts.slice(1), { shell: false });
+      if (activeRun) {
+        activeRun.child = child;
+      }
+    } catch (error) {
+      settle("failed", null, error instanceof Error ? error.message : String(error));
+      return;
+    }
 
     child.stdout?.on("data", (chunk) => {
       attempt.stdout += chunk.toString();
@@ -721,8 +847,10 @@ async function runWorkflowStep(
   record: WorkflowRuntimeRecord,
   variables: Record<string, string>,
   stepResult: WorkflowRunStepResult,
-  emitProgress: () => void
-): Promise<boolean> {
+  emitProgress: () => void,
+  signal?: AbortSignal,
+  activeRun?: WorkflowActiveRunContext
+): Promise<"success" | "failed" | "cancelled"> {
   const mode = step?.executionMode === "polling" ? "polling" : "once";
   const maxAttempts = mode === "polling" ? Math.max(1, Number(step?.maxAttempts ?? 1)) : 1;
   const pollIntervalMs = Math.max(0, Number(step?.pollIntervalMs ?? 0));
@@ -730,6 +858,7 @@ async function runWorkflowStep(
   const failureValues = getWorkflowConfiguredValues(step?.failureValues, ["failed", "error", "canceled", "cancelled", "fail"]);
   const completionPath = normalizeWorkflowJsonPath(step?.completionPath);
 
+  throwIfWorkflowRunCancelled(signal);
   stepResult.mode = mode;
   stepResult.status = "running";
   stepResult.startedAt = stepResult.startedAt ?? new Date().toISOString();
@@ -741,34 +870,50 @@ async function runWorkflowStep(
     stepResult.finishedAt = new Date().toISOString();
     stepResult.stderr = "轮询步骤缺少状态 JSONPath";
     emitProgress();
-    return false;
+    return "failed";
   }
 
   for (let attemptIndex = 1; attemptIndex <= maxAttempts; attemptIndex += 1) {
+    throwIfWorkflowRunCancelled(signal);
     const attempt = createWorkflowStepAttempt(attemptIndex);
     stepResult.attempts.push(attempt);
     syncWorkflowStepResultFromAttempt(stepResult, attempt);
     emitProgress();
 
-    await runCurlAttempt(step, record, variables, attempt, () => {
-      syncWorkflowStepResultFromAttempt(stepResult, attempt);
-      emitProgress();
-    });
+    await runCurlAttempt(
+      step,
+      record,
+      variables,
+      attempt,
+      () => {
+        syncWorkflowStepResultFromAttempt(stepResult, attempt);
+        emitProgress();
+      },
+      120_000,
+      signal,
+      activeRun
+    );
 
     syncWorkflowStepResultFromAttempt(stepResult, attempt);
+
+    if (attempt.status === "cancelled") {
+      markWorkflowStepCancelled(stepResult);
+      emitProgress();
+      return "cancelled";
+    }
 
     if (attempt.status !== "success") {
       stepResult.status = "failed";
       stepResult.finishedAt = attempt.finishedAt ?? new Date().toISOString();
       emitProgress();
-      return false;
+      return "failed";
     }
 
     if (mode === "once") {
       stepResult.status = "success";
       stepResult.finishedAt = attempt.finishedAt ?? new Date().toISOString();
       emitProgress();
-      return true;
+      return "success";
     }
 
     const responseJson = parseWorkflowResponseJson(attempt.stdout);
@@ -780,33 +925,33 @@ async function runWorkflowStep(
     if (failureValues.includes(comparableCompletionValue)) {
       stepResult.status = "failed";
       stepResult.finishedAt = attempt.finishedAt ?? new Date().toISOString();
-      stepResult.stderr = [stepResult.stderr, `轮询命中失败状态：${completionValue || "空值"}`].filter(Boolean).join("\n");
+      stepResult.stderr = appendWorkflowStderr(stepResult.stderr, `轮询命中失败状态：${completionValue || "空值"}`);
       emitProgress();
-      return false;
+      return "failed";
     }
 
     if (successValues.includes(comparableCompletionValue)) {
       stepResult.status = "success";
       stepResult.finishedAt = attempt.finishedAt ?? new Date().toISOString();
       emitProgress();
-      return true;
+      return "success";
     }
 
     emitProgress();
 
     if (attemptIndex < maxAttempts && pollIntervalMs > 0) {
-      await sleep(pollIntervalMs);
+      await sleep(pollIntervalMs, signal);
     }
   }
 
   stepResult.status = "failed";
   stepResult.finishedAt = new Date().toISOString();
-  stepResult.stderr = [
+  stepResult.stderr = appendWorkflowStderr(
     stepResult.stderr,
     `轮询超过最大轮次，最后状态：${stepResult.completionValue || "未读取到状态"}`
-  ].filter(Boolean).join("\n");
+  );
   emitProgress();
-  return false;
+  return "failed";
 }
 
 function getWorkflowResponseBody(stdout: string): string {
@@ -945,8 +1090,17 @@ async function runWorkflowRecord(record: WorkflowRuntimeRecord, emitProgress?: W
   const steps = Array.isArray(record?.steps) ? record.steps : [];
   const results = steps.map((step) => createWorkflowStepResult(step));
   const variables: Record<string, string> = {};
-  let status: "running" | "success" | "failed" = "running";
+  const progressEventId = String(record?.progressEventId ?? "").trim();
+  const activeRun: WorkflowActiveRunContext | null = progressEventId
+    ? { controller: new AbortController(), child: null }
+    : null;
+  const signal = activeRun?.controller.signal;
+  let status: WorkflowRunStatus = "running";
   let finishedAt: string | undefined;
+
+  if (progressEventId && activeRun) {
+    activeWorkflowRuns.set(progressEventId, activeRun);
+  }
 
   const buildPayload = (): WorkflowRunProgressPayload => ({
     progressEventId: record?.progressEventId,
@@ -968,33 +1122,85 @@ async function runWorkflowRecord(record: WorkflowRuntimeRecord, emitProgress?: W
 
   emitSnapshot();
 
-  for (const [index, step] of steps.entries()) {
-    const stepResult = results[index];
-    const waitBeforeMs = Number(step?.waitBeforeMs ?? 0);
+  try {
+    for (const [index, step] of steps.entries()) {
+      throwIfWorkflowRunCancelled(signal);
 
-    if (waitBeforeMs > 0) {
-      stepResult.status = "running";
-      stepResult.startedAt = stepResult.startedAt ?? new Date().toISOString();
-      stepResult.stderr = `等待 ${waitBeforeMs}ms 后执行`;
+      const stepResult = results[index];
+      const waitBeforeMs = Number(step?.waitBeforeMs ?? 0);
+
+      if (waitBeforeMs > 0) {
+        stepResult.status = "running";
+        stepResult.startedAt = stepResult.startedAt ?? new Date().toISOString();
+        stepResult.stderr = `等待 ${waitBeforeMs}ms 后执行`;
+        emitSnapshot();
+        await sleep(waitBeforeMs, signal);
+        stepResult.stderr = "";
+      }
+
+      const outcome = await runWorkflowStep(step, record, variables, stepResult, emitSnapshot, signal, activeRun ?? undefined);
+
+      if (outcome === "cancelled") {
+        status = "cancelled";
+        break;
+      }
+
+      if (outcome !== "success") {
+        break;
+      }
+
+      throwIfWorkflowRunCancelled(signal);
+      Object.assign(variables, collectWorkflowStepVariables(step, stepResult.stdout ?? ""));
       emitSnapshot();
-      await sleep(waitBeforeMs);
-      stepResult.stderr = "";
     }
 
-    const succeeded = await runWorkflowStep(step, record, variables, stepResult, emitSnapshot);
-
-    if (!succeeded) {
-      break;
+    if (status === "running") {
+      status = signal?.aborted
+        ? "cancelled"
+        : results.length > 0 && results.every((result) => result.status === "success")
+          ? "success"
+          : "failed";
+    }
+  } catch (error) {
+    if (!isWorkflowRunCancelledError(error)) {
+      throw error;
     }
 
-    Object.assign(variables, collectWorkflowStepVariables(step, stepResult.stdout ?? ""));
+    status = "cancelled";
+  } finally {
+    if (status === "cancelled") {
+      markActiveWorkflowStepCancelled(results);
+    }
+
+    finishedAt = new Date().toISOString();
     emitSnapshot();
+
+    if (progressEventId) {
+      activeWorkflowRuns.delete(progressEventId);
+    }
   }
 
-  status = results.length > 0 && results.every((result) => result.status === "success") ? "success" : "failed";
-  finishedAt = new Date().toISOString();
-  emitSnapshot();
   return buildPayload();
+}
+
+function cancelWorkflowRecordRun(progressEventId: unknown): { cancelled: boolean; progressEventId: string } {
+  const runId = String(progressEventId ?? "").trim();
+
+  if (!runId) {
+    return { cancelled: false, progressEventId: "" };
+  }
+
+  const activeRun = activeWorkflowRuns.get(runId);
+
+  if (!activeRun) {
+    return { cancelled: false, progressEventId: runId };
+  }
+
+  activeRun.controller.abort();
+
+  terminateWorkflowChild(activeRun.child);
+
+  return { cancelled: true, progressEventId: runId };
 }
 
 async function createMainWindow(): Promise<void> {
@@ -1183,6 +1389,9 @@ app.whenReady().then(async () => {
     runWorkflowRecord(record, (payload) =>
       event.sender.send("gordon:workflow-library:progress", toCloneableIpcValue(payload))
     )
+  );
+  ipcMain.handle("gordon:workflow-library:cancel-run", async (_event, progressEventId) =>
+    cancelWorkflowRecordRun(progressEventId)
   );
   ipcMain.handle("gordon:weekly-progress:list", async () => listWeeklyProgress());
   ipcMain.handle("gordon:weekly-progress:save", async (_event, record) => saveWeeklyProgress(record));

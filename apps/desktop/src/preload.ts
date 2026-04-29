@@ -142,6 +142,8 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
     ipcRenderer.invoke("gordon:workflow-library:upsert", toPlainIpcData(item)),
   runWorkflowRecord: (record: WorkflowLibraryItem["records"][number]) =>
     ipcRenderer.invoke("gordon:workflow-library:run-record", toPlainIpcData(record)),
+  cancelWorkflowRecordRun: (progressEventId: string) =>
+    ipcRenderer.invoke("gordon:workflow-library:cancel-run", progressEventId),
   onWorkflowRunProgress: (listener: (payload: unknown) => void): string => {
     const listenerId = `workflow_progress_listener_${Date.now()}_${progressListenerIdSeed++}`;
     const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload);

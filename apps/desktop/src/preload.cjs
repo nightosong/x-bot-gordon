@@ -114,6 +114,7 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
   deleteCommandWorkshopSession: (sessionId) => ipcRenderer.invoke("gordon:command-workshop:delete", sessionId),
   upsertWorkflowLibraryItem: (item) => ipcRenderer.invoke("gordon:workflow-library:upsert", toPlainIpcData(item)),
   runWorkflowRecord: (record) => ipcRenderer.invoke("gordon:workflow-library:run-record", toPlainIpcData(record)),
+  cancelWorkflowRecordRun: (progressEventId) => ipcRenderer.invoke("gordon:workflow-library:cancel-run", progressEventId),
   onWorkflowRunProgress: (listener) => {
     const listenerId = `workflow_progress_listener_${Date.now()}_${progressListenerIdSeed++}`;
     const wrapped = (_event, payload) => listener(payload);

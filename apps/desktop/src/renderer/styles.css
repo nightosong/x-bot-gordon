@@ -3562,7 +3562,8 @@ canvas {
 }
 
 .workflow-library-detail-head {
-  padding: 14px 18px;
+  align-items: center;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--line);
   background:
     linear-gradient(135deg, rgba(92, 225, 194, 0.08), rgba(245, 200, 107, 0.05)),
@@ -3588,8 +3589,10 @@ canvas {
 }
 
 .workflow-library-detail-title {
-  font-size: clamp(22px, 1.9vw, 28px);
+  font-size: clamp(16px, 1.25vw, 19px);
   font-family: "Iowan Old Style", "Baskerville", "Times New Roman", serif;
+  font-weight: 700;
+  line-height: 1.2;
 }
 
 .workflow-library-detail-layout {
@@ -3724,6 +3727,18 @@ canvas {
 .workflow-library-detail-shell .model-icon-button .action-icon {
   width: 13px;
   height: 13px;
+}
+
+.workflow-library-detail-shell .workflow-library-run-control.is-interrupting {
+  border-color: rgba(255, 126, 107, 0.26);
+  background: rgba(255, 126, 107, 0.1);
+  color: #ffc8bd;
+}
+
+.workflow-library-detail-shell .workflow-library-run-control.is-interrupting:hover:not(:disabled) {
+  border-color: rgba(255, 126, 107, 0.38);
+  background: rgba(255, 126, 107, 0.16);
+  color: #ffe1da;
 }
 
 .workflow-library-compose-card .model-action,
@@ -3896,12 +3911,13 @@ canvas {
 
 .workflow-library-env-editor-row {
   display: grid;
-  grid-template-columns: minmax(96px, 132px) minmax(240px, 520px) 30px;
+  grid-template-columns: minmax(88px, 120px) minmax(200px, 430px) minmax(180px, 360px) 30px;
   align-items: flex-end;
   justify-content: start;
 }
 
 .workflow-library-env-url-field,
+.workflow-library-env-key-field,
 .workflow-library-step-name-field {
   flex: 1 1 auto;
   min-width: 0;
@@ -4075,6 +4091,14 @@ canvas {
   color: #ffe6b0;
 }
 
+.workflow-library-run-overview.is-cancelled .workflow-library-run-orb {
+  border-color: rgba(255, 178, 117, 0.32);
+  background:
+    radial-gradient(circle, rgba(255, 178, 117, 0.2), rgba(255, 178, 117, 0.04) 62%),
+    rgba(255, 255, 255, 0.04);
+  color: #ffd9b8;
+}
+
 .workflow-library-run-overview.is-danger .workflow-library-run-orb {
   border-color: rgba(255, 126, 107, 0.3);
   background:
@@ -4146,6 +4170,11 @@ canvas {
   background: rgba(245, 200, 107, 0.2);
 }
 
+.workflow-library-run-flow-step.is-cancelled .workflow-library-run-flow-marker {
+  border-color: rgba(255, 178, 117, 0.36);
+  background: rgba(255, 178, 117, 0.2);
+}
+
 .workflow-library-run-flow-step.is-danger .workflow-library-run-flow-marker {
   border-color: rgba(255, 126, 107, 0.36);
   background: rgba(255, 126, 107, 0.22);
@@ -4167,6 +4196,10 @@ canvas {
 
 .workflow-library-run-flow-step.is-warning .workflow-library-run-flow-body {
   border-color: rgba(245, 200, 107, 0.16);
+}
+
+.workflow-library-run-flow-step.is-cancelled .workflow-library-run-flow-body {
+  border-color: rgba(255, 178, 117, 0.18);
 }
 
 .workflow-library-run-flow-step.is-danger .workflow-library-run-flow-body {
@@ -4302,6 +4335,12 @@ canvas {
   border-color: rgba(245, 200, 107, 0.24);
   background: rgba(245, 200, 107, 0.12);
   color: #ffe6b0;
+}
+
+.status-pill.is-cancelled {
+  border-color: rgba(255, 178, 117, 0.26);
+  background: rgba(255, 178, 117, 0.12);
+  color: #ffd9b8;
 }
 
 .status-pill.is-danger {

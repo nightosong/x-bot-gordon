@@ -1524,7 +1524,7 @@ function normalizeLegacyWorkflowLibrary(legacyEntries: unknown[]): WorkflowLibra
     .map((entry) => ({
       id: `workflow_${String(entry.id ?? randomUUID())}`,
       kind: "api-test" as const,
-      title: "接口测试工作流",
+      title: "模型接口测试",
       summary: String(entry.summary ?? ""),
       description: String(entry.description ?? ""),
       tags: Array.isArray(entry.tags) ? entry.tags.map((tag) => String(tag)) : [],
