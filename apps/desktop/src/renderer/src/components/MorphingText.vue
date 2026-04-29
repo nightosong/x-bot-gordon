@@ -20,7 +20,7 @@ const props = defineProps({
   },
   coolDownTime: {
     type: Number,
-    default: 0.55
+    default: 0
   },
   ariaLabel: {
     type: String,
@@ -152,7 +152,7 @@ function doCoolDown() {
 }
 
 function doMorph() {
-  morph -= coolDown;
+  morph += Math.abs(coolDown);
   coolDown = 0;
 
   let fraction = morph / props.morphTime;
@@ -166,6 +166,7 @@ function doMorph() {
 
   if (fraction === 1) {
     advanceText();
+    morph = 0;
   }
 }
 
@@ -179,7 +180,7 @@ function animate(timestamp) {
   const rawDelta = (timestamp - lastTime) / 1000;
   const delta = Math.min(Math.max(rawDelta, 0), MAX_FRAME_DELTA_SECONDS);
   lastTime = timestamp;
-  coolDown -= delta;
+  coolDown = Math.max(props.coolDownTime, 0) > 0 ? coolDown - delta : -delta;
 
   if (coolDown <= 0) {
     doMorph();
@@ -207,7 +208,7 @@ function startAnimation() {
   stopAnimation();
   lastTime = 0;
   morph = 0;
-  coolDown = props.coolDownTime;
+  coolDown = Math.max(props.coolDownTime, 0);
 
   if (reducedMotionQuery?.matches) {
     startReducedMotionCycle();

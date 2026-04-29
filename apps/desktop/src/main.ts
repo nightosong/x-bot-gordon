@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeImage, screen } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, screen } from "electron";
 import type { IpcMainEvent } from "electron";
 import { spawn } from "node:child_process";
 import path from "node:path";
@@ -34,6 +34,7 @@ import {
   upsertSkillDefinition
 } from "../../../packages/workbench/src/index.js";
 import type { AgentRunProgressEvent } from "../../../packages/shared/src/index.js";
+import { readCommandWorkshopAttachment } from "./attachment-reader.js";
 import { generateDailyProgressReport, generateWeeklyProgressReport, invokeActiveModel, rewriteWeeklyProgressItem } from "./ai.js";
 import { queryModelBalance } from "./model-balance.js";
 
@@ -54,6 +55,77 @@ type GordonConfirmWindowOptions = {
   cancelText?: string;
   tone?: GordonConfirmWindowTone;
 };
+
+type WorkflowRuntimeEnvironment = {
+  id?: string;
+  label?: string;
+  baseUrl?: string;
+};
+
+type WorkflowRuntimeVariableBinding = {
+  name?: string;
+  path?: string;
+};
+
+type WorkflowRuntimeStep = {
+  id?: string;
+  name?: string;
+  curl?: string;
+  waitBeforeMs?: number;
+  executionMode?: "once" | "polling";
+  pollIntervalMs?: number;
+  maxAttempts?: number;
+  completionPath?: string;
+  successValues?: string[];
+  failureValues?: string[];
+  produces?: WorkflowRuntimeVariableBinding[];
+};
+
+type WorkflowRuntimeRecord = {
+  progressEventId?: string;
+  activeEnvironmentId?: string;
+  environments?: WorkflowRuntimeEnvironment[];
+  apiKey?: string;
+  steps?: WorkflowRuntimeStep[];
+};
+
+type WorkflowRunStepAttempt = {
+  attempt: number;
+  status: "running" | "success" | "failed";
+  startedAt: string;
+  finishedAt?: string;
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  completionValue?: string;
+};
+
+type WorkflowRunStepResult = {
+  stepId: string;
+  name: string;
+  mode: "once" | "polling";
+  status: "pending" | "running" | "success" | "failed";
+  startedAt?: string;
+  finishedAt?: string;
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  attempt: number;
+  maxAttempts: number;
+  completionValue?: string;
+  attempts: WorkflowRunStepAttempt[];
+};
+
+type WorkflowRunProgressPayload = {
+  progressEventId?: string;
+  status: "running" | "success" | "failed";
+  startedAt: string;
+  finishedAt?: string;
+  variables: Record<string, string>;
+  steps: WorkflowRunStepResult[];
+};
+
+type WorkflowRunProgressEmitter = (payload: WorkflowRunProgressPayload) => void;
 
 function escapeHtml(value: unknown): string {
   return String(value ?? "")
@@ -440,101 +512,489 @@ function splitCurlCommand(command: string): string[] {
   return args;
 }
 
-function runCurlStep(step: { id?: string; name?: string; curl?: string }, timeoutMs = 120_000) {
+function normalizeWorkflowBaseUrl(baseUrl: unknown): string {
+  return String(baseUrl ?? "").trim().replace(/\/+$/, "");
+}
+
+function getActiveWorkflowEnvironment(record: WorkflowRuntimeRecord): WorkflowRuntimeEnvironment | null {
+  const environments = Array.isArray(record?.environments) ? record.environments : [];
+  const activeEnvironment =
+    environments.find((environment) => String(environment?.id ?? "") === String(record?.activeEnvironmentId ?? "")) ??
+    environments.find((environment) => String(environment?.id ?? "") === "prod") ??
+    environments[0] ??
+    null;
+
+  return activeEnvironment ?? null;
+}
+
+function replaceCurlPlaceholders(curl: string, record: WorkflowRuntimeRecord, variables: Record<string, string> = {}): string {
+  const activeEnvironment = getActiveWorkflowEnvironment(record);
+  const baseUrl = normalizeWorkflowBaseUrl(activeEnvironment?.baseUrl);
+  const apiKey = String(record?.apiKey ?? "").trim();
+  const replacements: Record<string, string> = {
+    BASE_URL: baseUrl,
+    API_KEY: apiKey,
+    ...variables
+  };
+  const resolveReplacement = (placeholder: string, name: string) =>
+    Object.prototype.hasOwnProperty.call(replacements, name) ? replacements[name] : placeholder;
+
+  return String(curl ?? "")
+    .replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, resolveReplacement)
+    .replace(/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g, resolveReplacement)
+    .replace(/\$(?!\{)([A-Za-z_][A-Za-z0-9_]*)/g, resolveReplacement);
+}
+
+function mergeWorkflowBaseUrlWithRequestUrl(baseUrl: string, requestUrl: string): string {
+  try {
+    const base = new URL(baseUrl);
+    const request = new URL(requestUrl);
+    const basePath = base.pathname.replace(/\/+$/, "");
+    const requestPath = request.pathname.startsWith("/") ? request.pathname : `/${request.pathname}`;
+
+    return `${base.origin}${basePath}${requestPath}${request.search}${request.hash}`;
+  } catch {
+    return requestUrl;
+  }
+}
+
+function findWorkflowUnresolvedVariables(command: string): string[] {
+  const normalized = String(command ?? "");
+  const dollarPlaceholders = Array.from(normalized.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g)).map((match) => match[1]);
+  const bareDollarPlaceholders = Array.from(normalized.matchAll(/\$(?!\{)([A-Za-z_][A-Za-z0-9_]*)/g)).map((match) => match[1]);
+  const doubleBracePlaceholders = Array.from(normalized.matchAll(/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g)).map(
+    (match) => match[1]
+  );
+
+  return Array.from(new Set([...dollarPlaceholders, ...bareDollarPlaceholders, ...doubleBracePlaceholders]));
+}
+
+function buildWorkflowCurlInvocation(
+  step: { curl?: string },
+  record: WorkflowRuntimeRecord,
+  variables: Record<string, string> = {}
+): { parts: string[]; unresolvedVariables: string[] } {
+  const activeEnvironment = getActiveWorkflowEnvironment(record);
+  const baseUrl = normalizeWorkflowBaseUrl(activeEnvironment?.baseUrl);
+  const originalCommand = String(step?.curl ?? "");
+  const usesBaseUrlPlaceholder = /\$BASE_URL\b|\$\{BASE_URL\}|\{\{\s*BASE_URL\s*\}\}/.test(originalCommand);
+  const command = replaceCurlPlaceholders(originalCommand, record, variables);
+  const unresolvedVariables = findWorkflowUnresolvedVariables(command);
+  const parts = splitCurlCommand(command);
+  const requestUrlIndex = parts.findIndex((part, index) => index > 0 && /^https?:\/\//i.test(part));
+
+  if (baseUrl && !usesBaseUrlPlaceholder && requestUrlIndex >= 0) {
+    parts[requestUrlIndex] = mergeWorkflowBaseUrlWithRequestUrl(baseUrl, parts[requestUrlIndex]);
+  }
+
+  return { parts, unresolvedVariables };
+}
+
+function createWorkflowStepResult(step: WorkflowRuntimeStep): WorkflowRunStepResult {
+  const mode = step?.executionMode === "polling" ? "polling" : "once";
+
+  return {
+    stepId: step?.id ?? "",
+    name: step?.name ?? "",
+    mode,
+    status: "pending",
+    exitCode: null,
+    stdout: "",
+    stderr: "",
+    attempt: 0,
+    maxAttempts: mode === "polling" ? Math.max(1, Number(step?.maxAttempts ?? 1)) : 1,
+    attempts: []
+  };
+}
+
+function createWorkflowStepAttempt(attempt: number): WorkflowRunStepAttempt {
+  return {
+    attempt,
+    status: "running",
+    startedAt: new Date().toISOString(),
+    exitCode: null,
+    stdout: "",
+    stderr: ""
+  };
+}
+
+function syncWorkflowStepResultFromAttempt(stepResult: WorkflowRunStepResult, attempt: WorkflowRunStepAttempt): void {
+  stepResult.startedAt = stepResult.startedAt ?? attempt.startedAt;
+  stepResult.exitCode = attempt.exitCode;
+  stepResult.stdout = attempt.stdout;
+  stepResult.stderr = attempt.stderr;
+  stepResult.attempt = attempt.attempt;
+  stepResult.completionValue = attempt.completionValue;
+}
+
+function normalizeWorkflowCompareValue(value: unknown): string {
+  return normalizeWorkflowVariableValue(value).trim().toLowerCase();
+}
+
+function getWorkflowConfiguredValues(values: unknown, fallback: string[]): string[] {
+  const normalized = Array.isArray(values)
+    ? values.map((value) => normalizeWorkflowCompareValue(value)).filter(Boolean)
+    : [];
+
+  return normalized.length ? normalized : fallback;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+}
+
+function runCurlAttempt(
+  step: WorkflowRuntimeStep,
+  record: WorkflowRuntimeRecord,
+  variables: Record<string, string>,
+  attempt: WorkflowRunStepAttempt,
+  onUpdate: () => void,
+  timeoutMs = 120_000
+): Promise<WorkflowRunStepAttempt> {
   return new Promise((resolve) => {
-    const startedAt = new Date().toISOString();
-    const parts = splitCurlCommand(String(step?.curl ?? ""));
+    const { parts, unresolvedVariables } = buildWorkflowCurlInvocation(step, record, variables);
+
+    const settle = (status: "success" | "failed", exitCode: number | null, stderrSuffix = "") => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimeout(timer);
+      attempt.status = status;
+      attempt.finishedAt = new Date().toISOString();
+      attempt.exitCode = exitCode;
+
+      if (stderrSuffix) {
+        attempt.stderr = [attempt.stderr, stderrSuffix].filter(Boolean).join("\n");
+      }
+
+      onUpdate();
+      resolve(attempt);
+    };
+
+    let settled = false;
+    let timedOut = false;
+    let child: ReturnType<typeof spawn> | null = null;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child?.kill("SIGTERM");
+      settle("failed", null, `curl 执行超时（${timeoutMs}ms）`);
+    }, timeoutMs);
 
     if (parts[0] !== "curl") {
-      resolve({
-        stepId: step?.id ?? "",
-        name: step?.name ?? "",
-        status: "failed",
-        startedAt,
-        finishedAt: new Date().toISOString(),
-        exitCode: null,
-        stdout: "",
-        stderr: "仅支持以 curl 开头的命令"
-      });
+      settle("failed", null, "仅支持以 curl 开头的命令");
       return;
     }
 
-    const child = spawn("curl", parts.slice(1), { shell: false });
-    let stdout = "";
-    let stderr = "";
-    let settled = false;
-    const timer = setTimeout(() => {
-      if (!settled) {
-        child.kill("SIGTERM");
-      }
-    }, timeoutMs);
+    if (unresolvedVariables.length) {
+      settle("failed", null, `变量未解析：${unresolvedVariables.join("、")}`);
+      return;
+    }
 
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
+    child = spawn("curl", parts.slice(1), { shell: false });
+
+    child.stdout?.on("data", (chunk) => {
+      attempt.stdout += chunk.toString();
+      onUpdate();
     });
 
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
+    child.stderr?.on("data", (chunk) => {
+      attempt.stderr += chunk.toString();
+      onUpdate();
     });
 
     child.on("error", (error) => {
-      settled = true;
-      clearTimeout(timer);
-      resolve({
-        stepId: step?.id ?? "",
-        name: step?.name ?? "",
-        status: "failed",
-        startedAt,
-        finishedAt: new Date().toISOString(),
-        exitCode: null,
-        stdout,
-        stderr: error.message
-      });
+      settle("failed", null, error.message);
     });
 
     child.on("close", (exitCode) => {
-      settled = true;
-      clearTimeout(timer);
-      resolve({
-        stepId: step?.id ?? "",
-        name: step?.name ?? "",
-        status: exitCode === 0 ? "success" : "failed",
-        startedAt,
-        finishedAt: new Date().toISOString(),
-        exitCode,
-        stdout,
-        stderr
-      });
+      settle(!timedOut && exitCode === 0 ? "success" : "failed", exitCode);
     });
+
+    onUpdate();
   });
 }
 
-async function runWorkflowRecord(record: { steps?: Array<{ id?: string; name?: string; curl?: string; waitBeforeMs?: number }> }) {
-  const startedAt = new Date().toISOString();
-  const steps = Array.isArray(record?.steps) ? record.steps : [];
-  const results = [];
+async function runWorkflowStep(
+  step: WorkflowRuntimeStep,
+  record: WorkflowRuntimeRecord,
+  variables: Record<string, string>,
+  stepResult: WorkflowRunStepResult,
+  emitProgress: () => void
+): Promise<boolean> {
+  const mode = step?.executionMode === "polling" ? "polling" : "once";
+  const maxAttempts = mode === "polling" ? Math.max(1, Number(step?.maxAttempts ?? 1)) : 1;
+  const pollIntervalMs = Math.max(0, Number(step?.pollIntervalMs ?? 0));
+  const successValues = getWorkflowConfiguredValues(step?.successValues, ["succeeded", "completed", "success", "done", "finished"]);
+  const failureValues = getWorkflowConfiguredValues(step?.failureValues, ["failed", "error", "canceled", "cancelled", "fail"]);
+  const completionPath = normalizeWorkflowJsonPath(step?.completionPath);
 
-  for (const step of steps) {
-    const waitBeforeMs = Number(step?.waitBeforeMs ?? 0);
+  stepResult.mode = mode;
+  stepResult.status = "running";
+  stepResult.startedAt = stepResult.startedAt ?? new Date().toISOString();
+  stepResult.maxAttempts = maxAttempts;
+  emitProgress();
 
-    if (waitBeforeMs > 0) {
-      await new Promise((resolve) => setTimeout(resolve, waitBeforeMs));
+  if (mode === "polling" && !completionPath) {
+    stepResult.status = "failed";
+    stepResult.finishedAt = new Date().toISOString();
+    stepResult.stderr = "轮询步骤缺少状态 JSONPath";
+    emitProgress();
+    return false;
+  }
+
+  for (let attemptIndex = 1; attemptIndex <= maxAttempts; attemptIndex += 1) {
+    const attempt = createWorkflowStepAttempt(attemptIndex);
+    stepResult.attempts.push(attempt);
+    syncWorkflowStepResultFromAttempt(stepResult, attempt);
+    emitProgress();
+
+    await runCurlAttempt(step, record, variables, attempt, () => {
+      syncWorkflowStepResultFromAttempt(stepResult, attempt);
+      emitProgress();
+    });
+
+    syncWorkflowStepResultFromAttempt(stepResult, attempt);
+
+    if (attempt.status !== "success") {
+      stepResult.status = "failed";
+      stepResult.finishedAt = attempt.finishedAt ?? new Date().toISOString();
+      emitProgress();
+      return false;
     }
 
-    const result = await runCurlStep(step);
-    results.push(result);
+    if (mode === "once") {
+      stepResult.status = "success";
+      stepResult.finishedAt = attempt.finishedAt ?? new Date().toISOString();
+      emitProgress();
+      return true;
+    }
 
-    if ((result as { status?: string }).status !== "success") {
-      break;
+    const responseJson = parseWorkflowResponseJson(attempt.stdout);
+    const completionValue = normalizeWorkflowVariableValue(readWorkflowJsonPath(responseJson, completionPath));
+    const comparableCompletionValue = normalizeWorkflowCompareValue(completionValue);
+    attempt.completionValue = completionValue;
+    syncWorkflowStepResultFromAttempt(stepResult, attempt);
+
+    if (failureValues.includes(comparableCompletionValue)) {
+      stepResult.status = "failed";
+      stepResult.finishedAt = attempt.finishedAt ?? new Date().toISOString();
+      stepResult.stderr = [stepResult.stderr, `轮询命中失败状态：${completionValue || "空值"}`].filter(Boolean).join("\n");
+      emitProgress();
+      return false;
+    }
+
+    if (successValues.includes(comparableCompletionValue)) {
+      stepResult.status = "success";
+      stepResult.finishedAt = attempt.finishedAt ?? new Date().toISOString();
+      emitProgress();
+      return true;
+    }
+
+    emitProgress();
+
+    if (attemptIndex < maxAttempts && pollIntervalMs > 0) {
+      await sleep(pollIntervalMs);
     }
   }
 
-  return {
-    status: results.every((result) => (result as { status?: string }).status === "success") ? "success" : "failed",
+  stepResult.status = "failed";
+  stepResult.finishedAt = new Date().toISOString();
+  stepResult.stderr = [
+    stepResult.stderr,
+    `轮询超过最大轮次，最后状态：${stepResult.completionValue || "未读取到状态"}`
+  ].filter(Boolean).join("\n");
+  emitProgress();
+  return false;
+}
+
+function getWorkflowResponseBody(stdout: string): string {
+  const normalized = String(stdout ?? "").trim();
+
+  if (!normalized) {
+    return "";
+  }
+
+  if (!/^HTTP\/\d(?:\.\d)?\s+\d{3}/i.test(normalized)) {
+    return normalized;
+  }
+
+  const parts = normalized.split(/\r?\n\r?\n/).filter(Boolean);
+  return parts.at(-1)?.trim() ?? normalized;
+}
+
+function parseWorkflowResponseJson(stdout: string): unknown {
+  const body = getWorkflowResponseBody(stdout);
+
+  if (!body) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(body);
+  } catch {
+    const objectStart = body.indexOf("{");
+    const objectEnd = body.lastIndexOf("}");
+    const arrayStart = body.indexOf("[");
+    const arrayEnd = body.lastIndexOf("]");
+
+    const objectCandidate = objectStart >= 0 && objectEnd > objectStart ? body.slice(objectStart, objectEnd + 1) : "";
+    const arrayCandidate = arrayStart >= 0 && arrayEnd > arrayStart ? body.slice(arrayStart, arrayEnd + 1) : "";
+    const candidate =
+      objectCandidate && arrayCandidate
+        ? objectStart < arrayStart
+          ? objectCandidate
+          : arrayCandidate
+        : objectCandidate || arrayCandidate;
+
+    if (!candidate) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      return null;
+    }
+  }
+}
+
+function normalizeWorkflowJsonPath(pathValue: unknown): string {
+  const normalized = String(pathValue ?? "").trim();
+
+  if (!normalized) {
+    return "";
+  }
+
+  const dataPathMatch = normalized.match(/(?:^|\n)\s*data\s*:\s*([^\n]+)/i);
+  return dataPathMatch?.[1]?.trim() ?? normalized;
+}
+
+function readWorkflowJsonPath(input: unknown, pathValue: unknown): unknown {
+  const pathText = normalizeWorkflowJsonPath(pathValue);
+  const normalizedPath = pathText.startsWith("$") ? pathText.slice(1) : pathText;
+  const tokens = normalizedPath
+    .replace(/\[(\d+)\]/g, ".$1")
+    .replace(/^\./, "")
+    .split(".")
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+  return tokens.reduce<unknown>((current, token) => {
+    if (current === null || current === undefined) {
+      return undefined;
+    }
+
+    if (Array.isArray(current) && /^\d+$/.test(token)) {
+      return current[Number(token)];
+    }
+
+    if (typeof current === "object") {
+      return (current as Record<string, unknown>)[token];
+    }
+
+    return undefined;
+  }, input);
+}
+
+function normalizeWorkflowVariableValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  return JSON.stringify(value);
+}
+
+function collectWorkflowStepVariables(step: WorkflowRuntimeStep, stdout: string): Record<string, string> {
+  const responseJson = parseWorkflowResponseJson(stdout);
+  const variables: Record<string, string> = {};
+
+  if (!responseJson || !Array.isArray(step?.produces)) {
+    return variables;
+  }
+
+  for (const binding of step.produces) {
+    const name = String(binding?.name ?? "").trim();
+    const path = normalizeWorkflowJsonPath(binding?.path);
+
+    if (!name || !path) {
+      continue;
+    }
+
+    const value = normalizeWorkflowVariableValue(readWorkflowJsonPath(responseJson, path));
+
+    if (value) {
+      variables[name] = value;
+    }
+  }
+
+  return variables;
+}
+
+async function runWorkflowRecord(record: WorkflowRuntimeRecord, emitProgress?: WorkflowRunProgressEmitter) {
+  const startedAt = new Date().toISOString();
+  const steps = Array.isArray(record?.steps) ? record.steps : [];
+  const results = steps.map((step) => createWorkflowStepResult(step));
+  const variables: Record<string, string> = {};
+  let status: "running" | "success" | "failed" = "running";
+  let finishedAt: string | undefined;
+
+  const buildPayload = (): WorkflowRunProgressPayload => ({
+    progressEventId: record?.progressEventId,
+    status,
     startedAt,
-    finishedAt: new Date().toISOString(),
-    steps: results
+    ...(finishedAt ? { finishedAt } : {}),
+    variables: { ...variables },
+    steps: results.map((step) => ({
+      ...step,
+      attempts: step.attempts.map((attempt) => ({ ...attempt }))
+    }))
+  });
+
+  const emitSnapshot = () => {
+    if (record?.progressEventId && emitProgress) {
+      emitProgress(buildPayload());
+    }
   };
+
+  emitSnapshot();
+
+  for (const [index, step] of steps.entries()) {
+    const stepResult = results[index];
+    const waitBeforeMs = Number(step?.waitBeforeMs ?? 0);
+
+    if (waitBeforeMs > 0) {
+      stepResult.status = "running";
+      stepResult.startedAt = stepResult.startedAt ?? new Date().toISOString();
+      stepResult.stderr = `等待 ${waitBeforeMs}ms 后执行`;
+      emitSnapshot();
+      await sleep(waitBeforeMs);
+      stepResult.stderr = "";
+    }
+
+    const succeeded = await runWorkflowStep(step, record, variables, stepResult, emitSnapshot);
+
+    if (!succeeded) {
+      break;
+    }
+
+    Object.assign(variables, collectWorkflowStepVariables(step, stepResult.stdout ?? ""));
+    emitSnapshot();
+  }
+
+  status = results.length > 0 && results.every((result) => result.status === "success") ? "success" : "failed";
+  finishedAt = new Date().toISOString();
+  emitSnapshot();
+  return buildPayload();
 }
 
 async function createMainWindow(): Promise<void> {
@@ -667,12 +1127,63 @@ app.whenReady().then(async () => {
     return toCloneableIpcValue(result);
   });
   ipcMain.handle("gordon:command-workshop:list", async () => listCommandWorkshopSessions());
+  ipcMain.handle("gordon:command-workshop:select-attachments", async (event) => {
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+    const openDialogOptions = {
+      title: "选择要发送给 Gordon 的文件",
+      properties: ["openFile", "multiSelections"],
+      filters: [
+        {
+          name: "常用文件",
+          extensions: [
+            "txt",
+            "md",
+            "csv",
+            "tsv",
+            "json",
+            "xml",
+            "yaml",
+            "yml",
+            "pdf",
+            "docx",
+            "pptx",
+            "xlsx",
+            "xls",
+            "png",
+            "jpg",
+            "jpeg",
+            "gif",
+            "webp",
+            "svg",
+            "mp4",
+            "mov",
+            "webm"
+          ]
+        },
+        { name: "所有文件", extensions: ["*"] }
+      ]
+    } satisfies Electron.OpenDialogOptions;
+    const result = ownerWindow
+      ? await dialog.showOpenDialog(ownerWindow, openDialogOptions)
+      : await dialog.showOpenDialog(openDialogOptions);
+
+    if (result.canceled || !result.filePaths.length) {
+      return [];
+    }
+
+    const attachments = await Promise.all(result.filePaths.map((filePath) => readCommandWorkshopAttachment(filePath)));
+    return toCloneableIpcValue(attachments);
+  });
   ipcMain.handle("gordon:command-workshop:upsert", async (_event, session) => upsertCommandWorkshopSession(session));
   ipcMain.handle("gordon:command-workshop:delete", async (_event, sessionId: string) =>
     deleteCommandWorkshopSession(sessionId)
   );
   ipcMain.handle("gordon:workflow-library:upsert", async (_event, item) => upsertWorkflowLibraryItem(item));
-  ipcMain.handle("gordon:workflow-library:run-record", async (_event, record) => runWorkflowRecord(record));
+  ipcMain.handle("gordon:workflow-library:run-record", async (event, record) =>
+    runWorkflowRecord(record, (payload) =>
+      event.sender.send("gordon:workflow-library:progress", toCloneableIpcValue(payload))
+    )
+  );
   ipcMain.handle("gordon:weekly-progress:list", async () => listWeeklyProgress());
   ipcMain.handle("gordon:weekly-progress:save", async (_event, record) => saveWeeklyProgress(record));
   ipcMain.handle("gordon:weekly-progress:delete", async (_event, recordId: string) => deleteWeeklyProgress(recordId));

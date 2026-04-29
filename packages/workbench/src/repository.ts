@@ -1380,7 +1380,7 @@ function createWorkflowVariableBinding(
 }
 
 function extractCurlMethod(curl: string): string {
-  const explicitMethod = curl.match(/--request\s+['"]?([A-Z]+)['"]?/i)?.[1];
+  const explicitMethod = curl.match(/(?:--request|-X)\s+['"]?([A-Z]+)['"]?/i)?.[1];
 
   if (explicitMethod) {
     return explicitMethod.toUpperCase();
@@ -1390,12 +1390,23 @@ function extractCurlMethod(curl: string): string {
 }
 
 function extractCurlUrl(curl: string): string {
-  const urlMatch = curl.match(/curl(?:\s+--location)?\s+['"]([^'"]+)['"]/i);
-  return urlMatch?.[1] ?? "";
+  const literalUrlMatch = curl.match(/(?:^|\s)(['"]?)(https?:\/\/[^'"\s\\]+)\1/i);
+
+  if (literalUrlMatch?.[2]) {
+    return literalUrlMatch[2];
+  }
+
+  const placeholderUrlMatch = curl.match(
+    /(?:^|\s)(['"]?)(\$BASE_URL[^'"\s\\]*|\$\{BASE_URL\}[^'"\s\\]*|\{\{\s*BASE_URL\s*\}\}[^'"\s\\]*)\1/i
+  );
+  return placeholderUrlMatch?.[2] ?? "";
 }
 
 function extractCurlPlaceholders(curl: string): string[] {
-  return Array.from(new Set(Array.from(curl.matchAll(/\$\{([A-Za-z0-9_]+)\}/g)).map((match) => match[1])));
+  const dollarPlaceholders = Array.from(curl.matchAll(/\$\{([A-Za-z0-9_]+)\}/g)).map((match) => match[1]);
+  const bareDollarPlaceholders = Array.from(curl.matchAll(/\$(?!\{)([A-Za-z_][A-Za-z0-9_]*)/g)).map((match) => match[1]);
+  const doubleBracePlaceholders = Array.from(curl.matchAll(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g)).map((match) => match[1]);
+  return Array.from(new Set([...dollarPlaceholders, ...bareDollarPlaceholders, ...doubleBracePlaceholders]));
 }
 
 function normalizeLegacyWorkflowProtocol(protocol: Record<string, unknown> | undefined): WorkflowProtocolDefinition {
@@ -1432,7 +1443,7 @@ function normalizeLegacyWorkflowStep(
     return createWorkflowVariableBinding({
       name,
       source: isTaskId ? "response" : "manual",
-      placeholder: `\${${name}}`,
+      placeholder: `$${name}`,
       summary: isTaskId ? "来自上一步返回结果的任务标识" : "执行前手工填入或从环境变量注入",
       ...(isTaskId
         ? {
@@ -1448,7 +1459,7 @@ function normalizeLegacyWorkflowStep(
           createWorkflowVariableBinding({
             name: "task_id",
             source: "response",
-            placeholder: "${task_id}",
+            placeholder: "$task_id",
             summary: "从提交接口响应中提取异步任务 ID",
             sourceStepId: String(request.id ?? ""),
             path: taskIdPath
@@ -1464,6 +1475,12 @@ function normalizeLegacyWorkflowStep(
     url: extractCurlUrl(curl),
     curl,
     waitBeforeMs: requestIndex === 0 ? 0 : Number(protocol?.pollIntervalMs ?? 0),
+    executionMode: requestIndex === 0 ? "once" : Number(protocol?.maxAttempts ?? 1) > 1 ? "polling" : "once",
+    pollIntervalMs: Number(protocol?.pollIntervalMs ?? 0),
+    maxAttempts: Number(protocol?.maxAttempts ?? 1),
+    completionPath: requestIndex === 0 ? "" : String(protocol?.completionPath ?? ""),
+    successValues: protocol?.completionSuccessValue ? [String(protocol.completionSuccessValue)] : [],
+    failureValues: [],
     responseFieldHints: Array.isArray(request.responseFieldHints) ? request.responseFieldHints.map((entry) => String(entry)) : [],
     consumes,
     produces

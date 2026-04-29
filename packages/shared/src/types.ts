@@ -18,8 +18,10 @@ export type WeeklyProgressStatus = "active" | "archived";
 export type WeeklyProgressItemStatus = "planned" | "in_progress" | "completed" | "blocked";
 export type WorkflowLibraryItemKind = "api-test";
 export type WorkflowLibraryItemStatus = "active" | "draft";
+export type WorkflowEnvironmentId = "dev" | "test" | "pre" | "prod" | string;
 export type WorkflowVariableSource = "manual" | "response";
 export type WorkflowProtocolMode = "single" | "sequential" | "polling";
+export type WorkflowStepExecutionMode = "once" | "polling";
 export type ModelModality =
   | "text"
   | "vision"
@@ -37,6 +39,8 @@ export type AgentExecutionMode = "chat" | "task";
 export type McpTransport = "stdio" | "http";
 export type CommandWorkshopMessageRole = "user" | "assistant";
 export type CommandWorkshopMessageState = "completed" | "error";
+export type CommandWorkshopAttachmentKind = "image" | "video" | "text" | "document" | "spreadsheet" | "data" | "other";
+export type CommandWorkshopAttachmentReadStatus = "readable" | "binary" | "unsupported" | "error";
 export type AgentRunStepType =
   | "agent_selected"
   | "model_selected"
@@ -207,9 +211,21 @@ export interface WorkflowRequestStep {
   url: string;
   curl: string;
   waitBeforeMs: number;
+  executionMode?: WorkflowStepExecutionMode;
+  pollIntervalMs?: number;
+  maxAttempts?: number;
+  completionPath?: string;
+  successValues?: string[];
+  failureValues?: string[];
   responseFieldHints: string[];
   consumes: WorkflowVariableBinding[];
   produces: WorkflowVariableBinding[];
+}
+
+export interface WorkflowEnvironmentConfig {
+  id: WorkflowEnvironmentId;
+  label: string;
+  baseUrl: string;
 }
 
 export interface WorkflowProtocolDefinition {
@@ -234,6 +250,9 @@ export interface WorkflowRecord {
   tags: string[];
   updatedAt: string;
   notes?: string;
+  activeEnvironmentId?: WorkflowEnvironmentId;
+  environments?: WorkflowEnvironmentConfig[];
+  apiKey?: string;
   sharedVariables: WorkflowVariableBinding[];
   steps: WorkflowRequestStep[];
   protocol: WorkflowProtocolDefinition;
@@ -478,12 +497,26 @@ export interface CommandWorkshopMessageArtifact {
   createdAt: string;
 }
 
+export interface CommandWorkshopAttachment {
+  id: string;
+  name: string;
+  path: string;
+  mimeType: string;
+  extension: string;
+  sizeBytes: number;
+  kind: CommandWorkshopAttachmentKind;
+  readStatus: CommandWorkshopAttachmentReadStatus;
+  extractedText?: string;
+  errorMessage?: string;
+}
+
 export interface CommandWorkshopMessage {
   id: string;
   role: CommandWorkshopMessageRole;
   content: string;
   state?: CommandWorkshopMessageState;
   createdAt: string;
+  attachments?: CommandWorkshopAttachment[];
   artifact?: CommandWorkshopMessageArtifact;
 }
 

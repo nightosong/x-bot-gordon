@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 let progressListenerIdSeed = 0;
 const agentRunProgressListeners = new Map();
+const workflowRunProgressListeners = new Map();
 
 function toPlainIpcData(value) {
   const visited = new WeakSet();
@@ -108,10 +109,28 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
     agentRunProgressListeners.delete(listenerId);
   },
   listCommandWorkshopSessions: () => ipcRenderer.invoke("gordon:command-workshop:list"),
+  selectCommandWorkshopAttachments: () => ipcRenderer.invoke("gordon:command-workshop:select-attachments"),
   upsertCommandWorkshopSession: (session) => ipcRenderer.invoke("gordon:command-workshop:upsert", toPlainIpcData(session)),
   deleteCommandWorkshopSession: (sessionId) => ipcRenderer.invoke("gordon:command-workshop:delete", sessionId),
   upsertWorkflowLibraryItem: (item) => ipcRenderer.invoke("gordon:workflow-library:upsert", toPlainIpcData(item)),
   runWorkflowRecord: (record) => ipcRenderer.invoke("gordon:workflow-library:run-record", toPlainIpcData(record)),
+  onWorkflowRunProgress: (listener) => {
+    const listenerId = `workflow_progress_listener_${Date.now()}_${progressListenerIdSeed++}`;
+    const wrapped = (_event, payload) => listener(payload);
+    workflowRunProgressListeners.set(listenerId, wrapped);
+    ipcRenderer.on("gordon:workflow-library:progress", wrapped);
+    return listenerId;
+  },
+  offWorkflowRunProgress: (listenerId) => {
+    const wrapped = workflowRunProgressListeners.get(listenerId);
+
+    if (!wrapped) {
+      return;
+    }
+
+    ipcRenderer.removeListener("gordon:workflow-library:progress", wrapped);
+    workflowRunProgressListeners.delete(listenerId);
+  },
   listWeeklyProgress: () => ipcRenderer.invoke("gordon:weekly-progress:list"),
   saveWeeklyProgress: (record) => ipcRenderer.invoke("gordon:weekly-progress:save", record),
   deleteWeeklyProgress: (recordId) => ipcRenderer.invoke("gordon:weekly-progress:delete", recordId),
