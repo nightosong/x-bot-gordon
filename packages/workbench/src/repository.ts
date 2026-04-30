@@ -1386,7 +1386,7 @@ function extractCurlMethod(curl: string): string {
     return explicitMethod.toUpperCase();
   }
 
-  return curl.includes("--data") || curl.includes("--data-raw") ? "POST" : "GET";
+  return /(?:--data(?:-raw|-binary|-urlencode)?|--json)\b|-d(?:\s|=|$)/i.test(curl) ? "POST" : "GET";
 }
 
 function extractCurlUrl(curl: string): string {

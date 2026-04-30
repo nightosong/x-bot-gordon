@@ -4032,6 +4032,68 @@ canvas {
   margin-top: 0;
 }
 
+.workflow-library-body-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.workflow-library-body-panel.is-collapsed {
+  gap: 0;
+}
+
+.workflow-library-body-head-actions {
+  align-items: center;
+}
+
+.workflow-library-body-toggle {
+  width: 30px;
+  height: 30px;
+}
+
+.workflow-library-body-toolbar,
+.workflow-library-body-footer {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.workflow-library-body-step-field {
+  min-width: min(260px, 100%);
+}
+
+.workflow-library-body-step-field .field-label {
+  font-size: 10px;
+}
+
+.workflow-library-body-step-select {
+  min-height: 28px;
+  padding: 5px 24px 5px 9px;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.workflow-library-body-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.workflow-library-body-textarea {
+  min-height: 210px;
+  font-family: "SF Mono", "Menlo", "Monaco", monospace;
+  font-size: 12px;
+  line-height: 1.62;
+}
+
+.workflow-library-body-footer {
+  align-items: center;
+}
+
+.workflow-library-body-footer .workflow-library-inline-copy {
+  margin-left: auto;
+  text-align: right;
+}
+
 .workflow-library-runtime-grid {
   align-items: end;
 }
@@ -5749,6 +5811,8 @@ canvas {
 
   .workflow-library-inline-head,
   .workflow-library-step-editor-head,
+  .workflow-library-body-toolbar,
+  .workflow-library-body-footer,
   .workflow-library-runtime-grid,
   .workflow-library-env-editor-row,
   .workflow-library-output-row,
@@ -5768,10 +5832,20 @@ canvas {
   }
 
   .workflow-library-api-key-field,
+  .workflow-library-body-step-field,
   .workflow-library-step-wait-field,
   .workflow-library-step-mode-field {
     max-width: none;
     flex-basis: auto;
+  }
+
+  .workflow-library-body-actions {
+    justify-content: flex-start;
+  }
+
+  .workflow-library-body-footer .workflow-library-inline-copy {
+    margin-left: 0;
+    text-align: left;
   }
 
   .weekly-hero,

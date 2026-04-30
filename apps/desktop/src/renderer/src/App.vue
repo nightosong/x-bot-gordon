@@ -1415,6 +1415,91 @@
                           </div>
                         </section>
 
+                        <section
+                          v-if="activeWorkflowBodyStepOptions.length"
+                          class="workflow-library-main-card workflow-library-body-panel"
+                          :class="{ 'is-collapsed': ui.workflow.bodyPanelCollapsed }"
+                        >
+                          <div class="workflow-library-main-card-head">
+                            <div>
+                              <p class="feature-kicker">Body</p>
+                              <p class="model-section-title">请求 Body</p>
+                            </div>
+                            <div class="model-section-actions workflow-library-body-head-actions">
+                              <span class="status-pill" :class="workflowBodyDraftChanged ? 'is-warning' : 'is-success'">
+                                {{ workflowBodyDraftChanged ? "临时替换" : "模板一致" }}
+                              </span>
+                              <button
+                                type="button"
+                                class="model-icon-button workflow-library-body-toggle"
+                                :aria-expanded="String(!ui.workflow.bodyPanelCollapsed)"
+                                :aria-label="ui.workflow.bodyPanelCollapsed ? '展开请求 Body' : '折叠请求 Body'"
+                                :title="ui.workflow.bodyPanelCollapsed ? '展开' : '折叠'"
+                                @click="ui.workflow.bodyPanelCollapsed = !ui.workflow.bodyPanelCollapsed"
+                              >
+                                <GIcon :name="ui.workflow.bodyPanelCollapsed ? 'chevronDown' : 'chevronUp'" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div v-if="!ui.workflow.bodyPanelCollapsed" class="workflow-library-body-toolbar">
+                            <label class="field workflow-library-body-step-field">
+                              <span class="field-label">请求步骤</span>
+                              <select
+                                v-model="ui.workflow.bodyStepId"
+                                class="field-input workflow-library-body-step-select"
+                                @change="handleWorkflowBodyStepSelect"
+                              >
+                                <option v-for="entry in activeWorkflowBodyStepOptions" :key="entry.id" :value="entry.id">
+                                  {{ entry.label }} · {{ entry.method }}
+                                </option>
+                              </select>
+                            </label>
+
+                            <div class="model-section-actions workflow-library-body-actions">
+                              <button type="button" class="model-action-secondary" @click="repairWorkflowBodyDraft">
+                                <GIcon name="refresh" />
+                                修复格式
+                              </button>
+                              <button type="button" class="model-action-secondary" @click="syncWorkflowBodyDraftFromActiveStep({ force: true })">
+                                <GIcon name="return" />
+                                恢复模板
+                              </button>
+                              <button
+                                type="button"
+                                class="model-action-secondary"
+                                :disabled="!workflowBodyDraftChanged"
+                                @click="persistWorkflowBodyDraftToTemplate"
+                              >
+                                <GIcon name="check" />
+                                写回模板
+                              </button>
+                            </div>
+                          </div>
+
+                          <label v-if="!ui.workflow.bodyPanelCollapsed" class="field">
+                            <span class="field-label">Body 内容</span>
+                            <textarea
+                              v-model="ui.workflow.bodyDraftText"
+                              class="field-textarea workflow-library-body-textarea"
+                              rows="10"
+                              placeholder="粘贴 JSON body，或直接粘贴包含 -d / --data 的完整 curl"
+                              @input="handleWorkflowBodyDraftInput"
+                            ></textarea>
+                          </label>
+
+                          <div v-if="!ui.workflow.bodyPanelCollapsed" class="workflow-library-body-footer">
+                            <span
+                              v-if="ui.workflow.bodyFeedbackText"
+                              class="status-pill"
+                              :class="ui.workflow.bodyFeedbackTone === 'success' ? 'is-success' : ui.workflow.bodyFeedbackTone === 'warning' ? 'is-warning' : ''"
+                            >
+                              {{ ui.workflow.bodyFeedbackText }}
+                            </span>
+                            <p class="workflow-library-inline-copy">直接执行时只替换本次请求体；点击写回模板后才会更新原始 curl。</p>
+                          </div>
+                        </section>
+
                         <section class="workflow-library-main-card workflow-library-run-section">
                           <div class="workflow-library-main-card-head">
                             <div>
@@ -3120,6 +3205,7 @@ const WORKFLOW_DEFAULT_ENVIRONMENTS = [
   { id: "pre", label: "PRE", baseUrl: "" },
   { id: "prod", label: "PROD", baseUrl: "" }
 ];
+const WORKFLOW_CURL_BODY_OPTIONS = new Set(["-d", "--data", "--data-raw", "--data-binary", "--data-urlencode", "--json"]);
 
 const desktopApi = window.gordonDesktop ?? null;
 let splineApplicationClass = null;
@@ -3196,6 +3282,11 @@ function createWorkflowState() {
     activeCardId: null,
     activeRecordId: null,
     copiedStepId: null,
+    bodyStepId: null,
+    bodyDraftText: "",
+    bodyFeedbackText: "",
+    bodyFeedbackTone: "neutral",
+    bodyPanelCollapsed: false,
     apiKeyVisible: false,
     searchQuery: "",
     editingRecordId: null,
@@ -3745,6 +3836,40 @@ const activeWorkflowRecord = computed(
 );
 const activeWorkflowProtocol = computed(() => activeWorkflowRecord.value?.protocol ?? null);
 const activeWorkflowSteps = computed(() => activeWorkflowRecord.value?.steps ?? []);
+const activeWorkflowBodyStepOptions = computed(() =>
+  activeWorkflowSteps.value
+    .map((step, index) => {
+      const bodySegment = findWorkflowCurlBodySegment(step?.curl ?? "");
+
+      if (!bodySegment) {
+        return null;
+      }
+
+      return {
+        id: step.id,
+        label: step.name || `请求 ${index + 1}`,
+        method: step.method || extractCurlMethod(step.curl),
+        body: bodySegment.value,
+        step
+      };
+    })
+    .filter(Boolean)
+);
+const activeWorkflowBodyStep = computed(
+  () =>
+    activeWorkflowBodyStepOptions.value.find((entry) => entry.id === ui.workflow.bodyStepId) ??
+    activeWorkflowBodyStepOptions.value[0] ??
+    null
+);
+const workflowBodyDraftChanged = computed(() => {
+  const activeBodyStep = activeWorkflowBodyStep.value;
+
+  if (!activeBodyStep) {
+    return false;
+  }
+
+  return normalizeWorkflowBodyDraftForCompare(ui.workflow.bodyDraftText) !== normalizeWorkflowBodyDraftForCompare(activeBodyStep.body);
+});
 const activeWorkflowEnvironments = computed(() => normalizeWorkflowEnvironments(activeWorkflowRecord.value));
 const activeWorkflowEnvironment = computed(
   () =>
@@ -4496,6 +4621,279 @@ function parseDelimitedValues(value) {
     .filter(Boolean);
 }
 
+function tokenizeWorkflowCurlCommand(command) {
+  const source = String(command ?? "");
+  const tokens = [];
+  let current = "";
+  let tokenStart = -1;
+  let quote = null;
+  let escaping = false;
+
+  const ensureTokenStart = (index) => {
+    if (tokenStart < 0) {
+      tokenStart = index;
+    }
+  };
+  const pushToken = (end) => {
+    if (tokenStart < 0) {
+      return;
+    }
+
+    tokens.push({
+      value: current,
+      start: tokenStart,
+      end
+    });
+    current = "";
+    tokenStart = -1;
+  };
+
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    const nextChar = source[index + 1] ?? "";
+
+    if (escaping) {
+      current += char;
+      escaping = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      if (!quote && (nextChar === "\n" || nextChar === "\r")) {
+        pushToken(index);
+
+        if (nextChar === "\r" && source[index + 2] === "\n") {
+          index += 2;
+        } else {
+          index += 1;
+        }
+
+        continue;
+      }
+
+      ensureTokenStart(index);
+      escaping = true;
+      continue;
+    }
+
+    if (quote) {
+      if (char === quote) {
+        quote = null;
+      } else {
+        current += char;
+      }
+
+      continue;
+    }
+
+    if (char === "'" || char === "\"") {
+      ensureTokenStart(index);
+      quote = char;
+      continue;
+    }
+
+    if (/\s/.test(char)) {
+      pushToken(index);
+      continue;
+    }
+
+    ensureTokenStart(index);
+    current += char;
+  }
+
+  pushToken(source.length);
+  return tokens.filter((token) => token.value || token.start < token.end);
+}
+
+function splitWorkflowCurlOptionValue(tokenValue) {
+  const equalIndex = String(tokenValue ?? "").indexOf("=");
+
+  if (equalIndex <= 0) {
+    return null;
+  }
+
+  const option = tokenValue.slice(0, equalIndex);
+
+  if (!WORKFLOW_CURL_BODY_OPTIONS.has(option)) {
+    return null;
+  }
+
+  return {
+    option,
+    value: tokenValue.slice(equalIndex + 1)
+  };
+}
+
+function findWorkflowCurlBodySegment(curl) {
+  const tokens = tokenizeWorkflowCurlCommand(curl);
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    const inlineOption = splitWorkflowCurlOptionValue(token.value);
+
+    if (inlineOption) {
+      return {
+        option: inlineOption.option,
+        value: inlineOption.value,
+        replaceStart: token.start,
+        replaceEnd: token.end,
+        inline: true
+      };
+    }
+
+    if (!WORKFLOW_CURL_BODY_OPTIONS.has(token.value)) {
+      continue;
+    }
+
+    const bodyToken = tokens[index + 1];
+
+    if (!bodyToken) {
+      return null;
+    }
+
+    return {
+      option: token.value,
+      value: bodyToken.value,
+      replaceStart: bodyToken.start,
+      replaceEnd: bodyToken.end,
+      inline: false
+    };
+  }
+
+  return null;
+}
+
+function quoteWorkflowCurlBody(value) {
+  return `'${String(value ?? "").replace(/'/g, "'\\''")}'`;
+}
+
+function replaceWorkflowCurlBody(curl, bodyText) {
+  const source = String(curl ?? "");
+  const bodySegment = findWorkflowCurlBodySegment(source);
+
+  if (!bodySegment) {
+    return source;
+  }
+
+  const replacement = bodySegment.inline
+    ? `${bodySegment.option}=${quoteWorkflowCurlBody(bodyText)}`
+    : quoteWorkflowCurlBody(bodyText);
+
+  return `${source.slice(0, bodySegment.replaceStart)}${replacement}${source.slice(bodySegment.replaceEnd)}`;
+}
+
+function normalizeWorkflowBodyDraftForCompare(value) {
+  return String(value ?? "").replace(/\r\n?/g, "\n").trim();
+}
+
+function extractWorkflowBodyCandidate(value) {
+  const raw = String(value ?? "").trim();
+  const extracted = findWorkflowCurlBodySegment(raw);
+
+  return extracted?.value ?? raw;
+}
+
+function stripWorkflowBodyShellWrapper(value) {
+  let nextValue = String(value ?? "")
+    .trim()
+    .replace(/[“”]/g, "\"")
+    .replace(/[‘’]/g, "'");
+
+  while (nextValue.length > 1) {
+    const firstChar = nextValue[0];
+    const lastChar = nextValue.at(-1);
+
+    if ((firstChar === "'" || firstChar === "\"") && lastChar === firstChar) {
+      nextValue = nextValue.slice(1, -1).trim();
+      continue;
+    }
+
+    if ((nextValue.startsWith("{") || nextValue.startsWith("[")) && (lastChar === "'" || lastChar === "\"")) {
+      nextValue = nextValue.slice(0, -1).trim();
+      continue;
+    }
+
+    if ((firstChar === "'" || firstChar === "\"") && (nextValue.endsWith("}") || nextValue.endsWith("]"))) {
+      nextValue = nextValue.slice(1).trim();
+      continue;
+    }
+
+    break;
+  }
+
+  return nextValue.replace(/;\s*$/, "").trim();
+}
+
+function removeWorkflowJsonTrailingCommas(value) {
+  let nextValue = String(value ?? "");
+  let previousValue = "";
+
+  while (nextValue !== previousValue) {
+    previousValue = nextValue;
+    nextValue = nextValue.replace(/,\s*([}\]])/g, "$1");
+  }
+
+  return nextValue;
+}
+
+function quoteWorkflowJsonLooseKeys(value) {
+  return String(value ?? "").replace(/([{,]\s*)([A-Za-z_$][A-Za-z0-9_$-]*)(\s*:)/g, '$1"$2"$3');
+}
+
+function normalizeWorkflowJsonSingleQuotedStrings(value) {
+  return String(value ?? "").replace(/'([^'\\]*(?:\\.[^'\\]*)*)'/g, (_match, innerValue) => {
+    const normalized = String(innerValue ?? "")
+      .replace(/\\'/g, "'")
+      .replace(/\\"/g, "\"");
+
+    return JSON.stringify(normalized);
+  });
+}
+
+function looksLikeWorkflowJsonBody(value) {
+  const normalized = String(value ?? "").trim();
+  return normalized.startsWith("{") || normalized.startsWith("[");
+}
+
+function repairWorkflowBodyText(value, { pretty = true } = {}) {
+  const stripped = stripWorkflowBodyShellWrapper(extractWorkflowBodyCandidate(value));
+  const withoutTrailingCommas = removeWorkflowJsonTrailingCommas(stripped);
+  const withLooseKeys = quoteWorkflowJsonLooseKeys(withoutTrailingCommas);
+  const candidates = Array.from(
+    new Set([
+      stripped,
+      withoutTrailingCommas,
+      withLooseKeys,
+      normalizeWorkflowJsonSingleQuotedStrings(withoutTrailingCommas),
+      normalizeWorkflowJsonSingleQuotedStrings(withLooseKeys)
+    ])
+  );
+
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue;
+    }
+
+    try {
+      const parsed = JSON.parse(candidate);
+
+      return {
+        ok: true,
+        text: pretty ? JSON.stringify(parsed, null, 2) : JSON.stringify(parsed),
+        parsed
+      };
+    } catch {
+      // Keep trying the next low-risk repair candidate.
+    }
+  }
+
+  return {
+    ok: false,
+    text: stripped,
+    error: looksLikeWorkflowJsonBody(stripped) ? "JSON 结构仍不完整，请检查引号、括号或逗号。" : "当前内容不像 JSON，将按原始文本处理。"
+  };
+}
+
 function extractCurlMethod(curl) {
   const explicitMethod = curl.match(/(?:--request|-X)\s+['"]?([A-Z]+)['"]?/i)?.[1];
 
@@ -4503,7 +4901,7 @@ function extractCurlMethod(curl) {
     return explicitMethod.toUpperCase();
   }
 
-  return /--data(?:-raw|-binary)?\b/i.test(curl) ? "POST" : "GET";
+  return /(?:--data(?:-raw|-binary|-urlencode)?|--json)\b|-d(?:\s|=|$)/i.test(curl) ? "POST" : "GET";
 }
 
 function extractCurlUrl(curl) {
@@ -4911,11 +5309,107 @@ function handleWorkflowRunProgress(payload) {
   }
 }
 
+function setWorkflowBodyFeedback(text, tone = "neutral") {
+  ui.workflow.bodyFeedbackText = String(text ?? "").trim();
+  ui.workflow.bodyFeedbackTone = tone;
+}
+
+function syncWorkflowBodyDraftFromActiveStep({ force = false } = {}) {
+  const activeBodyStep = activeWorkflowBodyStep.value;
+
+  if (!activeBodyStep) {
+    ui.workflow.bodyStepId = null;
+    ui.workflow.bodyDraftText = "";
+    setWorkflowBodyFeedback("", "neutral");
+    return;
+  }
+
+  if (!ui.workflow.bodyStepId || !activeWorkflowBodyStepOptions.value.some((entry) => entry.id === ui.workflow.bodyStepId)) {
+    ui.workflow.bodyStepId = activeBodyStep.id;
+  }
+
+  if (!force && workflowBodyDraftChanged.value) {
+    return;
+  }
+
+  ui.workflow.bodyDraftText = activeBodyStep.body;
+  setWorkflowBodyFeedback("已读取模板里的请求 Body。", "neutral");
+}
+
+function handleWorkflowBodyStepSelect() {
+  syncWorkflowBodyDraftFromActiveStep({ force: true });
+}
+
+function handleWorkflowBodyDraftInput() {
+  const activeBodyStep = activeWorkflowBodyStep.value;
+
+  if (!activeBodyStep) {
+    setWorkflowBodyFeedback("", "neutral");
+    return;
+  }
+
+  setWorkflowBodyFeedback(
+    workflowBodyDraftChanged.value ? "本次执行将使用当前 Body，不会自动写回模板。" : "当前 Body 与模板一致。",
+    workflowBodyDraftChanged.value ? "warning" : "success"
+  );
+}
+
+function repairWorkflowBodyDraft() {
+  const result = repairWorkflowBodyText(ui.workflow.bodyDraftText, { pretty: true });
+  ui.workflow.bodyDraftText = result.text;
+
+  if (result.ok) {
+    setWorkflowBodyFeedback("已修复并格式化为标准 JSON。", "success");
+    return;
+  }
+
+  setWorkflowBodyFeedback(result.error, looksLikeWorkflowJsonBody(result.text) ? "warning" : "neutral");
+}
+
+function getWorkflowBodyTextForRun() {
+  const result = repairWorkflowBodyText(ui.workflow.bodyDraftText, { pretty: false });
+
+  if (!result.ok && looksLikeWorkflowJsonBody(result.text)) {
+    throw new Error(result.error);
+  }
+
+  return result.text;
+}
+
+function applyWorkflowBodyDraftToRecord(record) {
+  const activeBodyStep = activeWorkflowBodyStep.value;
+
+  if (!record || !activeBodyStep || !workflowBodyDraftChanged.value) {
+    return record;
+  }
+
+  const bodyText = getWorkflowBodyTextForRun();
+
+  return {
+    ...record,
+    steps: (record.steps ?? []).map((step) => {
+      if (step.id !== activeBodyStep.id) {
+        return step;
+      }
+
+      const curl = replaceWorkflowCurlBody(step.curl, bodyText);
+
+      return {
+        ...step,
+        method: extractCurlMethod(curl),
+        url: extractCurlUrl(curl),
+        curl
+      };
+    })
+  };
+}
+
 function buildWorkflowRunRecord(record, progressEventId = "") {
+  const runtimeRecord = applyWorkflowBodyDraftToRecord(record);
   const activeEnvironmentApiKey = String(activeWorkflowEnvironment.value?.apiKey ?? record?.apiKey ?? "").trim();
 
   return toPlainIpcData({
-    ...record,
+    ...runtimeRecord,
     progressEventId,
     activeEnvironmentId: activeWorkflowEnvironment.value?.id ?? record?.activeEnvironmentId,
     environments: activeWorkflowEnvironments.value,
@@ -4951,6 +5445,64 @@ async function persistActiveWorkflowRuntimeConfig(showStatus = false) {
   } catch (error) {
     console.error("Failed to persist workflow runtime config", error);
     setStatus(`保存运行配置失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+  }
+}
+
+async function persistWorkflowBodyDraftToTemplate() {
+  const card = activeWorkflowCard.value;
+  const record = activeWorkflowRecord.value;
+  const activeBodyStep = activeWorkflowBodyStep.value;
+
+  if (!desktopApi?.upsertWorkflowLibraryItem || !card || !record || !activeBodyStep) {
+    setStatus("工作流仓储未就绪，暂时无法写回 Body。", "danger");
+    return;
+  }
+
+  const repairedBody = repairWorkflowBodyText(ui.workflow.bodyDraftText, { pretty: true });
+
+  if (!repairedBody.ok && looksLikeWorkflowJsonBody(repairedBody.text)) {
+    const message = repairedBody.error || "请求 Body 格式不正确";
+    setWorkflowBodyFeedback(message, "warning");
+    setStatus(message, "warning");
+    return;
+  }
+
+  const now = new Date().toISOString();
+  const nextRecord = {
+    ...record,
+    updatedAt: now,
+    steps: (record.steps ?? []).map((step) => {
+      if (step.id !== activeBodyStep.id) {
+        return step;
+      }
+
+      const curl = replaceWorkflowCurlBody(step.curl, repairedBody.text);
+
+      return {
+        ...step,
+        method: extractCurlMethod(curl),
+        url: extractCurlUrl(curl),
+        curl
+      };
+    })
+  };
+  const nextCard = {
+    ...card,
+    updatedAt: now,
+    lastUsedAt: now,
+    records: (card.records ?? []).map((entry) => (entry.id === record.id ? nextRecord : entry))
+  };
+
+  try {
+    workbench.workflowLibrary = await desktopApi.upsertWorkflowLibraryItem(toPlainIpcData(nextCard));
+    ui.workflow.activeCardId = nextCard.id;
+    ui.workflow.activeRecordId = nextRecord.id;
+    ui.workflow.bodyDraftText = repairedBody.text;
+    setWorkflowBodyFeedback("已写回模板 curl。", "success");
+    setStatus("已写回请求 Body 模板。", "success");
+  } catch (error) {
+    console.error("Failed to persist workflow body draft", error);
+    setStatus(`写回请求 Body 失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
   }
 }
 
@@ -8254,6 +8806,15 @@ watch(
     }
 
     syncWeeklySelectedReportTemplate(ui.weekly.draft);
+  }
+);
+
+watch(
+  () => `${ui.workflow.view}:${ui.workflow.activeCardId ?? ""}:${ui.workflow.activeRecordId ?? ""}`,
+  () => {
+    if (ui.workflow.view === "run") {
+      syncWorkflowBodyDraftFromActiveStep({ force: true });
+    }
   }
 );
 
