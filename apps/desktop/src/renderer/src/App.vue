@@ -3254,7 +3254,7 @@ function createWeeklyState() {
     draft: null,
     collapsedProjectIds: [],
     editorView: "projects",
-    reportingMode: "weekly",
+    reportingMode: "daily",
     reportOutputMode: "preview",
     reportFeedbackText: "",
     reportFeedbackTone: "neutral",
