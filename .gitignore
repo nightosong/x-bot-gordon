@@ -4,3 +4,4 @@ dist
 .pnpm-store
 data/*/*.json
 docs/*.md
+writing-books

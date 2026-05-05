@@ -13,8 +13,11 @@
 import { computed } from "vue";
 import {
   ArrowLeft,
+  BookOpen,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ChevronUp,
   Copy,
   Edit3,
@@ -28,8 +31,10 @@ import {
   Plus,
   RefreshCw,
   Settings,
+  Sparkles,
   Square,
   Trash2,
+  Upload,
   X
 } from "lucide-vue-next";
 
@@ -54,8 +59,11 @@ const props = defineProps({
 
 const ICONS = {
   add: Plus,
+  book: BookOpen,
   check: Check,
   chevronDown: ChevronDown,
+  chevronLeft: ChevronLeft,
+  chevronRight: ChevronRight,
   chevronUp: ChevronUp,
   close: X,
   copy: Copy,
@@ -72,6 +80,8 @@ const ICONS = {
   refresh: RefreshCw,
   return: ArrowLeft,
   settings: Settings,
+  sparkles: Sparkles,
+  upload: Upload,
   stop: Square
 };
 

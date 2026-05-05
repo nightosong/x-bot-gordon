@@ -132,6 +132,8 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
     ipcRenderer.removeListener("gordon:workflow-library:progress", wrapped);
     workflowRunProgressListeners.delete(listenerId);
   },
+  listWritingBooks: () => ipcRenderer.invoke("gordon:writing-books:list"),
+  saveWritingBook: (book) => ipcRenderer.invoke("gordon:writing-books:save", toPlainIpcData(book)),
   listWeeklyProgress: () => ipcRenderer.invoke("gordon:weekly-progress:list"),
   saveWeeklyProgress: (record) => ipcRenderer.invoke("gordon:weekly-progress:save", record),
   deleteWeeklyProgress: (recordId) => ipcRenderer.invoke("gordon:weekly-progress:delete", recordId),

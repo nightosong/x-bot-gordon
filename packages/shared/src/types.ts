@@ -41,6 +41,8 @@ export type CommandWorkshopMessageRole = "user" | "assistant";
 export type CommandWorkshopMessageState = "completed" | "error";
 export type CommandWorkshopAttachmentKind = "image" | "video" | "text" | "document" | "spreadsheet" | "data" | "other";
 export type CommandWorkshopAttachmentReadStatus = "readable" | "binary" | "unsupported" | "error";
+export type WritingBookLength = "short" | "medium" | "long";
+export type WritingChapterStatus = "todo" | "inProgress" | "done";
 export type AgentRunStepType =
   | "agent_selected"
   | "model_selected"
@@ -536,6 +538,32 @@ export interface CommandWorkshopSession {
   updatedAt: string;
 }
 
+export interface WritingChapter {
+  id: string;
+  title: string;
+  summary: string;
+  content: string;
+  status: WritingChapterStatus;
+  updatedAt: string;
+  fileName?: string;
+}
+
+export interface WritingBook {
+  id: string;
+  title: string;
+  author: string;
+  length: WritingBookLength;
+  genre: string;
+  status: string;
+  updatedAt: string;
+  coverTone: string;
+  intro: string;
+  outlineGuide: string;
+  seriesPlan: string;
+  chapters: WritingChapter[];
+  directoryName?: string;
+}
+
 export interface AgentMcpCallRecord {
   round: number;
   serverId: string;
@@ -613,6 +641,7 @@ export interface WorkbenchSnapshot {
   weeklyProgress: WeeklyProgressRecord[];
   databaseConnections: DatabaseConnectionItem[];
   workflowLibrary: WorkflowLibraryItem[];
+  writingBooks: WritingBook[];
   skillDefinitions: SkillDefinition[];
   mcpServers: McpServerConfig[];
   agentProfiles: AgentProfile[];

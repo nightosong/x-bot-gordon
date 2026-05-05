@@ -20,7 +20,9 @@ import {
   listMcpServers,
   listSkillDefinitions,
   listWeeklyProgress,
+  listWritingBooks,
   listModelSettings,
+  saveWritingBook,
   saveWeeklyProgress,
   toggleAgentProfileStatus,
   toggleMcpServerStatus,
@@ -1393,6 +1395,8 @@ app.whenReady().then(async () => {
   ipcMain.handle("gordon:workflow-library:cancel-run", async (_event, progressEventId) =>
     cancelWorkflowRecordRun(progressEventId)
   );
+  ipcMain.handle("gordon:writing-books:list", async () => listWritingBooks());
+  ipcMain.handle("gordon:writing-books:save", async (_event, book) => saveWritingBook(book));
   ipcMain.handle("gordon:weekly-progress:list", async () => listWeeklyProgress());
   ipcMain.handle("gordon:weekly-progress:save", async (_event, record) => saveWeeklyProgress(record));
   ipcMain.handle("gordon:weekly-progress:delete", async (_event, recordId: string) => deleteWeeklyProgress(recordId));

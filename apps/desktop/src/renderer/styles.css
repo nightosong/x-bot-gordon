@@ -879,6 +879,1105 @@ canvas {
   padding: 14px;
 }
 
+.marketplace-shell,
+.marketplace-shell-detail {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  height: 100%;
+  padding: 10px;
+  gap: 8px;
+}
+
+.marketplace-shell-detail {
+  grid-template-rows: minmax(0, 1fr);
+  padding: 0;
+  gap: 0;
+}
+
+.marketplace-shell-shelf {
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.writing-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.11), rgba(245, 200, 107, 0.07)),
+    var(--panel);
+}
+
+.marketplace-hero {
+  align-self: stretch;
+}
+
+.writing-shelf-head {
+  flex: 0 0 auto;
+  border-radius: 0;
+}
+
+.marketplace-shell-shelf .writing-shelf-grid {
+  padding: 10px;
+}
+
+.marketplace-app-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(190px, 1fr));
+  align-content: start;
+  gap: 10px;
+}
+
+.marketplace-app-card {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 11px;
+  min-height: 118px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background:
+    linear-gradient(150deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.025)),
+    var(--panel);
+  cursor: pointer;
+  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+}
+
+.marketplace-app-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(92, 225, 194, 0.28);
+  background:
+    linear-gradient(150deg, rgba(92, 225, 194, 0.11), rgba(245, 200, 107, 0.06)),
+    var(--panel);
+}
+
+.writing-app-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.writing-app-card::after {
+  content: "";
+  position: absolute;
+  right: -22px;
+  bottom: -48px;
+  width: 96px;
+  height: 136px;
+  border: 1px solid rgba(245, 200, 107, 0.16);
+  border-radius: 18px 18px 8px 8px;
+  background:
+    linear-gradient(90deg, rgba(245, 200, 107, 0.22), transparent 12%),
+    rgba(255, 255, 255, 0.035);
+  transform: rotate(12deg);
+  pointer-events: none;
+}
+
+.writing-app-mark,
+.writing-book-cover {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 52px;
+  height: 70px;
+  border: 1px solid rgba(247, 243, 235, 0.16);
+  border-radius: 14px 14px 8px 8px;
+  background:
+    linear-gradient(90deg, rgba(7, 17, 29, 0.45) 0 12px, transparent 12px),
+    linear-gradient(135deg, rgba(92, 225, 194, 0.42), rgba(245, 200, 107, 0.2));
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24);
+  color: #fafff9;
+  font-family: "Iowan Old Style", "Songti SC", serif;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.writing-book-cover {
+  width: 48px;
+  height: 66px;
+  border-radius: 10px 10px 6px 6px;
+  font-size: 22px;
+}
+
+.marketplace-app-copy,
+.writing-book-card-main,
+.writing-detail-title,
+.writing-shelf-title-block {
+  min-width: 0;
+}
+
+.marketplace-app-title,
+.writing-book-title {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.marketplace-app-card .models-copy,
+.writing-book-card .models-copy {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.marketplace-app-meta,
+.writing-book-card-foot,
+.writing-stat-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.marketplace-app-meta .pill,
+.writing-book-card-foot .pill,
+.writing-stat-list .pill {
+  min-height: 22px;
+  padding: 4px 8px;
+  font-size: 10.5px;
+}
+
+.marketplace-app-meta {
+  grid-column: 2;
+  align-self: end;
+}
+
+.writing-upload-action {
+  position: relative;
+  overflow: hidden;
+}
+
+.writing-upload-action input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.writing-shelf-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(210px, 1fr));
+  align-content: start;
+  gap: 9px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.writing-book-card {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 10px;
+  min-height: 116px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.035);
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.writing-book-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(245, 200, 107, 0.22);
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.writing-book-card-main {
+  display: grid;
+  gap: 7px;
+}
+
+.writing-book-card.is-coral .writing-book-cover {
+  background:
+    linear-gradient(90deg, rgba(7, 17, 29, 0.45) 0 12px, transparent 12px),
+    linear-gradient(135deg, rgba(255, 141, 119, 0.46), rgba(245, 200, 107, 0.18));
+}
+
+.writing-book-card.is-ink .writing-book-cover,
+.writing-book-cover-large.is-ink {
+  background:
+    linear-gradient(90deg, rgba(7, 17, 29, 0.5) 0 16px, transparent 16px),
+    linear-gradient(135deg, rgba(151, 182, 216, 0.34), rgba(92, 225, 194, 0.12));
+}
+
+.writing-book-meta {
+  margin: 0;
+  color: rgba(247, 243, 235, 0.68);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.writing-detail-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  height: 100%;
+}
+
+.writing-detail-head {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: minmax(42px, 1fr) auto minmax(180px, 1fr);
+  padding: 10px 12px;
+  border-width: 0 0 1px;
+  border-radius: 0;
+}
+
+.writing-detail-head .model-section-actions {
+  justify-self: end;
+}
+
+.writing-title-input {
+  width: min(460px, 44vw);
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: center;
+  font-family: "Iowan Old Style", "Songti SC", serif;
+  font-size: clamp(22px, 2.05vw, 30px);
+  font-weight: 800;
+}
+
+.writing-detail-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+  transition: grid-template-columns 180ms ease;
+}
+
+.writing-detail-layout.is-profile-collapsed {
+  grid-template-columns: 44px minmax(0, 1fr);
+}
+
+.writing-detail-rail {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  padding: 10px;
+  border-right: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.025);
+  overflow: auto;
+}
+
+.writing-detail-layout.is-profile-collapsed .writing-detail-rail {
+  justify-items: center;
+  padding: 8px 6px;
+  overflow: hidden;
+}
+
+.writing-profile-toggle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(8, 15, 24, 0.72);
+  backdrop-filter: blur(12px);
+}
+
+.writing-detail-layout.is-profile-collapsed .writing-profile-toggle {
+  position: static;
+  width: 30px;
+  height: 30px;
+}
+
+.writing-rail-content {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+}
+
+.writing-book-profile {
+  display: grid;
+  gap: 8px;
+}
+
+.writing-book-cover-large {
+  width: 92px;
+  height: 124px;
+  margin: 0 auto 2px;
+  font-size: 34px;
+}
+
+.writing-mini-select,
+.writing-mini-input {
+  min-height: 32px;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+.writing-method-card {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid rgba(245, 200, 107, 0.13);
+  border-radius: 16px;
+  background: rgba(245, 200, 107, 0.055);
+}
+
+.writing-method-card strong {
+  color: #ffe5a8;
+  font-size: 14px;
+}
+
+.writing-method-card p {
+  margin: 0;
+  color: rgba(247, 243, 235, 0.72);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.writing-main-stage {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  padding: 10px;
+  gap: 9px;
+  overflow: hidden;
+  --writing-ai-drawer-width: min(456px, calc(100% - 62px));
+}
+
+.writing-tab-bar {
+  display: flex;
+  gap: 5px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.writing-tab {
+  flex: 1;
+  display: grid;
+  gap: 3px;
+  min-height: 38px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: rgba(247, 243, 235, 0.68);
+  text-align: left;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.writing-tab span {
+  color: rgba(92, 225, 194, 0.74);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.writing-tab:hover,
+.writing-tab.is-active {
+  border-color: rgba(92, 225, 194, 0.22);
+  background: rgba(92, 225, 194, 0.1);
+  color: #e6fff8;
+}
+
+.writing-editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 9px;
+  min-height: 0;
+}
+
+.writing-editor-card,
+.writing-ai-card {
+  display: grid;
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.writing-editor-card {
+  grid-template-rows: auto minmax(0, 1fr);
+  padding: 11px;
+}
+
+.writing-editor-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.writing-ai-card {
+  display: flex;
+  flex-direction: column;
+  align-content: start;
+  gap: 9px;
+  padding: 11px;
+  overflow: auto;
+}
+
+.writing-ai-card > * {
+  flex: 0 0 auto;
+}
+
+.writing-ai-drawer {
+  position: absolute;
+  top: 63px;
+  bottom: 10px;
+  right: 10px;
+  z-index: 12;
+  width: var(--writing-ai-drawer-width);
+  max-height: calc(100% - 73px);
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.08), rgba(245, 200, 107, 0.05)),
+    #08101a;
+  box-shadow: 0 22px 52px rgba(0, 0, 0, 0.34);
+  opacity: 0;
+  pointer-events: none;
+  clip-path: inset(0 100% 0 0 round var(--radius-lg));
+  transform-origin: left center;
+  transition: clip-path 220ms ease, opacity 180ms ease, box-shadow 180ms ease;
+}
+
+.writing-detail-layout.is-ai-open .writing-ai-drawer {
+  opacity: 1;
+  pointer-events: auto;
+  clip-path: inset(0 0 0 0 round var(--radius-lg));
+}
+
+.writing-ai-float-trigger {
+  position: static;
+  z-index: 13;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.18), rgba(245, 200, 107, 0.1)),
+    rgba(8, 15, 24, 0.82);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.26);
+  backdrop-filter: blur(14px);
+}
+
+.writing-ai-float-trigger:hover {
+  border-color: rgba(92, 225, 194, 0.36);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+}
+
+.writing-editor-head,
+.writing-ai-head,
+.writing-ai-output-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.writing-editor-textarea {
+  min-height: 0;
+  height: 100%;
+  resize: none;
+  font-family: "Iowan Old Style", "Songti SC", "PingFang SC", serif;
+  font-size: 15px;
+  line-height: 1.82;
+}
+
+.writing-intro-stack,
+.writing-chapter-workbench {
+  display: grid;
+  gap: 9px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.writing-intro-stack {
+  align-content: start;
+  grid-auto-rows: max-content;
+  gap: 14px;
+  padding-bottom: 8px;
+}
+
+.writing-chapter-workbench {
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.writing-intro-field {
+  display: grid;
+  grid-template-rows: auto auto;
+  gap: 8px;
+  align-content: start;
+  min-height: 0;
+}
+
+.writing-intro-textarea {
+  display: block;
+  height: auto;
+  min-height: 132px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.writing-intro-textarea.is-large {
+  min-height: 188px;
+}
+
+.writing-outline-board {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid rgba(247, 243, 235, 0.1);
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.045), rgba(245, 200, 107, 0.035)),
+    rgba(255, 255, 255, 0.026);
+}
+
+.writing-chapter-list-panel,
+.writing-chapter-summary-panel {
+  display: grid;
+  min-height: 0;
+}
+
+.writing-chapter-list-panel {
+  grid-template-rows: auto minmax(0, 1fr);
+  border-right: 1px solid rgba(247, 243, 235, 0.1);
+}
+
+.writing-chapter-summary-panel {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 12px;
+  background: rgba(8, 16, 26, 0.26);
+}
+
+.writing-chapter-panel-head,
+.writing-chapter-summary-head,
+.writing-chapter-commandbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.writing-chapter-panel-head {
+  padding: 12px;
+  border-bottom: 1px solid rgba(247, 243, 235, 0.08);
+}
+
+.writing-panel-title {
+  margin: 0;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.writing-chapter-list {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-height: 0;
+  padding: 8px 0 8px 8px;
+  overflow: auto;
+}
+
+.writing-chapter-list-item {
+  position: relative;
+  display: grid;
+  gap: 7px;
+  min-height: 64px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-right-color: transparent;
+  border-radius: 14px 0 0 14px;
+  background: transparent;
+  color: rgba(247, 243, 235, 0.72);
+  text-align: left;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.writing-chapter-list-item:hover,
+.writing-chapter-list-item.is-active {
+  border-color: rgba(92, 225, 194, 0.22);
+  border-right-color: transparent;
+  background: rgba(8, 16, 26, 0.42);
+  color: var(--text);
+}
+
+.writing-chapter-list-item.is-active::after {
+  content: "";
+  position: absolute;
+  top: -1px;
+  right: -9px;
+  bottom: -1px;
+  width: 9px;
+  border-top: 1px solid rgba(92, 225, 194, 0.22);
+  border-bottom: 1px solid rgba(92, 225, 194, 0.22);
+  background: rgba(8, 16, 26, 0.42);
+}
+
+.writing-chapter-list-title {
+  color: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.writing-chapter-list-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  color: rgba(247, 243, 235, 0.56);
+  font-size: 11px;
+}
+
+.writing-chapter-list-meta .status-pill {
+  min-height: 21px;
+  padding: 3px 7px;
+  font-size: 10px;
+}
+
+.writing-chapter-title-input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-family: "Iowan Old Style", "Songti SC", serif;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.writing-chapter-summary-textarea {
+  min-height: 0;
+}
+
+.writing-chapter-summary-actions {
+  justify-content: flex-end;
+}
+
+.writing-chapter-summary-actions .model-action-secondary,
+.writing-chapter-submit {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.writing-chapter-commandbar {
+  position: relative;
+  z-index: 4;
+  padding: 10px;
+  border: 1px solid rgba(247, 243, 235, 0.1);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.writing-chapter-picker-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.writing-chapter-picker {
+  position: relative;
+  display: grid;
+  gap: 5px;
+  flex: 0 0 260px;
+  max-width: 32vw;
+  min-width: 210px;
+}
+
+.writing-chapter-dropdown {
+  position: relative;
+}
+
+.writing-chapter-dropdown-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  height: 32px;
+  min-height: 32px;
+  padding: 0 9px 0 11px;
+  border: 1px solid rgba(247, 243, 235, 0.1);
+  border-radius: 11px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.065), rgba(255, 255, 255, 0.025)),
+    rgba(8, 15, 24, 0.6);
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-align: left;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.writing-chapter-dropdown-trigger span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.writing-chapter-dropdown-trigger .action-icon {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  color: rgba(92, 225, 194, 0.78);
+}
+
+.writing-chapter-dropdown.is-open .writing-chapter-dropdown-trigger,
+.writing-chapter-dropdown-trigger:hover {
+  border-color: rgba(92, 225, 194, 0.28);
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.1), rgba(245, 200, 107, 0.045)),
+    rgba(8, 15, 24, 0.72);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+}
+
+.writing-chapter-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 22;
+  display: grid;
+  gap: 5px;
+  max-height: 244px;
+  padding: 6px;
+  overflow: auto;
+  border: 1px solid rgba(247, 243, 235, 0.12);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.07), rgba(245, 200, 107, 0.04)),
+    #08101a;
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.34);
+}
+
+.writing-chapter-dropdown-item {
+  display: grid;
+  gap: 3px;
+  padding: 8px 9px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(247, 243, 235, 0.76);
+  text-align: left;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.writing-chapter-dropdown-item:hover,
+.writing-chapter-dropdown-item.is-active {
+  border-color: rgba(92, 225, 194, 0.22);
+  background: rgba(92, 225, 194, 0.1);
+  color: var(--text);
+}
+
+.writing-chapter-dropdown-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  font-weight: 800;
+}
+
+.writing-chapter-dropdown-item small,
+.writing-chapter-dropdown-empty {
+  color: rgba(247, 243, 235, 0.54);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.writing-chapter-dropdown-empty {
+  margin: 0;
+  padding: 9px;
+  text-align: center;
+}
+
+.writing-chapter-search-field {
+  flex: 0 0 148px;
+  min-width: 128px;
+}
+
+.writing-chapter-search-input {
+  height: 32px;
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 11.5px;
+  line-height: 30px;
+  border-radius: 11px;
+}
+
+.writing-chapter-submit {
+  flex: 0 0 auto;
+}
+
+.writing-chapter-brief-strip {
+  display: grid;
+  gap: 5px;
+  padding: 10px 12px;
+  border: 1px solid rgba(245, 200, 107, 0.13);
+  border-radius: 16px;
+  background: rgba(245, 200, 107, 0.055);
+}
+
+.writing-chapter-brief-strip strong {
+  color: #ffe5a8;
+  font-size: 13px;
+}
+
+.writing-chapter-brief-strip p {
+  margin: 0;
+  color: rgba(247, 243, 235, 0.72);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.writing-chapter-draft-textarea {
+  min-height: 0;
+}
+
+.writing-ai-input {
+  min-height: 62px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.writing-ai-task-field {
+  position: relative;
+  z-index: 3;
+}
+
+.writing-ai-task-dropdown {
+  position: relative;
+}
+
+.writing-ai-task-dropdown-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  height: 30px;
+  min-height: 30px;
+  padding: 0 9px 0 10px;
+  border: 1px solid rgba(247, 243, 235, 0.1);
+  border-radius: 10px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.022)),
+    rgba(8, 15, 24, 0.62);
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-align: left;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.writing-ai-task-dropdown-trigger span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.writing-ai-task-dropdown-trigger .action-icon {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  color: rgba(92, 225, 194, 0.78);
+}
+
+.writing-ai-task-dropdown.is-open .writing-ai-task-dropdown-trigger,
+.writing-ai-task-dropdown-trigger:hover {
+  border-color: rgba(92, 225, 194, 0.28);
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.1), rgba(245, 200, 107, 0.045)),
+    rgba(8, 15, 24, 0.76);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+}
+
+.writing-ai-task-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 24;
+  display: grid;
+  gap: 5px;
+  max-height: 214px;
+  padding: 6px;
+  overflow: auto;
+  border: 1px solid rgba(247, 243, 235, 0.12);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.07), rgba(245, 200, 107, 0.04)),
+    #08101a;
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.34);
+}
+
+.writing-ai-task-dropdown-item {
+  display: grid;
+  gap: 3px;
+  padding: 8px 9px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(247, 243, 235, 0.76);
+  text-align: left;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.writing-ai-task-dropdown-item:hover,
+.writing-ai-task-dropdown-item.is-active {
+  border-color: rgba(92, 225, 194, 0.22);
+  background: rgba(92, 225, 194, 0.1);
+  color: var(--text);
+}
+
+.writing-ai-task-dropdown-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  font-weight: 800;
+}
+
+.writing-ai-task-dropdown-item small {
+  color: rgba(247, 243, 235, 0.54);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.writing-prompt-preview {
+  border: 1px solid rgba(247, 243, 235, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+}
+
+.writing-prompt-preview-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: rgba(247, 243, 235, 0.78);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-align: left;
+}
+
+.writing-prompt-preview-toggle span {
+  min-width: 0;
+}
+
+.writing-prompt-preview-toggle .action-icon {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  color: rgba(92, 225, 194, 0.78);
+  transition: transform 160ms ease;
+}
+
+.writing-prompt-preview.is-open .writing-prompt-preview-toggle .action-icon {
+  transform: rotate(180deg);
+}
+
+.writing-prompt-preview-toggle:hover,
+.writing-prompt-preview-toggle:focus-visible {
+  color: var(--text);
+  background: rgba(92, 225, 194, 0.07);
+}
+
+.writing-prompt-preview-body {
+  height: 214px;
+  min-height: 214px;
+  padding: 0 10px 10px;
+  border-top: 1px solid rgba(247, 243, 235, 0.07);
+  overflow: hidden;
+}
+
+.writing-prompt-preview pre {
+  display: block;
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 100%;
+  max-height: none;
+  margin: 0;
+  padding: 8px 0 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: rgba(247, 243, 235, 0.72);
+  font-family: "SF Mono", "Menlo", "Monaco", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.writing-ai-run-row {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+.writing-ai-run {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: max-content;
+  min-width: 92px;
+  min-height: 30px;
+  padding: 0 11px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.writing-ai-output {
+  display: grid;
+  gap: 8px;
+}
+
+.writing-ai-output .model-section-actions {
+  gap: 7px;
+}
+
+.writing-ai-output .model-action-secondary {
+  min-height: 30px;
+  padding: 0 11px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.writing-ai-output-textarea {
+  min-height: 132px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 .model-config-head {
   display: flex;
   align-items: center;
@@ -5774,9 +6873,54 @@ canvas {
 
   .models-grid,
   .model-form,
+  .marketplace-app-grid,
+  .writing-shelf-grid,
+  .writing-detail-layout,
+  .writing-editor-grid,
+  .writing-outline-board,
   .provider-grid,
   .provider-picker-grid {
     grid-template-columns: 1fr;
+  }
+
+  .writing-detail-head {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .writing-title-input {
+    width: 100%;
+  }
+
+  .marketplace-app-grid,
+  .writing-shelf-grid {
+    grid-template-columns: repeat(2, minmax(220px, 1fr));
+  }
+
+  .writing-detail-rail {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .writing-chapter-list-panel {
+    border-right: 0;
+    border-bottom: 1px solid rgba(247, 243, 235, 0.1);
+  }
+
+  .writing-chapter-list {
+    padding-right: 8px;
+  }
+
+  .writing-chapter-list-item {
+    border-radius: 14px;
+  }
+
+  .writing-chapter-list-item.is-active::after {
+    content: none;
+  }
+
+  .writing-chapter-picker {
+    flex-basis: 240px;
+    max-width: none;
   }
 
   .workflow-library-card-grid,
@@ -6090,7 +7234,50 @@ canvas {
 
 @media (max-width: 760px) {
   .workflow-library-card-grid,
-  .workflow-library-record-grid {
+  .workflow-library-record-grid,
+  .writing-shelf-grid,
+  .marketplace-app-grid {
     grid-template-columns: 1fr;
+  }
+
+  .marketplace-app-card,
+  .writing-book-card {
+    grid-template-columns: 1fr;
+  }
+
+  .marketplace-app-meta {
+    grid-column: auto;
+  }
+
+  .writing-detail-head,
+  .writing-shelf-head,
+  .marketplace-hero,
+  .writing-editor-head,
+  .writing-ai-head,
+  .writing-chapter-commandbar {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .writing-editor-tools {
+    justify-content: space-between;
+  }
+
+  .writing-chapter-picker-row {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .writing-chapter-picker,
+  .writing-chapter-search-field {
+    width: 100%;
+    min-width: 0;
+    flex-basis: auto;
+  }
+
+  .writing-tab-bar {
+    flex-direction: column;
   }
 }

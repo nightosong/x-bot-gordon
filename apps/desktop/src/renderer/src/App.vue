@@ -420,6 +420,484 @@
             </div>
           </template>
 
+          <template v-else-if="activeFeature === FEATURE_MARKETPLACE">
+            <div class="workspace-stage workspace-stage-scroll" :class="{ 'workspace-stage-flush': ui.marketplace.view === 'writingDetail' }">
+              <div
+                class="marketplace-shell"
+                :class="{
+                  'marketplace-shell-detail': ui.marketplace.view === 'writingDetail',
+                  'marketplace-shell-shelf': ui.marketplace.view === 'writingShelf'
+                }"
+              >
+                <template v-if="ui.marketplace.view === 'apps'">
+                  <section class="models-hero workflow-library-hero marketplace-hero">
+                    <div>
+                      <p class="feature-kicker">Marketplace</p>
+                      <p class="models-title">应用广场</p>
+                    </div>
+                    <div class="workflow-library-hero-side">
+                      <span class="status-pill">1 个应用</span>
+                    </div>
+                  </section>
+
+                  <section class="marketplace-app-grid">
+                    <article
+                      class="marketplace-app-card writing-app-card"
+                      role="button"
+                      tabindex="0"
+                      aria-label="进入笔墨生花"
+                      @click="openWritingAppShelf"
+                      @keydown.enter.prevent="openWritingAppShelf"
+                      @keydown.space.prevent="openWritingAppShelf"
+                    >
+                      <div class="writing-app-mark" aria-hidden="true">
+                        <span>笔</span>
+                      </div>
+                      <div class="marketplace-app-copy">
+                        <p class="feature-kicker">Novel Studio</p>
+                        <p class="marketplace-app-title">笔墨生花</p>
+                        <p class="models-copy">书架、故事设定、目录规划和章节正文都在同一个写作工作台里推进。</p>
+                      </div>
+                      <div class="marketplace-app-meta">
+                        <span class="pill">写作助手</span>
+                        <span class="pill pill-neutral">大师提示词</span>
+                      </div>
+                    </article>
+                  </section>
+                </template>
+
+                <template v-else-if="ui.marketplace.view === 'writingShelf'">
+                  <section class="workflow-library-detail-head writing-shelf-head">
+                    <div class="workflow-library-detail-head-side">
+                      <button type="button" class="model-icon-button weekly-back-button" aria-label="返回应用广场" title="返回应用广场" @click="backWritingMarketplace">
+                        <GIcon name="return" />
+                      </button>
+                    </div>
+
+                    <div class="workflow-library-detail-head-center">
+                      <p class="workflow-library-detail-title">笔墨生花</p>
+                    </div>
+
+                    <div class="workflow-library-detail-head-side workflow-library-detail-head-side-end">
+                      <span class="status-pill">{{ writingBooks.length }} 本书</span>
+                      <label class="model-icon-button writing-upload-action" aria-label="上传书稿" title="上传书稿">
+                        <GIcon name="upload" />
+                        <input type="file" accept=".txt,.md,.json" @change="handleWritingBookUpload" />
+                      </label>
+                      <button type="button" class="model-icon-button" aria-label="新建书籍" title="新建书籍" @click="createWritingBook">
+                        <GIcon name="add" />
+                      </button>
+                    </div>
+                  </section>
+
+                  <section class="writing-shelf-grid">
+                    <article
+                      v-for="book in writingBooks"
+                      :key="book.id"
+                      class="writing-book-card"
+                      :class="`is-${book.coverTone}`"
+                      role="button"
+                      tabindex="0"
+                      :aria-label="`打开${book.title}`"
+                      @click="openWritingBook(book.id)"
+                      @keydown.enter.prevent="openWritingBook(book.id)"
+                      @keydown.space.prevent="openWritingBook(book.id)"
+                    >
+                      <div class="writing-book-cover" aria-hidden="true">
+                        <span>{{ book.title.slice(0, 1) }}</span>
+                      </div>
+                      <div class="writing-book-card-main">
+                        <div>
+                          <p class="writing-book-title">{{ book.title }}</p>
+                          <p class="writing-book-meta">{{ getWritingLengthLabel(book.length) }} / {{ book.genre }}</p>
+                        </div>
+                        <p class="models-copy">{{ truncateText(book.intro, 98) }}</p>
+                        <div class="writing-book-card-foot">
+                          <span class="pill">{{ book.status }}</span>
+                          <span class="pill pill-neutral">{{ getWritingBookWordCount(book) }} 字</span>
+                          <span class="pill pill-neutral">完整度 {{ getWritingBookCompleteness(book) }}%</span>
+                        </div>
+                      </div>
+                    </article>
+                  </section>
+                </template>
+
+                <template v-else-if="activeWritingBook">
+                  <section class="writing-detail-shell">
+                    <header class="writing-detail-head">
+                      <button type="button" class="model-icon-button weekly-back-button" aria-label="返回书架" title="返回书架" @click="backWritingShelf">
+                        <GIcon name="return" />
+                      </button>
+
+                      <div class="writing-detail-title">
+                        <input
+                          :value="activeWritingBook.title"
+                          class="writing-title-input"
+                          aria-label="书名"
+                          @input="setWritingBookTitle($event.target.value)"
+                        />
+                      </div>
+
+                      <div class="model-section-actions">
+                        <span class="pill">{{ activeWritingLengthProfile.label }}</span>
+                        <span class="pill pill-neutral">{{ getWritingTabWordCount() }} 字</span>
+                      </div>
+                    </header>
+
+                    <section
+                      class="writing-detail-layout"
+                      :class="{
+                        'is-profile-collapsed': ui.marketplace.writing.isProfileCollapsed,
+                        'is-ai-open': ui.marketplace.writing.isAiDrawerOpen
+                      }"
+                    >
+                      <aside class="writing-detail-rail" :aria-expanded="ui.marketplace.writing.isProfileCollapsed ? 'false' : 'true'">
+                        <button
+                          type="button"
+                          class="model-icon-button writing-profile-toggle"
+                          :aria-label="ui.marketplace.writing.isProfileCollapsed ? '展开书籍信息' : '折叠书籍信息'"
+                          :title="ui.marketplace.writing.isProfileCollapsed ? '展开书籍信息' : '折叠书籍信息'"
+                          @click="toggleWritingProfileRail"
+                        >
+                          <GIcon :name="ui.marketplace.writing.isProfileCollapsed ? 'chevronRight' : 'chevronLeft'" />
+                        </button>
+
+                        <div v-if="!ui.marketplace.writing.isProfileCollapsed" class="writing-rail-content">
+                          <div class="writing-book-profile">
+                            <div class="writing-book-cover writing-book-cover-large" :class="`is-${activeWritingBook.coverTone}`" aria-hidden="true">
+                              <span>{{ activeWritingBook.title.slice(0, 1) || "书" }}</span>
+                            </div>
+                            <label class="field">
+                              <span class="field-label">篇幅</span>
+                              <select
+                                :value="activeWritingBook.length"
+                                class="field-input writing-mini-select"
+                                @change="setWritingBookLength($event.target.value)"
+                              >
+                                <option value="short">短篇</option>
+                                <option value="medium">中篇</option>
+                                <option value="long">长篇</option>
+                              </select>
+                            </label>
+                            <label class="field">
+                              <span class="field-label">类型</span>
+                              <input
+                                :value="activeWritingBook.genre"
+                                class="field-input writing-mini-input"
+                                @input="setWritingBookGenre($event.target.value)"
+                              />
+                            </label>
+                          </div>
+
+                          <div class="writing-method-card">
+                            <span class="field-label">篇幅策略</span>
+                            <strong>{{ activeWritingLengthProfile.scope }}</strong>
+                            <p>{{ activeWritingLengthProfile.method }}</p>
+                          </div>
+
+                          <div class="writing-stat-list">
+                            <span class="pill pill-neutral">更新 {{ formatWritingBookUpdatedAt(activeWritingBook.updatedAt) }}</span>
+                            <span class="pill pill-neutral">总字数 {{ getWritingBookWordCount(activeWritingBook) }}</span>
+                          </div>
+                        </div>
+                      </aside>
+
+                      <main class="writing-main-stage">
+                        <div class="writing-tab-bar" role="tablist" aria-label="书籍详情模块">
+                          <button
+                            v-for="tab in WRITING_APP_TABS"
+                            :key="tab.id"
+                            type="button"
+                            class="writing-tab"
+                            :class="{ 'is-active': ui.marketplace.writing.activeTab === tab.id }"
+                            :aria-selected="ui.marketplace.writing.activeTab === tab.id ? 'true' : 'false'"
+                            @click="setWritingTab(tab.id)"
+                          >
+                            <span>{{ tab.kicker }}</span>
+                            {{ tab.label }}
+                          </button>
+                        </div>
+
+                        <section class="writing-editor-grid">
+                          <article class="writing-editor-card">
+                            <div class="writing-editor-head">
+                              <div>
+                                <p class="feature-kicker">{{ activeWritingTabMeta.kicker }}</p>
+                                <p class="model-section-title">{{ activeWritingTabMeta.fieldLabel }}</p>
+                              </div>
+                              <div class="writing-editor-tools">
+                                <span class="status-pill">{{ getWritingTabWordCount() }} 字</span>
+                                <button
+                                  type="button"
+                                  class="model-icon-button writing-ai-float-trigger"
+                                  :aria-label="ui.marketplace.writing.isAiDrawerOpen ? '收起大师辅助' : '打开大师辅助'"
+                                  :title="ui.marketplace.writing.isAiDrawerOpen ? '收起大师辅助' : '打开大师辅助'"
+                                  @click="setWritingAiDrawerOpen(!ui.marketplace.writing.isAiDrawerOpen)"
+                                >
+                                  <GIcon name="sparkles" />
+                                </button>
+                              </div>
+                            </div>
+
+                            <div v-if="ui.marketplace.writing.activeTab === 'intro'" class="writing-intro-stack">
+                              <label v-for="section in activeWritingIntroSections" :key="section.key" class="field writing-intro-field">
+                                <span class="field-label">{{ section.label }}</span>
+                                <textarea
+                                  class="field-textarea writing-editor-textarea writing-intro-textarea"
+                                  :class="{ 'is-large': section.key !== 'intro' }"
+                                  :value="getWritingIntroFieldValue(activeWritingBook, section.key)"
+                                  :placeholder="section.placeholder"
+                                  @input="setWritingIntroField(activeWritingBook, section.key, $event.target.value)"
+                                ></textarea>
+                              </label>
+                            </div>
+
+                            <div v-else-if="ui.marketplace.writing.activeTab === 'outline'" class="writing-outline-board">
+                              <div class="writing-chapter-list-panel">
+                                <div class="writing-chapter-panel-head">
+                                  <div>
+                                    <p class="feature-kicker">Chapter List</p>
+                                    <p class="writing-panel-title">{{ activeWritingChapters.length }} 个章节</p>
+                                  </div>
+                                  <button type="button" class="model-icon-button" aria-label="新增章节" title="新增章节" @click="createWritingChapter">
+                                    <GIcon name="add" />
+                                  </button>
+                                </div>
+
+                                <div class="writing-chapter-list">
+                                  <button
+                                    v-for="(chapter, index) in activeWritingChapters"
+                                    :key="chapter.id"
+                                    type="button"
+                                    class="writing-chapter-list-item"
+                                    :class="{
+                                      'is-active': activeWritingChapter?.id === chapter.id,
+                                      'is-done': chapter.status === 'done',
+                                      'is-progress': chapter.status === 'inProgress'
+                                    }"
+                                    @click="selectWritingChapter(chapter.id)"
+                                  >
+                                    <span class="writing-chapter-list-title">{{ getWritingChapterDisplayTitle(chapter, index) }}</span>
+                                    <span class="writing-chapter-list-meta">
+                                      <span class="status-pill" :class="getWritingChapterStatusClass(chapter.status)">
+                                        {{ getWritingChapterStatusLabel(chapter.status) }}
+                                      </span>
+                                      <span>{{ getWritingChapterWordCount(chapter) }} 字</span>
+                                    </span>
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div v-if="activeWritingChapter" class="writing-chapter-summary-panel">
+                                <div class="writing-chapter-summary-head">
+                                  <div>
+                                    <p class="feature-kicker">Chapter Brief</p>
+                                    <input
+                                      class="writing-chapter-title-input"
+                                      :value="activeWritingChapter.title"
+                                      aria-label="章节标题"
+                                      @input="setWritingChapterTitle(activeWritingChapter, $event.target.value)"
+                                    />
+                                  </div>
+                                  <span class="status-pill" :class="getWritingChapterStatusClass(activeWritingChapter.status)">
+                                    {{ getWritingChapterStatusLabel(activeWritingChapter.status) }}
+                                  </span>
+                                </div>
+
+                                <textarea
+                                  class="field-textarea writing-editor-textarea writing-chapter-summary-textarea"
+                                  :value="activeWritingChapter.summary"
+                                  placeholder="写下本章目标、主要冲突、信息增量、人物变化和结尾钩子。"
+                                  @input="setWritingChapterSummary(activeWritingChapter, $event.target.value)"
+                                ></textarea>
+
+                                <div class="model-section-actions writing-chapter-summary-actions">
+                                  <button type="button" class="model-action-secondary" @click="goWritingChapter(activeWritingChapter.id)">
+                                    进入编写
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div v-else class="writing-chapter-workbench">
+                              <div v-if="activeWritingChapter" class="writing-chapter-commandbar">
+                                <div class="writing-chapter-picker-row">
+                                  <div class="writing-chapter-picker">
+                                    <span class="field-label">当前章节</span>
+                                    <div class="writing-chapter-dropdown" :class="{ 'is-open': ui.marketplace.writing.isChapterPickerOpen }">
+                                      <button
+                                        type="button"
+                                        class="writing-chapter-dropdown-trigger"
+                                        :aria-expanded="ui.marketplace.writing.isChapterPickerOpen ? 'true' : 'false'"
+                                        aria-haspopup="listbox"
+                                        @click="toggleWritingChapterPicker"
+                                      >
+                                        <span>{{ getWritingChapterDisplayTitle(activeWritingChapter, activeWritingChapterIndex) }}</span>
+                                        <GIcon name="chevronDown" />
+                                      </button>
+
+                                      <div v-if="ui.marketplace.writing.isChapterPickerOpen" class="writing-chapter-dropdown-menu" role="listbox">
+                                        <button
+                                          v-for="entry in filteredWritingChapterEntries"
+                                          :key="entry.chapter.id"
+                                          type="button"
+                                          class="writing-chapter-dropdown-item"
+                                          :class="{ 'is-active': activeWritingChapter?.id === entry.chapter.id }"
+                                          role="option"
+                                          :aria-selected="activeWritingChapter?.id === entry.chapter.id ? 'true' : 'false'"
+                                          @click="selectWritingChapterFromPicker(entry.chapter.id)"
+                                        >
+                                          <span>{{ entry.title }}</span>
+                                          <small>
+                                            {{ getWritingChapterStatusLabel(entry.chapter.status) }} / {{ getWritingChapterWordCount(entry.chapter) }} 字
+                                          </small>
+                                        </button>
+                                        <p v-if="!filteredWritingChapterEntries.length" class="writing-chapter-dropdown-empty">没有匹配章节</p>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <label class="field writing-chapter-search-field">
+                                    <span class="field-label">搜索</span>
+                                    <input
+                                      v-model="ui.marketplace.writing.chapterSearchQuery"
+                                      class="field-input writing-chapter-search-input"
+                                      placeholder="章节名"
+                                      @focus="setWritingChapterPickerOpen(true)"
+                                    />
+                                  </label>
+                                </div>
+
+                                <span class="status-pill" :class="getWritingChapterStatusClass(activeWritingChapter.status)">
+                                  {{ getWritingChapterStatusLabel(activeWritingChapter.status) }}
+                                </span>
+
+                                <button
+                                  type="button"
+                                  class="model-action writing-chapter-submit"
+                                  :disabled="!getWritingChapterWordCount(activeWritingChapter)"
+                                  @click="submitWritingChapter"
+                                >
+                                  提交章节
+                                </button>
+                              </div>
+
+                              <div v-if="activeWritingChapter" class="writing-chapter-brief-strip">
+                                <strong>{{ getWritingChapterDisplayTitle(activeWritingChapter, activeWritingChapterIndex) }}</strong>
+                                <p>{{ activeWritingChapter.summary || "这个章节还没有简介。" }}</p>
+                              </div>
+
+                              <textarea
+                                v-if="activeWritingChapter"
+                                class="field-textarea writing-editor-textarea writing-chapter-draft-textarea"
+                                :value="activeWritingChapter.content"
+                                placeholder="从这一章的第一个场景开始写。"
+                                @input="setWritingChapterContent(activeWritingChapter, $event.target.value)"
+                              ></textarea>
+                            </div>
+                          </article>
+
+                          <aside v-if="ui.marketplace.writing.isAiDrawerOpen" class="writing-ai-card writing-ai-drawer">
+                            <div class="writing-ai-head">
+                              <div>
+                                <p class="feature-kicker">AI Copilot</p>
+                                <p class="model-section-title">大师辅助</p>
+                              </div>
+                            </div>
+
+                            <div class="field writing-ai-task-field">
+                              <span class="field-label">辅助任务</span>
+                              <div class="writing-ai-task-dropdown" :class="{ 'is-open': ui.marketplace.writing.isAiTaskPickerOpen }">
+                                <button
+                                  type="button"
+                                  class="writing-ai-task-dropdown-trigger"
+                                  :aria-expanded="ui.marketplace.writing.isAiTaskPickerOpen ? 'true' : 'false'"
+                                  aria-haspopup="listbox"
+                                  @click="toggleWritingAiTaskPicker"
+                                >
+                                  <span>{{ activeWritingTask?.label ?? "选择任务" }}</span>
+                                  <GIcon name="chevronDown" />
+                                </button>
+
+                                <div v-if="ui.marketplace.writing.isAiTaskPickerOpen" class="writing-ai-task-dropdown-menu" role="listbox">
+                                  <button
+                                    v-for="task in activeWritingTaskOptions"
+                                    :key="task.id"
+                                    type="button"
+                                    class="writing-ai-task-dropdown-item"
+                                    :class="{ 'is-active': activeWritingTask?.id === task.id }"
+                                    role="option"
+                                    :aria-selected="activeWritingTask?.id === task.id ? 'true' : 'false'"
+                                    @click="selectWritingAiTask(task.id)"
+                                  >
+                                    <span>{{ task.label }}</span>
+                                    <small>{{ task.goal }}</small>
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
+                            <label class="field">
+                              <span class="field-label">额外要求</span>
+                              <textarea
+                                v-model="ui.marketplace.writing.aiInstruction"
+                                class="field-textarea writing-ai-input"
+                                placeholder="例如：更黑暗、更史诗；补一条反派线；第 3 章必须反转。"
+                              ></textarea>
+                            </label>
+
+                            <section class="writing-prompt-preview" :class="{ 'is-open': ui.marketplace.writing.isPromptPreviewOpen }">
+                              <button
+                                type="button"
+                                class="writing-prompt-preview-toggle"
+                                :aria-expanded="ui.marketplace.writing.isPromptPreviewOpen ? 'true' : 'false'"
+                                @click="toggleWritingPromptPreview"
+                              >
+                                <span>提示词预览</span>
+                                <GIcon name="chevronDown" />
+                              </button>
+                              <div v-if="ui.marketplace.writing.isPromptPreviewOpen" class="writing-prompt-preview-body">
+                                <pre>{{ activeWritingPromptPreview }}</pre>
+                              </div>
+                            </section>
+
+                            <div class="writing-ai-run-row">
+                              <button type="button" class="model-action writing-ai-run" :disabled="ui.marketplace.writing.isAiRunning" @click="generateWritingAssistantOutput">
+                                {{ ui.marketplace.writing.isAiRunning ? "生成中" : "生成建议" }}
+                              </button>
+                            </div>
+
+                            <div class="writing-ai-output">
+                              <div class="writing-ai-output-head">
+                                <span class="field-label">AI 输出</span>
+                                <span v-if="ui.marketplace.writing.aiFeedback" class="status-pill" :class="ui.marketplace.writing.aiFeedbackTone === 'success' ? 'is-success' : ui.marketplace.writing.aiFeedbackTone === 'danger' ? 'is-danger' : ''">
+                                  {{ ui.marketplace.writing.aiFeedback }}
+                                </span>
+                              </div>
+                              <textarea
+                                v-model="ui.marketplace.writing.aiOutput"
+                                class="field-textarea writing-ai-output-textarea"
+                                placeholder="生成结果会出现在这里。"
+                              ></textarea>
+                              <div class="model-section-actions">
+                                <button type="button" class="model-action-secondary" :disabled="!ui.marketplace.writing.aiOutput" @click="applyWritingAssistantOutput('append')">
+                                  追加
+                                </button>
+                                <button type="button" class="model-action-secondary" :disabled="!ui.marketplace.writing.aiOutput" @click="applyWritingAssistantOutput('replace')">
+                                  替换
+                                </button>
+                              </div>
+                            </div>
+                          </aside>
+                        </section>
+                      </main>
+                    </section>
+                  </section>
+                </template>
+              </div>
+            </div>
+          </template>
+
           <template v-else-if="activeFeature === FEATURE_TASKS">
             <div class="workspace-stage workspace-stage-scroll" :class="{ 'workspace-stage-flush': ui.weekly.view === 'editor' }">
               <div class="weekly-shell" :class="{ 'weekly-shell-editor': ui.weekly.view === 'editor' }">
@@ -3168,10 +3646,78 @@ const FEATURE_PLACEHOLDERS = {
 const WEEKLY_RISK_KEYWORDS = ["风险", "问题", "阻塞", "受阻", "卡点", "依赖", "待协调", "延期", "等待"];
 const WEEKLY_NO_RISK_PATTERN = /(暂无风险|无风险|无阻塞|暂无阻塞|未发现阻塞|风险可控)/;
 const WEEKLY_AUTOSAVE_DELAY = 700;
+const WRITING_AUTOSAVE_DELAY = 700;
 const DAILY_REPORT_GUIDE_COPY = [
   "系统会自动遍历今天有更新的叶子任务。",
   "更新范围包括：修改任务内容、修改任务状态。",
   "输出结果会按项目归组，仅保留今天推进过的任务清单。"
+].join("\n");
+const WRITING_APP_TABS = [
+  { id: "intro", label: "故事介绍", kicker: "Premise", fieldLabel: "设定与故事介绍" },
+  { id: "outline", label: "书籍目录", kicker: "Outline", fieldLabel: "卷章结构与目录" },
+  { id: "chapter", label: "章节编写", kicker: "Chapter", fieldLabel: "当前章节正文" }
+];
+const WRITING_LENGTH_PROFILES = {
+  short: {
+    label: "短篇",
+    scope: "一口气完成的强冲击叙事",
+    method: "只保留一个核心矛盾、一个决定性转折和一个余震结尾；背景只写会改变结局的设定。"
+  },
+  medium: {
+    label: "中篇",
+    scope: "多幕式成长与反转",
+    method: "用 3-5 个阶段推进人物关系和真相揭露；每一幕都要让主角付出不可逆代价。"
+  },
+  long: {
+    label: "长篇",
+    scope: "严密世界观与群像长线",
+    method: "先搭建时代、制度、利益网络和多阵营目标，再用卷级悬念、人物弧光和伏笔回收驱动章节。"
+  }
+};
+const WRITING_AI_TASKS = {
+  intro: [
+    { id: "world", label: "世界观总设", goal: "补强时代、地理、制度、资源、禁忌和冲突源，让背景成为剧情发动机。" },
+    { id: "character", label: "人物关系网", goal: "设计主角、对手、盟友、镜像人物和隐性债务，突出彼此之间的利益与情感牵连。" },
+    { id: "premise", label: "故事钩子", goal: "提炼一句不可忽视的核心命题，并扩写成具有出版级吸引力的故事简介。" }
+  ],
+  outline: [
+    { id: "structure", label: "章节规划", goal: "按篇幅拆分幕、卷、章，给每一章明确冲突、信息增量、人物变化和结尾钩子。" },
+    { id: "foreshadow", label: "伏笔回收", goal: "设计伏笔、误导、反转和回收节奏，避免目录只是事件流水账。" },
+    { id: "rhythm", label: "节奏诊断", goal: "检查高潮、缓冲、揭秘、失败和胜利的分布，让故事曲线更有张力。" }
+  ],
+  chapter: [
+    { id: "draft", label: "章节初稿", goal: "根据当前目录与设定生成章节正文，要求场景具体、对白有锋芒、段落有推进。" },
+    { id: "expand", label: "内容扩写", goal: "丰富感官细节、行动链、心理暗流和人物互动，不改变既有剧情方向。" },
+    { id: "polish", label: "文学润色", goal: "强化语言质感、节奏、意象和收束句，让章节更有记忆点。" }
+  ]
+};
+const WRITING_INTRO_SECTION_DEFINITIONS = {
+  intro: {
+    key: "intro",
+    label: "简短介绍",
+    placeholder: "用几段话写清故事核心命题、主角处境、主要矛盾和读者会被什么牵引。"
+  },
+  outlineGuide: {
+    key: "outlineGuide",
+    label: "大纲指导",
+    placeholder: "写下中篇结构的阶段、转折、人物变化和主要伏笔，帮助后续目录不散。"
+  },
+  seriesPlan: {
+    key: "seriesPlan",
+    label: "详细大纲指导",
+    placeholder: "写下长篇整体规划：分部、分卷、每一部的完整故事目标、核心阵营变化和最终回收。"
+  }
+};
+const WRITING_CHAPTER_STATUS_META = {
+  todo: { label: "未开始", className: "is-cancelled" },
+  inProgress: { label: "进行中", className: "is-warning" },
+  done: { label: "已完成", className: "is-success" }
+};
+const WRITING_MASTER_SYSTEM_PROMPT = [
+  "你是「笔墨生花」里的大师级小说总编、故事架构师和文字教练。",
+  "你的目标不是写普通顺滑文本，而是帮助作者设计能承受长篇推敲的故事：背景设定严密，人物关系有因果，情节曲折但不靠巧合，章节推进有明确的信息增量。",
+  "你必须根据短篇、中篇、长篇的不同叙事规律调整建议密度。",
+  "输出必须可直接放进写作项目，不写寒暄，不解释你在做什么。"
 ].join("\n");
 const MODEL_BALANCE_QUERY_TEMPLATE = [
   "({",
@@ -3213,9 +3759,13 @@ let splineApplicationPromise = null;
 let weeklyAutosaveTimer = null;
 let weeklySavedSnapshot = "";
 let weeklyAutosaveInFlight = false;
+let writingAutosaveTimer = null;
+let writingSaveInFlight = false;
+let writingQueuedSaveBookId = null;
 let weeklyReportCopyTimer = null;
 let agentProgressListenerId = null;
 let workflowProgressListenerId = null;
+const writingBookSaveVersions = new Map();
 
 function createEmptyModelSettings() {
   return {
@@ -3262,6 +3812,31 @@ function createWeeklyState() {
     dailyReportUseModelOptimization: false,
     isGeneratingReport: false,
     generatingReportKind: null
+  };
+}
+
+function createMarketplaceState() {
+  return {
+    view: "apps",
+    writing: {
+      books: [],
+      activeBookId: null,
+      activeTab: "intro",
+      activeChapterId: "",
+      aiTaskId: "world",
+      aiInstruction: "",
+      aiOutput: "",
+      aiFeedback: "",
+      aiFeedbackTone: "neutral",
+      isAiRunning: false,
+      uploadFeedback: "",
+      isProfileCollapsed: false,
+      isAiDrawerOpen: false,
+      isAiTaskPickerOpen: false,
+      isPromptPreviewOpen: false,
+      isChapterPickerOpen: false,
+      chapterSearchQuery: ""
+    }
   };
 }
 
@@ -3625,6 +4200,7 @@ const workbench = reactive({
   modelSettings: createEmptyModelSettings(),
   weeklyProgress: [],
   workflowLibrary: [],
+  writingBooks: [],
   skillDefinitions: [],
   mcpServers: [],
   agentProfiles: [],
@@ -3643,6 +4219,7 @@ const ui = reactive({
     view: "list",
     editor: createModelEditorState("openai")
   },
+  marketplace: createMarketplaceState(),
   weekly: createWeeklyState(),
   workflow: createWorkflowState(),
   dialog: createGordonDialogState(),
@@ -3672,6 +4249,7 @@ const robotRuntimeState = {
 const isWorkspaceImmersive = computed(
   () =>
     (activeFeature.value === FEATURE_TASKS && ui.weekly.view === "editor") ||
+    (activeFeature.value === FEATURE_MARKETPLACE && ui.marketplace.view !== "apps") ||
     (activeFeature.value === FEATURE_WORKFLOW_LIBRARY && ui.workflow.view !== "library") ||
     (activeFeature.value === FEATURE_COMMAND_WORKSHOP && ui.command.view === "chat")
 );
@@ -3700,6 +4278,54 @@ const enabledSkills = computed(() => workbench.skillDefinitions.filter((skill) =
 const enabledMcpServers = computed(() => workbench.mcpServers.filter((server) => server.enabled));
 
 const modelEditorFields = computed(() => getProviderFields(ui.modelManagement.editor.provider));
+const writingBooks = computed(() => ui.marketplace.writing.books ?? []);
+const activeWritingBook = computed(
+  () => writingBooks.value.find((book) => book.id === ui.marketplace.writing.activeBookId) ?? writingBooks.value[0] ?? null
+);
+const activeWritingTabMeta = computed(
+  () => WRITING_APP_TABS.find((tab) => tab.id === ui.marketplace.writing.activeTab) ?? WRITING_APP_TABS[0]
+);
+const activeWritingLengthProfile = computed(
+  () => WRITING_LENGTH_PROFILES[activeWritingBook.value?.length ?? "long"] ?? WRITING_LENGTH_PROFILES.long
+);
+const activeWritingIntroSections = computed(() => getWritingIntroSections(activeWritingBook.value));
+const activeWritingChapters = computed(() => getWritingChapters(activeWritingBook.value));
+const activeWritingChapter = computed(
+  () =>
+    activeWritingChapters.value.find((chapter) => chapter.id === ui.marketplace.writing.activeChapterId) ??
+    getPreferredWritingChapter(activeWritingBook.value) ??
+    null
+);
+const activeWritingChapterIndex = computed(() =>
+  Math.max(
+    0,
+    activeWritingChapters.value.findIndex((chapter) => chapter.id === activeWritingChapter.value?.id)
+  )
+);
+const filteredWritingChapterEntries = computed(() =>
+  getFilteredWritingChapterEntries(activeWritingChapters.value, ui.marketplace.writing.chapterSearchQuery)
+);
+const activeWritingTaskOptions = computed(() => WRITING_AI_TASKS[ui.marketplace.writing.activeTab] ?? WRITING_AI_TASKS.intro);
+const activeWritingTask = computed(
+  () =>
+    activeWritingTaskOptions.value.find((task) => task.id === ui.marketplace.writing.aiTaskId) ??
+    activeWritingTaskOptions.value[0] ??
+    null
+);
+const activeWritingContent = computed({
+  get: () => getWritingBookContent(activeWritingBook.value, ui.marketplace.writing.activeTab),
+  set: (value) => {
+    setWritingBookContent(activeWritingBook.value, ui.marketplace.writing.activeTab, value);
+  }
+});
+const activeWritingPromptPreview = computed(() =>
+  buildWritingAssistantPrompt({
+    book: activeWritingBook.value,
+    tabId: ui.marketplace.writing.activeTab,
+    task: activeWritingTask.value,
+    instruction: ui.marketplace.writing.aiInstruction
+  })
+);
 
 function hasModelBalanceQuery(profile) {
   return Boolean(String(profile?.balanceQueryCode ?? "").trim());
@@ -3814,6 +4440,890 @@ function buildModelEditorPayload() {
     balanceSnapshot: shouldReuseBalanceSnapshot ? ui.modelManagement.editor.balanceQueryResult ?? null : null,
     updatedAt: new Date().toISOString()
   };
+}
+
+function getWritingLengthLabel(length) {
+  return WRITING_LENGTH_PROFILES[length]?.label ?? WRITING_LENGTH_PROFILES.long.label;
+}
+
+function normalizeWritingBookLengthForUi(value) {
+  return WRITING_LENGTH_PROFILES[value] ? value : "long";
+}
+
+function normalizeWritingChapterStatusForUi(value) {
+  return WRITING_CHAPTER_STATUS_META[value] ? value : "todo";
+}
+
+function normalizeWritingBookForUi(book, index = 0) {
+  const now = new Date().toISOString();
+  const normalized = {
+    id: String(book?.id ?? "").trim() || createLocalId("writing_book"),
+    title: String(book?.title ?? "").trim() || "未命名故事",
+    author: String(book?.author ?? "Song"),
+    length: normalizeWritingBookLengthForUi(book?.length),
+    genre: String(book?.genre ?? "小说 / 待定类型"),
+    status: String(book?.status ?? "新建"),
+    updatedAt: String(book?.updatedAt ?? now),
+    coverTone: String(book?.coverTone ?? (index % 3 === 0 ? "teal" : index % 3 === 1 ? "coral" : "gold")),
+    intro: String(book?.intro ?? ""),
+    outlineGuide: String(book?.outlineGuide ?? ""),
+    seriesPlan: String(book?.seriesPlan ?? ""),
+    directoryName: typeof book?.directoryName === "string" ? book.directoryName : undefined,
+    chapters: []
+  };
+
+  normalized.chapters = (Array.isArray(book?.chapters) ? book.chapters : []).map((chapter, chapterIndex) =>
+    normalizeWritingChapter(
+      {
+        ...chapter,
+        status: normalizeWritingChapterStatusForUi(chapter?.status)
+      },
+      chapterIndex,
+      normalized
+    )
+  );
+
+  return normalized;
+}
+
+function normalizeWritingBooksForUi(books = []) {
+  return (Array.isArray(books) ? books : []).map((book, index) => normalizeWritingBookForUi(book, index));
+}
+
+function syncWritingBookSaveVersions(books = []) {
+  const bookIds = new Set(books.map((book) => book.id));
+
+  Array.from(writingBookSaveVersions.keys()).forEach((bookId) => {
+    if (!bookIds.has(bookId)) {
+      writingBookSaveVersions.delete(bookId);
+    }
+  });
+
+  books.forEach((book) => {
+    if (!writingBookSaveVersions.has(book.id)) {
+      writingBookSaveVersions.set(book.id, 0);
+    }
+  });
+}
+
+function applyWritingBooksFromStorage(books = [], options = {}) {
+  const normalizedBooks = normalizeWritingBooksForUi(books);
+  const preferredBookId = options.preferBookId ?? ui.marketplace.writing.activeBookId;
+  const preferredChapterId = options.preferChapterId ?? ui.marketplace.writing.activeChapterId;
+  const nextBook = normalizedBooks.find((book) => book.id === preferredBookId) ?? normalizedBooks[0] ?? null;
+
+  workbench.writingBooks = normalizedBooks;
+  ui.marketplace.writing.books = normalizedBooks;
+  syncWritingBookSaveVersions(normalizedBooks);
+  ui.marketplace.writing.activeBookId = nextBook?.id ?? null;
+
+  if (!nextBook) {
+    ui.marketplace.writing.activeChapterId = "";
+    if (ui.marketplace.view === "writingDetail") {
+      ui.marketplace.view = "writingShelf";
+    }
+    return;
+  }
+
+  const chapters = getWritingChapters(nextBook);
+  const nextChapter =
+    chapters.find((chapter) => chapter.id === preferredChapterId) ?? getPreferredWritingChapter(nextBook) ?? chapters[0] ?? null;
+  ui.marketplace.writing.activeChapterId = nextChapter?.id ?? "";
+}
+
+function clearWritingAutosaveTimer() {
+  if (writingAutosaveTimer) {
+    clearTimeout(writingAutosaveTimer);
+    writingAutosaveTimer = null;
+  }
+}
+
+function scheduleWritingBookAutosave(bookId) {
+  if (!desktopApi?.saveWritingBook || !bookId) {
+    return;
+  }
+
+  clearWritingAutosaveTimer();
+  writingAutosaveTimer = setTimeout(() => {
+    writingAutosaveTimer = null;
+    persistWritingBookById(bookId, { silent: true });
+  }, WRITING_AUTOSAVE_DELAY);
+}
+
+function touchWritingBook(book, options = {}) {
+  if (!book) {
+    return;
+  }
+
+  book.updatedAt = new Date().toISOString();
+
+  if (book.id) {
+    writingBookSaveVersions.set(book.id, (writingBookSaveVersions.get(book.id) ?? 0) + 1);
+  }
+
+  if (options.persist !== false) {
+    scheduleWritingBookAutosave(book.id);
+  }
+}
+
+function buildWritingBookSavePayload(book) {
+  if (!book) {
+    return null;
+  }
+
+  return toPlainIpcData(
+    {
+      ...book,
+      chapters: getWritingChapters(book).map((chapter) => ({
+        ...chapter,
+        status: normalizeWritingChapterStatusForUi(chapter.status),
+        content: String(chapter.content ?? "")
+      }))
+    },
+    null
+  );
+}
+
+async function persistWritingBookById(bookId, options = {}) {
+  const targetBookId = String(bookId ?? "").trim();
+
+  if (!desktopApi?.saveWritingBook || !targetBookId) {
+    return;
+  }
+
+  if (writingSaveInFlight) {
+    writingQueuedSaveBookId = targetBookId;
+    return;
+  }
+
+  const book = writingBooks.value.find((entry) => entry.id === targetBookId);
+
+  if (!book) {
+    return;
+  }
+
+  const saveVersion = writingBookSaveVersions.get(targetBookId) ?? 0;
+  const payload = buildWritingBookSavePayload(book);
+
+  if (!payload) {
+    return;
+  }
+
+  clearWritingAutosaveTimer();
+  writingSaveInFlight = true;
+
+  try {
+    const savedBooks = await desktopApi.saveWritingBook(payload);
+
+    if ((writingBookSaveVersions.get(targetBookId) ?? 0) === saveVersion) {
+      applyWritingBooksFromStorage(savedBooks, {
+        preferBookId: targetBookId,
+        preferChapterId: ui.marketplace.writing.activeChapterId
+      });
+    }
+
+    if (!options.silent) {
+      setStatus("小说已保存到本地书稿目录。", "success");
+    }
+  } catch (error) {
+    console.error("Failed to save writing book", error);
+    setStatus(`小说保存失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+  } finally {
+    writingSaveInFlight = false;
+
+    const queuedBookId = writingQueuedSaveBookId;
+    writingQueuedSaveBookId = null;
+
+    if (queuedBookId) {
+      persistWritingBookById(queuedBookId, { silent: true });
+    }
+  }
+}
+
+function setWritingBookTitle(value) {
+  const book = activeWritingBook.value;
+
+  if (!book) {
+    return;
+  }
+
+  book.title = String(value ?? "");
+  touchWritingBook(book);
+}
+
+function setWritingBookLength(value) {
+  const book = activeWritingBook.value;
+
+  if (!book) {
+    return;
+  }
+
+  book.length = normalizeWritingBookLengthForUi(value);
+  touchWritingBook(book);
+}
+
+function setWritingBookGenre(value) {
+  const book = activeWritingBook.value;
+
+  if (!book) {
+    return;
+  }
+
+  book.genre = String(value ?? "");
+  touchWritingBook(book);
+}
+
+function getWritingIntroSections(book) {
+  if (book?.length === "long") {
+    return [
+      WRITING_INTRO_SECTION_DEFINITIONS.intro,
+      WRITING_INTRO_SECTION_DEFINITIONS.outlineGuide,
+      WRITING_INTRO_SECTION_DEFINITIONS.seriesPlan
+    ];
+  }
+
+  if (book?.length === "medium") {
+    return [WRITING_INTRO_SECTION_DEFINITIONS.intro, WRITING_INTRO_SECTION_DEFINITIONS.outlineGuide];
+  }
+
+  return [WRITING_INTRO_SECTION_DEFINITIONS.intro];
+}
+
+function getWritingIntroFieldValue(book, key) {
+  return String(book?.[key] ?? "");
+}
+
+function setWritingIntroField(book, key, value) {
+  if (!book || !WRITING_INTRO_SECTION_DEFINITIONS[key]) {
+    return;
+  }
+
+  book[key] = String(value ?? "");
+  touchWritingBook(book);
+}
+
+function buildWritingIntroContent(book) {
+  if (!book) {
+    return "";
+  }
+
+  return getWritingIntroSections(book)
+    .map((section) => {
+      const value = getWritingIntroFieldValue(book, section.key).trim();
+      return value ? `【${section.label}】\n${value}` : "";
+    })
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function getWritingChapters(book) {
+  if (!book) {
+    return [];
+  }
+
+  if (!Array.isArray(book.chapters) || book.chapters.length === 0) {
+    book.chapters = createWritingChaptersFromLegacyBook(book);
+  }
+
+  return book.chapters.map((chapter, index) => normalizeWritingChapter(chapter, index, book));
+}
+
+function createWritingChaptersFromLegacyBook(book) {
+  const outlineLines = String(book?.outline ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => /^(\d+[.、]|第.+?章)/.test(line));
+  const sourceLines = outlineLines.length ? outlineLines : ["第一章：正文整理"];
+  const legacyContent = String(book?.chapter ?? "");
+
+  return sourceLines.map((line, index) => {
+    const normalizedLine = line.replace(/^\d+[.、]\s*/, "").replace(/^第.+?章[:：]?\s*/, "");
+    const [rawTitle, ...summaryParts] = normalizedLine.split(/[:：]/);
+
+    return {
+      id: `${book.id || "writing_book"}_chapter_${index + 1}`,
+      title: (rawTitle || `未命名章节 ${index + 1}`).trim(),
+      summary: summaryParts.join("：").trim(),
+      content: index === 0 ? legacyContent : "",
+      status: index === 0 && legacyContent.trim() ? "inProgress" : "todo",
+      updatedAt: book.updatedAt ?? new Date().toISOString()
+    };
+  });
+}
+
+function normalizeWritingChapter(chapter, index, book) {
+  const normalized = chapter ?? {};
+
+  if (!normalized.id) {
+    normalized.id = `${book?.id || "writing_book"}_chapter_${index + 1}`;
+  }
+
+  if (!normalized.title) {
+    normalized.title = `未命名章节 ${index + 1}`;
+  }
+
+  normalized.summary = String(normalized.summary ?? "");
+  normalized.content = String(normalized.content ?? "");
+  normalized.status = WRITING_CHAPTER_STATUS_META[normalized.status] ? normalized.status : "todo";
+  normalized.updatedAt = normalized.updatedAt ?? book?.updatedAt ?? new Date().toISOString();
+
+  return normalized;
+}
+
+function getPreferredWritingChapter(book) {
+  const chapters = getWritingChapters(book);
+
+  if (!chapters.length) {
+    return null;
+  }
+
+  const inProgressChapters = chapters
+    .filter((chapter) => chapter.status === "inProgress")
+    .sort((left, right) => new Date(right.updatedAt ?? 0).getTime() - new Date(left.updatedAt ?? 0).getTime());
+
+  return inProgressChapters[0] ?? chapters.find((chapter) => chapter.status === "todo") ?? chapters[chapters.length - 1];
+}
+
+function ensureWritingChapterSelection(book = activeWritingBook.value) {
+  const chapters = getWritingChapters(book);
+  const current = chapters.find((chapter) => chapter.id === ui.marketplace.writing.activeChapterId);
+
+  if (current) {
+    return current;
+  }
+
+  const preferred = getPreferredWritingChapter(book);
+  ui.marketplace.writing.activeChapterId = preferred?.id ?? "";
+  return preferred;
+}
+
+function selectPreferredWritingChapter(book = activeWritingBook.value) {
+  const preferred = getPreferredWritingChapter(book);
+  ui.marketplace.writing.activeChapterId = preferred?.id ?? "";
+  return preferred;
+}
+
+function selectWritingChapter(chapterId) {
+  ui.marketplace.writing.activeChapterId = chapterId;
+}
+
+function setWritingChapterPickerOpen(isOpen) {
+  ui.marketplace.writing.isChapterPickerOpen = Boolean(isOpen);
+}
+
+function toggleWritingChapterPicker() {
+  setWritingChapterPickerOpen(!ui.marketplace.writing.isChapterPickerOpen);
+}
+
+function selectWritingChapterFromPicker(chapterId) {
+  selectWritingChapter(chapterId);
+  ui.marketplace.writing.chapterSearchQuery = "";
+  setWritingChapterPickerOpen(false);
+}
+
+function getWritingChapterDisplayTitle(chapter, index = 0) {
+  const order = Number.isFinite(index) ? index + 1 : 1;
+  return `第${order}章 ${String(chapter?.title ?? "未命名章节").trim() || "未命名章节"}`;
+}
+
+function getFilteredWritingChapterEntries(chapters, query) {
+  const keyword = String(query ?? "").trim().toLowerCase();
+
+  return (Array.isArray(chapters) ? chapters : [])
+    .map((chapter, index) => ({
+      chapter,
+      index,
+      title: getWritingChapterDisplayTitle(chapter, index)
+    }))
+    .filter((entry) => {
+      if (!keyword) {
+        return true;
+      }
+
+      return [entry.title, entry.chapter?.summary, getWritingChapterStatusLabel(entry.chapter?.status)]
+        .map((value) => String(value ?? "").toLowerCase())
+        .some((value) => value.includes(keyword));
+    });
+}
+
+function getWritingChapterStatusLabel(status) {
+  return WRITING_CHAPTER_STATUS_META[status]?.label ?? WRITING_CHAPTER_STATUS_META.todo.label;
+}
+
+function getWritingChapterStatusClass(status) {
+  return WRITING_CHAPTER_STATUS_META[status]?.className ?? WRITING_CHAPTER_STATUS_META.todo.className;
+}
+
+function getWritingChapterWordCount(chapter) {
+  return String(chapter?.content ?? "").replace(/\s+/g, "").length;
+}
+
+function buildWritingOutlineContent(book) {
+  return getWritingChapters(book)
+    .map((chapter, index) => {
+      const title = getWritingChapterDisplayTitle(chapter, index);
+      const summary = String(chapter.summary ?? "").trim() || "暂无简介";
+      return `${title}\n状态：${getWritingChapterStatusLabel(chapter.status)}\n简介：${summary}`;
+    })
+    .join("\n\n");
+}
+
+function setWritingChapterTitle(chapter, value) {
+  if (!chapter || !activeWritingBook.value) {
+    return;
+  }
+
+  chapter.title = String(value ?? "");
+  chapter.updatedAt = new Date().toISOString();
+  touchWritingBook(activeWritingBook.value);
+}
+
+function setWritingChapterSummary(chapter, value) {
+  if (!chapter || !activeWritingBook.value) {
+    return;
+  }
+
+  chapter.summary = String(value ?? "");
+  chapter.updatedAt = new Date().toISOString();
+  touchWritingBook(activeWritingBook.value);
+}
+
+function setWritingChapterContent(chapter, value) {
+  if (!chapter || !activeWritingBook.value) {
+    return;
+  }
+
+  chapter.content = String(value ?? "");
+  chapter.updatedAt = new Date().toISOString();
+
+  if (chapter.status === "todo" && chapter.content.trim()) {
+    chapter.status = "inProgress";
+  }
+
+  touchWritingBook(activeWritingBook.value);
+}
+
+function createWritingChapter() {
+  const book = activeWritingBook.value;
+
+  if (!book) {
+    return;
+  }
+
+  const chapters = getWritingChapters(book);
+  const nextIndex = chapters.length + 1;
+  const chapter = {
+    id: createLocalId("writing_chapter"),
+    title: `未命名章节 ${nextIndex}`,
+    summary: "",
+    content: "",
+    status: "todo",
+    updatedAt: new Date().toISOString()
+  };
+
+  book.chapters = [...chapters, chapter];
+  selectWritingChapter(chapter.id);
+  touchWritingBook(book);
+  setStatus("已新增一个章节。", "success");
+}
+
+function goWritingChapter(chapterId) {
+  selectWritingChapter(chapterId);
+  ui.marketplace.writing.activeTab = "chapter";
+  ui.marketplace.writing.aiTaskId = WRITING_AI_TASKS.chapter[0].id;
+  ui.marketplace.writing.aiOutput = "";
+  ui.marketplace.writing.chapterSearchQuery = "";
+  setWritingChapterPickerOpen(false);
+  setWritingFeedback("", "neutral");
+}
+
+function submitWritingChapter() {
+  const chapter = activeWritingChapter.value;
+
+  if (!chapter || !activeWritingBook.value) {
+    return;
+  }
+
+  if (!String(chapter.content ?? "").trim()) {
+    setWritingFeedback("章节正文为空，暂时不能提交。", "warning");
+    return;
+  }
+
+  chapter.status = "done";
+  chapter.updatedAt = new Date().toISOString();
+  touchWritingBook(activeWritingBook.value);
+  setWritingFeedback(`「${chapter.title || "当前章节"}」已标记完成。`, "success");
+  setStatus(`章节「${chapter.title || "当前章节"}」已完成。`, "success");
+}
+
+function getWritingBookContent(book, tabId) {
+  if (!book) {
+    return "";
+  }
+
+  if (tabId === "outline") {
+    return buildWritingOutlineContent(book);
+  }
+
+  if (tabId === "chapter") {
+    return activeWritingChapter.value?.content ?? getPreferredWritingChapter(book)?.content ?? "";
+  }
+
+  return buildWritingIntroContent(book);
+}
+
+function setWritingBookContent(book, tabId, value) {
+  if (!book) {
+    return;
+  }
+
+  const content = String(value ?? "");
+
+  if (tabId === "outline") {
+    const chapter = activeWritingChapter.value ?? ensureWritingChapterSelection(book);
+    if (chapter) {
+      setWritingChapterSummary(chapter, content);
+    }
+  } else if (tabId === "chapter") {
+    const chapter = activeWritingChapter.value ?? ensureWritingChapterSelection(book);
+    if (chapter) {
+      setWritingChapterContent(chapter, content);
+    }
+  } else {
+    book.intro = content;
+    touchWritingBook(book);
+  }
+}
+
+function getWritingBookWordCount(book) {
+  const chapterText = getWritingChapters(book)
+    .map((chapter) => `${chapter.summary ?? ""}\n${chapter.content ?? ""}`)
+    .join("\n");
+
+  return [book?.intro, book?.outlineGuide, book?.seriesPlan, chapterText]
+    .map((value) => String(value ?? "").replace(/\s+/g, ""))
+    .join("").length;
+}
+
+function getWritingTabWordCount(tabId = ui.marketplace.writing.activeTab) {
+  return String(getWritingBookContent(activeWritingBook.value, tabId) ?? "").replace(/\s+/g, "").length;
+}
+
+function getWritingTabTitle(tabId) {
+  return WRITING_APP_TABS.find((tab) => tab.id === tabId)?.label ?? "写作";
+}
+
+function formatWritingBookUpdatedAt(value) {
+  if (!value) {
+    return "刚刚";
+  }
+
+  try {
+    return formatLocalDateTime(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function getWritingBookCompleteness(book) {
+  if (!book) {
+    return 0;
+  }
+
+  const introSections = getWritingIntroSections(book);
+  const filledIntroCount = introSections.filter((section) => getWritingIntroFieldValue(book, section.key).trim()).length;
+  const introScore = introSections.length ? filledIntroCount / introSections.length : 0;
+  const chapters = getWritingChapters(book);
+  const chapterScore = chapters.length ? chapters.filter((chapter) => chapter.status === "done").length / chapters.length : 0;
+  return Math.round((introScore * 0.4 + chapterScore * 0.6) * 100);
+}
+
+function setWritingFeedback(text, tone = "neutral") {
+  ui.marketplace.writing.aiFeedback = String(text ?? "").trim();
+  ui.marketplace.writing.aiFeedbackTone = tone;
+}
+
+function toggleWritingProfileRail() {
+  ui.marketplace.writing.isProfileCollapsed = !ui.marketplace.writing.isProfileCollapsed;
+}
+
+function setWritingAiDrawerOpen(isOpen) {
+  ui.marketplace.writing.isAiDrawerOpen = Boolean(isOpen);
+  if (!ui.marketplace.writing.isAiDrawerOpen) {
+    setWritingAiTaskPickerOpen(false);
+    ui.marketplace.writing.isPromptPreviewOpen = false;
+  }
+}
+
+function setWritingAiTaskPickerOpen(isOpen) {
+  ui.marketplace.writing.isAiTaskPickerOpen = Boolean(isOpen);
+}
+
+function toggleWritingAiTaskPicker() {
+  setWritingAiTaskPickerOpen(!ui.marketplace.writing.isAiTaskPickerOpen);
+}
+
+function selectWritingAiTask(taskId) {
+  ui.marketplace.writing.aiTaskId = taskId;
+  setWritingAiTaskPickerOpen(false);
+}
+
+function toggleWritingPromptPreview() {
+  ui.marketplace.writing.isPromptPreviewOpen = !ui.marketplace.writing.isPromptPreviewOpen;
+}
+
+function openWritingAppShelf() {
+  activeFeature.value = FEATURE_MARKETPLACE;
+  ui.marketplace.view = "writingShelf";
+  if (!ui.marketplace.writing.activeBookId && writingBooks.value.length) {
+    ui.marketplace.writing.activeBookId = writingBooks.value[0].id;
+  }
+}
+
+function backWritingMarketplace() {
+  ui.marketplace.view = "apps";
+  ui.marketplace.writing.aiOutput = "";
+  setWritingFeedback("", "neutral");
+}
+
+function openWritingBook(bookId) {
+  ui.marketplace.writing.activeBookId = bookId;
+  selectPreferredWritingChapter(writingBooks.value.find((book) => book.id === bookId) ?? null);
+  ui.marketplace.writing.activeTab = "intro";
+  ui.marketplace.writing.aiTaskId = WRITING_AI_TASKS.intro[0].id;
+  ui.marketplace.writing.aiOutput = "";
+  ui.marketplace.writing.isAiDrawerOpen = false;
+  ui.marketplace.writing.isPromptPreviewOpen = false;
+  setWritingFeedback("", "neutral");
+  ui.marketplace.view = "writingDetail";
+}
+
+function backWritingShelf() {
+  ui.marketplace.view = "writingShelf";
+  ui.marketplace.writing.aiOutput = "";
+  setWritingFeedback("", "neutral");
+}
+
+async function createWritingBook() {
+  const now = new Date().toISOString();
+  const book = {
+    id: createLocalId("writing_book"),
+    title: `未命名故事 ${writingBooks.value.length + 1}`,
+    author: "Song",
+    length: "medium",
+    genre: "小说 / 待定类型",
+    status: "新建",
+    updatedAt: now,
+    coverTone: writingBooks.value.length % 2 === 0 ? "gold" : "teal",
+    intro: "在这里写下故事的核心命题、世界观、人物关系和主要矛盾。",
+    outlineGuide: "把故事拆成开始、失控、反转和收束四个阶段，每个阶段都要写清冲突升级和人物变化。",
+    seriesPlan: "",
+    chapters: [
+      {
+        id: createLocalId("writing_chapter"),
+        title: "开场章节",
+        summary: "写下本章冲突、信息增量、人物变化和结尾钩子。",
+        content: "## 第一章\n\n",
+        status: "inProgress",
+        updatedAt: now
+      }
+    ]
+  };
+
+  ui.marketplace.writing.books = [book, ...writingBooks.value];
+  workbench.writingBooks = ui.marketplace.writing.books;
+  writingBookSaveVersions.set(book.id, 0);
+  openWritingBook(book.id);
+  setStatus("已创建一本新书，正在写入本地书稿目录。", "success");
+  await persistWritingBookById(book.id, { silent: false });
+}
+
+async function handleWritingBookUpload(event) {
+  const file = event.target?.files?.[0] ?? null;
+
+  if (!file) {
+    return;
+  }
+
+  try {
+    const text = await file.text();
+    const title = file.name.replace(/\.[^.]+$/, "").trim() || "上传书稿";
+    const book = {
+      id: createLocalId("writing_book_upload"),
+      title,
+      author: "Song",
+      length: "long",
+      genre: "上传书稿",
+      status: "导入",
+      updatedAt: new Date().toISOString(),
+      coverTone: "ink",
+      intro: `从「${file.name}」导入。建议先让 AI 帮你整理故事简介、人物关系和世界观。`,
+      outlineGuide: "待整理目录。可以在目录 Tab 里使用「章节规划」生成结构。",
+      seriesPlan: "",
+      chapters: [
+        {
+          id: createLocalId("writing_chapter_upload"),
+          title: "导入正文",
+          summary: "从上传书稿中导入的初始正文，可继续拆分和整理。",
+          content: text.slice(0, 16000),
+          status: text.trim() ? "inProgress" : "todo",
+          updatedAt: new Date().toISOString()
+        }
+      ]
+    };
+
+    ui.marketplace.writing.books = [book, ...writingBooks.value];
+    workbench.writingBooks = ui.marketplace.writing.books;
+    writingBookSaveVersions.set(book.id, 0);
+    ui.marketplace.writing.uploadFeedback = `已导入 ${file.name}`;
+    openWritingBook(book.id);
+    setStatus(`已导入「${title}」，正在写入本地书稿目录。`, "success");
+    await persistWritingBookById(book.id, { silent: false });
+  } catch (error) {
+    console.error("Failed to upload writing book", error);
+    ui.marketplace.writing.uploadFeedback = "导入失败";
+    setStatus(`导入书稿失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+  } finally {
+    event.target.value = "";
+  }
+}
+
+function setWritingTab(tabId) {
+  if (tabId === "chapter") {
+    selectPreferredWritingChapter(activeWritingBook.value);
+  } else {
+    ensureWritingChapterSelection(activeWritingBook.value);
+    setWritingChapterPickerOpen(false);
+  }
+
+  if (ui.marketplace.writing.activeTab === tabId) {
+    return;
+  }
+
+  ui.marketplace.writing.activeTab = tabId;
+  ui.marketplace.writing.aiTaskId = (WRITING_AI_TASKS[tabId] ?? WRITING_AI_TASKS.intro)[0]?.id ?? "";
+  ui.marketplace.writing.aiOutput = "";
+  setWritingAiTaskPickerOpen(false);
+  setWritingFeedback("", "neutral");
+}
+
+function buildWritingAssistantPrompt({ book, tabId, task, instruction }) {
+  if (!book) {
+    return "";
+  }
+
+  const lengthProfile = WRITING_LENGTH_PROFILES[book.length] ?? WRITING_LENGTH_PROFILES.long;
+  const tabTitle = getWritingTabTitle(tabId);
+  const content = getWritingBookContent(book, tabId);
+  const currentChapter = activeWritingChapter.value ?? getPreferredWritingChapter(book);
+
+  return [
+    `作品：${book.title}`,
+    `篇幅：${lengthProfile.label}（${lengthProfile.scope}）`,
+    `类型：${book.genre || "未设定"}`,
+    `当前模块：${tabTitle}`,
+    `大师思路：${lengthProfile.method}`,
+    `本次任务：${task?.label ?? "综合辅助"} - ${task?.goal ?? "提升当前内容"}`,
+    instruction ? `作者额外要求：${instruction}` : "作者额外要求：无",
+    "",
+    "故事介绍与规划：",
+    buildWritingIntroContent(book) || "(空)",
+    "",
+    "章节目录：",
+    buildWritingOutlineContent(book) || "(空)",
+    "",
+    "当前选中章节：",
+    currentChapter
+      ? [
+          `标题：${getWritingChapterDisplayTitle(currentChapter, getWritingChapters(book).findIndex((chapter) => chapter.id === currentChapter.id))}`,
+          `状态：${getWritingChapterStatusLabel(currentChapter.status)}`,
+          `简介：${currentChapter.summary || "(空)"}`,
+          "正文：",
+          currentChapter.content || "(空)"
+        ].join("\n")
+      : "(空)",
+    "",
+    `请围绕「${tabTitle}」输出可直接粘贴的内容。要求：`,
+    "- 不要寒暄，不要解释提示词。",
+    "- 保留并强化人物动机、因果链、伏笔和冲突。",
+    "- 如果是目录，必须包含章节目标、矛盾、信息增量和结尾钩子。",
+    "- 如果是章节，必须有场景动作、对白张力、心理暗流和段落节奏。",
+    "- 如果是介绍，必须补齐世界规则、核心矛盾、主要人物与主题命题。",
+    "",
+    "当前模块原文：",
+    content || "(空)"
+  ].join("\n");
+}
+
+async function generateWritingAssistantOutput() {
+  const book = activeWritingBook.value;
+  const task = activeWritingTask.value;
+
+  if (!book || !desktopApi?.invokeModelText) {
+    setWritingFeedback("AI 桥接未就绪。", "danger");
+    return;
+  }
+
+  try {
+    ui.marketplace.writing.isAiRunning = true;
+    ui.marketplace.writing.aiOutput = "";
+    setWritingAiTaskPickerOpen(false);
+    setWritingFeedback("正在召唤总编和故事架构师...", "neutral");
+    setStatus("笔墨生花正在生成建议。", "neutral");
+
+    const result = await desktopApi.invokeModelText({
+      temperature: 0.72,
+      maxOutputTokens: 2200,
+      messages: [
+        {
+          role: "system",
+          content: WRITING_MASTER_SYSTEM_PROMPT
+        },
+        {
+          role: "user",
+          content: activeWritingPromptPreview.value
+        }
+      ]
+    });
+
+    ui.marketplace.writing.aiOutput = String(result?.text ?? "").trim();
+    setWritingFeedback(result?.profileLabel ? `已由 ${result.profileLabel} 生成。` : "AI 已生成建议。", "success");
+    setStatus("笔墨生花已生成建议。", "success");
+  } catch (error) {
+    console.error("Failed to generate writing assistant output", error);
+    const message = error instanceof Error ? error.message : "未知错误";
+    setWritingFeedback(`生成失败：${message}`, "danger");
+    setStatus(`笔墨生花生成失败：${message}`, "danger");
+  } finally {
+    ui.marketplace.writing.isAiRunning = false;
+  }
+}
+
+function applyWritingAssistantOutput(mode = "append") {
+  const output = String(ui.marketplace.writing.aiOutput ?? "").trim();
+  const book = activeWritingBook.value;
+
+  if (!output || !book) {
+    setWritingFeedback("当前没有可写入的 AI 输出。", "warning");
+    return;
+  }
+
+  if (ui.marketplace.writing.activeTab === "chapter") {
+    const chapter = activeWritingChapter.value ?? ensureWritingChapterSelection(book);
+    const current = String(chapter?.content ?? "").trim();
+    setWritingChapterContent(chapter, mode === "replace" ? output : [current, output].filter(Boolean).join("\n\n"));
+  } else if (ui.marketplace.writing.activeTab === "outline") {
+    const chapter = activeWritingChapter.value ?? ensureWritingChapterSelection(book);
+    const current = String(chapter?.summary ?? "").trim();
+    setWritingChapterSummary(chapter, mode === "replace" ? output : [current, output].filter(Boolean).join("\n\n"));
+  } else {
+    const targetKey = book.length === "short" ? "intro" : book.length === "long" ? "seriesPlan" : "outlineGuide";
+    const current = getWritingIntroFieldValue(book, targetKey).trim();
+    setWritingIntroField(book, targetKey, mode === "replace" ? output : [current, output].filter(Boolean).join("\n\n"));
+  }
+
+  setWritingFeedback(mode === "replace" ? "已用 AI 输出替换当前模块。" : "已把 AI 输出追加到当前模块。", "success");
 }
 
 const activeWeeklyRecord = computed(() =>
@@ -6382,6 +7892,7 @@ function applyWorkbenchSnapshot(snapshot, modelSettings) {
   syncModelBalanceRuntimeFromProfiles(modelSettings?.profiles ?? []);
   workbench.weeklyProgress = [...(snapshot?.weeklyProgress ?? [])];
   workbench.workflowLibrary = [...(snapshot?.workflowLibrary ?? [])];
+  applyWritingBooksFromStorage(snapshot?.writingBooks ?? []);
   workbench.skillDefinitions = [...(snapshot?.skillDefinitions ?? [])];
   workbench.mcpServers = [...(snapshot?.mcpServers ?? [])];
   workbench.agentProfiles = [...(snapshot?.agentProfiles ?? [])];
@@ -6451,6 +7962,10 @@ function setActiveFeature(featureId) {
 
   if (featureId === FEATURE_TASKS) {
     closeWeeklyEditor();
+  }
+
+  if (featureId === FEATURE_MARKETPLACE && !ui.marketplace.view) {
+    ui.marketplace.view = "apps";
   }
 
   if (featureId === FEATURE_WORKFLOW_LIBRARY) {
@@ -8860,6 +10375,7 @@ onBeforeUnmount(() => {
   }
 
   clearWeeklyAutosaveTimer();
+  clearWritingAutosaveTimer();
   disposeRobotRuntime();
   document.body.classList.remove("load-error");
 });

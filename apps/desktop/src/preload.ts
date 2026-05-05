@@ -16,6 +16,7 @@ import type {
   ModelTextRequest,
   SkillDefinition,
   WorkflowLibraryItem,
+  WritingBook,
   WeeklyProgressRecord,
   WeeklyProgressRewriteRequest,
   WeeklyReportGenerateRequest
@@ -161,6 +162,9 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
     ipcRenderer.removeListener("gordon:workflow-library:progress", wrapped);
     workflowRunProgressListeners.delete(listenerId);
   },
+  listWritingBooks: (): Promise<WritingBook[]> => ipcRenderer.invoke("gordon:writing-books:list"),
+  saveWritingBook: (book: WritingBook): Promise<WritingBook[]> =>
+    ipcRenderer.invoke("gordon:writing-books:save", toPlainIpcData(book)),
   listWeeklyProgress: () => ipcRenderer.invoke("gordon:weekly-progress:list"),
   saveWeeklyProgress: (record: WeeklyProgressRecord) => ipcRenderer.invoke("gordon:weekly-progress:save", record),
   deleteWeeklyProgress: (recordId: string) => ipcRenderer.invoke("gordon:weekly-progress:delete", recordId),

@@ -1,5 +1,5 @@
 import path from "node:path";
-import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 
 import { resolveFromRoot } from "../../shared/src/index.js";
@@ -25,6 +25,10 @@ import type {
   WeeklyProgressRecord,
   WeeklyReportTemplateItem,
   WeeklyProgressTaskItem,
+  WritingBook,
+  WritingBookLength,
+  WritingChapter,
+  WritingChapterStatus,
   WorkTask
 } from "../../shared/src/index.js";
 import {
@@ -94,6 +98,10 @@ function getAgentRunLogsFilePath(): string {
 
 function getCommandWorkshopSessionsFilePath(): string {
   return resolveFromRoot("data", "workbench", "command-workshop-sessions.json");
+}
+
+function getWritingBooksDirectoryPath(): string {
+  return resolveFromRoot("data", "workbench", "writing-books");
 }
 
 function encodeGithubPath(value: string): string {
@@ -1363,6 +1371,266 @@ async function writeWorkbenchCollection<T>(filePath: string, items: T[]): Promis
 
 function sortByUpdatedAtDescending<T extends { updatedAt: string }>(items: T[]): T[] {
   return [...items].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+}
+
+const WRITING_BOOK_CONFIG_FILE_NAME = "book.json";
+const WRITING_BOOK_CHAPTERS_FILE_NAME = "chapters.json";
+const WRITING_BOOK_CHAPTERS_DIRECTORY_NAME = "chapters";
+const WRITING_BOOK_LENGTHS = new Set<WritingBookLength>(["short", "medium", "long"]);
+const WRITING_CHAPTER_STATUSES = new Set<WritingChapterStatus>(["todo", "inProgress", "done"]);
+
+type StoredWritingBookConfig = Omit<WritingBook, "chapters" | "directoryName">;
+type StoredWritingChapterMeta = Omit<WritingChapter, "content">;
+
+function sanitizeWritingAssetName(value: unknown, fallback: string): string {
+  const normalized = String(value ?? "")
+    .trim()
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, "-")
+    .replace(/\s+/g, " ")
+    .replace(/^\.+|\.+$/g, "")
+    .replace(/-+/g, "-")
+    .trim();
+
+  return normalized || fallback;
+}
+
+function normalizeWritingBookLength(value: unknown): WritingBookLength {
+  const length = String(value ?? "");
+  return WRITING_BOOK_LENGTHS.has(length as WritingBookLength) ? (length as WritingBookLength) : "long";
+}
+
+function normalizeWritingChapterStatus(value: unknown): WritingChapterStatus {
+  const status = String(value ?? "");
+  return WRITING_CHAPTER_STATUSES.has(status as WritingChapterStatus) ? (status as WritingChapterStatus) : "todo";
+}
+
+function normalizeWritingBookConfig(input: Partial<WritingBook> | null | undefined, directoryName = ""): StoredWritingBookConfig {
+  const timestamp = String(input?.updatedAt ?? new Date().toISOString());
+  const title = String(input?.title ?? directoryName ?? "").trim() || "未命名故事";
+
+  return {
+    id: String(input?.id ?? `writing_book_${randomUUID()}`),
+    title,
+    author: String(input?.author ?? "Song"),
+    length: normalizeWritingBookLength(input?.length),
+    genre: String(input?.genre ?? "小说 / 待定类型"),
+    status: String(input?.status ?? "新建"),
+    updatedAt: timestamp,
+    coverTone: String(input?.coverTone ?? "teal"),
+    intro: String(input?.intro ?? ""),
+    outlineGuide: String(input?.outlineGuide ?? ""),
+    seriesPlan: String(input?.seriesPlan ?? "")
+  };
+}
+
+function normalizeWritingChapterMeta(input: Partial<WritingChapter> | null | undefined, index: number, bookId: string): StoredWritingChapterMeta {
+  return {
+    id: String(input?.id ?? `${bookId}_chapter_${index + 1}`),
+    title: String(input?.title ?? "").trim() || `未命名章节 ${index + 1}`,
+    summary: String(input?.summary ?? ""),
+    status: normalizeWritingChapterStatus(input?.status),
+    updatedAt: String(input?.updatedAt ?? new Date().toISOString()),
+    fileName: input?.fileName ? sanitizeWritingAssetName(input.fileName, "") : undefined
+  };
+}
+
+function buildWritingChapterFileName(chapter: Pick<WritingChapter, "title">, index: number, usedFileNames: Set<string>): string {
+  const order = String(index + 1).padStart(3, "0");
+  const title = sanitizeWritingAssetName(chapter.title, "未命名章节");
+  const baseName = `第${order}章 ${title}`;
+  let candidate = `${baseName}.md`;
+  let suffix = 2;
+
+  while (usedFileNames.has(candidate)) {
+    candidate = `${baseName}-${suffix++}.md`;
+  }
+
+  usedFileNames.add(candidate);
+  return candidate;
+}
+
+async function readWritingBookDirectoryNames(): Promise<string[]> {
+  try {
+    const entries = await readdir(getWritingBooksDirectoryPath(), { withFileTypes: true });
+    return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return [];
+    }
+
+    throw error;
+  }
+}
+
+async function readWritingBookConfigId(directoryName: string): Promise<string | null> {
+  try {
+    const config = await readJsonFile<Partial<WritingBook>>(
+      path.join(getWritingBooksDirectoryPath(), directoryName, WRITING_BOOK_CONFIG_FILE_NAME)
+    );
+    return typeof config.id === "string" && config.id.trim() ? config.id : null;
+  } catch {
+    return null;
+  }
+}
+
+async function findWritingBookDirectoryById(bookId: string): Promise<string | null> {
+  const directoryNames = await readWritingBookDirectoryNames();
+
+  for (const directoryName of directoryNames) {
+    const currentId = await readWritingBookConfigId(directoryName);
+
+    if (currentId === bookId) {
+      return directoryName;
+    }
+  }
+
+  return null;
+}
+
+async function resolveWritingBookTargetDirectory(book: WritingBook): Promise<{ targetDirectoryName: string; existingDirectoryName: string | null }> {
+  const rootDirectory = getWritingBooksDirectoryPath();
+  const existingDirectoryName =
+    (typeof book.directoryName === "string" && book.directoryName.trim() ? book.directoryName : null) ??
+    (book.id ? await findWritingBookDirectoryById(book.id) : null);
+  const baseName = sanitizeWritingAssetName(book.title, "未命名故事");
+  let targetDirectoryName = baseName;
+  let suffix = 2;
+
+  while (await pathExists(path.join(rootDirectory, targetDirectoryName))) {
+    const existingId = await readWritingBookConfigId(targetDirectoryName);
+
+    if (!existingId || existingId === book.id || targetDirectoryName === existingDirectoryName) {
+      break;
+    }
+
+    targetDirectoryName = `${baseName}-${suffix++}`;
+  }
+
+  return { targetDirectoryName, existingDirectoryName };
+}
+
+async function readWritingBookFromDirectory(directoryName: string): Promise<WritingBook | null> {
+  const bookDirectory = path.join(getWritingBooksDirectoryPath(), directoryName);
+
+  try {
+    const [configInput, chapterMetaInput] = await Promise.all([
+      readJsonFile<Partial<WritingBook>>(path.join(bookDirectory, WRITING_BOOK_CONFIG_FILE_NAME)),
+      readJsonFile<Array<Partial<WritingChapter>>>(path.join(bookDirectory, WRITING_BOOK_CHAPTERS_FILE_NAME)).catch((error) => {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+          return [];
+        }
+
+        throw error;
+      })
+    ]);
+    const config = normalizeWritingBookConfig(configInput, directoryName);
+    const chaptersDirectory = path.join(bookDirectory, WRITING_BOOK_CHAPTERS_DIRECTORY_NAME);
+    const usedFileNames = new Set<string>();
+    const chapterMetas = (Array.isArray(chapterMetaInput) ? chapterMetaInput : []).map((chapter, index) =>
+      normalizeWritingChapterMeta(chapter, index, config.id)
+    );
+    const chapters = await Promise.all(
+      chapterMetas.map(async (chapter, index) => {
+        const fileName =
+          chapter.fileName && !usedFileNames.has(chapter.fileName)
+            ? chapter.fileName
+            : buildWritingChapterFileName(chapter, index, usedFileNames);
+        usedFileNames.add(fileName);
+        const contentPath = path.join(chaptersDirectory, fileName);
+        const content = await readFile(contentPath, "utf8").catch((error) => {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+            return "";
+          }
+
+          throw error;
+        });
+
+        return {
+          ...chapter,
+          fileName,
+          content
+        };
+      })
+    );
+
+    return {
+      ...config,
+      directoryName,
+      chapters
+    };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+async function writeWritingBook(book: WritingBook): Promise<WritingBook> {
+  const rootDirectory = getWritingBooksDirectoryPath();
+  const config = normalizeWritingBookConfig(book, book.directoryName);
+  const chapters = (Array.isArray(book.chapters) ? book.chapters : []).map((chapter, index) => ({
+    ...normalizeWritingChapterMeta(chapter, index, config.id),
+    content: String(chapter?.content ?? "")
+  }));
+  const { targetDirectoryName, existingDirectoryName } = await resolveWritingBookTargetDirectory({
+    ...book,
+    ...config,
+    chapters
+  });
+  const bookDirectory = path.join(rootDirectory, targetDirectoryName);
+  const chaptersDirectory = path.join(bookDirectory, WRITING_BOOK_CHAPTERS_DIRECTORY_NAME);
+  const usedFileNames = new Set<string>();
+  const chapterMetas: StoredWritingChapterMeta[] = chapters.map((chapter, index) => ({
+    id: chapter.id,
+    title: chapter.title,
+    summary: chapter.summary,
+    status: chapter.status,
+    updatedAt: chapter.updatedAt,
+    fileName: buildWritingChapterFileName(chapter, index, usedFileNames)
+  }));
+
+  await mkdir(chaptersDirectory, { recursive: true });
+  await writeFile(path.join(bookDirectory, WRITING_BOOK_CONFIG_FILE_NAME), `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  await writeFile(path.join(bookDirectory, WRITING_BOOK_CHAPTERS_FILE_NAME), `${JSON.stringify(chapterMetas, null, 2)}\n`, "utf8");
+
+  await Promise.all(
+    chapterMetas.map((chapter, index) =>
+      writeFile(path.join(chaptersDirectory, chapter.fileName ?? buildWritingChapterFileName(chapter, index, new Set())), chapters[index]?.content ?? "", "utf8")
+    )
+  );
+
+  const chapterFiles = await readdir(chaptersDirectory, { withFileTypes: true }).catch(() => []);
+  await Promise.all(
+    chapterFiles
+      .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".md") && !usedFileNames.has(entry.name))
+      .map((entry) => rm(path.join(chaptersDirectory, entry.name), { force: true }))
+  );
+
+  if (existingDirectoryName && existingDirectoryName !== targetDirectoryName) {
+    await rm(path.join(rootDirectory, existingDirectoryName), { recursive: true, force: true });
+  }
+
+  const savedBook = await readWritingBookFromDirectory(targetDirectoryName);
+
+  if (!savedBook) {
+    throw new Error("保存小说后读取失败");
+  }
+
+  return savedBook;
+}
+
+export async function listWritingBooks(): Promise<WritingBook[]> {
+  const directoryNames = await readWritingBookDirectoryNames();
+  const books = await Promise.all(directoryNames.map((directoryName) => readWritingBookFromDirectory(directoryName)));
+
+  return sortByUpdatedAtDescending(books.filter((book): book is WritingBook => Boolean(book)));
+}
+
+export async function saveWritingBook(book: WritingBook): Promise<WritingBook[]> {
+  await writeWritingBook(book);
+  return listWritingBooks();
 }
 
 function createWorkflowVariableBinding(
