@@ -523,8 +523,8 @@
                 </template>
 
                 <template v-else-if="activeWritingBook">
-                  <section class="writing-detail-shell">
-                    <header class="writing-detail-head">
+                  <section class="writing-detail-shell" :class="{ 'is-ai-running': ui.marketplace.writing.isAiRunning }">
+                    <header class="writing-detail-head" :inert="ui.marketplace.writing.isAiRunning ? true : null">
                       <button type="button" class="model-icon-button weekly-back-button" aria-label="返回书架" title="返回书架" @click="backWritingShelf">
                         <GIcon name="return" />
                       </button>
@@ -546,6 +546,7 @@
 
                     <section
                       class="writing-detail-layout"
+                      :inert="ui.marketplace.writing.isAiRunning ? true : null"
                       :class="{
                         'is-profile-collapsed': ui.marketplace.writing.isProfileCollapsed,
                         'is-ai-open': ui.marketplace.writing.isAiDrawerOpen
@@ -870,7 +871,7 @@
                             <div class="writing-ai-output">
                               <div class="writing-ai-output-head">
                                 <span class="field-label">AI 输出</span>
-                                <span v-if="ui.marketplace.writing.aiFeedback" class="status-pill" :class="ui.marketplace.writing.aiFeedbackTone === 'success' ? 'is-success' : ui.marketplace.writing.aiFeedbackTone === 'danger' ? 'is-danger' : ''">
+                                <span v-if="ui.marketplace.writing.aiFeedback" class="status-pill" :class="getWritingAiFeedbackClass()">
                                   {{ ui.marketplace.writing.aiFeedback }}
                                 </span>
                               </div>
@@ -892,6 +893,20 @@
                         </section>
                       </main>
                     </section>
+
+                    <div v-if="ui.marketplace.writing.isAiRunning" class="writing-ai-busy-shield" role="status" aria-live="polite">
+                      <div class="writing-ai-busy-card">
+                        <span class="writing-ai-busy-orbit" aria-hidden="true">
+                          <i></i>
+                          <i></i>
+                          <i></i>
+                        </span>
+                        <div>
+                          <strong>正在生成建议</strong>
+                          <p>任务已在后台执行，可以切换到其他页面，完成后会回到大师辅助输出区。</p>
+                        </div>
+                      </div>
+                    </div>
                   </section>
                 </template>
               </div>
@@ -5044,11 +5059,39 @@ function setWritingFeedback(text, tone = "neutral") {
   ui.marketplace.writing.aiFeedbackTone = tone;
 }
 
+function getWritingAiFeedbackClass() {
+  if (ui.marketplace.writing.isAiRunning) {
+    return "is-running";
+  }
+
+  if (ui.marketplace.writing.aiFeedbackTone === "success") {
+    return "is-success";
+  }
+
+  if (ui.marketplace.writing.aiFeedbackTone === "warning") {
+    return "is-warning";
+  }
+
+  if (ui.marketplace.writing.aiFeedbackTone === "danger") {
+    return "is-danger";
+  }
+
+  return "";
+}
+
 function toggleWritingProfileRail() {
+  if (ui.marketplace.writing.isAiRunning) {
+    return;
+  }
+
   ui.marketplace.writing.isProfileCollapsed = !ui.marketplace.writing.isProfileCollapsed;
 }
 
 function setWritingAiDrawerOpen(isOpen) {
+  if (ui.marketplace.writing.isAiRunning) {
+    return;
+  }
+
   ui.marketplace.writing.isAiDrawerOpen = Boolean(isOpen);
   if (!ui.marketplace.writing.isAiDrawerOpen) {
     setWritingAiTaskPickerOpen(false);
@@ -5258,19 +5301,24 @@ function buildWritingAssistantPrompt({ book, tabId, task, instruction }) {
 
 async function generateWritingAssistantOutput() {
   const book = activeWritingBook.value;
-  const task = activeWritingTask.value;
+
+  if (ui.marketplace.writing.isAiRunning) {
+    return;
+  }
 
   if (!book || !desktopApi?.invokeModelText) {
     setWritingFeedback("AI 桥接未就绪。", "danger");
     return;
   }
 
+  const prompt = activeWritingPromptPreview.value;
+
   try {
     ui.marketplace.writing.isAiRunning = true;
     ui.marketplace.writing.aiOutput = "";
     setWritingAiTaskPickerOpen(false);
-    setWritingFeedback("正在召唤总编和故事架构师...", "neutral");
-    setStatus("笔墨生花正在生成建议。", "neutral");
+    setWritingFeedback("正在召唤主编和故事架构师...", "neutral");
+    setStatus("笔墨生花正在后台生成建议。", "neutral");
 
     const result = await desktopApi.invokeModelText({
       temperature: 0.72,
@@ -5282,7 +5330,7 @@ async function generateWritingAssistantOutput() {
         },
         {
           role: "user",
-          content: activeWritingPromptPreview.value
+          content: prompt
         }
       ]
     });
