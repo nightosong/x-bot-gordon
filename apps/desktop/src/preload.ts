@@ -14,6 +14,7 @@ import type {
   McpToolDefinition,
   ModelProfile,
   ModelTextRequest,
+  WritingBookSaveOptions,
   SkillDefinition,
   WorkflowLibraryItem,
   WritingBook,
@@ -96,6 +97,7 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
   toggleModelProfileStatus: (profileId: string) => ipcRenderer.invoke("gordon:model-settings:toggle-status", profileId),
   deleteModelProfile: (profileId: string) => ipcRenderer.invoke("gordon:model-settings:delete", profileId),
   invokeModelText: (request: ModelTextRequest) => ipcRenderer.invoke("gordon:model:invoke-text", request),
+  cancelModelText: (requestId: string) => ipcRenderer.invoke("gordon:model:cancel-text", requestId),
   queryModelBalance: (request: ModelBalanceQueryRequest): Promise<ModelBalanceSnapshot> =>
     ipcRenderer.invoke("gordon:model:query-balance", request),
   listSkillDefinitions: () => ipcRenderer.invoke("gordon:skills:list"),
@@ -163,8 +165,8 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
     workflowRunProgressListeners.delete(listenerId);
   },
   listWritingBooks: (): Promise<WritingBook[]> => ipcRenderer.invoke("gordon:writing-books:list"),
-  saveWritingBook: (book: WritingBook): Promise<WritingBook[]> =>
-    ipcRenderer.invoke("gordon:writing-books:save", toPlainIpcData(book)),
+  saveWritingBook: (book: WritingBook, options?: WritingBookSaveOptions): Promise<WritingBook[]> =>
+    ipcRenderer.invoke("gordon:writing-books:save", toPlainIpcData(book), toPlainIpcData(options ?? {})),
   listWeeklyProgress: () => ipcRenderer.invoke("gordon:weekly-progress:list"),
   saveWeeklyProgress: (record: WeeklyProgressRecord) => ipcRenderer.invoke("gordon:weekly-progress:save", record),
   deleteWeeklyProgress: (recordId: string) => ipcRenderer.invoke("gordon:weekly-progress:delete", recordId),

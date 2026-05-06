@@ -48,9 +48,9 @@ async function getActiveModelProfile(): Promise<ModelProfile> {
   return profile;
 }
 
-export async function invokeActiveModel(request: ModelTextRequest): Promise<ModelTextResponse> {
+export async function invokeActiveModel(request: ModelTextRequest, options: { signal?: AbortSignal } = {}): Promise<ModelTextResponse> {
   const profile = await getActiveModelProfile();
-  return invokeModelText(profile, request);
+  return invokeModelText(profile, request, options);
 }
 
 export async function rewriteWeeklyProgressItem(

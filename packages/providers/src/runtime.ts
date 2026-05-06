@@ -253,6 +253,12 @@ function buildLogPreview(value: unknown, depth = 0): unknown {
 }
 
 function buildMissingTextReason(payload: unknown): string | null {
+  const payloadErrorMessage = extractErrorMessage(payload);
+
+  if (payloadErrorMessage) {
+    return payloadErrorMessage;
+  }
+
   const finishReason = getNestedValue(payload, ["choices", 0, "finish_reason"]);
 
   if (typeof finishReason === "string" && finishReason.trim()) {
@@ -358,10 +364,15 @@ function buildAzureEndpoint(profile: ModelProfile): string {
     : `${endpoint}${endpoint.includes("?") ? "&" : "?"}api-version=${defaultApiVersion}`;
 }
 
-async function invokeOpenAiCompatible(profile: ModelProfile, request: ModelTextRequest): Promise<ModelTextResponse> {
+async function invokeOpenAiCompatible(
+  profile: ModelProfile,
+  request: ModelTextRequest,
+  options: { signal?: AbortSignal } = {}
+): Promise<ModelTextResponse> {
   const endpoint = `${trimTrailingSlash(profile.baseUrl?.trim() || "https://api.openai.com/v1")}/chat/completions`;
   const response = await fetch(endpoint, {
     method: "POST",
+    signal: options.signal,
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${profile.apiKey}`,
@@ -389,6 +400,13 @@ async function invokeOpenAiCompatible(profile: ModelProfile, request: ModelTextR
       };
     }>;
   };
+  const payloadErrorMessage = extractErrorMessage(payload);
+
+  if (payloadErrorMessage) {
+    logMissingOpenAiStyleText(profile, endpoint, payload);
+    throw new Error(`模型服务错误：${payloadErrorMessage}`);
+  }
+
   const text = extractOpenAiCompatibleText(payload).trim();
 
   if (!text) {
@@ -406,9 +424,14 @@ async function invokeOpenAiCompatible(profile: ModelProfile, request: ModelTextR
   };
 }
 
-async function invokeAzure(profile: ModelProfile, request: ModelTextRequest): Promise<ModelTextResponse> {
+async function invokeAzure(
+  profile: ModelProfile,
+  request: ModelTextRequest,
+  options: { signal?: AbortSignal } = {}
+): Promise<ModelTextResponse> {
   const response = await fetch(buildAzureEndpoint(profile), {
     method: "POST",
+    signal: options.signal,
     headers: {
       "Content-Type": "application/json",
       "api-key": profile.apiKey
@@ -434,6 +457,13 @@ async function invokeAzure(profile: ModelProfile, request: ModelTextRequest): Pr
       };
     }>;
   };
+  const payloadErrorMessage = extractErrorMessage(payload);
+
+  if (payloadErrorMessage) {
+    logMissingOpenAiStyleText(profile, buildAzureEndpoint(profile), payload);
+    throw new Error(`模型服务错误：${payloadErrorMessage}`);
+  }
+
   const text = extractOpenAiCompatibleText(payload).trim();
 
   if (!text) {
@@ -451,11 +481,16 @@ async function invokeAzure(profile: ModelProfile, request: ModelTextRequest): Pr
   };
 }
 
-async function invokeAnthropic(profile: ModelProfile, request: ModelTextRequest): Promise<ModelTextResponse> {
+async function invokeAnthropic(
+  profile: ModelProfile,
+  request: ModelTextRequest,
+  options: { signal?: AbortSignal } = {}
+): Promise<ModelTextResponse> {
   const endpoint = `${trimTrailingSlash(profile.baseUrl?.trim() || "https://api.anthropic.com")}/v1/messages`;
   const conversation = getConversationMessages(request.messages);
   const response = await fetch(endpoint, {
     method: "POST",
+    signal: options.signal,
     headers: {
       "Content-Type": "application/json",
       "x-api-key": profile.apiKey,
@@ -522,11 +557,16 @@ function buildGoogleEndpoint(profile: ModelProfile): string {
   return `${normalizedBaseUrl}/${encodeURIComponent(profile.model)}:generateContent?key=${encodeURIComponent(profile.apiKey)}`;
 }
 
-async function invokeGoogle(profile: ModelProfile, request: ModelTextRequest): Promise<ModelTextResponse> {
+async function invokeGoogle(
+  profile: ModelProfile,
+  request: ModelTextRequest,
+  options: { signal?: AbortSignal } = {}
+): Promise<ModelTextResponse> {
   const systemPrompt = getSystemPrompt(request.messages);
   const conversation = getConversationMessages(request.messages);
   const response = await fetch(buildGoogleEndpoint(profile), {
     method: "POST",
+    signal: options.signal,
     headers: {
       "Content-Type": "application/json"
     },
@@ -574,21 +614,25 @@ async function invokeGoogle(profile: ModelProfile, request: ModelTextRequest): P
   };
 }
 
-export async function invokeModelText(profile: ModelProfile, request: ModelTextRequest): Promise<ModelTextResponse> {
+export async function invokeModelText(
+  profile: ModelProfile,
+  request: ModelTextRequest,
+  options: { signal?: AbortSignal } = {}
+): Promise<ModelTextResponse> {
   if (OPENAI_COMPATIBLE_PROVIDERS.has(profile.provider)) {
-    return invokeOpenAiCompatible(profile, request);
+    return invokeOpenAiCompatible(profile, request, options);
   }
 
   if (profile.provider === "azure") {
-    return invokeAzure(profile, request);
+    return invokeAzure(profile, request, options);
   }
 
   if (profile.provider === "anthropic") {
-    return invokeAnthropic(profile, request);
+    return invokeAnthropic(profile, request, options);
   }
 
   if (profile.provider === "google") {
-    return invokeGoogle(profile, request);
+    return invokeGoogle(profile, request, options);
   }
 
   throw new Error(`暂不支持的模型供应商：${profile.provider}`);

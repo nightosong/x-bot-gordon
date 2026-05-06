@@ -45,6 +45,7 @@ const currentDir = path.dirname(currentFilePath);
 const desktopAssetDir = path.resolve(currentDir, "..", "assets");
 const appIconFileName = process.platform === "win32" ? "gordon.ico" : "gordon.icns";
 const appIconPath = path.join(desktopAssetDir, appIconFileName);
+const modelTextAbortControllers = new Map<string, AbortController>();
 
 type GordonConfirmWindowTone = "neutral" | "warning" | "danger";
 
@@ -1245,7 +1246,34 @@ app.whenReady().then(async () => {
     toggleModelProfileStatus(profileId)
   );
   ipcMain.handle("gordon:model-settings:delete", async (_event, profileId: string) => deleteModelProfile(profileId));
-  ipcMain.handle("gordon:model:invoke-text", async (_event, request) => invokeActiveModel(request));
+  ipcMain.handle("gordon:model:invoke-text", async (_event, request) => {
+    const requestId = typeof request?.requestId === "string" && request.requestId.trim() ? request.requestId.trim() : "";
+    const abortController = requestId ? new AbortController() : null;
+
+    if (requestId && abortController) {
+      modelTextAbortControllers.set(requestId, abortController);
+    }
+
+    try {
+      return await invokeActiveModel(request, abortController ? { signal: abortController.signal } : {});
+    } finally {
+      if (requestId) {
+        modelTextAbortControllers.delete(requestId);
+      }
+    }
+  });
+  ipcMain.handle("gordon:model:cancel-text", async (_event, requestId) => {
+    const normalizedRequestId = typeof requestId === "string" ? requestId.trim() : "";
+    const abortController = normalizedRequestId ? modelTextAbortControllers.get(normalizedRequestId) : null;
+
+    if (!abortController) {
+      return false;
+    }
+
+    abortController.abort();
+    modelTextAbortControllers.delete(normalizedRequestId);
+    return true;
+  });
   ipcMain.handle("gordon:model:query-balance", async (_event, request) => queryModelBalance(request));
   ipcMain.handle("gordon:skills:list", async () => listSkillDefinitions());
   ipcMain.handle("gordon:skills:upsert", async (_event, skill) => upsertSkillDefinition(skill));
@@ -1396,7 +1424,7 @@ app.whenReady().then(async () => {
     cancelWorkflowRecordRun(progressEventId)
   );
   ipcMain.handle("gordon:writing-books:list", async () => listWritingBooks());
-  ipcMain.handle("gordon:writing-books:save", async (_event, book) => saveWritingBook(book));
+  ipcMain.handle("gordon:writing-books:save", async (_event, book, options) => saveWritingBook(book, options));
   ipcMain.handle("gordon:weekly-progress:list", async () => listWeeklyProgress());
   ipcMain.handle("gordon:weekly-progress:save", async (_event, record) => saveWeeklyProgress(record));
   ipcMain.handle("gordon:weekly-progress:delete", async (_event, recordId: string) => deleteWeeklyProgress(recordId));

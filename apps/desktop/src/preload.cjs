@@ -74,6 +74,7 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
   toggleModelProfileStatus: (profileId) => ipcRenderer.invoke("gordon:model-settings:toggle-status", profileId),
   deleteModelProfile: (profileId) => ipcRenderer.invoke("gordon:model-settings:delete", profileId),
   invokeModelText: (request) => ipcRenderer.invoke("gordon:model:invoke-text", request),
+  cancelModelText: (requestId) => ipcRenderer.invoke("gordon:model:cancel-text", requestId),
   queryModelBalance: (request) => ipcRenderer.invoke("gordon:model:query-balance", request),
   listSkillDefinitions: () => ipcRenderer.invoke("gordon:skills:list"),
   upsertSkillDefinition: (skill) => ipcRenderer.invoke("gordon:skills:upsert", skill),
@@ -133,7 +134,7 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
     workflowRunProgressListeners.delete(listenerId);
   },
   listWritingBooks: () => ipcRenderer.invoke("gordon:writing-books:list"),
-  saveWritingBook: (book) => ipcRenderer.invoke("gordon:writing-books:save", toPlainIpcData(book)),
+  saveWritingBook: (book, options) => ipcRenderer.invoke("gordon:writing-books:save", toPlainIpcData(book), toPlainIpcData(options ?? {})),
   listWeeklyProgress: () => ipcRenderer.invoke("gordon:weekly-progress:list"),
   saveWeeklyProgress: (record) => ipcRenderer.invoke("gordon:weekly-progress:save", record),
   deleteWeeklyProgress: (recordId) => ipcRenderer.invoke("gordon:weekly-progress:delete", recordId),

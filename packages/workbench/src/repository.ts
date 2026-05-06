@@ -30,6 +30,9 @@ import type {
   WritingBookPart,
   WritingBookPartType,
   WritingChapter,
+  WritingOutlinePlannerJob,
+  WritingOutlinePlannerStatus,
+  WritingBookSaveOptions,
   WritingChapterStatus,
   WorkTask
 } from "../../shared/src/index.js";
@@ -1381,6 +1384,7 @@ const WRITING_BOOK_CHAPTERS_DIRECTORY_NAME = "chapters";
 const WRITING_BOOK_LENGTHS = new Set<WritingBookLength>(["short", "medium", "long"]);
 const WRITING_BOOK_PART_TYPES = new Set<WritingBookPartType>(["act", "volume"]);
 const WRITING_CHAPTER_STATUSES = new Set<WritingChapterStatus>(["todo", "inProgress", "done"]);
+const WRITING_OUTLINE_PLANNER_STATUSES = new Set<WritingOutlinePlannerStatus>(["idle", "running", "completed", "failed", "cancelled"]);
 const WRITING_CHAPTER_CONTENT_FILE_NAME_PATTERN = /^[a-f0-9]{32}\.md$/i;
 const WRITING_CHAPTER_PREFIX_PATTERN = /^第\s*([0-9０-９一二三四五六七八九十百千万零〇两]+)\s*章\s*(?:[：:、.\-]\s*)?(.*)$/;
 const WRITING_PART_PREFIX_PATTERN = /^(?:第\s*)?([0-9０-９一二三四五六七八九十百千万零〇两]+)\s*(幕|卷)\s*(?:[：:、.\-·]\s*)?(.*)$/;
@@ -1408,6 +1412,11 @@ function normalizeWritingBookLength(value: unknown): WritingBookLength {
 function normalizeWritingChapterStatus(value: unknown): WritingChapterStatus {
   const status = String(value ?? "");
   return WRITING_CHAPTER_STATUSES.has(status as WritingChapterStatus) ? (status as WritingChapterStatus) : "todo";
+}
+
+function normalizeWritingOutlinePlannerStatus(value: unknown): WritingOutlinePlannerStatus {
+  const status = String(value ?? "");
+  return WRITING_OUTLINE_PLANNER_STATUSES.has(status as WritingOutlinePlannerStatus) ? (status as WritingOutlinePlannerStatus) : "idle";
 }
 
 function normalizeWritingBookPartType(value: unknown): WritingBookPartType {
@@ -1476,6 +1485,11 @@ function normalizeWritingChapterIndex(value: unknown, fallbackIndex: number): nu
   return parseStoredWritingChapterIndex(value) ?? normalizedFallback;
 }
 
+function normalizeNonNegativeNumber(value: unknown): number {
+  const numeric = Number(value ?? 0);
+  return Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) : 0;
+}
+
 function splitStoredWritingChapterTitle(value: unknown): { index: number | null; title: string } {
   const title = String(value ?? "")
     .trim()
@@ -1533,10 +1547,52 @@ function normalizeWritingBookParts(input: unknown, bookId: string): WritingBookP
     .sort((left, right) => left.index - right.index);
 }
 
+function normalizeWritingOutlinePlannerJob(input: Partial<WritingOutlinePlannerJob> | null | undefined): WritingOutlinePlannerJob | undefined {
+  if (!input || typeof input !== "object") {
+    return undefined;
+  }
+
+  const targetPartCount = Math.max(1, normalizeWritingChapterIndex(input.targetPartCount, 0));
+  const minChaptersPerPart = Math.max(1, normalizeWritingChapterIndex(input.minChaptersPerPart, 79));
+  const maxChaptersPerPart = Math.max(minChaptersPerPart, normalizeWritingChapterIndex(input.maxChaptersPerPart, minChaptersPerPart - 1));
+  const chaptersPerPart = Math.min(
+    maxChaptersPerPart,
+    Math.max(minChaptersPerPart, normalizeWritingChapterIndex(input.chaptersPerPart, Math.round((minChaptersPerPart + maxChaptersPerPart) / 2) - 1))
+  );
+  const batchSize = Math.min(40, Math.max(5, normalizeWritingChapterIndex(input.batchSize, 19)));
+  const createdAt = String(input.createdAt ?? new Date().toISOString());
+
+  return {
+    id: String(input.id ?? `writing_outline_job_${randomUUID()}`),
+    status: normalizeWritingOutlinePlannerStatus(input.status),
+    instruction: String(input.instruction ?? ""),
+    targetPartCount,
+    partType: normalizeWritingBookPartType(input.partType),
+    minChaptersPerPart,
+    maxChaptersPerPart,
+    chaptersPerPart,
+    batchSize,
+    targetChapterCount: targetPartCount * chaptersPerPart,
+    generatedChapterCount: normalizeNonNegativeNumber(input.generatedChapterCount),
+    currentPartIndex: normalizeNonNegativeNumber(input.currentPartIndex),
+    currentBatchStartIndex: normalizeNonNegativeNumber(input.currentBatchStartIndex),
+    currentBatchEndIndex: normalizeNonNegativeNumber(input.currentBatchEndIndex),
+    lastCompletedChapterIndex: normalizeNonNegativeNumber(input.lastCompletedChapterIndex),
+    retryAttempt: normalizeNonNegativeNumber(input.retryAttempt),
+    maxRetryAttempts: normalizeNonNegativeNumber(input.maxRetryAttempts),
+    ...(input.lastRetryAt ? { lastRetryAt: String(input.lastRetryAt) } : {}),
+    ...(input.lastError ? { lastError: String(input.lastError) } : {}),
+    createdAt,
+    updatedAt: String(input.updatedAt ?? createdAt),
+    ...(input.error ? { error: String(input.error) } : {})
+  };
+}
+
 function normalizeWritingBookConfig(input: Partial<WritingBook> | null | undefined, directoryName = ""): StoredWritingBookConfig {
   const timestamp = String(input?.updatedAt ?? new Date().toISOString());
   const title = String(input?.title ?? directoryName ?? "").trim() || "未命名故事";
   const id = String(input?.id ?? `writing_book_${randomUUID()}`);
+  const outlinePlannerJob = normalizeWritingOutlinePlannerJob(input?.outlinePlannerJob);
 
   return {
     id,
@@ -1550,7 +1606,8 @@ function normalizeWritingBookConfig(input: Partial<WritingBook> | null | undefin
     intro: String(input?.intro ?? ""),
     outlineGuide: String(input?.outlineGuide ?? ""),
     seriesPlan: String(input?.seriesPlan ?? ""),
-    parts: normalizeWritingBookParts(input?.parts, id)
+    parts: normalizeWritingBookParts(input?.parts, id),
+    ...(outlinePlannerJob ? { outlinePlannerJob } : {})
   };
 }
 
@@ -1594,6 +1651,68 @@ function resolveWritingChapterContentFileName(fileName: string | undefined, used
   }
 
   return createWritingChapterContentFileName(usedFileNames);
+}
+
+function resolveExistingWritingChapterContentFileName(fileName: string | undefined, usedFileNames: Set<string>): string | undefined {
+  const normalizedFileName = fileName ? sanitizeWritingAssetName(fileName, "") : "";
+
+  if (
+    normalizedFileName &&
+    WRITING_CHAPTER_CONTENT_FILE_NAME_PATTERN.test(normalizedFileName) &&
+    !usedFileNames.has(normalizedFileName)
+  ) {
+    usedFileNames.add(normalizedFileName);
+    return normalizedFileName;
+  }
+
+  return undefined;
+}
+
+async function isEmptyWritingChapterContentFile(filePath: string): Promise<boolean> {
+  try {
+    return !(await readFile(filePath, "utf8")).trim();
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT";
+  }
+}
+
+function getWritingChapterMergeKey(chapter: Pick<WritingChapter, "id" | "index">): string {
+  const index = normalizeWritingChapterIndex(chapter.index, 0);
+  return index ? `index:${index}` : `id:${chapter.id}`;
+}
+
+function mergeWritingBookForIncrementalSave(incomingBook: WritingBook, existingBook: WritingBook | null): WritingBook {
+  if (!existingBook) {
+    return incomingBook;
+  }
+
+  const incomingChapters = Array.isArray(incomingBook.chapters) ? incomingBook.chapters : [];
+  const existingChapters = Array.isArray(existingBook.chapters) ? existingBook.chapters : [];
+  const incomingByKey = new Map(incomingChapters.map((chapter) => [getWritingChapterMergeKey(chapter), chapter]));
+  const mergedChapters = [
+    ...existingChapters.map((chapter) => {
+      const incomingChapter = incomingByKey.get(getWritingChapterMergeKey(chapter));
+
+      if (!incomingChapter) {
+        return chapter;
+      }
+
+      return {
+        ...chapter,
+        ...incomingChapter,
+        content: String(incomingChapter.content ?? "").trim() ? incomingChapter.content : chapter.content,
+        fileName: incomingChapter.fileName ?? chapter.fileName
+      };
+    }),
+    ...incomingChapters.filter((chapter) => !existingChapters.some((existingChapter) => getWritingChapterMergeKey(existingChapter) === getWritingChapterMergeKey(chapter)))
+  ].sort((left, right) => normalizeWritingChapterIndex(left.index, 0) - normalizeWritingChapterIndex(right.index, 0));
+
+  return {
+    ...existingBook,
+    ...incomingBook,
+    parts: Array.isArray(incomingBook.parts) && incomingBook.parts.length ? incomingBook.parts : existingBook.parts,
+    chapters: mergedChapters
+  };
 }
 
 async function readWritingBookDirectoryNames(): Promise<string[]> {
@@ -1678,11 +1797,16 @@ async function readWritingBookFromDirectory(directoryName: string): Promise<Writ
     );
     const chapters = await Promise.all(
       chapterMetas.map(async (chapter) => {
-        const fileName =
-          chapter.fileName && !usedFileNames.has(chapter.fileName)
-            ? chapter.fileName
-            : createWritingChapterContentFileName(usedFileNames);
-        usedFileNames.add(fileName);
+        const fileName = resolveExistingWritingChapterContentFileName(chapter.fileName, usedFileNames);
+
+        if (!fileName) {
+          return {
+            ...chapter,
+            fileName: undefined,
+            content: ""
+          };
+        }
+
         const contentPath = path.join(chaptersDirectory, fileName);
         const content = await readFile(contentPath, "utf8").catch((error) => {
           if ((error as NodeJS.ErrnoException).code === "ENOENT") {
@@ -1691,10 +1815,11 @@ async function readWritingBookFromDirectory(directoryName: string): Promise<Writ
 
           throw error;
         });
+        const hasContent = Boolean(content.trim());
 
         return {
           ...chapter,
-          fileName,
+          ...(hasContent ? { fileName } : { fileName: undefined }),
           content
         };
       })
@@ -1714,47 +1839,70 @@ async function readWritingBookFromDirectory(directoryName: string): Promise<Writ
   }
 }
 
-async function writeWritingBook(book: WritingBook): Promise<WritingBook> {
+async function writeWritingBook(book: WritingBook, options: WritingBookSaveOptions = {}): Promise<WritingBook> {
   const rootDirectory = getWritingBooksDirectoryPath();
-  const config = normalizeWritingBookConfig(book, book.directoryName);
-  const chapters = (Array.isArray(book.chapters) ? book.chapters : []).map((chapter, index) => ({
+  const target = await resolveWritingBookTargetDirectory(book);
+  const existingBook =
+    options.mergeChapters && target.existingDirectoryName ? await readWritingBookFromDirectory(target.existingDirectoryName) : null;
+  const mergedBook = options.mergeChapters ? mergeWritingBookForIncrementalSave(book, existingBook) : book;
+  const config = normalizeWritingBookConfig(mergedBook, mergedBook.directoryName);
+  const chapters = (Array.isArray(mergedBook.chapters) ? mergedBook.chapters : []).map((chapter, index) => ({
     ...normalizeWritingChapterMeta(chapter, index, config.id),
     content: String(chapter?.content ?? "")
   }));
   const { targetDirectoryName, existingDirectoryName } = await resolveWritingBookTargetDirectory({
-    ...book,
+    ...mergedBook,
     ...config,
     chapters
   });
   const bookDirectory = path.join(rootDirectory, targetDirectoryName);
   const chaptersDirectory = path.join(bookDirectory, WRITING_BOOK_CHAPTERS_DIRECTORY_NAME);
   const usedFileNames = new Set<string>();
-  const chapterMetas: StoredWritingChapterMeta[] = chapters.map((chapter) => ({
-    id: chapter.id,
-    index: chapter.index,
-    ...(chapter.partIndex ? { partIndex: chapter.partIndex } : {}),
-    title: chapter.title,
-    summary: chapter.summary,
-    status: chapter.status,
-    updatedAt: chapter.updatedAt,
-    fileName: resolveWritingChapterContentFileName(chapter.fileName, usedFileNames)
-  }));
+  const chapterMetas: StoredWritingChapterMeta[] = chapters.map((chapter) => {
+    const content = String(chapter.content ?? "");
+    const fileName = content.trim() ? resolveWritingChapterContentFileName(chapter.fileName, usedFileNames) : undefined;
 
-  await mkdir(chaptersDirectory, { recursive: true });
+    return {
+      id: chapter.id,
+      index: chapter.index,
+      ...(chapter.partIndex ? { partIndex: chapter.partIndex } : {}),
+      title: chapter.title,
+      summary: chapter.summary,
+      status: chapter.status,
+      updatedAt: chapter.updatedAt,
+      ...(fileName ? { fileName } : {})
+    };
+  });
+
+  await mkdir(bookDirectory, { recursive: true });
   await writeFile(path.join(bookDirectory, WRITING_BOOK_CONFIG_FILE_NAME), `${JSON.stringify(config, null, 2)}\n`, "utf8");
   await writeFile(path.join(bookDirectory, WRITING_BOOK_CHAPTERS_FILE_NAME), `${JSON.stringify(chapterMetas, null, 2)}\n`, "utf8");
 
-  await Promise.all(
-    chapterMetas.map((chapter, index) =>
-      writeFile(path.join(chaptersDirectory, chapter.fileName ?? createWritingChapterContentFileName(new Set())), chapters[index]?.content ?? "", "utf8")
-    )
-  );
+  const chapterContentWrites = chapterMetas
+    .map((chapter, index) => ({
+      fileName: chapter.fileName,
+      content: String(chapters[index]?.content ?? "")
+    }))
+    .filter((chapter): chapter is { fileName: string; content: string } => Boolean(chapter.fileName && chapter.content.trim()));
+
+  if (chapterContentWrites.length) {
+    await mkdir(chaptersDirectory, { recursive: true });
+    await Promise.all(
+      chapterContentWrites.map((chapter) => writeFile(path.join(chaptersDirectory, chapter.fileName), chapter.content, "utf8"))
+    );
+  }
 
   const chapterFiles = await readdir(chaptersDirectory, { withFileTypes: true }).catch(() => []);
   await Promise.all(
     chapterFiles
       .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".md") && !usedFileNames.has(entry.name))
-      .map((entry) => rm(path.join(chaptersDirectory, entry.name), { force: true }))
+      .map(async (entry) => {
+        const filePath = path.join(chaptersDirectory, entry.name);
+
+        if (!options.mergeChapters || (await isEmptyWritingChapterContentFile(filePath))) {
+          await rm(filePath, { force: true });
+        }
+      })
   );
 
   if (existingDirectoryName && existingDirectoryName !== targetDirectoryName) {
@@ -1777,8 +1925,8 @@ export async function listWritingBooks(): Promise<WritingBook[]> {
   return sortByUpdatedAtDescending(books.filter((book): book is WritingBook => Boolean(book)));
 }
 
-export async function saveWritingBook(book: WritingBook): Promise<WritingBook[]> {
-  await writeWritingBook(book);
+export async function saveWritingBook(book: WritingBook, options: WritingBookSaveOptions = {}): Promise<WritingBook[]> {
+  await writeWritingBook(book, options);
   return listWritingBooks();
 }
 

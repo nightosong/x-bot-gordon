@@ -523,8 +523,8 @@
                 </template>
 
                 <template v-else-if="activeWritingBook">
-                  <section class="writing-detail-shell" :class="{ 'is-ai-running': ui.marketplace.writing.isAiRunning }">
-                    <header class="writing-detail-head" :inert="ui.marketplace.writing.isAiRunning ? true : null">
+                  <section class="writing-detail-shell" :class="{ 'is-ai-running': isActiveWritingBookAiRunning }">
+                    <header class="writing-detail-head">
                       <button type="button" class="model-icon-button weekly-back-button" aria-label="返回书架" title="返回书架" @click="backWritingShelf">
                         <GIcon name="return" />
                       </button>
@@ -534,6 +534,7 @@
                           :value="activeWritingBook.title"
                           class="writing-title-input"
                           aria-label="书名"
+                          :disabled="isActiveWritingBookAiRunning"
                           @input="setWritingBookTitle($event.target.value)"
                         />
                       </div>
@@ -546,10 +547,10 @@
 
                     <section
                       class="writing-detail-layout"
-                      :inert="ui.marketplace.writing.isAiRunning ? true : null"
                       :class="{
                         'is-profile-collapsed': ui.marketplace.writing.isProfileCollapsed,
-                        'is-ai-open': ui.marketplace.writing.isAiDrawerOpen
+                        'is-ai-open': ui.marketplace.writing.isAiDrawerOpen,
+                        'is-book-running': isActiveWritingBookAiRunning
                       }"
                     >
                       <aside class="writing-detail-rail" :aria-expanded="ui.marketplace.writing.isProfileCollapsed ? 'false' : 'true'">
@@ -862,9 +863,52 @@
                               </div>
                             </section>
 
+                            <section v-if="activeWritingLongOutlineRequest || activeWritingOutlinePlannerJob" class="writing-outline-planner-card">
+                              <div class="writing-outline-planner-head">
+                                <div>
+                                  <p class="feature-kicker">Long Plan</p>
+                                  <p class="writing-outline-planner-title">
+                                    {{ activeWritingOutlinePlannerJob ? getWritingOutlinePlannerStatusLabel(activeWritingOutlinePlannerJob) : "长篇分批规划" }}
+                                  </p>
+                                </div>
+                                <span
+                                  v-if="activeWritingOutlinePlannerJob"
+                                  class="status-pill"
+                                  :class="getWritingOutlinePlannerStatusClass(activeWritingOutlinePlannerJob)"
+                                >
+                                  {{ getWritingOutlinePlannerProgressPercent(activeWritingOutlinePlannerJob) }}%
+                                </span>
+                              </div>
+                              <p v-if="activeWritingLongOutlineRequest" class="writing-outline-planner-copy">
+                                {{ buildWritingLongOutlineTargetContent(activeWritingLongOutlineRequest) }}
+                              </p>
+                              <p v-if="activeWritingOutlinePlannerJob" class="writing-outline-planner-copy">
+                                {{ getWritingOutlinePlannerProgressCopy(activeWritingOutlinePlannerJob) }}
+                              </p>
+                              <div v-if="activeWritingOutlinePlannerJob" class="writing-outline-planner-progress" aria-hidden="true">
+                                <span :style="{ width: `${getWritingOutlinePlannerProgressPercent(activeWritingOutlinePlannerJob)}%` }"></span>
+                              </div>
+                              <p v-if="getWritingOutlinePlannerRetryCopy(activeWritingOutlinePlannerJob)" class="writing-outline-planner-retry">
+                                {{ getWritingOutlinePlannerRetryCopy(activeWritingOutlinePlannerJob) }}
+                              </p>
+                              <div v-if="canResumeWritingOutlinePlanner(activeWritingBook, activeWritingOutlinePlannerJob)" class="writing-outline-planner-actions">
+                                <button
+                                  type="button"
+                                  class="model-action-secondary writing-outline-planner-resume"
+                                  :disabled="ui.marketplace.writing.isAiRunning"
+                                  @click="resumeWritingOutlinePlanningJob"
+                                >
+                                  继续规划
+                                </button>
+                              </div>
+                              <p v-if="activeWritingOutlinePlannerJob?.error || activeWritingOutlinePlannerJob?.lastError" class="writing-outline-planner-error">
+                                {{ activeWritingOutlinePlannerJob.error || activeWritingOutlinePlannerJob.lastError }}
+                              </p>
+                            </section>
+
                             <div class="writing-ai-run-row">
                               <button type="button" class="model-action writing-ai-run" :disabled="ui.marketplace.writing.isAiRunning" @click="generateWritingAssistantOutput">
-                                {{ ui.marketplace.writing.isAiRunning ? "生成中" : "生成建议" }}
+                                {{ getWritingAiRunButtonLabel() }}
                               </button>
                             </div>
 
@@ -892,21 +936,31 @@
                           </aside>
                         </section>
                       </main>
-                    </section>
 
-                    <div v-if="ui.marketplace.writing.isAiRunning" class="writing-ai-busy-shield" role="status" aria-live="polite">
-                      <div class="writing-ai-busy-card">
-                        <span class="writing-ai-busy-orbit" aria-hidden="true">
-                          <i></i>
-                          <i></i>
-                          <i></i>
-                        </span>
-                        <div>
-                          <strong>正在生成建议</strong>
-                          <p>任务已在后台执行，可以切换到其他页面，完成后会回到大师辅助输出区。</p>
+                      <div v-if="isActiveWritingBookAiRunning" class="writing-ai-busy-shield" role="status" aria-live="polite">
+                        <div class="writing-ai-busy-card" :class="{ 'has-stop': isWritingOutlinePlannerRunning(activeWritingOutlinePlannerJob) }">
+                          <span class="writing-ai-busy-orbit" aria-hidden="true">
+                            <i></i>
+                            <i></i>
+                            <i></i>
+                          </span>
+                          <div class="writing-ai-busy-copy">
+                            <strong>{{ getWritingBusyTitle() }}</strong>
+                            <p>{{ getWritingBusyDescription() }}</p>
+                          </div>
+                          <button
+                            v-if="isWritingOutlinePlannerRunning(activeWritingOutlinePlannerJob)"
+                            type="button"
+                            class="writing-ai-busy-stop"
+                            aria-label="停止任务"
+                            title="停止任务"
+                            @click="cancelWritingOutlinePlanningJob"
+                          >
+                            <GIcon name="stop" :size="15" />
+                          </button>
                         </div>
                       </div>
-                    </div>
+                    </section>
                   </section>
                 </template>
               </div>
@@ -3708,6 +3762,14 @@ const WRITING_AI_TASKS = {
 };
 const WRITING_OUTLINE_REWRITE_PATTERN =
   /(重改|重写|重做|重构|重新设计|重新规划|从零|推翻|不要参考|不参考|不代入|不用已有|忽略已有|全新目录|新的目录|替换目录)/;
+const WRITING_OUTLINE_EXPANSION_PATTERN =
+  /(扩写|扩充|扩展|拓展|增加到|加到|分为|分成|拆成|每幕|每一幕|每卷|每一卷|几百章|上千章|千章|百章|长篇规划)/;
+const WRITING_LONG_OUTLINE_BATCH_SIZE = 20;
+const WRITING_LONG_OUTLINE_MASTER_MAX_TOKENS = 5200;
+const WRITING_LONG_OUTLINE_BATCH_MAX_TOKENS = 8200;
+const WRITING_MODEL_MAX_RETRY_ATTEMPTS = 5;
+const WRITING_MODEL_RETRY_BASE_DELAY_MS = 1200;
+const WRITING_MODEL_RETRY_MAX_DELAY_MS = 8000;
 const WRITING_CHAPTER_PREFIX_PATTERN = /^第\s*([0-9０-９一二三四五六七八九十百千万零〇两]+)\s*章\s*(?:[：:、.\-]\s*)?(.*)$/;
 const WRITING_PART_PREFIX_PATTERN = /^(?:第\s*)?([0-9０-９一二三四五六七八九十百千万零〇两]+)\s*(幕|卷)\s*(?:[：:、.\-·]\s*)?(.*)$/;
 const WRITING_AI_TASK_PROMPTS = {
@@ -3835,7 +3897,8 @@ let weeklySavedSnapshot = "";
 let weeklyAutosaveInFlight = false;
 let writingAutosaveTimer = null;
 let writingSaveInFlight = false;
-let writingQueuedSaveBookId = null;
+let writingQueuedSave = null;
+let activeWritingModelRequestId = "";
 let weeklyReportCopyTimer = null;
 let agentProgressListenerId = null;
 let workflowProgressListenerId = null;
@@ -3903,6 +3966,8 @@ function createMarketplaceState() {
       aiFeedback: "",
       aiFeedbackTone: "neutral",
       isAiRunning: false,
+      aiRunningBookId: "",
+      outlinePlannerCancelRequested: false,
       uploadFeedback: "",
       isProfileCollapsed: false,
       isAiDrawerOpen: false,
@@ -4386,6 +4451,18 @@ const activeWritingTask = computed(
     activeWritingTaskOptions.value[0] ??
     null
 );
+const activeWritingOutlinePlannerJob = computed(() => activeWritingBook.value?.outlinePlannerJob ?? null);
+const isActiveWritingBookAiRunning = computed(
+  () => ui.marketplace.writing.isAiRunning && ui.marketplace.writing.aiRunningBookId === activeWritingBook.value?.id
+);
+const activeWritingLongOutlineRequest = computed(() =>
+  getWritingLongOutlineRequest({
+    book: activeWritingBook.value,
+    tabId: ui.marketplace.writing.activeTab,
+    task: activeWritingTask.value,
+    instruction: ui.marketplace.writing.aiInstruction
+  })
+);
 const activeWritingContent = computed({
   get: () => getWritingBookContent(activeWritingBook.value, ui.marketplace.writing.activeTab),
   set: (value) => {
@@ -4650,6 +4727,48 @@ function normalizeWritingBookPartsForUi(parts = [], bookId = "writing_book") {
     .sort((left, right) => left.index - right.index);
 }
 
+function normalizePositiveInteger(value, fallbackValue = 1) {
+  const parsedValue = Number(value);
+  return Number.isInteger(parsedValue) && parsedValue > 0 ? parsedValue : fallbackValue;
+}
+
+function normalizeWritingOutlinePlannerJobForUi(job) {
+  if (!job || typeof job !== "object") {
+    return undefined;
+  }
+
+  const minChaptersPerPart = normalizePositiveInteger(job.minChaptersPerPart, 80);
+  const maxChaptersPerPart = Math.max(minChaptersPerPart, normalizePositiveInteger(job.maxChaptersPerPart, 100));
+  const chaptersPerPart = Math.min(maxChaptersPerPart, Math.max(minChaptersPerPart, normalizePositiveInteger(job.chaptersPerPart, Math.round((minChaptersPerPart + maxChaptersPerPart) / 2))));
+  const targetPartCount = normalizePositiveInteger(job.targetPartCount, 1);
+  const batchSize = Math.min(40, Math.max(5, normalizePositiveInteger(job.batchSize, WRITING_LONG_OUTLINE_BATCH_SIZE)));
+
+  return {
+    id: String(job.id ?? "").trim() || createLocalId("writing_outline_job"),
+    status: ["idle", "running", "completed", "failed", "cancelled"].includes(job.status) ? job.status : "idle",
+    instruction: String(job.instruction ?? ""),
+    targetPartCount,
+    partType: normalizeWritingBookPartTypeForUi(job.partType),
+    minChaptersPerPart,
+    maxChaptersPerPart,
+    chaptersPerPart,
+    batchSize,
+    targetChapterCount: targetPartCount * chaptersPerPart,
+    generatedChapterCount: Math.max(0, Number(job.generatedChapterCount ?? 0) || 0),
+    currentPartIndex: Math.max(0, Number(job.currentPartIndex ?? 0) || 0),
+    currentBatchStartIndex: Math.max(0, Number(job.currentBatchStartIndex ?? 0) || 0),
+    currentBatchEndIndex: Math.max(0, Number(job.currentBatchEndIndex ?? 0) || 0),
+    lastCompletedChapterIndex: Math.max(0, Number(job.lastCompletedChapterIndex ?? 0) || 0),
+    retryAttempt: Math.max(0, Number(job.retryAttempt ?? 0) || 0),
+    maxRetryAttempts: Math.max(0, Number(job.maxRetryAttempts ?? 0) || 0),
+    ...(job.lastRetryAt ? { lastRetryAt: String(job.lastRetryAt) } : {}),
+    ...(job.lastError ? { lastError: String(job.lastError) } : {}),
+    createdAt: String(job.createdAt ?? new Date().toISOString()),
+    updatedAt: String(job.updatedAt ?? new Date().toISOString()),
+    ...(job.error ? { error: String(job.error) } : {})
+  };
+}
+
 function normalizeWritingBookForUi(book, index = 0) {
   const now = new Date().toISOString();
   const bookId = String(book?.id ?? "").trim() || createLocalId("writing_book");
@@ -4667,6 +4786,7 @@ function normalizeWritingBookForUi(book, index = 0) {
     seriesPlan: String(book?.seriesPlan ?? ""),
     directoryName: typeof book?.directoryName === "string" ? book.directoryName : undefined,
     parts: normalizeWritingBookPartsForUi(book?.parts, bookId),
+    outlinePlannerJob: normalizeWritingOutlinePlannerJobForUi(book?.outlinePlannerJob),
     chapters: []
   };
 
@@ -4790,7 +4910,16 @@ async function persistWritingBookById(bookId, options = {}) {
   }
 
   if (writingSaveInFlight) {
-    writingQueuedSaveBookId = targetBookId;
+    writingQueuedSave = {
+      bookId: targetBookId,
+      options: {
+        ...(writingQueuedSave?.options ?? {}),
+        ...options,
+        mergeChapters: Boolean(writingQueuedSave?.options?.mergeChapters || options.mergeChapters),
+        keepLocal: Boolean(writingQueuedSave?.options?.keepLocal || options.keepLocal),
+        silent: Boolean((writingQueuedSave?.options?.silent ?? true) && (options.silent ?? true))
+      }
+    };
     return;
   }
 
@@ -4811,9 +4940,16 @@ async function persistWritingBookById(bookId, options = {}) {
   writingSaveInFlight = true;
 
   try {
-    const savedBooks = await desktopApi.saveWritingBook(payload);
+    const savedBooks = await desktopApi.saveWritingBook(payload, options.mergeChapters ? { mergeChapters: true } : {});
 
-    if ((writingBookSaveVersions.get(targetBookId) ?? 0) === saveVersion) {
+    if (options.keepLocal && (writingBookSaveVersions.get(targetBookId) ?? 0) === saveVersion) {
+      const savedBook = normalizeWritingBooksForUi(savedBooks).find((entry) => entry.id === targetBookId);
+
+      if (savedBook) {
+        Object.assign(book, savedBook);
+        writingBookSaveVersions.set(targetBookId, 0);
+      }
+    } else if ((writingBookSaveVersions.get(targetBookId) ?? 0) === saveVersion) {
       applyWritingBooksFromStorage(savedBooks, {
         preferBookId: targetBookId,
         preferChapterId: ui.marketplace.writing.activeChapterId
@@ -4829,11 +4965,11 @@ async function persistWritingBookById(bookId, options = {}) {
   } finally {
     writingSaveInFlight = false;
 
-    const queuedBookId = writingQueuedSaveBookId;
-    writingQueuedSaveBookId = null;
+    const queuedSave = writingQueuedSave;
+    writingQueuedSave = null;
 
-    if (queuedBookId) {
-      persistWritingBookById(queuedBookId, { silent: true });
+    if (queuedSave) {
+      persistWritingBookById(queuedSave.bookId, queuedSave.options);
     }
   }
 }
@@ -5316,7 +5452,7 @@ function getWritingAiFeedbackClass() {
 }
 
 function toggleWritingProfileRail() {
-  if (ui.marketplace.writing.isAiRunning) {
+  if (isActiveWritingBookAiRunning.value) {
     return;
   }
 
@@ -5324,7 +5460,7 @@ function toggleWritingProfileRail() {
 }
 
 function setWritingAiDrawerOpen(isOpen) {
-  if (ui.marketplace.writing.isAiRunning) {
+  if (isActiveWritingBookAiRunning.value) {
     return;
   }
 
@@ -5497,8 +5633,152 @@ function getWritingTaskPromptSpec(tabId, taskId) {
   );
 }
 
+function parseWritingInstructionPartCount(instruction) {
+  const match = String(instruction ?? "").match(
+    /(?:分(?:为|成)|拆(?:为|成)|规划(?:为|成)|设计(?:为|成))?\s*([0-9０-９一二三四五六七八九十百千万零〇两]+)\s*(幕|卷|部)/
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  const count = parseWritingChapterIndex(match[1]);
+
+  if (!count) {
+    return null;
+  }
+
+  return {
+    count,
+    partType: match[2] === "卷" ? "volume" : "act"
+  };
+}
+
+function parseWritingInstructionChapterRange(instruction) {
+  const text = String(instruction ?? "");
+  const perPartMatch = text.match(
+    /每\s*(?:一)?(?:幕|卷|部)\s*(?:大概|大约|约|左右|预计|规划)?\s*([0-9０-９一二三四五六七八九十百千万零〇两]+)\s*(?:[-~－—–到至]\s*([0-9０-９一二三四五六七八九十百千万零〇两]+))?\s*章/
+  );
+
+  if (perPartMatch) {
+    const first = parseWritingChapterIndex(perPartMatch[1]);
+    const second = parseWritingChapterIndex(perPartMatch[2]);
+
+    if (first) {
+      return {
+        min: Math.min(first, second ?? first),
+        max: Math.max(first, second ?? first),
+        source: "perPart"
+      };
+    }
+  }
+
+  const totalMatch = text.match(/(?:共|总共|总计|整体|全书|增加到|扩写到)?\s*([0-9０-９一二三四五六七八九十百千万零〇两]+)\s*(?:章|章节)/);
+  const total = parseWritingChapterIndex(totalMatch?.[1]);
+
+  return total ? { min: total, max: total, source: "total" } : null;
+}
+
+function getWritingLongOutlineRequest({ book, tabId, task, instruction }) {
+  if (!book || tabId !== "outline" || task?.id !== "structure") {
+    return null;
+  }
+
+  const instructionText = String(instruction ?? "").trim();
+  const partCountRequest = parseWritingInstructionPartCount(instructionText);
+  const chapterRange = parseWritingInstructionChapterRange(instructionText);
+  const hasExpansionIntent = WRITING_OUTLINE_EXPANSION_PATTERN.test(instructionText);
+
+  if (!hasExpansionIntent && !partCountRequest && !chapterRange) {
+    return null;
+  }
+
+  const existingPartCount = getWritingBookParts(book).length;
+  const targetPartCount = Math.max(1, partCountRequest?.count ?? (existingPartCount || 1));
+  const partType = partCountRequest?.partType ?? (getWritingBookParts(book)[0]?.type || "act");
+  const minChaptersPerPart =
+    chapterRange?.source === "perPart"
+      ? chapterRange.min
+      : chapterRange?.source === "total"
+        ? Math.max(1, Math.floor(chapterRange.min / targetPartCount))
+        : 24;
+  const maxChaptersPerPart =
+    chapterRange?.source === "perPart"
+      ? chapterRange.max
+      : chapterRange?.source === "total"
+        ? Math.max(minChaptersPerPart, Math.ceil(chapterRange.max / targetPartCount))
+        : Math.max(minChaptersPerPart, 30);
+  const chaptersPerPart = Math.round((minChaptersPerPart + maxChaptersPerPart) / 2);
+  const targetChapterCount = targetPartCount * chaptersPerPart;
+  const shouldUseLongPlanner =
+    targetChapterCount >= 80 ||
+    targetPartCount > Math.max(1, existingPartCount) ||
+    minChaptersPerPart >= 40 ||
+    /几百章|上千章|千章|百章/.test(instructionText);
+
+  if (!shouldUseLongPlanner) {
+    return null;
+  }
+
+  return {
+    instruction: instructionText,
+    targetPartCount,
+    partType,
+    minChaptersPerPart,
+    maxChaptersPerPart,
+    chaptersPerPart,
+    targetChapterCount,
+    batchSize: WRITING_LONG_OUTLINE_BATCH_SIZE
+  };
+}
+
 function shouldIgnoreExistingWritingOutline(instruction, taskId) {
-  return taskId === "structure" && WRITING_OUTLINE_REWRITE_PATTERN.test(String(instruction ?? ""));
+  const text = String(instruction ?? "");
+  return taskId === "structure" && (WRITING_OUTLINE_REWRITE_PATTERN.test(text) || WRITING_OUTLINE_EXPANSION_PATTERN.test(text));
+}
+
+function buildWritingLongOutlineTargetContent(request) {
+  if (!request) {
+    return "";
+  }
+
+  const partLabel = request.partType === "volume" ? "卷" : "幕";
+
+  return [
+    `目标结构：${request.targetPartCount} ${partLabel}`,
+    `每${partLabel}章节范围：${request.minChaptersPerPart}-${request.maxChaptersPerPart} 章`,
+    `本轮规划采用：每${partLabel} ${request.chaptersPerPart} 章，共 ${request.targetChapterCount} 章`,
+    `分批粒度：每批 ${request.batchSize} 章，逐批生成、校验并落盘`
+  ].join("\n");
+}
+
+function buildWritingLongOutlineSeedContent(book, maxChapters = 36) {
+  const partsContent = getWritingBookParts(book)
+    .map((part) => `${getWritingPartDisplayLabel(part)}：${part.description || "暂无描述"}`)
+    .join("\n");
+  const chapters = getWritingChapters(book);
+  const visibleChapters =
+    chapters.length <= maxChapters
+      ? chapters
+      : [...chapters.slice(0, Math.ceil(maxChapters / 2)), null, ...chapters.slice(-Math.floor(maxChapters / 2))];
+  const chaptersContent = visibleChapters
+    .map((chapter, index) => {
+      if (!chapter) {
+        return `... 已省略 ${Math.max(0, chapters.length - maxChapters)} 章 ...`;
+      }
+
+      const chapterIndex = chapters.findIndex((entry) => entry.id === chapter.id);
+      return `${getWritingChapterDisplayTitle(chapter, chapterIndex >= 0 ? chapterIndex : index)}：${chapter.summary || "暂无简介"}`;
+    })
+    .join("\n");
+
+  return [
+    "现有目录只作为种子参考，不是最终章节数上限；如果作者要求扩写，必须重新设计覆盖目标篇幅的长篇结构。",
+    partsContent ? `【现有幕/卷】\n${partsContent}` : "",
+    chaptersContent ? `【现有章节种子】\n${chaptersContent}` : ""
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function buildWritingAssistantPrompt({ book, tabId, task, instruction }) {
@@ -5511,10 +5791,15 @@ function buildWritingAssistantPrompt({ book, tabId, task, instruction }) {
   const content = getWritingBookContent(book, tabId);
   const currentChapter = activeWritingChapter.value ?? getPreferredWritingChapter(book);
   const taskSpec = getWritingTaskPromptSpec(tabId, task?.id);
-  const shouldIgnoreOutline = shouldIgnoreExistingWritingOutline(instruction, task?.id);
+  const longOutlineRequest = getWritingLongOutlineRequest({ book, tabId, task, instruction });
+  const shouldIgnoreOutline = !longOutlineRequest && shouldIgnoreExistingWritingOutline(instruction, task?.id);
   const introContent = buildWritingIntroContent(book) || "(空)";
-  const outlineContent = shouldIgnoreOutline ? "(作者要求重改目录，本轮不代入已有章节目录。)" : buildWritingOutlineContent(book) || "(空)";
-  const currentModuleContent = tabId === "outline" && shouldIgnoreOutline ? outlineContent : content;
+  const outlineContent = longOutlineRequest
+    ? buildWritingLongOutlineSeedContent(book)
+    : shouldIgnoreOutline
+      ? "(作者要求重改目录，本轮不代入已有章节目录。)"
+      : buildWritingOutlineContent(book) || "(空)";
+  const currentModuleContent = tabId === "outline" && (shouldIgnoreOutline || longOutlineRequest) ? outlineContent : content;
   const chapterContext =
     currentChapter
       ? [
@@ -5543,6 +5828,7 @@ function buildWritingAssistantPrompt({ book, tabId, task, instruction }) {
     "",
     "输出要求：",
     taskSpec.output,
+    longOutlineRequest ? "\n长篇扩展模式：\n" + buildWritingLongOutlineTargetContent(longOutlineRequest) : "",
     "",
     "故事介绍与规划：",
     introContent,
@@ -5568,6 +5854,823 @@ function buildWritingAssistantPrompt({ book, tabId, task, instruction }) {
   ].join("\n");
 }
 
+function getWritingAssistantMaxOutputTokens(tabId, taskId) {
+  if (tabId === "outline" && taskId === "structure") {
+    return 6200;
+  }
+
+  if (tabId === "chapter") {
+    return 4200;
+  }
+
+  return 2600;
+}
+
+function createWritingOutlinePlannerJob(request, book = null) {
+  const now = new Date().toISOString();
+  const generatedChapterCount = book ? countWritingGeneratedTargetChapters(book, request) : 0;
+
+  return {
+    id: createLocalId("writing_outline_job"),
+    status: "running",
+    instruction: request.instruction,
+    targetPartCount: request.targetPartCount,
+    partType: request.partType,
+    minChaptersPerPart: request.minChaptersPerPart,
+    maxChaptersPerPart: request.maxChaptersPerPart,
+    chaptersPerPart: request.chaptersPerPart,
+    batchSize: request.batchSize,
+    targetChapterCount: request.targetChapterCount,
+    generatedChapterCount,
+    currentPartIndex: 0,
+    currentBatchStartIndex: 0,
+    currentBatchEndIndex: 0,
+    lastCompletedChapterIndex: book ? getLastCompletedWritingChapterIndex(book, request) : 0,
+    retryAttempt: 0,
+    maxRetryAttempts: 0,
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
+function updateWritingOutlinePlannerJob(book, updates = {}) {
+  if (!book?.outlinePlannerJob) {
+    return null;
+  }
+
+  book.outlinePlannerJob = {
+    ...book.outlinePlannerJob,
+    ...updates,
+    updatedAt: new Date().toISOString()
+  };
+  return book.outlinePlannerJob;
+}
+
+function cancelWritingOutlinePlanningJob() {
+  ui.marketplace.writing.outlinePlannerCancelRequested = true;
+  if (activeWritingModelRequestId && desktopApi?.cancelModelText) {
+    desktopApi.cancelModelText(activeWritingModelRequestId).catch((error) => {
+      console.warn("Failed to cancel writing model request", error);
+    });
+  }
+  setWritingFeedback("正在停止分批规划，当前请求会尽快中断。", "warning");
+}
+
+function isWritingAssistantAbortError(error) {
+  const name = String(error?.name ?? "");
+  const message = String(error?.message ?? error ?? "");
+
+  return (
+    name === "AbortError" ||
+    /abort|aborted|cancelled|canceled|operation was aborted|ERR_ABORTED/i.test(message)
+  );
+}
+
+function createWritingAbortError() {
+  const error = new Error("任务已停止");
+  error.name = "AbortError";
+  return error;
+}
+
+function getWritingErrorMessage(error) {
+  return error instanceof Error ? error.message : String(error ?? "未知错误");
+}
+
+function isRetryableWritingAssistantError(error) {
+  if (isWritingAssistantAbortError(error) || ui.marketplace.writing.outlinePlannerCancelRequested) {
+    return false;
+  }
+
+  const message = getWritingErrorMessage(error);
+
+  return /(?:HTTP\s*)?(?:408|429|500|502|503|504)|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|fetch failed|network|timeout|socket|gateway|upstream|overloaded|rate limit|too many requests|服务错误|serivce_request_error|service_request_error|ccp http status|模型没有返回可用文本内容/i.test(
+    message
+  );
+}
+
+function getWritingRetryDelayMs(retryAttempt) {
+  const attempt = Math.max(1, Number(retryAttempt) || 1);
+  return Math.min(WRITING_MODEL_RETRY_MAX_DELAY_MS, WRITING_MODEL_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1));
+}
+
+async function waitWritingRetryDelay(delayMs) {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < delayMs) {
+    if (ui.marketplace.writing.outlinePlannerCancelRequested) {
+      throw createWritingAbortError();
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, Math.min(250, delayMs - (Date.now() - startedAt))));
+  }
+}
+
+function isWritingOutlinePlannerRunning(job = activeWritingOutlinePlannerJob.value) {
+  return job?.status === "running";
+}
+
+function getWritingLongOutlineRequestFromJob(job) {
+  if (!job) {
+    return null;
+  }
+
+  const targetPartCount = normalizePositiveInteger(job.targetPartCount, 1);
+  const minChaptersPerPart = normalizePositiveInteger(job.minChaptersPerPart, 80);
+  const maxChaptersPerPart = Math.max(minChaptersPerPart, normalizePositiveInteger(job.maxChaptersPerPart, 100));
+  const chaptersPerPart = Math.min(maxChaptersPerPart, Math.max(minChaptersPerPart, normalizePositiveInteger(job.chaptersPerPart, Math.round((minChaptersPerPart + maxChaptersPerPart) / 2))));
+
+  return {
+    instruction: String(job.instruction ?? ""),
+    targetPartCount,
+    partType: normalizeWritingBookPartTypeForUi(job.partType),
+    minChaptersPerPart,
+    maxChaptersPerPart,
+    chaptersPerPart,
+    targetChapterCount: targetPartCount * chaptersPerPart,
+    batchSize: Math.min(40, Math.max(5, normalizePositiveInteger(job.batchSize, WRITING_LONG_OUTLINE_BATCH_SIZE)))
+  };
+}
+
+function isSameWritingLongOutlineRequest(left, right) {
+  return Boolean(
+    left &&
+      right &&
+      left.targetPartCount === right.targetPartCount &&
+      left.partType === right.partType &&
+      left.minChaptersPerPart === right.minChaptersPerPart &&
+      left.maxChaptersPerPart === right.maxChaptersPerPart &&
+      left.chaptersPerPart === right.chaptersPerPart &&
+      left.targetChapterCount === right.targetChapterCount &&
+      String(left.instruction ?? "") === String(right.instruction ?? "")
+  );
+}
+
+function getNextMissingWritingChapterIndex(book, startIndex, endIndex) {
+  const existingIndexes = new Set(getWritingChapters(book).map((chapter) => normalizeWritingChapterIndex(chapter.index, 0)));
+
+  for (let index = startIndex; index <= endIndex; index += 1) {
+    if (!existingIndexes.has(index)) {
+      return index;
+    }
+  }
+
+  return null;
+}
+
+function getLastCompletedWritingChapterIndex(book, request) {
+  let lastCompletedIndex = 0;
+  const existingIndexes = new Set(getWritingChapters(book).map((chapter) => normalizeWritingChapterIndex(chapter.index, 0)));
+
+  for (let index = 1; index <= request.targetChapterCount; index += 1) {
+    if (!existingIndexes.has(index)) {
+      break;
+    }
+
+    lastCompletedIndex = index;
+  }
+
+  return lastCompletedIndex;
+}
+
+function canResumeWritingOutlinePlanner(book, job) {
+  const isStaleRunningJob = job?.status === "running" && !ui.marketplace.writing.isAiRunning;
+
+  if (!book || !job || (!["failed", "cancelled"].includes(job.status) && !isStaleRunningJob)) {
+    return false;
+  }
+
+  const request = getWritingLongOutlineRequestFromJob(job);
+
+  return Boolean(request && getNextMissingWritingChapterIndex(book, 1, request.targetChapterCount));
+}
+
+function getWritingOutlinePlannerRetryCopy(job = activeWritingOutlinePlannerJob.value) {
+  if (!job?.retryAttempt || !job.maxRetryAttempts || job.status !== "running") {
+    return "";
+  }
+
+  return `当前批次遇到临时错误，正在第 ${job.retryAttempt}/${job.maxRetryAttempts} 次重试。`;
+}
+
+function getWritingOutlinePlannerProgressPercent(job = activeWritingOutlinePlannerJob.value) {
+  if (!job?.targetChapterCount) {
+    return 0;
+  }
+
+  return Math.min(100, Math.round((Number(job.generatedChapterCount ?? 0) / job.targetChapterCount) * 100));
+}
+
+function getWritingOutlinePlannerProgressCopy(job = activeWritingOutlinePlannerJob.value) {
+  if (!job) {
+    return "";
+  }
+
+  if (job.status === "running" && !ui.marketplace.writing.isAiRunning && activeWritingBook.value) {
+    const request = getWritingLongOutlineRequestFromJob(job);
+    const nextMissingIndex = request ? getNextMissingWritingChapterIndex(activeWritingBook.value, 1, request.targetChapterCount) : null;
+
+    return nextMissingIndex
+      ? `上次规划停在第 ${nextMissingIndex} 章前；本地已落盘 ${job.generatedChapterCount}/${job.targetChapterCount} 章。`
+      : `本地已落盘 ${job.generatedChapterCount}/${job.targetChapterCount} 章。`;
+  }
+
+  if (job.status === "running" && !job.currentPartIndex) {
+    return `正在生成幕/卷总规划；本地已落盘 ${job.generatedChapterCount}/${job.targetChapterCount} 章。`;
+  }
+
+  if (job.status === "running") {
+    const partLabel = job.partType === "volume" ? "卷" : "幕";
+    return `本地已落盘 ${job.generatedChapterCount}/${job.targetChapterCount} 章；当前请求第 ${job.currentPartIndex} ${partLabel}，第 ${job.currentBatchStartIndex}-${job.currentBatchEndIndex} 章。`;
+  }
+
+  if (["failed", "cancelled"].includes(job.status) && activeWritingBook.value) {
+    const request = getWritingLongOutlineRequestFromJob(job);
+    const nextMissingIndex = request ? getNextMissingWritingChapterIndex(activeWritingBook.value, 1, request.targetChapterCount) : null;
+
+    if (nextMissingIndex) {
+      return `本地已落盘 ${job.generatedChapterCount}/${job.targetChapterCount} 章；可从第 ${nextMissingIndex} 章继续。`;
+    }
+  }
+
+  return `本地已落盘 ${job.generatedChapterCount}/${job.targetChapterCount} 章。`;
+}
+
+function getWritingOutlinePlannerStatusLabel(job = activeWritingOutlinePlannerJob.value) {
+  if (!job) {
+    return "";
+  }
+
+  if (job.status === "running") {
+    if (!ui.marketplace.writing.isAiRunning) {
+      return "待继续";
+    }
+
+    if (!job.currentPartIndex) {
+      return "总规划中";
+    }
+
+    return "分批规划中";
+  }
+
+  if (job.status === "completed") {
+    return "规划完成";
+  }
+
+  if (job.status === "failed") {
+    return "规划失败";
+  }
+
+  if (job.status === "cancelled") {
+    return "已停止";
+  }
+
+  return "待规划";
+}
+
+function getWritingOutlinePlannerStatusClass(job = activeWritingOutlinePlannerJob.value) {
+  if (job?.status === "completed") {
+    return "is-success";
+  }
+
+  if (job?.status === "failed") {
+    return "is-danger";
+  }
+
+  if (job?.status === "cancelled") {
+    return "is-warning";
+  }
+
+  return job?.status === "running" ? (ui.marketplace.writing.isAiRunning ? "is-running" : "is-warning") : "";
+}
+
+function getWritingAiRunButtonLabel() {
+  if (ui.marketplace.writing.isAiRunning) {
+    return activeWritingOutlinePlannerJob.value?.status === "running" ? "规划中" : "生成中";
+  }
+
+  const resumeRequest = getWritingLongOutlineRequestFromJob(activeWritingOutlinePlannerJob.value);
+
+  if (
+    canResumeWritingOutlinePlanner(activeWritingBook.value, activeWritingOutlinePlannerJob.value) &&
+    (!activeWritingLongOutlineRequest.value || isSameWritingLongOutlineRequest(activeWritingLongOutlineRequest.value, resumeRequest))
+  ) {
+    return "继续规划";
+  }
+
+  return activeWritingLongOutlineRequest.value ? "启动分批规划" : "生成建议";
+}
+
+function getWritingBusyTitle() {
+  return activeWritingOutlinePlannerJob.value?.status === "running" ? "正在分批规划长篇目录" : "正在生成建议";
+}
+
+function getWritingBusyDescription() {
+  const job = activeWritingOutlinePlannerJob.value;
+
+  if (job?.status === "running") {
+    const partLabel = job.partType === "volume" ? "卷" : "幕";
+
+    if (!job.currentPartIndex) {
+      return `正在生成幕/卷总规划；当前本地已落盘 ${job.generatedChapterCount}/${job.targetChapterCount} 章。可以返回书架或切换到其他书籍，任务会继续在后台执行。`;
+    }
+
+    return `本地已落盘 ${job.generatedChapterCount}/${job.targetChapterCount} 章；当前在第 ${job.currentPartIndex} ${partLabel}，生成第 ${job.currentBatchStartIndex}-${job.currentBatchEndIndex} 章。可以返回书架或切换到其他书籍，任务会继续在后台执行。`;
+  }
+
+  return "任务已在后台执行，可以切换到其他页面，完成后会回到大师辅助输出区。";
+}
+
+function buildWritingPartsContext(book) {
+  const parts = getWritingBookParts(book);
+
+  if (!parts.length) {
+    return "(空)";
+  }
+
+  return parts.map((part) => `${getWritingPartDisplayLabel(part)}\n${part.description || "暂无描述"}`).join("\n\n");
+}
+
+function ensureWritingLongOutlineParts(book, request) {
+  const partLabel = request.partType === "volume" ? "卷" : "幕";
+  const existingByIndex = new Map(getWritingBookParts(book).map((part) => [part.index, part]));
+
+  book.parts = Array.from({ length: request.targetPartCount }, (_, index) => {
+    const partIndex = index + 1;
+    const existingPart = existingByIndex.get(partIndex);
+
+    return normalizeWritingBookPart(
+      existingPart ?? {
+        id: createLocalId("writing_part"),
+        type: request.partType,
+        index: partIndex,
+        title: `未命名${partLabel} ${partIndex}`,
+        description: "待补充本幕/卷的整体故事设计、关键矛盾、阶段高潮和转折作用。"
+      },
+      index,
+      book.id
+    );
+  });
+}
+
+function buildWritingRecentChapterContext(book, partIndex, beforeIndex, limit = 8) {
+  const chapters = getWritingChapters(book)
+    .filter((chapter) => (!partIndex || chapter.partIndex === partIndex) && normalizeWritingChapterIndex(chapter.index, 0) < beforeIndex)
+    .sort((left, right) => normalizeWritingChapterIndex(left.index, 0) - normalizeWritingChapterIndex(right.index, 0))
+    .slice(-limit);
+
+  if (!chapters.length) {
+    return "(本幕/卷还没有已生成章节)";
+  }
+
+  return chapters
+    .map((chapter) => {
+      const index = getWritingChapters(book).findIndex((entry) => entry.id === chapter.id);
+      return `${getWritingChapterDisplayTitle(chapter, index)}：${chapter.summary || "暂无简介"}`;
+    })
+    .join("\n");
+}
+
+function buildWritingLongOutlineMasterPrompt(book, request) {
+  const partLabel = request.partType === "volume" ? "卷" : "幕";
+
+  return [
+    "你正在为「笔墨生花」执行长篇小说总体规划任务。",
+    "目标：先生成幕/卷级 Master Plan，不要输出章节列表。",
+    "",
+    `作品：${book.title}`,
+    `类型：${book.genre || "未设定"}`,
+    `作者要求：${request.instruction || "无"}`,
+    "",
+    "长篇目标：",
+    buildWritingLongOutlineTargetContent(request),
+    "",
+    "故事介绍与规划：",
+    buildWritingIntroContent(book) || "(空)",
+    "",
+    "现有目录种子：",
+    buildWritingLongOutlineSeedContent(book, 36),
+    "",
+    "输出 JSON 代码块，且只允许包含 parts 字段：",
+    `{"parts":[{"index":1,"type":"${request.partType}","title":"${partLabel}标题（不要包含第X${partLabel}前缀）","description":"本${partLabel}的故事目标、现实映照、主要冲突、人物变化、阶段高潮和伏笔安排"}]}`,
+    "",
+    `必须输出 exactly ${request.targetPartCount} 个 ${partLabel}；每个 description 要能支撑 ${request.minChaptersPerPart}-${request.maxChaptersPerPart} 章。`
+  ].join("\n");
+}
+
+function buildWritingLongOutlineBatchPrompt(book, request, part, batchStartIndex, batchEndIndex) {
+  const partLabel = request.partType === "volume" ? "卷" : "幕";
+  const expectedCount = batchEndIndex - batchStartIndex + 1;
+
+  return [
+    "你正在为「笔墨生花」执行长篇小说章节目录分批规划任务。",
+    "目标：只生成当前批次的章节 JSON，不要输出其它批次，不要输出解释。",
+    "",
+    `作品：${book.title}`,
+    `类型：${book.genre || "未设定"}`,
+    `作者要求：${request.instruction || "无"}`,
+    "",
+    "全书目标：",
+    buildWritingLongOutlineTargetContent(request),
+    "",
+    "故事介绍与规划：",
+    buildWritingIntroContent(book) || "(空)",
+    "",
+    "幕/卷总规划：",
+    buildWritingPartsContext(book),
+    "",
+    `当前${partLabel}：${getWritingPartDisplayLabel(part)}`,
+    part?.description || "暂无描述",
+    "",
+    "本幕/卷最近已生成章节：",
+    buildWritingRecentChapterContext(book, part.index, batchStartIndex),
+    "",
+    "本批次硬性要求：",
+    `- 必须输出 exactly ${expectedCount} 个 chapters。`,
+    `- index 必须从 ${batchStartIndex} 连续到 ${batchEndIndex}。`,
+    `- 每个 chapter 的 partIndex 必须是 ${part.index}。`,
+    "- title 只写纯标题，不要包含“第X章”。",
+    "- summary 要写清本章目标、主要冲突、信息增量、人物变化、伏笔/回收、结尾钩子和现实反思落点。",
+    "- 当前批次必须承接上一批，不要重复已有章节，不要提前收束整本书。",
+    "",
+    "输出 JSON 代码块，格式：",
+    `{"chapters":[{"index":${batchStartIndex},"partIndex":${part.index},"title":"章节标题","summary":"本章目标、主要冲突、信息增量、伏笔/回收、结尾钩子、现实反思落点"}]}`
+  ].join("\n");
+}
+
+function normalizeWritingLongBatchPlans(plans, part, batchStartIndex, batchEndIndex) {
+  const expectedCount = batchEndIndex - batchStartIndex + 1;
+  const sortedPlans = plans
+    .filter((plan) => normalizeWritingChapterIndex(plan.index, 0) >= batchStartIndex && normalizeWritingChapterIndex(plan.index, 0) <= batchEndIndex)
+    .sort((left, right) => normalizeWritingChapterIndex(left.index, 0) - normalizeWritingChapterIndex(right.index, 0));
+  const sourcePlans = sortedPlans.length >= expectedCount ? sortedPlans : plans.slice(0, expectedCount);
+
+  if (sourcePlans.length < expectedCount) {
+    return [];
+  }
+
+  return sourcePlans.slice(0, expectedCount).map((plan, offset) => ({
+    ...plan,
+    index: batchStartIndex + offset,
+    partIndex: part.index,
+    title: normalizeWritingChapterPlanTitle(plan.title),
+    summary: normalizeWritingChapterPlanSummary(plan.summary)
+  }));
+}
+
+function mergeWritingChapterPlanBatch(book, plans) {
+  const existingChapters = getWritingChapters(book);
+  const existingByTitle = new Map(
+    existingChapters.map((chapter) => [normalizeWritingChapterTitleForMatch(chapter.title), chapter]).filter(([title]) => Boolean(title))
+  );
+  const existingByIndex = new Map(existingChapters.map((chapter) => [normalizeWritingChapterIndex(chapter.index, 0), chapter]));
+  const planIndexes = new Set(plans.map((plan) => normalizeWritingChapterIndex(plan.index, 0)));
+  const retainedChapters = existingChapters.filter((chapter) => !planIndexes.has(normalizeWritingChapterIndex(chapter.index, 0)));
+  const batchChapters = plans.map((plan, index) => {
+    const titleKey = normalizeWritingChapterTitleForMatch(plan.title);
+    const indexMatchedChapter = existingByIndex.get(normalizeWritingChapterIndex(plan.index, index)) ?? null;
+    const existingChapter =
+      existingByTitle.get(titleKey) ?? (indexMatchedChapter && !String(indexMatchedChapter.content ?? "").trim() ? indexMatchedChapter : null);
+    return buildWritingChapterFromPlan(plan, existingChapter, normalizeWritingChapterIndex(plan.index, index) - 1);
+  });
+
+  book.chapters = [...retainedChapters, ...batchChapters].sort(
+    (left, right) => normalizeWritingChapterIndex(left.index, 0) - normalizeWritingChapterIndex(right.index, 0)
+  );
+}
+
+function countWritingGeneratedTargetChapters(book, request) {
+  return getWritingChapters(book).filter((chapter) => {
+    const index = normalizeWritingChapterIndex(chapter.index, 0);
+    return index >= 1 && index <= request.targetChapterCount;
+  }).length;
+}
+
+async function invokeWritingAssistantModel(prompt, maxOutputTokens, temperature = 0.72, options = {}) {
+  const maxRetries = Math.max(0, Number(options.maxRetries ?? 0) || 0);
+  let retryAttempt = 0;
+
+  while (retryAttempt <= maxRetries) {
+    if (ui.marketplace.writing.outlinePlannerCancelRequested) {
+      throw createWritingAbortError();
+    }
+
+    const requestId = createLocalId("writing_model_request");
+    activeWritingModelRequestId = requestId;
+
+    try {
+      return await desktopApi.invokeModelText({
+        requestId,
+        temperature,
+        maxOutputTokens,
+        messages: [
+          {
+            role: "system",
+            content: WRITING_MASTER_SYSTEM_PROMPT
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ]
+      });
+    } catch (error) {
+      if (retryAttempt >= maxRetries || !isRetryableWritingAssistantError(error)) {
+        throw error;
+      }
+
+      retryAttempt += 1;
+      const delayMs = getWritingRetryDelayMs(retryAttempt);
+
+      if (typeof options.onRetry === "function") {
+        await options.onRetry({
+          error,
+          retryAttempt,
+          maxRetries,
+          delayMs
+        });
+      }
+
+      await waitWritingRetryDelay(delayMs);
+    } finally {
+      if (activeWritingModelRequestId === requestId) {
+        activeWritingModelRequestId = "";
+      }
+    }
+  }
+
+  throw new Error("模型调用重试失败");
+}
+
+async function generateWritingLongOutlinePlan(book, request, options = {}) {
+  if (!book || !desktopApi?.invokeModelText) {
+    setWritingFeedback("AI 桥接未就绪。", "danger");
+    return;
+  }
+
+  const existingJob = book.outlinePlannerJob ?? null;
+  const shouldResume =
+    Boolean(options.resume) ||
+    (canResumeWritingOutlinePlanner(book, existingJob) && isSameWritingLongOutlineRequest(request, getWritingLongOutlineRequestFromJob(existingJob)));
+  const job = shouldResume && existingJob
+    ? {
+        ...existingJob,
+        status: "running",
+        instruction: request.instruction,
+        targetPartCount: request.targetPartCount,
+        partType: request.partType,
+        minChaptersPerPart: request.minChaptersPerPart,
+        maxChaptersPerPart: request.maxChaptersPerPart,
+        chaptersPerPart: request.chaptersPerPart,
+        batchSize: request.batchSize,
+        targetChapterCount: request.targetChapterCount,
+        generatedChapterCount: countWritingGeneratedTargetChapters(book, request),
+        lastCompletedChapterIndex: getLastCompletedWritingChapterIndex(book, request),
+        retryAttempt: 0,
+        maxRetryAttempts: WRITING_MODEL_MAX_RETRY_ATTEMPTS,
+        lastError: "",
+        error: ""
+      }
+    : createWritingOutlinePlannerJob(request, book);
+  const partLabel = request.partType === "volume" ? "卷" : "幕";
+
+  try {
+    ui.marketplace.writing.isAiRunning = true;
+    ui.marketplace.writing.aiRunningBookId = book.id;
+    ui.marketplace.writing.outlinePlannerCancelRequested = false;
+    ui.marketplace.writing.aiOutput = "";
+    book.outlinePlannerJob = job;
+    setWritingAiTaskPickerOpen(false);
+    setWritingFeedback(
+      shouldResume
+        ? `继续长篇分批规划：已落盘 ${job.generatedChapterCount}/${request.targetChapterCount} 章。`
+        : `长篇分批规划启动：${request.targetPartCount} ${partLabel} / ${request.targetChapterCount} 章。`,
+      "neutral"
+    );
+    setStatus(shouldResume ? "笔墨生花正在继续分批规划长篇目录。" : "笔墨生花正在后台分批规划长篇目录。", "neutral");
+    touchWritingBook(book, { persist: false });
+    await persistWritingBookById(book.id, { silent: true, keepLocal: true, mergeChapters: true });
+
+    const shouldGenerateMasterPlan = !shouldResume || getWritingBookParts(book).length < request.targetPartCount;
+
+    if (shouldGenerateMasterPlan) {
+      const masterResult = await invokeWritingAssistantModel(
+        buildWritingLongOutlineMasterPrompt(book, request),
+        WRITING_LONG_OUTLINE_MASTER_MAX_TOKENS,
+        0.66,
+        {
+          maxRetries: WRITING_MODEL_MAX_RETRY_ATTEMPTS,
+          onRetry: async ({ error, retryAttempt, maxRetries }) => {
+            const message = getWritingErrorMessage(error);
+            updateWritingOutlinePlannerJob(book, {
+              status: "running",
+              retryAttempt,
+              maxRetryAttempts: maxRetries,
+              lastRetryAt: new Date().toISOString(),
+              lastError: message,
+              error: ""
+            });
+            setWritingFeedback(`总体规划请求失败，正在第 ${retryAttempt}/${maxRetries} 次重试。`, "warning");
+            ui.marketplace.writing.aiOutput = [
+              `【长篇分批规划重试】总体规划 ${retryAttempt}/${maxRetries}`,
+              "",
+              message
+            ].join("\n");
+            touchWritingBook(book, { persist: false });
+            await persistWritingBookById(book.id, { silent: true, keepLocal: true, mergeChapters: true });
+          }
+        }
+      );
+      const masterPlan = parseWritingChapterJsonPayload(masterResult?.text ?? "", { allowPartsOnly: true });
+      const plannedParts = masterPlan.parts.length
+        ? masterPlan.parts.slice(0, request.targetPartCount)
+        : Array.from({ length: request.targetPartCount }, (_, index) => ({
+            id: createLocalId("writing_part"),
+            type: request.partType,
+            index: index + 1,
+            title: `未命名${partLabel} ${index + 1}`,
+            description: "待补充本幕/卷的整体故事设计、关键矛盾、阶段高潮和转折作用。"
+          }));
+
+      book.parts = plannedParts.map((part, index) =>
+        normalizeWritingBookPart({ ...part, type: part.type ?? request.partType, index: part.index ?? index + 1 }, index, book.id)
+      );
+      ui.marketplace.writing.aiOutput = [`【总体规划已生成】`, buildWritingPartsContext(book)].join("\n\n");
+    } else {
+      ensureWritingLongOutlineParts(book, request);
+      ui.marketplace.writing.aiOutput = [
+        `【继续长篇分批规划】`,
+        `已落盘 ${countWritingGeneratedTargetChapters(book, request)}/${request.targetChapterCount} 章`,
+        "",
+        buildWritingPartsContext(book)
+      ].join("\n\n");
+    }
+
+    ensureWritingLongOutlineParts(book, request);
+    updateWritingOutlinePlannerJob(book, {
+      retryAttempt: 0,
+      maxRetryAttempts: WRITING_MODEL_MAX_RETRY_ATTEMPTS,
+      lastError: "",
+      error: "",
+      generatedChapterCount: countWritingGeneratedTargetChapters(book, request),
+      lastCompletedChapterIndex: getLastCompletedWritingChapterIndex(book, request)
+    });
+    touchWritingBook(book, { persist: false });
+    await persistWritingBookById(book.id, { silent: true, keepLocal: true, mergeChapters: true });
+
+    for (let partIndex = 1; partIndex <= request.targetPartCount; partIndex += 1) {
+      const part = getWritingBookParts(book).find((entry) => entry.index === partIndex) ?? normalizeWritingBookPart(null, partIndex - 1, book.id);
+      const partStartIndex = (partIndex - 1) * request.chaptersPerPart + 1;
+      const partEndIndex = partIndex * request.chaptersPerPart;
+      let batchStartIndex = getNextMissingWritingChapterIndex(book, partStartIndex, partEndIndex);
+
+      while (batchStartIndex && batchStartIndex <= partEndIndex) {
+        if (ui.marketplace.writing.outlinePlannerCancelRequested) {
+          updateWritingOutlinePlannerJob(book, {
+            status: "cancelled",
+            generatedChapterCount: countWritingGeneratedTargetChapters(book, request),
+            lastCompletedChapterIndex: getLastCompletedWritingChapterIndex(book, request),
+            retryAttempt: 0
+          });
+          setWritingFeedback("长篇分批规划已停止。", "warning");
+          setStatus("笔墨生花分批规划已停止。", "warning");
+          touchWritingBook(book, { persist: false });
+          await persistWritingBookById(book.id, { silent: true, keepLocal: true, mergeChapters: true });
+          return;
+        }
+
+        const batchEndIndex = Math.min(partEndIndex, batchStartIndex + request.batchSize - 1);
+        updateWritingOutlinePlannerJob(book, {
+          status: "running",
+          currentPartIndex: partIndex,
+          currentBatchStartIndex: batchStartIndex,
+          currentBatchEndIndex: batchEndIndex,
+          generatedChapterCount: countWritingGeneratedTargetChapters(book, request),
+          retryAttempt: 0,
+          maxRetryAttempts: WRITING_MODEL_MAX_RETRY_ATTEMPTS,
+          lastError: "",
+          error: ""
+        });
+        setWritingFeedback(`正在规划第 ${partIndex} ${partLabel}：第 ${batchStartIndex}-${batchEndIndex} 章。`, "neutral");
+        ui.marketplace.writing.aiOutput = [
+          `【长篇分批规划进度】${book.outlinePlannerJob.generatedChapterCount}/${request.targetChapterCount} 章已落盘`,
+          `当前请求：第 ${partIndex} ${partLabel}，第 ${batchStartIndex}-${batchEndIndex} 章`,
+          "",
+          "当前批次正在生成中，批次完成后会写入 chapters.json。"
+        ].join("\n");
+        touchWritingBook(book, { persist: false });
+        await persistWritingBookById(book.id, { silent: true, keepLocal: true, mergeChapters: true });
+
+        const batchResult = await invokeWritingAssistantModel(
+          buildWritingLongOutlineBatchPrompt(book, request, part, batchStartIndex, batchEndIndex),
+          WRITING_LONG_OUTLINE_BATCH_MAX_TOKENS,
+          0.7,
+          {
+            maxRetries: WRITING_MODEL_MAX_RETRY_ATTEMPTS,
+            onRetry: async ({ error, retryAttempt, maxRetries }) => {
+              const message = getWritingErrorMessage(error);
+              updateWritingOutlinePlannerJob(book, {
+                status: "running",
+                currentPartIndex: partIndex,
+                currentBatchStartIndex: batchStartIndex,
+                currentBatchEndIndex: batchEndIndex,
+                generatedChapterCount: countWritingGeneratedTargetChapters(book, request),
+                lastCompletedChapterIndex: getLastCompletedWritingChapterIndex(book, request),
+                retryAttempt,
+                maxRetryAttempts: maxRetries,
+                lastRetryAt: new Date().toISOString(),
+                lastError: message,
+                error: ""
+              });
+              setWritingFeedback(`第 ${batchStartIndex}-${batchEndIndex} 章请求失败，正在第 ${retryAttempt}/${maxRetries} 次重试。`, "warning");
+              ui.marketplace.writing.aiOutput = [
+                `【长篇分批规划重试】第 ${batchStartIndex}-${batchEndIndex} 章`,
+                `重试：${retryAttempt}/${maxRetries}`,
+                `本地已落盘：${book.outlinePlannerJob.generatedChapterCount}/${request.targetChapterCount} 章`,
+                "",
+                message
+              ].join("\n");
+              touchWritingBook(book, { persist: false });
+              await persistWritingBookById(book.id, { silent: true, keepLocal: true, mergeChapters: true });
+            }
+          }
+        );
+        const batchPlan = parseWritingChaptersFromAssistantOutput(batchResult?.text ?? "");
+        const normalizedPlans = normalizeWritingLongBatchPlans(batchPlan.chapters, part, batchStartIndex, batchEndIndex);
+
+        if (!normalizedPlans.length) {
+          throw new Error(`第 ${batchStartIndex}-${batchEndIndex} 章没有返回完整 chapters JSON`);
+        }
+
+        mergeWritingChapterPlanBatch(book, normalizedPlans);
+        const generatedChapterCount = countWritingGeneratedTargetChapters(book, request);
+        updateWritingOutlinePlannerJob(book, {
+          generatedChapterCount,
+          lastCompletedChapterIndex: getLastCompletedWritingChapterIndex(book, request),
+          retryAttempt: 0,
+          maxRetryAttempts: WRITING_MODEL_MAX_RETRY_ATTEMPTS,
+          lastError: "",
+          error: ""
+        });
+        ui.marketplace.writing.aiOutput = [
+          `【长篇分批规划进度】${generatedChapterCount}/${request.targetChapterCount} 章`,
+          `当前完成：第 ${partIndex} ${partLabel}，第 ${batchStartIndex}-${batchEndIndex} 章`,
+          "",
+          batchResult?.text ?? ""
+        ].join("\n");
+        touchWritingBook(book, { persist: false });
+        await persistWritingBookById(book.id, { silent: true, keepLocal: true, mergeChapters: true });
+        batchStartIndex = getNextMissingWritingChapterIndex(book, partStartIndex, partEndIndex);
+      }
+    }
+
+    updateWritingOutlinePlannerJob(book, {
+      status: "completed",
+      generatedChapterCount: countWritingGeneratedTargetChapters(book, request),
+      lastCompletedChapterIndex: getLastCompletedWritingChapterIndex(book, request),
+      currentPartIndex: request.targetPartCount,
+      currentBatchStartIndex: request.targetChapterCount,
+      currentBatchEndIndex: request.targetChapterCount,
+      retryAttempt: 0,
+      maxRetryAttempts: WRITING_MODEL_MAX_RETRY_ATTEMPTS,
+      lastError: "",
+      error: ""
+    });
+    if (activeWritingBook.value?.id === book.id) {
+      selectWritingChapter(getWritingChapters(book)[0]?.id ?? "");
+    }
+    touchWritingBook(book, { persist: false });
+    await persistWritingBookById(book.id, { silent: true, keepLocal: true, mergeChapters: true });
+    setWritingFeedback(`长篇目录规划完成：${request.targetChapterCount} 章已写入本地。`, "success");
+    setStatus("笔墨生花长篇目录已分批写入本地。", "success");
+  } catch (error) {
+    console.error("Failed to generate long writing outline", error);
+    const message = error instanceof Error ? error.message : "未知错误";
+    const isCancelled = ui.marketplace.writing.outlinePlannerCancelRequested || isWritingAssistantAbortError(error);
+    updateWritingOutlinePlannerJob(book, {
+      status: isCancelled ? "cancelled" : "failed",
+      generatedChapterCount: countWritingGeneratedTargetChapters(book, request),
+      lastCompletedChapterIndex: getLastCompletedWritingChapterIndex(book, request),
+      retryAttempt: 0,
+      maxRetryAttempts: WRITING_MODEL_MAX_RETRY_ATTEMPTS,
+      lastError: isCancelled ? "" : message,
+      ...(isCancelled ? { error: "" } : { error: message })
+    });
+    touchWritingBook(book, { persist: false });
+    await persistWritingBookById(book.id, { silent: true, keepLocal: true, mergeChapters: true }).catch(() => {});
+    if (isCancelled) {
+      setWritingFeedback("长篇分批规划已停止。", "warning");
+      setStatus("笔墨生花分批规划已停止。", "warning");
+    } else {
+      setWritingFeedback(`分批规划失败：${message}`, "danger");
+      setStatus(`笔墨生花分批规划失败：${message}`, "danger");
+    }
+  } finally {
+    ui.marketplace.writing.isAiRunning = false;
+    ui.marketplace.writing.aiRunningBookId = "";
+    ui.marketplace.writing.outlinePlannerCancelRequested = false;
+  }
+}
+
 async function generateWritingAssistantOutput() {
   const book = activeWritingBook.value;
 
@@ -5580,29 +6683,38 @@ async function generateWritingAssistantOutput() {
     return;
   }
 
+  const longOutlineRequest = activeWritingLongOutlineRequest.value;
+  const resumeRequest = getWritingLongOutlineRequestFromJob(book.outlinePlannerJob);
+
+  if (
+    canResumeWritingOutlinePlanner(book, book.outlinePlannerJob) &&
+    resumeRequest &&
+    (!longOutlineRequest || isSameWritingLongOutlineRequest(longOutlineRequest, resumeRequest))
+  ) {
+    await generateWritingLongOutlinePlan(book, resumeRequest, { resume: true });
+    return;
+  }
+
+  if (longOutlineRequest) {
+    await generateWritingLongOutlinePlan(book, longOutlineRequest);
+    return;
+  }
+
   const prompt = activeWritingPromptPreview.value;
 
   try {
     ui.marketplace.writing.isAiRunning = true;
+    ui.marketplace.writing.aiRunningBookId = book.id;
     ui.marketplace.writing.aiOutput = "";
     setWritingAiTaskPickerOpen(false);
     setWritingFeedback("正在召唤主编和故事架构师...", "neutral");
     setStatus("笔墨生花正在后台生成建议。", "neutral");
 
-    const result = await desktopApi.invokeModelText({
-      temperature: 0.72,
-      maxOutputTokens: 2200,
-      messages: [
-        {
-          role: "system",
-          content: WRITING_MASTER_SYSTEM_PROMPT
-        },
-        {
-          role: "user",
-          content: prompt
-        }
-      ]
-    });
+    const result = await invokeWritingAssistantModel(
+      prompt,
+      getWritingAssistantMaxOutputTokens(ui.marketplace.writing.activeTab, activeWritingTask.value?.id),
+      0.72
+    );
 
     ui.marketplace.writing.aiOutput = String(result?.text ?? "").trim();
     setWritingFeedback(result?.profileLabel ? `已由 ${result.profileLabel} 生成。` : "AI 已生成建议。", "success");
@@ -5614,7 +6726,19 @@ async function generateWritingAssistantOutput() {
     setStatus(`笔墨生花生成失败：${message}`, "danger");
   } finally {
     ui.marketplace.writing.isAiRunning = false;
+    ui.marketplace.writing.aiRunningBookId = "";
   }
+}
+
+async function resumeWritingOutlinePlanningJob() {
+  const book = activeWritingBook.value;
+  const request = getWritingLongOutlineRequestFromJob(book?.outlinePlannerJob);
+
+  if (!book || !request || ui.marketplace.writing.isAiRunning) {
+    return;
+  }
+
+  await generateWritingLongOutlinePlan(book, request, { resume: true });
 }
 
 function normalizeWritingChapterTitleForMatch(value) {
@@ -5717,7 +6841,7 @@ function normalizeWritingPartPlanEntry(entry, fallbackIndex = 0) {
   };
 }
 
-function parseWritingChapterJsonPayload(value) {
+function parseWritingChapterJsonPayload(value, options = {}) {
   const text = String(value ?? "").trim();
   const candidates = [];
   const fencedBlocks = Array.from(text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)).map((match) => match[1]?.trim()).filter(Boolean);
@@ -5788,7 +6912,7 @@ function parseWritingChapterJsonPayload(value) {
         }
       });
 
-      if (normalizedChapters.length) {
+      if (normalizedChapters.length || (options.allowPartsOnly && normalizedParts.length)) {
         return { parts: normalizedParts, chapters: normalizedChapters };
       }
     } catch {

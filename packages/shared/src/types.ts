@@ -44,6 +44,7 @@ export type CommandWorkshopAttachmentReadStatus = "readable" | "binary" | "unsup
 export type WritingBookLength = "short" | "medium" | "long";
 export type WritingBookPartType = "act" | "volume";
 export type WritingChapterStatus = "todo" | "inProgress" | "done";
+export type WritingOutlinePlannerStatus = "idle" | "running" | "completed" | "failed" | "cancelled";
 export type AgentRunStepType =
   | "agent_selected"
   | "model_selected"
@@ -428,6 +429,7 @@ export interface ModelMessage {
 }
 
 export interface ModelTextRequest {
+  requestId?: string;
   messages: ModelMessage[];
   temperature?: number;
   maxOutputTokens?: number;
@@ -547,6 +549,31 @@ export interface WritingBookPart {
   description: string;
 }
 
+export interface WritingOutlinePlannerJob {
+  id: string;
+  status: WritingOutlinePlannerStatus;
+  instruction: string;
+  targetPartCount: number;
+  partType: WritingBookPartType;
+  minChaptersPerPart: number;
+  maxChaptersPerPart: number;
+  chaptersPerPart: number;
+  batchSize: number;
+  targetChapterCount: number;
+  generatedChapterCount: number;
+  currentPartIndex: number;
+  currentBatchStartIndex: number;
+  currentBatchEndIndex: number;
+  lastCompletedChapterIndex?: number;
+  retryAttempt?: number;
+  maxRetryAttempts?: number;
+  lastRetryAt?: string;
+  lastError?: string;
+  createdAt: string;
+  updatedAt: string;
+  error?: string;
+}
+
 export interface WritingChapter {
   id: string;
   index: number;
@@ -572,8 +599,13 @@ export interface WritingBook {
   outlineGuide: string;
   seriesPlan: string;
   parts: WritingBookPart[];
+  outlinePlannerJob?: WritingOutlinePlannerJob;
   chapters: WritingChapter[];
   directoryName?: string;
+}
+
+export interface WritingBookSaveOptions {
+  mergeChapters?: boolean;
 }
 
 export interface AgentMcpCallRecord {

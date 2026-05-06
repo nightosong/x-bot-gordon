@@ -1152,7 +1152,13 @@ canvas {
   font-weight: 800;
 }
 
+.writing-title-input:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
 .writing-detail-layout {
+  position: relative;
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
   min-height: 0;
@@ -1160,8 +1166,8 @@ canvas {
   transition: grid-template-columns 180ms ease;
 }
 
-.writing-detail-shell.is-ai-running .writing-detail-head,
-.writing-detail-shell.is-ai-running .writing-detail-layout {
+.writing-detail-layout.is-book-running .writing-detail-rail,
+.writing-detail-layout.is-book-running .writing-main-stage {
   filter: saturate(0.82) brightness(0.82);
 }
 
@@ -1194,6 +1200,14 @@ canvas {
   box-shadow: 0 22px 52px rgba(0, 0, 0, 0.34);
 }
 
+.writing-ai-busy-card.has-stop {
+  grid-template-columns: 46px minmax(0, 1fr) 42px;
+}
+
+.writing-ai-busy-copy {
+  min-width: 0;
+}
+
 .writing-ai-busy-card strong {
   color: #e6fff8;
   font-size: 14px;
@@ -1205,6 +1219,42 @@ canvas {
   color: rgba(247, 243, 235, 0.68);
   font-size: 12px;
   line-height: 1.55;
+}
+
+.writing-ai-busy-stop {
+  display: inline-grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(255, 132, 112, 0.32);
+  border-radius: 50%;
+  background:
+    linear-gradient(135deg, rgba(255, 132, 112, 0.16), rgba(245, 200, 107, 0.08)),
+    rgba(255, 255, 255, 0.04);
+  color: #ff9b87;
+  box-shadow: inset 0 0 18px rgba(255, 132, 112, 0.08);
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.writing-ai-busy-stop:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 132, 112, 0.58);
+  background:
+    linear-gradient(135deg, rgba(255, 132, 112, 0.24), rgba(245, 200, 107, 0.12)),
+    rgba(255, 255, 255, 0.07);
+  box-shadow:
+    inset 0 0 18px rgba(255, 132, 112, 0.12),
+    0 12px 26px rgba(0, 0, 0, 0.2);
+}
+
+.writing-ai-busy-stop:focus-visible {
+  outline: 2px solid rgba(92, 225, 194, 0.82);
+  outline-offset: 3px;
 }
 
 .writing-ai-busy-orbit {
@@ -2094,6 +2144,79 @@ canvas {
   font-family: "SF Mono", "Menlo", "Monaco", monospace;
   font-size: 12px;
   line-height: 1.6;
+}
+
+.writing-outline-planner-card {
+  display: grid;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid rgba(92, 225, 194, 0.16);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.08), rgba(245, 200, 107, 0.035)),
+    rgba(255, 255, 255, 0.035);
+}
+
+.writing-outline-planner-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.writing-outline-planner-title {
+  margin: 2px 0 0;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.25;
+}
+
+.writing-outline-planner-copy,
+.writing-outline-planner-error,
+.writing-outline-planner-retry {
+  margin: 0;
+  white-space: pre-line;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.writing-outline-planner-copy {
+  color: rgba(247, 243, 235, 0.62);
+}
+
+.writing-outline-planner-error {
+  color: #ffc8bd;
+}
+
+.writing-outline-planner-retry {
+  color: rgba(245, 200, 107, 0.86);
+}
+
+.writing-outline-planner-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.writing-outline-planner-resume {
+  min-height: 26px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+.writing-outline-planner-progress {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(247, 243, 235, 0.08);
+}
+
+.writing-outline-planner-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(92, 225, 194, 0.92), rgba(245, 200, 107, 0.88));
+  transition: width 180ms ease;
 }
 
 .writing-ai-run-row {
