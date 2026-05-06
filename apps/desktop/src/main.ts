@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, screen } from "electron";
 import type { IpcMainEvent } from "electron";
 import { spawn } from "node:child_process";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -35,7 +36,7 @@ import {
   upsertModelProfile,
   upsertSkillDefinition
 } from "../../../packages/workbench/src/index.js";
-import type { AgentRunProgressEvent } from "../../../packages/shared/src/index.js";
+import type { AgentRunProgressEvent, WritingBookExportFormat, WritingBookExportRequest } from "../../../packages/shared/src/index.js";
 import { readCommandWorkshopAttachment } from "./attachment-reader.js";
 import { generateDailyProgressReport, generateWeeklyProgressReport, invokeActiveModel, rewriteWeeklyProgressItem } from "./ai.js";
 import { queryModelBalance } from "./model-balance.js";
@@ -141,6 +142,7 @@ type WorkflowActiveRunContext = {
 
 const WORKFLOW_RUN_CANCELLED_MESSAGE = "执行已中断";
 const activeWorkflowRuns = new Map<string, WorkflowActiveRunContext>();
+const WRITING_BOOK_EXPORT_EXTENSIONS = new Set<WritingBookExportFormat>(["txt", "md"]);
 
 class WorkflowRunCancelledError extends Error {
   constructor() {
@@ -218,6 +220,58 @@ function toCloneableIpcValue<T>(value: T): T {
   }
 
   return normalize(value) as T;
+}
+
+function normalizeWritingBookExportFormat(value: unknown): WritingBookExportFormat {
+  const format = String(value ?? "").trim().toLowerCase();
+  return WRITING_BOOK_EXPORT_EXTENSIONS.has(format as WritingBookExportFormat) ? (format as WritingBookExportFormat) : "txt";
+}
+
+function sanitizeWritingBookExportFileName(value: unknown, format: WritingBookExportFormat): string {
+  const baseName = String(value ?? "")
+    .replace(/\.[^.]+$/, "")
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
+    .replace(/\s+/g, " ")
+    .replace(/[. ]+$/g, "")
+    .trim();
+  return `${baseName || "未命名书稿"}.${format}`;
+}
+
+function resolveWritingBookExportPath(request: WritingBookExportRequest): {
+  directoryPath: string;
+  fileName: string;
+  filePath: string;
+  format: WritingBookExportFormat;
+  content: string;
+} {
+  const directoryPath = String(request?.directoryPath ?? "").trim();
+  const content = String(request?.content ?? "");
+
+  if (!directoryPath) {
+    throw new Error("请选择输出目录");
+  }
+
+  if (!content.trim()) {
+    throw new Error("没有可导出的正文内容");
+  }
+
+  const format = normalizeWritingBookExportFormat(request?.format);
+  const resolvedDirectoryPath = path.resolve(directoryPath);
+  const fileName = sanitizeWritingBookExportFileName(request?.fileName, format);
+  const filePath = path.join(resolvedDirectoryPath, fileName);
+  const relativePath = path.relative(resolvedDirectoryPath, filePath);
+
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    throw new Error("导出路径不合法");
+  }
+
+  return {
+    directoryPath: resolvedDirectoryPath,
+    fileName,
+    filePath,
+    format,
+    content: content.endsWith("\n") ? content : `${content}\n`
+  };
 }
 
 function buildGordonConfirmWindowHtml(options: GordonConfirmWindowOptions, resolveChannel: string): string {
@@ -1425,6 +1479,35 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("gordon:writing-books:list", async () => listWritingBooks());
   ipcMain.handle("gordon:writing-books:save", async (_event, book, options) => saveWritingBook(book, options));
+  ipcMain.handle("gordon:writing-books:select-export-directory", async (event) => {
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+    const openDialogOptions = {
+      title: "选择笔墨生花导出目录",
+      properties: ["openDirectory", "createDirectory"]
+    } satisfies Electron.OpenDialogOptions;
+    const result = ownerWindow
+      ? await dialog.showOpenDialog(ownerWindow, openDialogOptions)
+      : await dialog.showOpenDialog(openDialogOptions);
+
+    if (result.canceled || !result.filePaths.length) {
+      return null;
+    }
+
+    return result.filePaths[0];
+  });
+  ipcMain.handle("gordon:writing-books:export", async (_event, request: WritingBookExportRequest) => {
+    const exportTarget = resolveWritingBookExportPath(request);
+
+    await mkdir(exportTarget.directoryPath, { recursive: true });
+    await writeFile(exportTarget.filePath, exportTarget.content, "utf8");
+
+    return {
+      filePath: exportTarget.filePath,
+      fileName: exportTarget.fileName,
+      format: exportTarget.format,
+      writtenBytes: Buffer.byteLength(exportTarget.content, "utf8")
+    };
+  });
   ipcMain.handle("gordon:weekly-progress:list", async () => listWeeklyProgress());
   ipcMain.handle("gordon:weekly-progress:save", async (_event, record) => saveWeeklyProgress(record));
   ipcMain.handle("gordon:weekly-progress:delete", async (_event, recordId: string) => deleteWeeklyProgress(recordId));

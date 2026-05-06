@@ -135,6 +135,8 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
   },
   listWritingBooks: () => ipcRenderer.invoke("gordon:writing-books:list"),
   saveWritingBook: (book, options) => ipcRenderer.invoke("gordon:writing-books:save", toPlainIpcData(book), toPlainIpcData(options ?? {})),
+  selectWritingBookExportDirectory: () => ipcRenderer.invoke("gordon:writing-books:select-export-directory"),
+  exportWritingBook: (request) => ipcRenderer.invoke("gordon:writing-books:export", toPlainIpcData(request)),
   listWeeklyProgress: () => ipcRenderer.invoke("gordon:weekly-progress:list"),
   saveWeeklyProgress: (record) => ipcRenderer.invoke("gordon:weekly-progress:save", record),
   deleteWeeklyProgress: (recordId) => ipcRenderer.invoke("gordon:weekly-progress:delete", recordId),

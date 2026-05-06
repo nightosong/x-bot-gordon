@@ -595,6 +595,17 @@
                             <span class="field-label">篇幅策略</span>
                             <strong>{{ activeWritingLengthProfile.scope }}</strong>
                             <p>{{ activeWritingLengthProfile.method }}</p>
+                            <div class="writing-method-card-foot">
+                              <span>{{ activeWritingDoneChapterCount }} 章已完成</span>
+                              <button
+                                type="button"
+                                class="writing-mini-text-button"
+                                :disabled="isActiveWritingBookAiRunning"
+                                @click="openWritingExportDialog"
+                              >
+                                书籍导出
+                              </button>
+                            </div>
                           </div>
 
                           <div class="writing-stat-list">
@@ -3579,6 +3590,102 @@
         </section>
       </div>
     </Transition>
+
+    <Transition name="gordon-dialog-fade">
+      <div
+        v-if="ui.marketplace.writing.isExportDialogOpen"
+        class="gordon-dialog-backdrop writing-export-backdrop"
+        @click.self="closeWritingExportDialog"
+      >
+        <section class="gordon-dialog writing-export-dialog" role="dialog" aria-modal="true" aria-label="书籍导出">
+          <div class="gordon-dialog-head">
+            <div class="gordon-dialog-mark writing-export-mark" aria-hidden="true">文</div>
+
+            <div>
+              <p class="gordon-dialog-kicker">Export</p>
+              <h2 class="gordon-dialog-title">书籍导出</h2>
+            </div>
+          </div>
+
+          <p class="gordon-dialog-message">
+            只拼接已完成章节，文件名固定为 {{ activeWritingExportFileName }}。
+          </p>
+
+          <div class="writing-export-panel">
+            <div class="writing-export-field">
+              <span class="gordon-dialog-field-label">文件类型</span>
+              <div class="writing-export-format-row" role="radiogroup" aria-label="导出文件类型">
+                <button
+                  v-for="format in WRITING_BOOK_EXPORT_FORMATS"
+                  :key="format.id"
+                  type="button"
+                  class="writing-export-format-button"
+                  :class="{ 'is-active': ui.marketplace.writing.exportFormat === format.id }"
+                  :aria-checked="ui.marketplace.writing.exportFormat === format.id ? 'true' : 'false'"
+                  role="radio"
+                  :disabled="ui.marketplace.writing.isExporting"
+                  @click="setWritingExportFormat(format.id)"
+                >
+                  {{ format.label }}
+                </button>
+              </div>
+            </div>
+
+            <div class="writing-export-field">
+              <span class="gordon-dialog-field-label">输出目录</span>
+              <div class="writing-export-directory-row">
+                <input
+                  class="gordon-dialog-input writing-export-directory-input"
+                  :value="ui.marketplace.writing.exportDirectory || '尚未选择目录'"
+                  readonly
+                />
+                <button
+                  type="button"
+                  class="gordon-dialog-button gordon-dialog-button-secondary"
+                  :disabled="ui.marketplace.writing.isExporting"
+                  @click="selectWritingExportDirectory"
+                >
+                  选择目录
+                </button>
+              </div>
+            </div>
+
+            <div class="writing-export-summary">
+              <span>已完成章节：{{ activeWritingDoneChapterCount }}</span>
+              <span>导出文件：{{ activeWritingExportFileName }}</span>
+            </div>
+          </div>
+
+          <p
+            v-if="ui.marketplace.writing.exportFeedback"
+            class="writing-export-feedback"
+            :class="`is-${ui.marketplace.writing.exportFeedbackTone}`"
+          >
+            {{ ui.marketplace.writing.exportFeedback }}
+          </p>
+
+          <div class="gordon-dialog-actions">
+            <button
+              type="button"
+              class="gordon-dialog-button gordon-dialog-button-secondary"
+              :disabled="ui.marketplace.writing.isExporting"
+              @click="closeWritingExportDialog"
+            >
+              取消
+            </button>
+
+            <button
+              type="button"
+              class="gordon-dialog-button gordon-dialog-button-primary"
+              :disabled="!canExportActiveWritingBook"
+              @click="exportActiveWritingBook"
+            >
+              {{ ui.marketplace.writing.isExporting ? "保存中" : "确认" }}
+            </button>
+          </div>
+        </section>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -3789,11 +3896,22 @@ const WRITING_OUTLINE_EXPANSION_PATTERN =
 const WRITING_LONG_OUTLINE_BATCH_SIZE = 20;
 const WRITING_LONG_OUTLINE_MASTER_MAX_TOKENS = 5200;
 const WRITING_LONG_OUTLINE_BATCH_MAX_TOKENS = 8200;
+const WRITING_CHAPTER_MAX_OUTPUT_TOKENS = 7600;
 const WRITING_MODEL_MAX_RETRY_ATTEMPTS = 5;
 const WRITING_MODEL_RETRY_BASE_DELAY_MS = 1200;
 const WRITING_MODEL_RETRY_MAX_DELAY_MS = 8000;
 const WRITING_CHAPTER_PREFIX_PATTERN = /^第\s*([0-9０-９一二三四五六七八九十百千万零〇两]+)\s*章\s*(?:[：:、.\-]\s*)?(.*)$/;
 const WRITING_PART_PREFIX_PATTERN = /^(?:第\s*)?([0-9０-９一二三四五六七八九十百千万零〇两]+)\s*(幕|卷)\s*(?:[：:、.\-·]\s*)?(.*)$/;
+const WRITING_CHAPTER_OUTPUT_DEFAULTS = [
+  "章节正文默认控制在 4000-5000 字；如果模型输出能力不足，优先保证场景完整和结尾钩子，不要压缩成提纲。",
+  "合理划分段落，包括第一段在内，每段开头都必须保留两个全角空格“　　”（两个汉字宽度）缩进。",
+  "章节正文开头不要输出章节标题，不要出现“第X章 XXXXX”。",
+  "只输出正文，不要附加创作说明、提纲、分析或 Markdown 标题。"
+];
+const WRITING_BOOK_EXPORT_FORMATS = [
+  { id: "txt", label: "TXT" },
+  { id: "md", label: "Markdown" }
+];
 const WRITING_AI_TASK_PROMPTS = {
   intro: {
     world: {
@@ -3996,7 +4114,13 @@ function createMarketplaceState() {
       isAiTaskPickerOpen: false,
       isPromptPreviewOpen: false,
       isChapterPickerOpen: false,
-      chapterSearchQuery: ""
+      chapterSearchQuery: "",
+      isExportDialogOpen: false,
+      exportFormat: "txt",
+      exportDirectory: "",
+      exportFeedback: "",
+      exportFeedbackTone: "neutral",
+      isExporting: false
     }
   };
 }
@@ -4451,6 +4575,8 @@ const activeWritingLengthProfile = computed(
 );
 const activeWritingIntroSections = computed(() => getWritingIntroSections(activeWritingBook.value));
 const activeWritingChapters = computed(() => getWritingChapters(activeWritingBook.value));
+const activeWritingDoneChapters = computed(() => getDoneWritingChapters(activeWritingBook.value));
+const activeWritingDoneChapterCount = computed(() => activeWritingDoneChapters.value.length);
 const activeWritingChapter = computed(
   () =>
     activeWritingChapters.value.find((chapter) => chapter.id === ui.marketplace.writing.activeChapterId) ??
@@ -4498,6 +4624,18 @@ const activeWritingPromptPreview = computed(() =>
     task: activeWritingTask.value,
     instruction: ui.marketplace.writing.aiInstruction
   })
+);
+const activeWritingExportFileName = computed(() =>
+  getWritingExportFileName(activeWritingBook.value, ui.marketplace.writing.exportFormat)
+);
+const canExportActiveWritingBook = computed(
+  () =>
+    Boolean(
+      activeWritingBook.value &&
+        activeWritingDoneChapterCount.value > 0 &&
+        String(ui.marketplace.writing.exportDirectory ?? "").trim() &&
+        !ui.marketplace.writing.isExporting
+    )
 );
 
 function hasModelBalanceQuery(profile) {
@@ -5256,6 +5394,189 @@ function getWritingChapterWordCount(chapter) {
   return String(chapter?.content ?? "").replace(/\s+/g, "").length;
 }
 
+function normalizeWritingExportFormat(format) {
+  const normalized = String(format ?? "").trim().toLowerCase();
+  return WRITING_BOOK_EXPORT_FORMATS.some((entry) => entry.id === normalized) ? normalized : "txt";
+}
+
+function sanitizeWritingExportTitle(value) {
+  return String(value ?? "")
+    .replace(/\.[^.]+$/, "")
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
+    .replace(/\s+/g, " ")
+    .replace(/[. ]+$/g, "")
+    .trim() || "未命名书稿";
+}
+
+function getWritingExportFileName(book, format) {
+  return `${sanitizeWritingExportTitle(book?.title)}.${normalizeWritingExportFormat(format)}`;
+}
+
+function getDoneWritingChapters(book) {
+  return getWritingChapters(book)
+    .filter((chapter) => chapter.status === "done" && String(chapter.content ?? "").trim())
+    .sort((left, right) => normalizeWritingChapterIndex(left.index, 0) - normalizeWritingChapterIndex(right.index, 0));
+}
+
+function getWritingExportPartHeading(book, chapter) {
+  const part = getWritingChapterPart(book, chapter);
+
+  if (part) {
+    return getWritingPartDisplayLabel(part);
+  }
+
+  const partIndex = parseWritingChapterIndex(chapter?.partIndex);
+  return partIndex ? `第${partIndex}幕` : "";
+}
+
+function normalizeWritingChapterDraftOutput(value) {
+  const text = String(value ?? "")
+    .replace(/^\s*```(?:markdown|md|text)?\s*/i, "")
+    .replace(/\s*```\s*$/i, "");
+
+  if (!text.trim()) {
+    return "";
+  }
+
+  const lines = text.split(/\r?\n/);
+
+  while (lines.length && !lines[0].trim()) {
+    lines.shift();
+  }
+
+  const firstLine = String(lines[0] ?? "").trim().replace(/^#+\s*/, "").trim();
+
+  if (WRITING_CHAPTER_PREFIX_PATTERN.test(firstLine)) {
+    lines.shift();
+  }
+
+  return lines.join("\n").replace(/^(?:\r?\n)+/, "").replace(/[ \t\r\n]+$/, "");
+}
+
+function trimWritingExportTextBlock(value) {
+  return String(value ?? "").replace(/^(?:[ \t]*\r?\n)+/, "").replace(/[ \t\r\n]+$/, "");
+}
+
+function buildWritingBookExportContent(book) {
+  const chapters = getDoneWritingChapters(book);
+  const allChapters = getWritingChapters(book);
+  const lines = [`《${sanitizeWritingExportTitle(book?.title)}》`, ""];
+  const intro = trimWritingExportTextBlock(book?.intro ?? "");
+  let previousPartHeading = "";
+
+  if (intro) {
+    lines.push(intro, "");
+  }
+
+  chapters.forEach((chapter) => {
+    const partHeading = getWritingExportPartHeading(book, chapter);
+
+    if (partHeading && partHeading !== previousPartHeading) {
+      lines.push(partHeading, "");
+      previousPartHeading = partHeading;
+    }
+
+    const chapterIndex = allChapters.findIndex((entry) => entry.id === chapter.id);
+    lines.push(getWritingChapterDisplayTitle(chapter, chapterIndex >= 0 ? chapterIndex : 0), "");
+    lines.push(trimWritingExportTextBlock(chapter.content ?? ""), "");
+  });
+
+  return `${lines.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
+}
+
+function setWritingExportFeedback(text, tone = "neutral") {
+  ui.marketplace.writing.exportFeedback = String(text ?? "").trim();
+  ui.marketplace.writing.exportFeedbackTone = tone;
+}
+
+function openWritingExportDialog() {
+  if (!activeWritingBook.value) {
+    return;
+  }
+
+  ui.marketplace.writing.exportFormat = normalizeWritingExportFormat(ui.marketplace.writing.exportFormat);
+  ui.marketplace.writing.isExportDialogOpen = true;
+  setWritingExportFeedback(
+    activeWritingDoneChapterCount.value > 0 ? "" : "当前还没有已完成且有正文的章节，暂时不能导出书稿文件。",
+    activeWritingDoneChapterCount.value > 0 ? "neutral" : "warning"
+  );
+}
+
+function closeWritingExportDialog() {
+  if (ui.marketplace.writing.isExporting) {
+    return;
+  }
+
+  ui.marketplace.writing.isExportDialogOpen = false;
+  setWritingExportFeedback("", "neutral");
+}
+
+function setWritingExportFormat(format) {
+  ui.marketplace.writing.exportFormat = normalizeWritingExportFormat(format);
+}
+
+async function selectWritingExportDirectory() {
+  if (!desktopApi?.selectWritingBookExportDirectory) {
+    setWritingExportFeedback("当前桌面桥接暂不支持选择输出目录。", "danger");
+    return;
+  }
+
+  try {
+    const directoryPath = await desktopApi.selectWritingBookExportDirectory();
+
+    if (directoryPath) {
+      ui.marketplace.writing.exportDirectory = directoryPath;
+      setWritingExportFeedback("", "neutral");
+    }
+  } catch (error) {
+    console.error("Failed to select writing export directory", error);
+    setWritingExportFeedback(`选择目录失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+  }
+}
+
+async function exportActiveWritingBook() {
+  const book = activeWritingBook.value;
+
+  if (!book || ui.marketplace.writing.isExporting) {
+    return;
+  }
+
+  if (!activeWritingDoneChapterCount.value) {
+    setWritingExportFeedback("当前还没有已完成且有正文的章节，暂时不能导出书稿文件。", "warning");
+    return;
+  }
+
+  if (!String(ui.marketplace.writing.exportDirectory ?? "").trim()) {
+    setWritingExportFeedback("请先选择输出目录。", "warning");
+    return;
+  }
+
+  if (!desktopApi?.exportWritingBook) {
+    setWritingExportFeedback("当前桌面桥接暂不支持导出书稿。", "danger");
+    return;
+  }
+
+  try {
+    ui.marketplace.writing.isExporting = true;
+    setWritingExportFeedback("正在保存书稿文件...", "neutral");
+    const format = normalizeWritingExportFormat(ui.marketplace.writing.exportFormat);
+    const result = await desktopApi.exportWritingBook({
+      directoryPath: ui.marketplace.writing.exportDirectory,
+      fileName: getWritingExportFileName(book, format),
+      format,
+      content: buildWritingBookExportContent(book)
+    });
+    ui.marketplace.writing.isExportDialogOpen = false;
+    setWritingExportFeedback("", "neutral");
+    setStatus(`已导出书稿文件：${result.fileName ?? activeWritingExportFileName.value}`, "success");
+  } catch (error) {
+    console.error("Failed to export writing book", error);
+    setWritingExportFeedback(`导出失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+  } finally {
+    ui.marketplace.writing.isExporting = false;
+  }
+}
+
 function buildWritingOutlineContent(book) {
   const partsContent = getWritingBookParts(book)
     .map((part) => `partIndex：${part.index}\npartType：${part.type}\npartTitle：${part.title}\npartDescription：${part.description || "暂无描述"}`)
@@ -5822,6 +6143,7 @@ function buildWritingAssistantPrompt({ book, tabId, task, instruction }) {
       ? "(作者要求重改目录，本轮不代入已有章节目录。)"
       : buildWritingOutlineContent(book) || "(空)";
   const currentModuleContent = tabId === "outline" && (shouldIgnoreOutline || longOutlineRequest) ? outlineContent : content;
+  const chapterOutputDefaults = tabId === "chapter" ? ["章节生成默认项：", ...WRITING_CHAPTER_OUTPUT_DEFAULTS.map((item) => `- ${item}`)].join("\n") : "";
   const chapterContext =
     currentChapter
       ? [
@@ -5850,6 +6172,7 @@ function buildWritingAssistantPrompt({ book, tabId, task, instruction }) {
     "",
     "输出要求：",
     taskSpec.output,
+    chapterOutputDefaults,
     longOutlineRequest ? "\n长篇扩展模式：\n" + buildWritingLongOutlineTargetContent(longOutlineRequest) : "",
     "",
     "故事介绍与规划：",
@@ -5868,7 +6191,7 @@ function buildWritingAssistantPrompt({ book, tabId, task, instruction }) {
     "- 章节规划的 chapters JSON 中，每个章节必须包含 integer 类型的 index；title 只写纯标题，不要包含“第X章”。",
     "- 幕/卷不是章节；如需要幕或卷，必须输出 parts，并在章节里用 partIndex 关联，章节 index 仍然全书连续累加。",
     "- 如果作者要求“第几章拆成几章 / 移除第几章 / 在第n章和第n+1章中间增加章节”，必须落实到最终 chapters JSON。",
-    "- 如果是章节，必须有场景动作、对白张力、心理暗流和段落节奏。",
+    "- 如果是章节，必须有场景动作、对白张力、心理暗流和段落节奏；正文开头不要带章节标题。",
     "- 如果是介绍，必须补齐世界规则、核心矛盾、主要人物与主题命题。",
     "",
     "当前模块原文：",
@@ -5882,7 +6205,7 @@ function getWritingAssistantMaxOutputTokens(tabId, taskId) {
   }
 
   if (tabId === "chapter") {
-    return 4200;
+    return WRITING_CHAPTER_MAX_OUTPUT_TOKENS;
   }
 
   return 2600;
@@ -6738,7 +7061,10 @@ async function generateWritingAssistantOutput() {
       0.72
     );
 
-    ui.marketplace.writing.aiOutput = String(result?.text ?? "").trim();
+    ui.marketplace.writing.aiOutput =
+      ui.marketplace.writing.activeTab === "chapter"
+        ? normalizeWritingChapterDraftOutput(result?.text ?? "")
+        : String(result?.text ?? "").trim();
     setWritingFeedback(result?.profileLabel ? `已由 ${result.profileLabel} 生成。` : "AI 已生成建议。", "success");
     setStatus("笔墨生花已生成建议。", "success");
   } catch (error) {
@@ -7123,13 +7449,16 @@ async function applyWritingChapterPlanOutput(book, output, mode = "append") {
   touchWritingBook(book, { persist: false });
   await persistWritingBookById(book.id, { silent: true });
   setWritingFeedback(mode === "replace" ? `已替换为 ${plans.length} 个章节，并写入本地目录。` : `已追加 ${nextChapters.length - existingChapters.length} 个章节，并写入本地目录。`, "success");
-  setStatus("书籍目录已写入本地 chapters.json 和章节 Markdown 文件。", "success");
+  setStatus("书籍目录已写入本地 chapters.json。", "success");
   return true;
 }
 
 async function applyWritingAssistantOutput(mode = "append") {
-  const output = String(ui.marketplace.writing.aiOutput ?? "").trim();
   const book = activeWritingBook.value;
+  const output =
+    ui.marketplace.writing.activeTab === "chapter"
+      ? normalizeWritingChapterDraftOutput(ui.marketplace.writing.aiOutput ?? "")
+      : String(ui.marketplace.writing.aiOutput ?? "").trim();
 
   if (!output || !book) {
     setWritingFeedback("当前没有可写入的 AI 输出。", "warning");

@@ -1439,6 +1439,44 @@ canvas {
   line-height: 1.6;
 }
 
+.writing-method-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 2px;
+  color: rgba(247, 243, 235, 0.52);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.writing-mini-text-button {
+  flex: 0 0 auto;
+  min-height: 24px;
+  padding: 0 9px;
+  border: 1px solid rgba(92, 225, 194, 0.18);
+  border-radius: 999px;
+  background: rgba(92, 225, 194, 0.1);
+  color: #bcf8ea;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0;
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.writing-mini-text-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(92, 225, 194, 0.34);
+  background: rgba(92, 225, 194, 0.16);
+}
+
+.writing-mini-text-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+  transform: none;
+}
+
 .writing-main-stage {
   position: relative;
   display: grid;
@@ -2769,6 +2807,12 @@ canvas {
   transform: translateY(-1px);
 }
 
+.gordon-dialog-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+  transform: none;
+}
+
 .gordon-dialog-button:focus-visible {
   outline: 3px solid rgba(92, 225, 194, 0.12);
   outline-offset: 2px;
@@ -2791,6 +2835,111 @@ canvas {
   border-color: rgba(255, 141, 119, 0.24);
   background: rgba(255, 141, 119, 0.14);
   color: #ffd0c6;
+}
+
+.writing-export-backdrop {
+  z-index: 62;
+}
+
+.writing-export-dialog {
+  width: min(520px, calc(100vw - 36px));
+}
+
+.writing-export-mark {
+  font-family: "Iowan Old Style", "Songti SC", serif;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.writing-export-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 13px;
+}
+
+.writing-export-field {
+  display: grid;
+  gap: 7px;
+}
+
+.writing-export-format-row {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid rgba(247, 243, 235, 0.09);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.writing-export-format-button {
+  flex: 1;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: rgba(247, 243, 235, 0.66);
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.writing-export-format-button:hover,
+.writing-export-format-button.is-active {
+  border-color: rgba(92, 225, 194, 0.22);
+  background: rgba(92, 225, 194, 0.1);
+  color: #e6fff8;
+}
+
+.writing-export-format-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.writing-export-directory-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.writing-export-directory-input {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.writing-export-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 9px 10px;
+  border: 1px solid rgba(247, 243, 235, 0.08);
+  border-radius: 13px;
+  background: var(--panel-soft);
+  color: rgba(247, 243, 235, 0.6);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.writing-export-feedback {
+  margin: 12px 0 0;
+  color: rgba(247, 243, 235, 0.68);
+  font-size: 11.5px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.writing-export-feedback.is-success {
+  color: #bcf8ea;
+}
+
+.writing-export-feedback.is-warning {
+  color: #ffe5a8;
+}
+
+.writing-export-feedback.is-danger {
+  color: #ffc5b7;
 }
 
 .gordon-dialog-fade-enter-active,

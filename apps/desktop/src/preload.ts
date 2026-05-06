@@ -14,6 +14,8 @@ import type {
   McpToolDefinition,
   ModelProfile,
   ModelTextRequest,
+  WritingBookExportRequest,
+  WritingBookExportResult,
   WritingBookSaveOptions,
   SkillDefinition,
   WorkflowLibraryItem,
@@ -167,6 +169,10 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
   listWritingBooks: (): Promise<WritingBook[]> => ipcRenderer.invoke("gordon:writing-books:list"),
   saveWritingBook: (book: WritingBook, options?: WritingBookSaveOptions): Promise<WritingBook[]> =>
     ipcRenderer.invoke("gordon:writing-books:save", toPlainIpcData(book), toPlainIpcData(options ?? {})),
+  selectWritingBookExportDirectory: (): Promise<string | null> =>
+    ipcRenderer.invoke("gordon:writing-books:select-export-directory"),
+  exportWritingBook: (request: WritingBookExportRequest): Promise<WritingBookExportResult> =>
+    ipcRenderer.invoke("gordon:writing-books:export", toPlainIpcData(request)),
   listWeeklyProgress: () => ipcRenderer.invoke("gordon:weekly-progress:list"),
   saveWeeklyProgress: (record: WeeklyProgressRecord) => ipcRenderer.invoke("gordon:weekly-progress:save", record),
   deleteWeeklyProgress: (recordId: string) => ipcRenderer.invoke("gordon:weekly-progress:delete", recordId),

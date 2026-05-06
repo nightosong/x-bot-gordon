@@ -608,6 +608,22 @@ export interface WritingBookSaveOptions {
   mergeChapters?: boolean;
 }
 
+export type WritingBookExportFormat = "txt" | "md";
+
+export interface WritingBookExportRequest {
+  directoryPath: string;
+  fileName: string;
+  format: WritingBookExportFormat;
+  content: string;
+}
+
+export interface WritingBookExportResult {
+  filePath: string;
+  fileName: string;
+  format: WritingBookExportFormat;
+  writtenBytes: number;
+}
+
 export interface AgentMcpCallRecord {
   round: number;
   serverId: string;
