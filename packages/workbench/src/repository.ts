@@ -27,6 +27,8 @@ import type {
   WeeklyProgressTaskItem,
   WritingBook,
   WritingBookLength,
+  WritingBookPart,
+  WritingBookPartType,
   WritingChapter,
   WritingChapterStatus,
   WorkTask
@@ -1377,7 +1379,11 @@ const WRITING_BOOK_CONFIG_FILE_NAME = "book.json";
 const WRITING_BOOK_CHAPTERS_FILE_NAME = "chapters.json";
 const WRITING_BOOK_CHAPTERS_DIRECTORY_NAME = "chapters";
 const WRITING_BOOK_LENGTHS = new Set<WritingBookLength>(["short", "medium", "long"]);
+const WRITING_BOOK_PART_TYPES = new Set<WritingBookPartType>(["act", "volume"]);
 const WRITING_CHAPTER_STATUSES = new Set<WritingChapterStatus>(["todo", "inProgress", "done"]);
+const WRITING_CHAPTER_CONTENT_FILE_NAME_PATTERN = /^[a-f0-9]{32}\.md$/i;
+const WRITING_CHAPTER_PREFIX_PATTERN = /^第\s*([0-9０-９一二三四五六七八九十百千万零〇两]+)\s*章\s*(?:[：:、.\-]\s*)?(.*)$/;
+const WRITING_PART_PREFIX_PATTERN = /^(?:第\s*)?([0-9０-９一二三四五六七八九十百千万零〇两]+)\s*(幕|卷)\s*(?:[：:、.\-·]\s*)?(.*)$/;
 
 type StoredWritingBookConfig = Omit<WritingBook, "chapters" | "directoryName">;
 type StoredWritingChapterMeta = Omit<WritingChapter, "content">;
@@ -1404,12 +1410,136 @@ function normalizeWritingChapterStatus(value: unknown): WritingChapterStatus {
   return WRITING_CHAPTER_STATUSES.has(status as WritingChapterStatus) ? (status as WritingChapterStatus) : "todo";
 }
 
+function normalizeWritingBookPartType(value: unknown): WritingBookPartType {
+  const type = String(value ?? "");
+  return WRITING_BOOK_PART_TYPES.has(type as WritingBookPartType) ? (type as WritingBookPartType) : "act";
+}
+
+function parseStoredWritingChapterIndex(value: unknown): number | null {
+  const normalizedValue = String(value ?? "")
+    .trim()
+    .replace(/[０-９]/g, (char) => String(char.charCodeAt(0) - 0xff10));
+
+  if (/^\d+$/.test(normalizedValue)) {
+    const parsedValue = Number(normalizedValue);
+    return Number.isInteger(parsedValue) && parsedValue > 0 ? parsedValue : null;
+  }
+
+  const digits: Record<string, number> = {
+    零: 0,
+    "〇": 0,
+    一: 1,
+    二: 2,
+    两: 2,
+    三: 3,
+    四: 4,
+    五: 5,
+    六: 6,
+    七: 7,
+    八: 8,
+    九: 9
+  };
+  const units: Record<string, number> = { 十: 10, 百: 100, 千: 1000, 万: 10000 };
+  let total = 0;
+  let section = 0;
+  let number = 0;
+
+  for (const char of normalizedValue) {
+    if (digits[char] !== undefined) {
+      number = digits[char];
+      continue;
+    }
+
+    const unit = units[char];
+
+    if (!unit) {
+      return null;
+    }
+
+    if (unit === 10000) {
+      section = (section + (number || 1)) * unit;
+      total += section;
+      section = 0;
+    } else {
+      section += (number || 1) * unit;
+    }
+
+    number = 0;
+  }
+
+  const parsedValue = total + section + number;
+  return Number.isInteger(parsedValue) && parsedValue > 0 ? parsedValue : null;
+}
+
+function normalizeWritingChapterIndex(value: unknown, fallbackIndex: number): number {
+  const normalizedFallback = Number.isFinite(fallbackIndex) && fallbackIndex >= 0 ? fallbackIndex + 1 : 1;
+  return parseStoredWritingChapterIndex(value) ?? normalizedFallback;
+}
+
+function splitStoredWritingChapterTitle(value: unknown): { index: number | null; title: string } {
+  const title = String(value ?? "")
+    .trim()
+    .replace(/^["'“”‘’`]+|["'“”‘’`]+$/g, "")
+    .replace(/\*\*/g, "")
+    .trim();
+  const match = title.match(WRITING_CHAPTER_PREFIX_PATTERN);
+
+  if (!match) {
+    return { index: null, title };
+  }
+
+  return {
+    index: parseStoredWritingChapterIndex(match[1]),
+    title: String(match[2] ?? "").trim()
+  };
+}
+
+function splitStoredWritingPartTitle(value: unknown): { index: number | null; type: WritingBookPartType | null; title: string } {
+  const title = String(value ?? "")
+    .trim()
+    .replace(/^["'“”‘’`]+|["'“”‘’`]+$/g, "")
+    .replace(/\*\*/g, "")
+    .trim();
+  const match = title.match(WRITING_PART_PREFIX_PATTERN);
+
+  if (!match) {
+    return { index: null, type: null, title };
+  }
+
+  return {
+    index: parseStoredWritingChapterIndex(match[1]),
+    type: match[2] === "卷" ? "volume" : "act",
+    title: String(match[3] ?? "").trim()
+  };
+}
+
+function normalizeWritingBookPart(input: Partial<WritingBookPart> | null | undefined, index: number, bookId: string): WritingBookPart {
+  const titleParts = splitStoredWritingPartTitle(input?.title);
+  const partIndex = normalizeWritingChapterIndex(input?.index ?? titleParts.index, index);
+  const partType = normalizeWritingBookPartType(input?.type ?? titleParts.type);
+
+  return {
+    id: String(input?.id ?? `${bookId}_part_${partIndex}`),
+    type: partType,
+    index: partIndex,
+    title: titleParts.title || `未命名${partType === "volume" ? "卷" : "幕"} ${partIndex}`,
+    description: String(input?.description ?? "")
+  };
+}
+
+function normalizeWritingBookParts(input: unknown, bookId: string): WritingBookPart[] {
+  return (Array.isArray(input) ? input : [])
+    .map((part, index) => normalizeWritingBookPart(part as Partial<WritingBookPart>, index, bookId))
+    .sort((left, right) => left.index - right.index);
+}
+
 function normalizeWritingBookConfig(input: Partial<WritingBook> | null | undefined, directoryName = ""): StoredWritingBookConfig {
   const timestamp = String(input?.updatedAt ?? new Date().toISOString());
   const title = String(input?.title ?? directoryName ?? "").trim() || "未命名故事";
+  const id = String(input?.id ?? `writing_book_${randomUUID()}`);
 
   return {
-    id: String(input?.id ?? `writing_book_${randomUUID()}`),
+    id,
     title,
     author: String(input?.author ?? "Song"),
     length: normalizeWritingBookLength(input?.length),
@@ -1419,14 +1549,20 @@ function normalizeWritingBookConfig(input: Partial<WritingBook> | null | undefin
     coverTone: String(input?.coverTone ?? "teal"),
     intro: String(input?.intro ?? ""),
     outlineGuide: String(input?.outlineGuide ?? ""),
-    seriesPlan: String(input?.seriesPlan ?? "")
+    seriesPlan: String(input?.seriesPlan ?? ""),
+    parts: normalizeWritingBookParts(input?.parts, id)
   };
 }
 
 function normalizeWritingChapterMeta(input: Partial<WritingChapter> | null | undefined, index: number, bookId: string): StoredWritingChapterMeta {
+  const titleParts = splitStoredWritingChapterTitle(input?.title);
+  const chapterIndex = normalizeWritingChapterIndex(input?.index ?? titleParts.index, index);
+
   return {
     id: String(input?.id ?? `${bookId}_chapter_${index + 1}`),
-    title: String(input?.title ?? "").trim() || `未命名章节 ${index + 1}`,
+    index: chapterIndex,
+    ...(input?.partIndex ? { partIndex: normalizeWritingChapterIndex(input.partIndex, 0) } : {}),
+    title: titleParts.title || `未命名章节 ${chapterIndex}`,
     summary: String(input?.summary ?? ""),
     status: normalizeWritingChapterStatus(input?.status),
     updatedAt: String(input?.updatedAt ?? new Date().toISOString()),
@@ -1434,19 +1570,30 @@ function normalizeWritingChapterMeta(input: Partial<WritingChapter> | null | und
   };
 }
 
-function buildWritingChapterFileName(chapter: Pick<WritingChapter, "title">, index: number, usedFileNames: Set<string>): string {
-  const order = String(index + 1).padStart(3, "0");
-  const title = sanitizeWritingAssetName(chapter.title, "未命名章节");
-  const baseName = `第${order}章 ${title}`;
-  let candidate = `${baseName}.md`;
-  let suffix = 2;
+function createWritingChapterContentFileName(usedFileNames: Set<string>): string {
+  let candidate = `${randomUUID().replace(/-/g, "")}.md`;
 
   while (usedFileNames.has(candidate)) {
-    candidate = `${baseName}-${suffix++}.md`;
+    candidate = `${randomUUID().replace(/-/g, "")}.md`;
   }
 
   usedFileNames.add(candidate);
   return candidate;
+}
+
+function resolveWritingChapterContentFileName(fileName: string | undefined, usedFileNames: Set<string>): string {
+  const normalizedFileName = fileName ? sanitizeWritingAssetName(fileName, "") : "";
+
+  if (
+    normalizedFileName &&
+    WRITING_CHAPTER_CONTENT_FILE_NAME_PATTERN.test(normalizedFileName) &&
+    !usedFileNames.has(normalizedFileName)
+  ) {
+    usedFileNames.add(normalizedFileName);
+    return normalizedFileName;
+  }
+
+  return createWritingChapterContentFileName(usedFileNames);
 }
 
 async function readWritingBookDirectoryNames(): Promise<string[]> {
@@ -1530,11 +1677,11 @@ async function readWritingBookFromDirectory(directoryName: string): Promise<Writ
       normalizeWritingChapterMeta(chapter, index, config.id)
     );
     const chapters = await Promise.all(
-      chapterMetas.map(async (chapter, index) => {
+      chapterMetas.map(async (chapter) => {
         const fileName =
           chapter.fileName && !usedFileNames.has(chapter.fileName)
             ? chapter.fileName
-            : buildWritingChapterFileName(chapter, index, usedFileNames);
+            : createWritingChapterContentFileName(usedFileNames);
         usedFileNames.add(fileName);
         const contentPath = path.join(chaptersDirectory, fileName);
         const content = await readFile(contentPath, "utf8").catch((error) => {
@@ -1582,13 +1729,15 @@ async function writeWritingBook(book: WritingBook): Promise<WritingBook> {
   const bookDirectory = path.join(rootDirectory, targetDirectoryName);
   const chaptersDirectory = path.join(bookDirectory, WRITING_BOOK_CHAPTERS_DIRECTORY_NAME);
   const usedFileNames = new Set<string>();
-  const chapterMetas: StoredWritingChapterMeta[] = chapters.map((chapter, index) => ({
+  const chapterMetas: StoredWritingChapterMeta[] = chapters.map((chapter) => ({
     id: chapter.id,
+    index: chapter.index,
+    ...(chapter.partIndex ? { partIndex: chapter.partIndex } : {}),
     title: chapter.title,
     summary: chapter.summary,
     status: chapter.status,
     updatedAt: chapter.updatedAt,
-    fileName: buildWritingChapterFileName(chapter, index, usedFileNames)
+    fileName: resolveWritingChapterContentFileName(chapter.fileName, usedFileNames)
   }));
 
   await mkdir(chaptersDirectory, { recursive: true });
@@ -1597,7 +1746,7 @@ async function writeWritingBook(book: WritingBook): Promise<WritingBook> {
 
   await Promise.all(
     chapterMetas.map((chapter, index) =>
-      writeFile(path.join(chaptersDirectory, chapter.fileName ?? buildWritingChapterFileName(chapter, index, new Set())), chapters[index]?.content ?? "", "utf8")
+      writeFile(path.join(chaptersDirectory, chapter.fileName ?? createWritingChapterContentFileName(new Set())), chapters[index]?.content ?? "", "utf8")
     )
   );
 

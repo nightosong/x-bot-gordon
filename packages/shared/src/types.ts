@@ -42,6 +42,7 @@ export type CommandWorkshopMessageState = "completed" | "error";
 export type CommandWorkshopAttachmentKind = "image" | "video" | "text" | "document" | "spreadsheet" | "data" | "other";
 export type CommandWorkshopAttachmentReadStatus = "readable" | "binary" | "unsupported" | "error";
 export type WritingBookLength = "short" | "medium" | "long";
+export type WritingBookPartType = "act" | "volume";
 export type WritingChapterStatus = "todo" | "inProgress" | "done";
 export type AgentRunStepType =
   | "agent_selected"
@@ -538,8 +539,18 @@ export interface CommandWorkshopSession {
   updatedAt: string;
 }
 
+export interface WritingBookPart {
+  id: string;
+  type: WritingBookPartType;
+  index: number;
+  title: string;
+  description: string;
+}
+
 export interface WritingChapter {
   id: string;
+  index: number;
+  partIndex?: number;
   title: string;
   summary: string;
   content: string;
@@ -560,6 +571,7 @@ export interface WritingBook {
   intro: string;
   outlineGuide: string;
   seriesPlan: string;
+  parts: WritingBookPart[];
   chapters: WritingChapter[];
   directoryName?: string;
 }

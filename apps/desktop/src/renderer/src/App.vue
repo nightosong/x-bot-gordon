@@ -678,7 +678,12 @@
                                     }"
                                     @click="selectWritingChapter(chapter.id)"
                                   >
-                                    <span class="writing-chapter-list-title">{{ getWritingChapterDisplayTitle(chapter, index) }}</span>
+                                    <span class="writing-chapter-list-title-row">
+                                      <span class="writing-chapter-list-title">{{ getWritingChapterDisplayTitle(chapter, index) }}</span>
+                                      <span v-if="getWritingChapterPartLabel(activeWritingBook, chapter)" class="writing-chapter-part-label">
+                                        {{ getWritingChapterPartLabel(activeWritingBook, chapter) }}
+                                      </span>
+                                    </span>
                                     <span class="writing-chapter-list-meta">
                                       <span class="status-pill" :class="getWritingChapterStatusClass(chapter.status)">
                                         {{ getWritingChapterStatusLabel(chapter.status) }}
@@ -693,12 +698,7 @@
                                 <div class="writing-chapter-summary-head">
                                   <div>
                                     <p class="feature-kicker">Chapter Brief</p>
-                                    <input
-                                      class="writing-chapter-title-input"
-                                      :value="activeWritingChapter.title"
-                                      aria-label="章节标题"
-                                      @input="setWritingChapterTitle(activeWritingChapter, $event.target.value)"
-                                    />
+                                    <p class="writing-panel-title">章节简介</p>
                                   </div>
                                   <span class="status-pill" :class="getWritingChapterStatusClass(activeWritingChapter.status)">
                                     {{ getWritingChapterStatusLabel(activeWritingChapter.status) }}
@@ -3706,6 +3706,65 @@ const WRITING_AI_TASKS = {
     { id: "polish", label: "文学润色", goal: "强化语言质感、节奏、意象和收束句，让章节更有记忆点。" }
   ]
 };
+const WRITING_OUTLINE_REWRITE_PATTERN =
+  /(重改|重写|重做|重构|重新设计|重新规划|从零|推翻|不要参考|不参考|不代入|不用已有|忽略已有|全新目录|新的目录|替换目录)/;
+const WRITING_CHAPTER_PREFIX_PATTERN = /^第\s*([0-9０-９一二三四五六七八九十百千万零〇两]+)\s*章\s*(?:[：:、.\-]\s*)?(.*)$/;
+const WRITING_PART_PREFIX_PATTERN = /^(?:第\s*)?([0-9０-９一二三四五六七八九十百千万零〇两]+)\s*(幕|卷)\s*(?:[：:、.\-·]\s*)?(.*)$/;
+const WRITING_AI_TASK_PROMPTS = {
+  intro: {
+    world: {
+      role: "世界观架构师",
+      strategy: "从时代、地理、制度、资源、阶层、禁忌、技术或魔法规则里找到能持续制造剧情压力的发动机。",
+      output: "输出可直接放入故事介绍的大纲化设定，必须包含世界规则、主要矛盾、制度代价和可推进章节的冲突源。"
+    },
+    character: {
+      role: "人物关系设计师",
+      strategy: "把人物当作利益、情感、秘密和债务的网络来设计，避免只列人设标签。",
+      output: "输出人物关系网、核心人物弧线、对手镜像、盟友代价和至少三条可在后续章节回收的关系伏笔。"
+    },
+    premise: {
+      role: "出版级故事钩子编辑",
+      strategy: "提炼故事中最不可逃避的两难问题，让简介同时具备命题、冲突和读者悬念。",
+      output: "输出短简介、扩展简介和一句核心命题，语言要有吸引力，但不能牺牲故事因果。"
+    }
+  },
+  outline: {
+    structure: {
+      role: "长线目录架构师",
+      strategy:
+        "根据故事介绍、大纲指导、篇幅策略和作者要求生成最终章节目录。目录必须贴合整本小说的故事曲线，兼顾伏笔布设、反转节奏、人物弧光、因果连贯和卷/幕级高潮。中长篇如需要幕或卷，必须把幕/卷放在 parts，不要把幕/卷当成 chapter。若作者要求拆分、移除、插入或重排章节，直接输出变更后的最终目录，不要只给操作建议。",
+      output:
+        "必须输出一个 JSON 代码块，格式为 {\"parts\":[{\"index\":1,\"type\":\"act\",\"title\":\"幕或卷标题（不要包含第X幕/第X卷前缀）\",\"description\":\"本幕/卷整体故事设计\"}],\"chapters\":[{\"index\":1,\"partIndex\":1,\"title\":\"章节标题（不要包含第X章前缀）\",\"summary\":\"本章目标、主要冲突、信息增量、伏笔/回收、结尾钩子\"}]}。index 与 partIndex 必须是 integer；短篇可省略 parts 和 partIndex；JSON 外可以补充简短设计说明，但章节落盘只读取 JSON。"
+    },
+    foreshadow: {
+      role: "伏笔与回收编辑",
+      strategy: "检查目录里的承诺、误导、延迟满足和回收位置，让伏笔跨章节生长，而不是孤立出现。",
+      output: "输出伏笔布设表、回收节奏建议和需要改写的章节简介；如需要改目录，也附带包含 parts 以及 integer index / partIndex / 纯 title 的 chapters JSON。"
+    },
+    rhythm: {
+      role: "叙事节奏诊断师",
+      strategy: "检查章节之间的紧张、缓冲、揭秘、失败、胜利和余波分布，避免连续同质场景。",
+      output: "输出节奏诊断、章节顺序调整建议和每个阶段的高潮/低谷；如需要改目录，也附带包含 parts 以及 integer index / partIndex / 纯 title 的 chapters JSON。"
+    }
+  },
+  chapter: {
+    draft: {
+      role: "章节初稿主笔",
+      strategy: "从当前章节目标出发写场景，而不是泛写概述；每一段都要推进动作、信息或人物关系。",
+      output: "输出可直接作为正文的章节初稿，包含场景调度、对白张力、行动链、心理暗流和结尾钩子。"
+    },
+    expand: {
+      role: "内容扩写编辑",
+      strategy: "保留既有剧情方向，补强感官细节、行动因果、人物互动和潜台词。",
+      output: "输出扩写后的正文片段，避免空泛抒情，重点补足事件推进和人物变化。"
+    },
+    polish: {
+      role: "文学润色编辑",
+      strategy: "在不改变剧情事实的前提下调整句式、节奏、意象和段落收束。",
+      output: "输出润色后的正文，语言要更有记忆点，但保持可读性和叙事清晰。"
+    }
+  }
+};
 const WRITING_INTRO_SECTION_DEFINITIONS = {
   intro: {
     key: "intro",
@@ -4469,10 +4528,133 @@ function normalizeWritingChapterStatusForUi(value) {
   return WRITING_CHAPTER_STATUS_META[value] ? value : "todo";
 }
 
+function parseWritingChapterIndex(value) {
+  const normalizedValue = String(value ?? "")
+    .trim()
+    .replace(/[０-９]/g, (char) => String(char.charCodeAt(0) - 0xff10));
+
+  if (/^\d+$/.test(normalizedValue)) {
+    const parsedValue = Number(normalizedValue);
+    return Number.isInteger(parsedValue) && parsedValue > 0 ? parsedValue : null;
+  }
+
+  const digits = {
+    零: 0,
+    "〇": 0,
+    一: 1,
+    二: 2,
+    两: 2,
+    三: 3,
+    四: 4,
+    五: 5,
+    六: 6,
+    七: 7,
+    八: 8,
+    九: 9
+  };
+  const units = { 十: 10, 百: 100, 千: 1000, 万: 10000 };
+  let total = 0;
+  let section = 0;
+  let number = 0;
+
+  for (const char of normalizedValue) {
+    if (digits[char] !== undefined) {
+      number = digits[char];
+      continue;
+    }
+
+    const unit = units[char];
+
+    if (!unit) {
+      return null;
+    }
+
+    if (unit === 10000) {
+      section = (section + (number || 1)) * unit;
+      total += section;
+      section = 0;
+    } else {
+      section += (number || 1) * unit;
+    }
+
+    number = 0;
+  }
+
+  const parsedValue = total + section + number;
+  return Number.isInteger(parsedValue) && parsedValue > 0 ? parsedValue : null;
+}
+
+function normalizeWritingChapterIndex(value, fallbackIndex = 0) {
+  const normalizedFallback = Number.isFinite(fallbackIndex) && fallbackIndex >= 0 ? fallbackIndex + 1 : 1;
+  return parseWritingChapterIndex(value) ?? normalizedFallback;
+}
+
+function splitWritingChapterTitlePrefix(value) {
+  const title = String(value ?? "")
+    .trim()
+    .replace(/^["'“”‘’`]+|["'“”‘’`]+$/g, "")
+    .replace(/\*\*/g, "")
+    .trim();
+  const match = title.match(WRITING_CHAPTER_PREFIX_PATTERN);
+
+  if (!match) {
+    return { index: null, title };
+  }
+
+  return {
+    index: parseWritingChapterIndex(match[1]),
+    title: String(match[2] ?? "").trim()
+  };
+}
+
+function normalizeWritingBookPartTypeForUi(value) {
+  return value === "volume" ? "volume" : "act";
+}
+
+function splitWritingBookPartTitlePrefix(value) {
+  const title = String(value ?? "")
+    .trim()
+    .replace(/^["'“”‘’`]+|["'“”‘’`]+$/g, "")
+    .replace(/\*\*/g, "")
+    .trim();
+  const match = title.match(WRITING_PART_PREFIX_PATTERN);
+
+  if (!match) {
+    return { index: null, type: null, title };
+  }
+
+  return {
+    index: parseWritingChapterIndex(match[1]),
+    type: match[2] === "卷" ? "volume" : "act",
+    title: String(match[3] ?? "").trim()
+  };
+}
+
+function normalizeWritingBookPart(part, index = 0, bookId = "writing_book") {
+  const titleParts = splitWritingBookPartTitlePrefix(part?.title);
+  const partIndex = normalizeWritingChapterIndex(part?.index ?? titleParts.index, index);
+  const partType = normalizeWritingBookPartTypeForUi(part?.type ?? titleParts.type);
+
+  return {
+    id: String(part?.id ?? "").trim() || `${bookId}_part_${partIndex}`,
+    type: partType,
+    index: partIndex,
+    title: titleParts.title || `未命名${partType === "volume" ? "卷" : "幕"} ${partIndex}`,
+    description: String(part?.description ?? part?.summary ?? "")
+  };
+}
+
+function normalizeWritingBookPartsForUi(parts = [], bookId = "writing_book") {
+  return (Array.isArray(parts) ? parts : [])
+    .map((part, index) => normalizeWritingBookPart(part, index, bookId))
+    .sort((left, right) => left.index - right.index);
+}
+
 function normalizeWritingBookForUi(book, index = 0) {
   const now = new Date().toISOString();
+  const bookId = String(book?.id ?? "").trim() || createLocalId("writing_book");
   const normalized = {
-    id: String(book?.id ?? "").trim() || createLocalId("writing_book"),
+    id: bookId,
     title: String(book?.title ?? "").trim() || "未命名故事",
     author: String(book?.author ?? "Song"),
     length: normalizeWritingBookLengthForUi(book?.length),
@@ -4484,6 +4666,7 @@ function normalizeWritingBookForUi(book, index = 0) {
     outlineGuide: String(book?.outlineGuide ?? ""),
     seriesPlan: String(book?.seriesPlan ?? ""),
     directoryName: typeof book?.directoryName === "string" ? book.directoryName : undefined,
+    parts: normalizeWritingBookPartsForUi(book?.parts, bookId),
     chapters: []
   };
 
@@ -4758,6 +4941,7 @@ function createWritingChaptersFromLegacyBook(book) {
 
     return {
       id: `${book.id || "writing_book"}_chapter_${index + 1}`,
+      index: index + 1,
       title: (rawTitle || `未命名章节 ${index + 1}`).trim(),
       summary: summaryParts.join("：").trim(),
       content: index === 0 ? legacyContent : "",
@@ -4769,14 +4953,19 @@ function createWritingChaptersFromLegacyBook(book) {
 
 function normalizeWritingChapter(chapter, index, book) {
   const normalized = chapter ?? {};
+  const titleParts = splitWritingChapterTitlePrefix(normalized.title);
 
   if (!normalized.id) {
     normalized.id = `${book?.id || "writing_book"}_chapter_${index + 1}`;
   }
 
-  if (!normalized.title) {
-    normalized.title = `未命名章节 ${index + 1}`;
+  normalized.index = normalizeWritingChapterIndex(normalized.index ?? titleParts.index, index);
+  if (normalized.partIndex) {
+    normalized.partIndex = normalizeWritingChapterIndex(normalized.partIndex, 0);
+  } else {
+    delete normalized.partIndex;
   }
+  normalized.title = titleParts.title || `未命名章节 ${normalized.index}`;
 
   normalized.summary = String(normalized.summary ?? "");
   normalized.content = String(normalized.content ?? "");
@@ -4838,8 +5027,43 @@ function selectWritingChapterFromPicker(chapterId) {
 }
 
 function getWritingChapterDisplayTitle(chapter, index = 0) {
-  const order = Number.isFinite(index) ? index + 1 : 1;
-  return `第${order}章 ${String(chapter?.title ?? "未命名章节").trim() || "未命名章节"}`;
+  const order = normalizeWritingChapterIndex(chapter?.index, index);
+  const title = splitWritingChapterTitlePrefix(chapter?.title).title || `未命名章节 ${order}`;
+  return `第${order}章 ${title}`;
+}
+
+function getWritingBookParts(book) {
+  if (!book) {
+    return [];
+  }
+
+  return (Array.isArray(book.parts) ? book.parts : [])
+    .slice()
+    .sort((left, right) => normalizeWritingChapterIndex(left?.index, 0) - normalizeWritingChapterIndex(right?.index, 0));
+}
+
+function getWritingPartDisplayLabel(part) {
+  if (!part) {
+    return "";
+  }
+
+  const label = part.type === "volume" ? "卷" : "幕";
+  const title = splitWritingBookPartTitlePrefix(part.title).title || `未命名${label} ${part.index}`;
+  return `第${part.index}${label} ${title}`;
+}
+
+function getWritingChapterPart(book, chapter) {
+  const partIndex = parseWritingChapterIndex(chapter?.partIndex);
+
+  if (!partIndex) {
+    return null;
+  }
+
+  return getWritingBookParts(book).find((part) => part.index === partIndex) ?? null;
+}
+
+function getWritingChapterPartLabel(book, chapter) {
+  return getWritingPartDisplayLabel(getWritingChapterPart(book, chapter));
 }
 
 function getFilteredWritingChapterEntries(chapters, query) {
@@ -4875,12 +5099,21 @@ function getWritingChapterWordCount(chapter) {
 }
 
 function buildWritingOutlineContent(book) {
-  return getWritingChapters(book)
+  const partsContent = getWritingBookParts(book)
+    .map((part) => `partIndex：${part.index}\npartType：${part.type}\npartTitle：${part.title}\npartDescription：${part.description || "暂无描述"}`)
+    .join("\n\n");
+  const chaptersContent = getWritingChapters(book)
     .map((chapter, index) => {
-      const title = getWritingChapterDisplayTitle(chapter, index);
+      const order = normalizeWritingChapterIndex(chapter.index, index);
+      const title = splitWritingChapterTitlePrefix(chapter.title).title || `未命名章节 ${order}`;
       const summary = String(chapter.summary ?? "").trim() || "暂无简介";
-      return `${title}\n状态：${getWritingChapterStatusLabel(chapter.status)}\n简介：${summary}`;
+      const partLine = chapter.partIndex ? `partIndex：${chapter.partIndex}\n` : "";
+      return `${partLine}index：${order}\ntitle：${title}\n状态：${getWritingChapterStatusLabel(chapter.status)}\n简介：${summary}`;
     })
+    .join("\n\n");
+
+  return [partsContent ? `【幕/卷设计】\n${partsContent}` : "", chaptersContent ? `【章节目录】\n${chaptersContent}` : ""]
+    .filter(Boolean)
     .join("\n\n");
 }
 
@@ -4889,7 +5122,9 @@ function setWritingChapterTitle(chapter, value) {
     return;
   }
 
-  chapter.title = String(value ?? "");
+  const titleParts = splitWritingChapterTitlePrefix(value);
+  chapter.index = normalizeWritingChapterIndex(titleParts.index ?? chapter.index, getWritingChapters(activeWritingBook.value).indexOf(chapter));
+  chapter.title = titleParts.title;
   chapter.updatedAt = new Date().toISOString();
   touchWritingBook(activeWritingBook.value);
 }
@@ -4930,6 +5165,7 @@ function createWritingChapter() {
   const nextIndex = chapters.length + 1;
   const chapter = {
     id: createLocalId("writing_chapter"),
+    index: nextIndex,
     title: `未命名章节 ${nextIndex}`,
     summary: "",
     content: "",
@@ -5162,9 +5398,11 @@ async function createWritingBook() {
     intro: "在这里写下故事的核心命题、世界观、人物关系和主要矛盾。",
     outlineGuide: "把故事拆成开始、失控、反转和收束四个阶段，每个阶段都要写清冲突升级和人物变化。",
     seriesPlan: "",
+    parts: [],
     chapters: [
       {
         id: createLocalId("writing_chapter"),
+        index: 1,
         title: "开场章节",
         summary: "写下本章冲突、信息增量、人物变化和结尾钩子。",
         content: "## 第一章\n\n",
@@ -5251,6 +5489,18 @@ function setWritingTab(tabId) {
   setWritingFeedback("", "neutral");
 }
 
+function getWritingTaskPromptSpec(tabId, taskId) {
+  return (
+    WRITING_AI_TASK_PROMPTS[tabId]?.[taskId] ??
+    WRITING_AI_TASK_PROMPTS[tabId]?.[(WRITING_AI_TASKS[tabId] ?? [])[0]?.id] ??
+    WRITING_AI_TASK_PROMPTS.intro.premise
+  );
+}
+
+function shouldIgnoreExistingWritingOutline(instruction, taskId) {
+  return taskId === "structure" && WRITING_OUTLINE_REWRITE_PATTERN.test(String(instruction ?? ""));
+}
+
 function buildWritingAssistantPrompt({ book, tabId, task, instruction }) {
   if (!book) {
     return "";
@@ -5260,23 +5510,12 @@ function buildWritingAssistantPrompt({ book, tabId, task, instruction }) {
   const tabTitle = getWritingTabTitle(tabId);
   const content = getWritingBookContent(book, tabId);
   const currentChapter = activeWritingChapter.value ?? getPreferredWritingChapter(book);
-
-  return [
-    `作品：${book.title}`,
-    `篇幅：${lengthProfile.label}（${lengthProfile.scope}）`,
-    `类型：${book.genre || "未设定"}`,
-    `当前模块：${tabTitle}`,
-    `大师思路：${lengthProfile.method}`,
-    `本次任务：${task?.label ?? "综合辅助"} - ${task?.goal ?? "提升当前内容"}`,
-    instruction ? `作者额外要求：${instruction}` : "作者额外要求：无",
-    "",
-    "故事介绍与规划：",
-    buildWritingIntroContent(book) || "(空)",
-    "",
-    "章节目录：",
-    buildWritingOutlineContent(book) || "(空)",
-    "",
-    "当前选中章节：",
+  const taskSpec = getWritingTaskPromptSpec(tabId, task?.id);
+  const shouldIgnoreOutline = shouldIgnoreExistingWritingOutline(instruction, task?.id);
+  const introContent = buildWritingIntroContent(book) || "(空)";
+  const outlineContent = shouldIgnoreOutline ? "(作者要求重改目录，本轮不代入已有章节目录。)" : buildWritingOutlineContent(book) || "(空)";
+  const currentModuleContent = tabId === "outline" && shouldIgnoreOutline ? outlineContent : content;
+  const chapterContext =
     currentChapter
       ? [
           `标题：${getWritingChapterDisplayTitle(currentChapter, getWritingChapters(book).findIndex((chapter) => chapter.id === currentChapter.id))}`,
@@ -5285,17 +5524,47 @@ function buildWritingAssistantPrompt({ book, tabId, task, instruction }) {
           "正文：",
           currentChapter.content || "(空)"
         ].join("\n")
-      : "(空)",
+      : "(空)";
+
+  return [
+    "你正在执行「笔墨生花」的一次写作辅助任务。通用标准：大师级小说总编 + 故事架构师 + 文字教练。",
+    "",
+    `作品：${book.title}`,
+    `篇幅：${lengthProfile.label}（${lengthProfile.scope}）`,
+    `类型：${book.genre || "未设定"}`,
+    `当前模块：${tabTitle}`,
+    `大师思路：${lengthProfile.method}`,
+    `本次任务：${task?.label ?? "综合辅助"} - ${task?.goal ?? "提升当前内容"}`,
+    `本任务设计者：${taskSpec.role}`,
+    instruction ? `作者额外要求：${instruction}` : "作者额外要求：无",
+    "",
+    "任务专属提示词：",
+    taskSpec.strategy,
+    "",
+    "输出要求：",
+    taskSpec.output,
+    "",
+    "故事介绍与规划：",
+    introContent,
+    "",
+    "章节目录：",
+    outlineContent,
+    "",
+    "当前选中章节：",
+    chapterContext,
     "",
     `请围绕「${tabTitle}」输出可直接粘贴的内容。要求：`,
     "- 不要寒暄，不要解释提示词。",
     "- 保留并强化人物动机、因果链、伏笔和冲突。",
-    "- 如果是目录，必须包含章节目标、矛盾、信息增量和结尾钩子。",
+    "- 如果是章节规划，必须输出最终目录，不输出“建议你可以怎么改”的中间建议。",
+    "- 章节规划的 chapters JSON 中，每个章节必须包含 integer 类型的 index；title 只写纯标题，不要包含“第X章”。",
+    "- 幕/卷不是章节；如需要幕或卷，必须输出 parts，并在章节里用 partIndex 关联，章节 index 仍然全书连续累加。",
+    "- 如果作者要求“第几章拆成几章 / 移除第几章 / 在第n章和第n+1章中间增加章节”，必须落实到最终 chapters JSON。",
     "- 如果是章节，必须有场景动作、对白张力、心理暗流和段落节奏。",
     "- 如果是介绍，必须补齐世界规则、核心矛盾、主要人物与主题命题。",
     "",
     "当前模块原文：",
-    content || "(空)"
+    currentModuleContent || "(空)"
   ].join("\n");
 }
 
@@ -5348,7 +5617,371 @@ async function generateWritingAssistantOutput() {
   }
 }
 
-function applyWritingAssistantOutput(mode = "append") {
+function normalizeWritingChapterTitleForMatch(value) {
+  return splitWritingChapterTitlePrefix(value)
+    .title
+    .replace(/\s+/g, "")
+    .toLowerCase();
+}
+
+function normalizeWritingChapterPlanTitle(value) {
+  return String(value ?? "")
+    .trim()
+    .replace(/^["'“”‘’`]+|["'“”‘’`]+$/g, "")
+    .replace(/\*\*/g, "")
+    .trim();
+}
+
+function normalizeWritingChapterPlanSummary(value) {
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry ?? "").trim()).filter(Boolean).join("\n");
+  }
+
+  if (value && typeof value === "object") {
+    return Object.entries(value)
+      .map(([key, entryValue]) => `${key}：${String(entryValue ?? "").trim()}`)
+      .filter((line) => !line.endsWith("："))
+      .join("\n");
+  }
+
+  return String(value ?? "").trim();
+}
+
+function normalizeWritingChapterPlanEntry(entry, fallbackIndex = 0) {
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+
+  const rawTitle = normalizeWritingChapterPlanTitle(
+    entry.title ?? entry.name ?? entry.chapterTitle ?? entry.chapter ?? entry.标题 ?? entry.章节标题
+  );
+  const titleParts = splitWritingChapterTitlePrefix(rawTitle);
+  const chapterIndex = normalizeWritingChapterIndex(
+    entry.index ?? entry.order ?? entry.chapterIndex ?? entry.chapterNo ?? entry.序号 ?? entry.章节序号 ?? titleParts.index,
+    fallbackIndex
+  );
+  const partIndex =
+    parseWritingChapterIndex(
+      entry.partIndex ?? entry.part_index ?? entry.volumeIndex ?? entry.actIndex ?? entry.幕序号 ?? entry.卷序号 ?? entry.所属幕 ?? entry.所属卷
+    ) ?? null;
+  const title = titleParts.title;
+  const summary = normalizeWritingChapterPlanSummary(
+    entry.summary ??
+      entry.brief ??
+      entry.description ??
+      entry.synopsis ??
+      entry.goal ??
+      entry.简介 ??
+      entry.摘要 ??
+      entry.梗概 ??
+      entry.章节简介 ??
+      entry.本章目标
+  );
+
+  if (!title) {
+    return null;
+  }
+
+  return {
+    index: chapterIndex,
+    ...(partIndex ? { partIndex } : {}),
+    title,
+    summary: summary || "待补充章节目标、主要冲突、信息增量、伏笔/回收和结尾钩子。"
+  };
+}
+
+function normalizeWritingPartPlanEntry(entry, fallbackIndex = 0) {
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+
+  const rawTitle = normalizeWritingChapterPlanTitle(entry.title ?? entry.name ?? entry.partTitle ?? entry.volumeTitle ?? entry.标题 ?? entry.卷名 ?? entry.幕名);
+  const titleParts = splitWritingBookPartTitlePrefix(rawTitle);
+  const partIndex = normalizeWritingChapterIndex(entry.index ?? entry.order ?? entry.partIndex ?? entry.序号 ?? titleParts.index, fallbackIndex);
+  const partType = normalizeWritingBookPartTypeForUi(entry.type ?? entry.partType ?? entry.kind ?? titleParts.type);
+  const title = titleParts.title || rawTitle;
+  const description = normalizeWritingChapterPlanSummary(
+    entry.description ?? entry.summary ?? entry.brief ?? entry.synopsis ?? entry.goal ?? entry.描述 ?? entry.简介 ?? entry.概述
+  );
+
+  if (!title) {
+    return null;
+  }
+
+  return {
+    id: createLocalId("writing_part"),
+    type: partType,
+    index: partIndex,
+    title,
+    description: description || "待补充本幕/卷的整体故事设计、关键矛盾、阶段高潮和转折作用。"
+  };
+}
+
+function parseWritingChapterJsonPayload(value) {
+  const text = String(value ?? "").trim();
+  const candidates = [];
+  const fencedBlocks = Array.from(text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)).map((match) => match[1]?.trim()).filter(Boolean);
+
+  candidates.push(...fencedBlocks);
+
+  const firstObjectIndex = text.indexOf("{");
+  const lastObjectIndex = text.lastIndexOf("}");
+  if (firstObjectIndex >= 0 && lastObjectIndex > firstObjectIndex) {
+    candidates.push(text.slice(firstObjectIndex, lastObjectIndex + 1));
+  }
+
+  const firstArrayIndex = text.indexOf("[");
+  const lastArrayIndex = text.lastIndexOf("]");
+  if (firstArrayIndex >= 0 && lastArrayIndex > firstArrayIndex) {
+    candidates.push(text.slice(firstArrayIndex, lastArrayIndex + 1));
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      const chapters = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.chapters) ? parsed.chapters : [];
+      const parts = Array.isArray(parsed?.parts)
+        ? parsed.parts
+        : Array.isArray(parsed?.volumes)
+          ? parsed.volumes.map((part) => ({ ...part, type: part?.type ?? "volume" }))
+          : Array.isArray(parsed?.acts)
+            ? parsed.acts.map((part) => ({ ...part, type: part?.type ?? "act" }))
+            : [];
+      const normalizedParts = parts.map((entry, index) => normalizeWritingPartPlanEntry(entry, index)).filter(Boolean);
+      const normalizedChapters = [];
+      let currentPartIndex = normalizedParts.at(-1)?.index ?? null;
+
+      chapters.forEach((entry, index) => {
+        const rawTitle = normalizeWritingChapterPlanTitle(
+          entry?.title ?? entry?.name ?? entry?.chapterTitle ?? entry?.chapter ?? entry?.标题 ?? entry?.章节标题
+        );
+        const partTitleParts = splitWritingBookPartTitlePrefix(rawTitle);
+
+        if (partTitleParts.index && partTitleParts.type) {
+          const partPlan = normalizeWritingPartPlanEntry(
+            {
+              ...entry,
+              index: partTitleParts.index,
+              type: partTitleParts.type,
+              title: partTitleParts.title,
+              description: entry?.description ?? entry?.summary
+            },
+            normalizedParts.length
+          );
+
+          if (partPlan) {
+            normalizedParts.push(partPlan);
+            currentPartIndex = partPlan.index;
+          }
+
+          return;
+        }
+
+        const chapterPlan = normalizeWritingChapterPlanEntry(entry, normalizedChapters.length || index);
+
+        if (chapterPlan) {
+          if (currentPartIndex && !chapterPlan.partIndex) {
+            chapterPlan.partIndex = currentPartIndex;
+          }
+
+          normalizedChapters.push(chapterPlan);
+        }
+      });
+
+      if (normalizedChapters.length) {
+        return { parts: normalizedParts, chapters: normalizedChapters };
+      }
+    } catch {
+      // Continue with markdown fallback.
+    }
+  }
+
+  return { parts: [], chapters: [] };
+}
+
+function splitWritingChapterTitleAndSummary(value, fallbackIndex = 0) {
+  const text = normalizeWritingChapterPlanTitle(value);
+  const titleParts = splitWritingChapterTitlePrefix(text);
+  const chapterIndex = normalizeWritingChapterIndex(titleParts.index, fallbackIndex);
+  const titleText = titleParts.title || text;
+  const separatorIndex = titleText.search(/[：:]/);
+
+  if (separatorIndex > 0) {
+    const title = normalizeWritingChapterPlanTitle(titleText.slice(0, separatorIndex));
+    const summary = titleText.slice(separatorIndex + 1).trim();
+    return { index: chapterIndex, title, summary };
+  }
+
+  return { index: chapterIndex, title: titleText, summary: "" };
+}
+
+function parseWritingChapterMarkdownPayload(value) {
+  const parts = [];
+  const chapters = [];
+  let current = null;
+  let currentPart = null;
+
+  String(value ?? "")
+    .split(/\r?\n/g)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .forEach((rawLine) => {
+      const line = rawLine.replace(/^>\s*/, "").replace(/^#{1,6}\s*/, "").replace(/^\s*[-*+]\s*/, "").trim();
+      const partMatch = line.match(/^(?:\*\*)?\s*(?:第\s*)?([0-9０-９一二三四五六七八九十百千万零〇两]+)\s*(幕|卷)\s*[：:.\-、·]?\s*(.+?)(?:\*\*)?$/i);
+
+      if (partMatch?.[3]) {
+        const partType = partMatch[2] === "卷" ? "volume" : "act";
+        const partIndex = normalizeWritingChapterIndex(partMatch[1], parts.length);
+        currentPart = {
+          id: createLocalId("writing_part"),
+          type: partType,
+          index: partIndex,
+          title: normalizeWritingChapterPlanTitle(partMatch[3]),
+          description: ""
+        };
+        parts.push(currentPart);
+        current = null;
+        return;
+      }
+
+      const titleMatch = line.match(
+        /^(?:\*\*)?\s*(?:第\s*([0-9０-９一二三四五六七八九十百千万零〇两]+)\s*章|chapter\s*(\d+)|(\d+)[.、])\s*[：:.\-、]?\s*(.+?)(?:\*\*)?$/i
+      );
+
+      if (titleMatch?.[4]) {
+        const chapterIndex = titleMatch[1] ?? titleMatch[2] ?? titleMatch[3] ?? chapters.length + 1;
+        const titleLine = `第${chapterIndex}章 ${titleMatch[4]}`;
+        const { index, title, summary } = splitWritingChapterTitleAndSummary(titleLine, chapters.length);
+
+        if (title) {
+          current = { index, ...(currentPart?.index ? { partIndex: currentPart.index } : {}), title, summary };
+          chapters.push(current);
+        }
+
+        return;
+      }
+
+      if (!current) {
+        if (currentPart) {
+          const descriptionMatch = line.match(/^(?:简介|描述|概述|本幕目标|本卷目标|目标|主要冲突|阶段高潮|转折作用)\s*[：:]\s*(.+)$/);
+          const descriptionText = descriptionMatch?.[1]?.trim() || line;
+
+          if (descriptionText && !/^```/.test(descriptionText)) {
+            currentPart.description = [currentPart.description, descriptionText].filter(Boolean).join("\n");
+          }
+        }
+
+        return;
+      }
+
+      const summaryMatch = line.match(/^(?:简介|摘要|梗概|章节简介|本章目标|目标|主要冲突|信息增量|伏笔|结尾钩子)\s*[：:]\s*(.+)$/);
+      const summaryText = summaryMatch?.[1]?.trim() || line;
+
+      if (summaryText && !/^```/.test(summaryText)) {
+        current.summary = [current.summary, summaryText].filter(Boolean).join("\n");
+      }
+    });
+
+  const normalizedParts = parts
+    .map((part, index) => normalizeWritingBookPart(part, index, "writing_book"))
+    .filter((part) => part.title);
+  const normalizedChapters = chapters
+    .map((chapter, index) => ({
+      index: normalizeWritingChapterIndex(chapter.index, index),
+      ...(chapter.partIndex ? { partIndex: normalizeWritingChapterIndex(chapter.partIndex, 0) } : {}),
+      title: normalizeWritingChapterPlanTitle(chapter.title),
+      summary: normalizeWritingChapterPlanSummary(chapter.summary)
+    }))
+    .filter((chapter) => chapter.title);
+
+  return { parts: normalizedParts, chapters: normalizedChapters };
+}
+
+function parseWritingChaptersFromAssistantOutput(value) {
+  const jsonPlan = parseWritingChapterJsonPayload(value);
+  return jsonPlan.chapters.length ? jsonPlan : parseWritingChapterMarkdownPayload(value);
+}
+
+function buildWritingChapterFromPlan(plan, existingChapter = null, fallbackIndex = 0) {
+  const now = new Date().toISOString();
+  const chapterIndex = normalizeWritingChapterIndex(plan.index ?? existingChapter?.index, fallbackIndex);
+  const title = splitWritingChapterTitlePrefix(plan.title).title || `未命名章节 ${chapterIndex}`;
+
+  return {
+    id: existingChapter?.id ?? createLocalId("writing_chapter"),
+    index: chapterIndex,
+    ...(plan.partIndex ? { partIndex: normalizeWritingChapterIndex(plan.partIndex, 0) } : existingChapter?.partIndex ? { partIndex: existingChapter.partIndex } : {}),
+    title,
+    summary: plan.summary,
+    content: existingChapter?.content ?? "",
+    status: existingChapter?.status ?? "todo",
+    updatedAt: now,
+    ...(existingChapter?.fileName ? { fileName: existingChapter.fileName } : {})
+  };
+}
+
+async function applyWritingChapterPlanOutput(book, output, mode = "append") {
+  const outlinePlan = parseWritingChaptersFromAssistantOutput(output);
+  const plans = outlinePlan.chapters;
+  const currentTaskId = activeWritingTask.value?.id ?? "";
+
+  if (!plans.length) {
+    if (currentTaskId === "structure") {
+      setWritingFeedback("未识别到可落盘的章节 JSON，请重新生成或让 AI 按提示词输出 chapters。", "warning");
+      return true;
+    }
+
+    return false;
+  }
+
+  const existingChapters = getWritingChapters(book);
+  const existingByTitle = new Map(
+    existingChapters.map((chapter) => [normalizeWritingChapterTitleForMatch(chapter.title), chapter]).filter(([title]) => Boolean(title))
+  );
+  const existingTitleKeys = new Set(existingByTitle.keys());
+  const nextChapters =
+    mode === "replace"
+      ? plans.map((plan, index) => buildWritingChapterFromPlan(plan, existingByTitle.get(normalizeWritingChapterTitleForMatch(plan.title)) ?? null, index))
+      : [
+          ...existingChapters,
+          ...plans
+            .filter((plan) => !existingTitleKeys.has(normalizeWritingChapterTitleForMatch(plan.title)))
+            .map((plan, index) => buildWritingChapterFromPlan(plan, null, existingChapters.length + index))
+        ];
+
+  if (mode === "append" && nextChapters.length === existingChapters.length) {
+    setWritingFeedback("生成目录里的章节已存在，没有新增章节。", "warning");
+    return true;
+  }
+
+  const existingParts = getWritingBookParts(book);
+  const existingPartsByIndex = new Map(existingParts.map((part) => [part.index, part]));
+
+  if (mode === "replace") {
+    book.parts = outlinePlan.parts.map((part, index) => ({
+      ...normalizeWritingBookPart(part, index, book.id),
+      id: existingPartsByIndex.get(part.index)?.id ?? part.id
+    }));
+  } else if (outlinePlan.parts.length) {
+    const existingPartIndexes = new Set(existingParts.map((part) => part.index));
+    book.parts = [
+      ...existingParts,
+      ...outlinePlan.parts
+        .filter((part) => !existingPartIndexes.has(part.index))
+        .map((part, index) => normalizeWritingBookPart(part, existingParts.length + index, book.id))
+    ].sort((left, right) => left.index - right.index);
+  }
+
+  book.chapters = nextChapters;
+  selectWritingChapter(nextChapters[0]?.id ?? "");
+  touchWritingBook(book, { persist: false });
+  await persistWritingBookById(book.id, { silent: true });
+  setWritingFeedback(mode === "replace" ? `已替换为 ${plans.length} 个章节，并写入本地目录。` : `已追加 ${nextChapters.length - existingChapters.length} 个章节，并写入本地目录。`, "success");
+  setStatus("书籍目录已写入本地 chapters.json 和章节 Markdown 文件。", "success");
+  return true;
+}
+
+async function applyWritingAssistantOutput(mode = "append") {
   const output = String(ui.marketplace.writing.aiOutput ?? "").trim();
   const book = activeWritingBook.value;
 
@@ -5362,6 +5995,10 @@ function applyWritingAssistantOutput(mode = "append") {
     const current = String(chapter?.content ?? "").trim();
     setWritingChapterContent(chapter, mode === "replace" ? output : [current, output].filter(Boolean).join("\n\n"));
   } else if (ui.marketplace.writing.activeTab === "outline") {
+    if (await applyWritingChapterPlanOutput(book, output, mode)) {
+      return;
+    }
+
     const chapter = activeWritingChapter.value ?? ensureWritingChapterSelection(book);
     const current = String(chapter?.summary ?? "").trim();
     setWritingChapterSummary(chapter, mode === "replace" ? output : [current, output].filter(Boolean).join("\n\n"));

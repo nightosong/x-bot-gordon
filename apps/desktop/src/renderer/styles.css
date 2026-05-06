@@ -1675,10 +1675,14 @@ canvas {
 }
 
 .writing-chapter-list-title {
+  min-width: 0;
+  overflow: hidden;
   color: inherit;
   font-size: 13px;
   font-weight: 800;
   line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .writing-chapter-list-meta {
@@ -1696,16 +1700,24 @@ canvas {
   font-size: 10px;
 }
 
-.writing-chapter-title-input {
-  width: 100%;
+.writing-chapter-list-title-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 10px;
   min-width: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--text);
-  font-family: "Iowan Old Style", "Songti SC", serif;
-  font-size: 20px;
-  font-weight: 800;
+}
+
+.writing-chapter-part-label {
+  max-width: 112px;
+  overflow: hidden;
+  color: rgba(247, 243, 235, 0.42);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .writing-chapter-summary-textarea {
