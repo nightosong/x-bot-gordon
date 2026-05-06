@@ -749,7 +749,12 @@
                                         <GIcon name="chevronDown" />
                                       </button>
 
-                                      <div v-if="ui.marketplace.writing.isChapterPickerOpen" class="writing-chapter-dropdown-menu" role="listbox">
+                                      <div
+                                        v-if="ui.marketplace.writing.isChapterPickerOpen"
+                                        ref="writingChapterDropdownMenuRef"
+                                        class="writing-chapter-dropdown-menu"
+                                        role="listbox"
+                                      >
                                         <button
                                           v-for="entry in filteredWritingChapterEntries"
                                           :key="entry.chapter.id"
@@ -781,17 +786,19 @@
                                   </label>
                                 </div>
 
-                                <span class="status-pill" :class="getWritingChapterStatusClass(activeWritingChapter.status)">
+                                <span class="status-pill writing-chapter-status-pill" :class="getWritingChapterStatusClass(activeWritingChapter.status)">
                                   {{ getWritingChapterStatusLabel(activeWritingChapter.status) }}
                                 </span>
 
                                 <button
                                   type="button"
                                   class="model-action writing-chapter-submit"
-                                  :disabled="!getWritingChapterWordCount(activeWritingChapter)"
+                                  :class="{ 'is-submitted': isWritingChapterSubmitConfirmed(activeWritingChapter) }"
+                                  :disabled="!getWritingChapterWordCount(activeWritingChapter) || isWritingChapterSubmitConfirmed(activeWritingChapter)"
                                   @click="submitWritingChapter"
                                 >
-                                  提交章节
+                                  <GIcon v-if="isWritingChapterSubmitConfirmed(activeWritingChapter)" name="check" :size="13" />
+                                  {{ isWritingChapterSubmitConfirmed(activeWritingChapter) ? "已提交" : "提交" }}
                                 </button>
                               </div>
 
@@ -4120,7 +4127,9 @@ function createMarketplaceState() {
       exportDirectory: "",
       exportFeedback: "",
       exportFeedbackTone: "neutral",
-      isExporting: false
+      isExporting: false,
+      submittedChapterId: "",
+      submittedChapterContentSnapshot: ""
     }
   };
 }
@@ -4473,6 +4482,7 @@ const commandInputRef = ref(null);
 const commandMessagesRef = ref(null);
 const gordonDialogPrimaryRef = ref(null);
 const gordonDialogInputRef = ref(null);
+const writingChapterDropdownMenuRef = ref(null);
 const weeklyTaskRewriteIds = ref([]);
 
 const status = reactive({
@@ -5300,16 +5310,21 @@ function ensureWritingChapterSelection(book = activeWritingBook.value) {
 
 function selectPreferredWritingChapter(book = activeWritingBook.value) {
   const preferred = getPreferredWritingChapter(book);
-  ui.marketplace.writing.activeChapterId = preferred?.id ?? "";
+  selectWritingChapter(preferred?.id ?? "");
   return preferred;
 }
 
 function selectWritingChapter(chapterId) {
   ui.marketplace.writing.activeChapterId = chapterId;
+  clearWritingChapterSubmitConfirmation(chapterId);
 }
 
 function setWritingChapterPickerOpen(isOpen) {
   ui.marketplace.writing.isChapterPickerOpen = Boolean(isOpen);
+
+  if (ui.marketplace.writing.isChapterPickerOpen) {
+    scrollWritingChapterPickerToActive();
+  }
 }
 
 function toggleWritingChapterPicker() {
@@ -5320,6 +5335,20 @@ function selectWritingChapterFromPicker(chapterId) {
   selectWritingChapter(chapterId);
   ui.marketplace.writing.chapterSearchQuery = "";
   setWritingChapterPickerOpen(false);
+}
+
+async function scrollWritingChapterPickerToActive() {
+  await nextTick();
+
+  const menu = writingChapterDropdownMenuRef.value;
+  const activeItem = menu?.querySelector?.(".writing-chapter-dropdown-item.is-active");
+
+  if (!menu || !activeItem) {
+    return;
+  }
+
+  const targetTop = activeItem.offsetTop - (menu.clientHeight - activeItem.clientHeight) / 2;
+  menu.scrollTop = Math.max(0, targetTop);
 }
 
 function getWritingChapterDisplayTitle(chapter, index = 0) {
@@ -5392,6 +5421,21 @@ function getWritingChapterStatusClass(status) {
 
 function getWritingChapterWordCount(chapter) {
   return String(chapter?.content ?? "").replace(/\s+/g, "").length;
+}
+
+function isWritingChapterSubmitConfirmed(chapter) {
+  return Boolean(
+    chapter?.id &&
+      ui.marketplace.writing.submittedChapterId === chapter.id &&
+      String(chapter.content ?? "") === ui.marketplace.writing.submittedChapterContentSnapshot
+  );
+}
+
+function clearWritingChapterSubmitConfirmation(chapterId = "") {
+  if (!chapterId || ui.marketplace.writing.submittedChapterId === chapterId) {
+    ui.marketplace.writing.submittedChapterId = "";
+    ui.marketplace.writing.submittedChapterContentSnapshot = "";
+  }
 }
 
 function normalizeWritingExportFormat(format) {
@@ -5626,6 +5670,13 @@ function setWritingChapterContent(chapter, value) {
   chapter.content = String(value ?? "");
   chapter.updatedAt = new Date().toISOString();
 
+  if (
+    ui.marketplace.writing.submittedChapterId === chapter.id &&
+    chapter.content !== ui.marketplace.writing.submittedChapterContentSnapshot
+  ) {
+    clearWritingChapterSubmitConfirmation(chapter.id);
+  }
+
   if (chapter.status === "todo" && chapter.content.trim()) {
     chapter.status = "inProgress";
   }
@@ -5682,6 +5733,8 @@ function submitWritingChapter() {
 
   chapter.status = "done";
   chapter.updatedAt = new Date().toISOString();
+  ui.marketplace.writing.submittedChapterId = chapter.id;
+  ui.marketplace.writing.submittedChapterContentSnapshot = String(chapter.content ?? "");
   touchWritingBook(activeWritingBook.value);
   setWritingFeedback(`「${chapter.title || "当前章节"}」已标记完成。`, "success");
   setStatus(`章节「${chapter.title || "当前章节"}」已完成。`, "success");

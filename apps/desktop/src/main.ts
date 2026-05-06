@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, screen } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeImage } from "electron";
 import type { IpcMainEvent } from "electron";
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -47,6 +47,8 @@ const desktopAssetDir = path.resolve(currentDir, "..", "assets");
 const appIconFileName = process.platform === "win32" ? "gordon.ico" : "gordon.icns";
 const appIconPath = path.join(desktopAssetDir, appIconFileName);
 const modelTextAbortControllers = new Map<string, AbortController>();
+const MAIN_WINDOW_MIN_WIDTH = 1180;
+const MAIN_WINDOW_MIN_HEIGHT = 760;
 
 type GordonConfirmWindowTone = "neutral" | "warning" | "danger";
 
@@ -1261,15 +1263,11 @@ function cancelWorkflowRecordRun(progressEventId: unknown): { cancelled: boolean
 }
 
 async function createMainWindow(): Promise<void> {
-  const { width: workAreaWidth, height: workAreaHeight } = screen.getPrimaryDisplay().workAreaSize;
-  const width = Math.max(1180, Math.min(1320, Math.round(workAreaWidth * 0.82)));
-  const height = Math.max(760, Math.min(860, Math.round(workAreaHeight * 0.84)));
-
   const window = new BrowserWindow({
-    width,
-    height,
-    minWidth: 1080,
-    minHeight: 720,
+    width: MAIN_WINDOW_MIN_WIDTH,
+    height: MAIN_WINDOW_MIN_HEIGHT,
+    minWidth: MAIN_WINDOW_MIN_WIDTH,
+    minHeight: MAIN_WINDOW_MIN_HEIGHT,
     title: "Gordon Work Assistant",
     icon: appIconPath,
     webPreferences: {
