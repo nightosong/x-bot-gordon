@@ -1089,21 +1089,6 @@ canvas {
   align-content: start;
 }
 
-.comic-empty-panel {
-  display: grid;
-  grid-template-columns: 58px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  min-height: 118px;
-  padding: 14px;
-  border: 1px dashed rgba(68, 156, 216, 0.28);
-  border-radius: 18px;
-  background:
-    linear-gradient(135deg, rgba(68, 156, 216, 0.08), rgba(255, 255, 255, 0.035)),
-    var(--panel);
-}
-
-.comic-empty-mark,
 .comic-project-cover {
   display: grid;
   place-items: center;
@@ -1200,25 +1185,35 @@ canvas {
 }
 
 .comic-project-profile {
+  position: relative;
   display: grid;
   gap: 10px;
+}
+
+.comic-rail-content {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-height: 100%;
+}
+
+.comic-rail-footer {
+  display: grid;
+  align-self: end;
+  gap: 8px;
+  margin-top: auto;
 }
 
 .comic-project-cover-large {
   width: 88px;
   height: 118px;
+  margin: 0 auto 2px;
   border-radius: 16px;
   font-size: 34px;
 }
 
 .comic-main-stage {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) minmax(0, 0.86fr);
-  gap: 10px;
-  min-width: 0;
-  min-height: 0;
-  padding: 10px;
-  overflow: auto;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .comic-editor-card {
@@ -1232,6 +1227,10 @@ canvas {
 .comic-plan-textarea {
   min-height: 0;
   height: 100%;
+}
+
+.comic-prompt-textarea {
+  min-height: 92px;
 }
 
 .comic-page-count-field {
@@ -1312,7 +1311,27 @@ canvas {
   overflow: auto;
 }
 
+.writing-shelf-grid.is-empty {
+  grid-template-columns: 1fr;
+  place-items: center;
+  align-content: stretch;
+}
+
+.writing-shelf-empty {
+  margin: 0;
+  padding: 7px 12px;
+  border: 1px solid rgba(247, 243, 235, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(247, 243, 235, 0.52);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  box-shadow: inset 0 0 18px rgba(255, 255, 255, 0.025);
+}
+
 .writing-book-card {
+  position: relative;
   display: grid;
   grid-template-columns: 48px minmax(0, 1fr);
   gap: 10px;
@@ -1334,6 +1353,53 @@ canvas {
 .writing-book-card-main {
   display: grid;
   gap: 7px;
+}
+
+.writing-book-card-main > div:first-child {
+  padding-right: 50px;
+}
+
+.shelf-card-delete {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  min-height: 24px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(239, 120, 111, 0.16);
+  border-radius: 999px;
+  background:
+    linear-gradient(135deg, rgba(239, 120, 111, 0.12), rgba(255, 255, 255, 0.04)),
+    rgba(8, 15, 24, 0.36);
+  color: rgba(255, 209, 202, 0.78);
+  box-shadow:
+    inset 0 0 14px rgba(239, 120, 111, 0.06),
+    0 8px 18px rgba(0, 0, 0, 0.12);
+  opacity: 0.42;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  transition:
+    transform 160ms ease,
+    opacity 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.shelf-card-delete:hover,
+.shelf-card-delete:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(239, 120, 111, 0.42);
+  background:
+    linear-gradient(135deg, rgba(239, 120, 111, 0.2), rgba(255, 255, 255, 0.06)),
+    rgba(8, 15, 24, 0.64);
+  color: #ffd5ce;
+  opacity: 1;
 }
 
 .writing-book-card.is-coral .writing-book-cover {
@@ -1640,8 +1706,15 @@ canvas {
 }
 
 .writing-book-profile {
+  position: relative;
   display: grid;
   gap: 8px;
+}
+
+.writing-profile-actions {
+  display: flex;
+  justify-content: flex-end;
+  min-height: 24px;
 }
 
 .writing-book-cover-large {
@@ -7981,8 +8054,7 @@ canvas {
   }
 
   .marketplace-app-card,
-  .writing-book-card,
-  .comic-empty-panel {
+  .writing-book-card {
     grid-template-columns: 1fr;
   }
 

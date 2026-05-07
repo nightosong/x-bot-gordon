@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeImage } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell } from "electron";
 import type { IpcMainEvent } from "electron";
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -9,12 +9,14 @@ import { callToolOnMcpServer, listToolsFromMcpServer, runAgent } from "../../../
 import { buildWorkbenchSnapshot } from "../../../packages/core/src/index.js";
 import {
   deleteAgentProfile,
+  deleteComicProject,
   deleteCommandWorkshopSession,
   deleteMcpServer,
   activateModelProfile,
   deleteModelProfile,
   deleteSkillDefinition,
   deleteWeeklyProgress,
+  deleteWritingBook,
   importSkillDefinitionFromGithub,
   listAgentProfiles,
   listCommandWorkshopSessions,
@@ -38,7 +40,13 @@ import {
   upsertModelProfile,
   upsertSkillDefinition
 } from "../../../packages/workbench/src/index.js";
-import type { AgentRunProgressEvent, WritingBookExportFormat, WritingBookExportRequest } from "../../../packages/shared/src/index.js";
+import type {
+  AgentRunProgressEvent,
+  ComicProjectExportFormat,
+  ComicProjectExportRequest,
+  WritingBookExportFormat,
+  WritingBookExportRequest
+} from "../../../packages/shared/src/index.js";
 import { readCommandWorkshopAttachment } from "./attachment-reader.js";
 import { generateDailyProgressReport, generateWeeklyProgressReport, invokeActiveModel, rewriteWeeklyProgressItem } from "./ai.js";
 import { queryModelBalance } from "./model-balance.js";
@@ -147,6 +155,7 @@ type WorkflowActiveRunContext = {
 const WORKFLOW_RUN_CANCELLED_MESSAGE = "执行已中断";
 const activeWorkflowRuns = new Map<string, WorkflowActiveRunContext>();
 const WRITING_BOOK_EXPORT_EXTENSIONS = new Set<WritingBookExportFormat>(["txt", "md"]);
+const COMIC_PROJECT_EXPORT_EXTENSIONS = new Set<ComicProjectExportFormat>(["md"]);
 
 class WorkflowRunCancelledError extends Error {
   constructor() {
@@ -262,6 +271,58 @@ function resolveWritingBookExportPath(request: WritingBookExportRequest): {
   const format = normalizeWritingBookExportFormat(request?.format);
   const resolvedDirectoryPath = path.resolve(directoryPath);
   const fileName = sanitizeWritingBookExportFileName(request?.fileName, format);
+  const filePath = path.join(resolvedDirectoryPath, fileName);
+  const relativePath = path.relative(resolvedDirectoryPath, filePath);
+
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    throw new Error("导出路径不合法");
+  }
+
+  return {
+    directoryPath: resolvedDirectoryPath,
+    fileName,
+    filePath,
+    format,
+    content: content.endsWith("\n") ? content : `${content}\n`
+  };
+}
+
+function normalizeComicProjectExportFormat(value: unknown): ComicProjectExportFormat {
+  const format = String(value ?? "").trim().toLowerCase();
+  return COMIC_PROJECT_EXPORT_EXTENSIONS.has(format as ComicProjectExportFormat) ? (format as ComicProjectExportFormat) : "md";
+}
+
+function sanitizeComicProjectExportFileName(value: unknown, format: ComicProjectExportFormat): string {
+  const baseName = String(value ?? "")
+    .replace(/\.[^.]+$/, "")
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
+    .replace(/\s+/g, " ")
+    .replace(/[. ]+$/g, "")
+    .trim();
+  return `${baseName || "未命名漫画项目"}.${format}`;
+}
+
+function resolveComicProjectExportPath(request: ComicProjectExportRequest): {
+  directoryPath: string;
+  fileName: string;
+  filePath: string;
+  format: ComicProjectExportFormat;
+  content: string;
+} {
+  const directoryPath = String(request?.directoryPath ?? "").trim();
+  const content = String(request?.content ?? "");
+
+  if (!directoryPath) {
+    throw new Error("请选择输出目录");
+  }
+
+  if (!content.trim()) {
+    throw new Error("没有可导出的项目内容");
+  }
+
+  const format = normalizeComicProjectExportFormat(request?.format);
+  const resolvedDirectoryPath = path.resolve(directoryPath);
+  const fileName = sanitizeComicProjectExportFileName(request?.fileName, format);
   const filePath = path.join(resolvedDirectoryPath, fileName);
   const relativePath = path.relative(resolvedDirectoryPath, filePath);
 
@@ -1479,8 +1540,43 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("gordon:comic-projects:list", async () => listComicProjects());
   ipcMain.handle("gordon:comic-projects:upsert", async (_event, project) => upsertComicProject(project));
+  ipcMain.handle("gordon:comic-projects:delete", async (_event, projectId: string) =>
+    deleteComicProject(projectId, (targetPath) => shell.trashItem(targetPath))
+  );
+  ipcMain.handle("gordon:comic-projects:select-export-directory", async (event) => {
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+    const openDialogOptions = {
+      title: "选择丹青溢彩导出目录",
+      properties: ["openDirectory", "createDirectory"]
+    } satisfies Electron.OpenDialogOptions;
+    const result = ownerWindow
+      ? await dialog.showOpenDialog(ownerWindow, openDialogOptions)
+      : await dialog.showOpenDialog(openDialogOptions);
+
+    if (result.canceled || !result.filePaths.length) {
+      return null;
+    }
+
+    return result.filePaths[0];
+  });
+  ipcMain.handle("gordon:comic-projects:export", async (_event, request: ComicProjectExportRequest) => {
+    const exportTarget = resolveComicProjectExportPath(request);
+
+    await mkdir(exportTarget.directoryPath, { recursive: true });
+    await writeFile(exportTarget.filePath, exportTarget.content, "utf8");
+
+    return {
+      filePath: exportTarget.filePath,
+      fileName: exportTarget.fileName,
+      format: exportTarget.format,
+      writtenBytes: Buffer.byteLength(exportTarget.content, "utf8")
+    };
+  });
   ipcMain.handle("gordon:writing-books:list", async () => listWritingBooks());
   ipcMain.handle("gordon:writing-books:save", async (_event, book, options) => saveWritingBook(book, options));
+  ipcMain.handle("gordon:writing-books:delete", async (_event, bookId: string) =>
+    deleteWritingBook(bookId, (targetPath) => shell.trashItem(targetPath))
+  );
   ipcMain.handle("gordon:writing-books:select-export-directory", async (event) => {
     const ownerWindow = BrowserWindow.fromWebContents(event.sender);
     const openDialogOptions = {

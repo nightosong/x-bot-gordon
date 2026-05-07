@@ -610,6 +610,18 @@ export interface WritingBookSaveOptions {
 
 export type ComicProjectFormat = "poster" | "serial";
 export type ComicProjectPalette = "monochrome" | "color";
+export type ComicChapterStatus = "todo" | "inProgress" | "done";
+
+export interface ComicChapter {
+  id: string;
+  index: number;
+  title: string;
+  summary: string;
+  prompt: string;
+  content: string;
+  status: ComicChapterStatus;
+  updatedAt: string;
+}
 
 export interface ComicProject {
   id: string;
@@ -623,6 +635,7 @@ export interface ComicProject {
   episodePlan: string;
   pageCount: number;
   coverTone: string;
+  chapters: ComicChapter[];
   createdAt: string;
   updatedAt: string;
 }
@@ -640,6 +653,22 @@ export interface WritingBookExportResult {
   filePath: string;
   fileName: string;
   format: WritingBookExportFormat;
+  writtenBytes: number;
+}
+
+export type ComicProjectExportFormat = "md";
+
+export interface ComicProjectExportRequest {
+  directoryPath: string;
+  fileName: string;
+  format: ComicProjectExportFormat;
+  content: string;
+}
+
+export interface ComicProjectExportResult {
+  filePath: string;
+  fileName: string;
+  format: ComicProjectExportFormat;
   writtenBytes: number;
 }
 

@@ -6,6 +6,8 @@ import { resolveFromRoot } from "../../shared/src/index.js";
 import type {
   AgentRunLog,
   AgentProfile,
+  ComicChapter,
+  ComicChapterStatus,
   ComicProject,
   ComicProjectFormat,
   ComicProjectPalette,
@@ -110,6 +112,10 @@ function getCommandWorkshopSessionsFilePath(): string {
 
 function getComicProjectsFilePath(): string {
   return resolveFromRoot("data", "workbench", "comic-projects.json");
+}
+
+function getComicProjectDeleteStagingDirectoryPath(): string {
+  return resolveFromRoot("data", "workbench", ".delete-staging", "comic-projects");
 }
 
 function getWritingBooksDirectoryPath(): string {
@@ -1937,8 +1943,26 @@ export async function saveWritingBook(book: WritingBook, options: WritingBookSav
   return listWritingBooks();
 }
 
+export async function deleteWritingBook(bookId: string, moveToTrash: (targetPath: string) => Promise<void>): Promise<WritingBook[]> {
+  const normalizedBookId = String(bookId ?? "").trim();
+
+  if (!normalizedBookId) {
+    return listWritingBooks();
+  }
+
+  const directoryName = await findWritingBookDirectoryById(normalizedBookId);
+
+  if (!directoryName) {
+    return listWritingBooks();
+  }
+
+  await moveToTrash(path.join(getWritingBooksDirectoryPath(), directoryName));
+  return listWritingBooks();
+}
+
 const COMIC_PROJECT_FORMATS = new Set<ComicProjectFormat>(["poster", "serial"]);
 const COMIC_PROJECT_PALETTES = new Set<ComicProjectPalette>(["monochrome", "color"]);
+const COMIC_CHAPTER_STATUSES = new Set<ComicChapterStatus>(["todo", "inProgress", "done"]);
 
 function normalizeComicProjectFormat(value: unknown): ComicProjectFormat {
   const format = String(value ?? "").trim();
@@ -1948,6 +1972,50 @@ function normalizeComicProjectFormat(value: unknown): ComicProjectFormat {
 function normalizeComicProjectPalette(value: unknown): ComicProjectPalette {
   const palette = String(value ?? "").trim();
   return COMIC_PROJECT_PALETTES.has(palette as ComicProjectPalette) ? (palette as ComicProjectPalette) : "color";
+}
+
+function normalizeComicChapterStatus(value: unknown): ComicChapterStatus {
+  const status = String(value ?? "").trim();
+  return COMIC_CHAPTER_STATUSES.has(status as ComicChapterStatus) ? (status as ComicChapterStatus) : "todo";
+}
+
+function normalizeComicChapter(input: Partial<ComicChapter> | null | undefined, index = 0): ComicChapter {
+  const now = new Date().toISOString();
+
+  return {
+    id: String(input?.id ?? "").trim() || `comic_chapter_${randomUUID()}`,
+    index: Math.max(1, Math.round(Number(input?.index ?? index + 1) || index + 1)),
+    title: String(input?.title ?? "").trim() || `第 ${index + 1} 章`,
+    summary: String(input?.summary ?? ""),
+    prompt: String(input?.prompt ?? ""),
+    content: String(input?.content ?? ""),
+    status: normalizeComicChapterStatus(input?.status),
+    updatedAt: String(input?.updatedAt ?? "").trim() || now
+  };
+}
+
+function normalizeComicChapters(input: unknown): ComicChapter[] {
+  const chapters = (Array.isArray(input) ? input : [])
+    .map((chapter, index) => normalizeComicChapter(chapter as Partial<ComicChapter>, index))
+    .sort((left, right) => left.index - right.index);
+
+  if (chapters.length) {
+    return chapters;
+  }
+
+  return [
+    normalizeComicChapter(
+      {
+        index: 1,
+        title: "开场分镜",
+        summary: "写下这一章的场景目标、镜头顺序、角色动作和结尾画面。",
+        prompt: "基于总介绍生成开场分镜，明确画面、动作、对白和页数。",
+        content: "",
+        status: "inProgress"
+      },
+      0
+    )
+  ];
 }
 
 function normalizeComicProject(input: Partial<ComicProject> | null | undefined, index = 0): ComicProject {
@@ -1968,6 +2036,7 @@ function normalizeComicProject(input: Partial<ComicProject> | null | undefined, 
     episodePlan: String(input?.episodePlan ?? ""),
     pageCount: Math.max(1, Math.round(Number(input?.pageCount ?? 1) || 1)),
     coverTone: String(input?.coverTone ?? "").trim() || (index % 2 === 0 ? "ink" : "coral"),
+    chapters: normalizeComicChapters(input?.chapters),
     createdAt,
     updatedAt
   };
@@ -1986,6 +2055,36 @@ export async function upsertComicProject(project: ComicProject): Promise<ComicPr
     : [normalizedProject, ...current];
 
   await writeWorkbenchCollection(getComicProjectsFilePath(), sortByUpdatedAtDescending(nextProjects));
+  return listComicProjects();
+}
+
+export async function deleteComicProject(projectId: string, moveToTrash: (targetPath: string) => Promise<void>): Promise<ComicProject[]> {
+  const normalizedProjectId = String(projectId ?? "").trim();
+
+  if (!normalizedProjectId) {
+    return listComicProjects();
+  }
+
+  const current = await listComicProjects();
+  const deletedProject = current.find((entry) => entry.id === normalizedProjectId);
+
+  if (!deletedProject) {
+    return current;
+  }
+
+  const stagingDirectory = getComicProjectDeleteStagingDirectoryPath();
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const snapshotFileName = `${sanitizeWritingAssetName(deletedProject.title, "comic-project")}-${timestamp}.json`;
+  const snapshotPath = path.join(stagingDirectory, snapshotFileName);
+
+  await mkdir(stagingDirectory, { recursive: true });
+  await writeFile(snapshotPath, `${JSON.stringify(deletedProject, null, 2)}\n`, "utf8");
+  await moveToTrash(snapshotPath);
+  await writeWorkbenchCollection(
+    getComicProjectsFilePath(),
+    sortByUpdatedAtDescending(current.filter((entry) => entry.id !== normalizedProjectId))
+  );
+
   return listComicProjects();
 }
 

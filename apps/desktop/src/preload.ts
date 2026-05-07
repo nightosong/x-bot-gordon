@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from "electron";
 
 import type {
   AgentProfile,
+  ComicProjectExportRequest,
+  ComicProjectExportResult,
   ComicProject,
   ModelBalanceQueryRequest,
   ModelBalanceSnapshot,
@@ -170,9 +172,17 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
   listComicProjects: (): Promise<ComicProject[]> => ipcRenderer.invoke("gordon:comic-projects:list"),
   upsertComicProject: (project: ComicProject): Promise<ComicProject[]> =>
     ipcRenderer.invoke("gordon:comic-projects:upsert", toPlainIpcData(project)),
+  deleteComicProject: (projectId: string): Promise<ComicProject[]> =>
+    ipcRenderer.invoke("gordon:comic-projects:delete", projectId),
+  selectComicProjectExportDirectory: (): Promise<string | null> =>
+    ipcRenderer.invoke("gordon:comic-projects:select-export-directory"),
+  exportComicProject: (request: ComicProjectExportRequest): Promise<ComicProjectExportResult> =>
+    ipcRenderer.invoke("gordon:comic-projects:export", toPlainIpcData(request)),
   listWritingBooks: (): Promise<WritingBook[]> => ipcRenderer.invoke("gordon:writing-books:list"),
   saveWritingBook: (book: WritingBook, options?: WritingBookSaveOptions): Promise<WritingBook[]> =>
     ipcRenderer.invoke("gordon:writing-books:save", toPlainIpcData(book), toPlainIpcData(options ?? {})),
+  deleteWritingBook: (bookId: string): Promise<WritingBook[]> =>
+    ipcRenderer.invoke("gordon:writing-books:delete", bookId),
   selectWritingBookExportDirectory: (): Promise<string | null> =>
     ipcRenderer.invoke("gordon:writing-books:select-export-directory"),
   exportWritingBook: (request: WritingBookExportRequest): Promise<WritingBookExportResult> =>

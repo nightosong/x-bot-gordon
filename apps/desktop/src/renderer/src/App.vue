@@ -482,7 +482,7 @@
                       <div class="marketplace-app-copy">
                         <p class="feature-kicker">Comic Studio</p>
                         <p class="marketplace-app-title">{{ COMIC_APP_NAME }}</p>
-                        <p class="models-copy">漫画创作工作台，面向单色漫画、彩绘分镜、单图海报和连载企划。</p>
+                        <p class="models-copy">漫画创作工作台，面向单色、彩绘分镜、单图海报和连载企划。</p>
                       </div>
                       <div class="marketplace-app-meta">
                         <span class="pill">漫画创作</span>
@@ -513,16 +513,8 @@
                     </div>
                   </section>
 
-                  <section class="writing-shelf-grid comic-project-grid">
-                    <article v-if="!comicProjects.length" class="comic-empty-panel">
-                      <div class="comic-empty-mark" aria-hidden="true">漫</div>
-                      <div>
-                        <p class="writing-book-title">还没有漫画项目</p>
-                        <p class="models-copy">先开一个单图海报或连载企划，再整理画风、分镜和页数。</p>
-                      </div>
-                      <button type="button" class="model-action" @click="createComicProject">新建项目</button>
-                    </article>
-
+                  <section class="writing-shelf-grid comic-project-grid" :class="{ 'is-empty': !comicProjects.length }">
+                    <p v-if="!comicProjects.length" class="writing-shelf-empty" role="status">暂无漫画项目</p>
                     <article
                       v-for="project in comicProjects"
                       :key="project.id"
@@ -535,6 +527,16 @@
                       @keydown.enter.prevent="openComicProject(project.id)"
                       @keydown.space.prevent="openComicProject(project.id)"
                     >
+                      <button
+                        type="button"
+                        class="shelf-card-delete"
+                        aria-label="删除漫画项目"
+                        @click.stop="deleteComicProjectFromShelf(project.id)"
+                        @keydown.enter.stop
+                        @keydown.space.stop
+                      >
+                        <GIcon name="delete" :size="12" />
+                      </button>
                       <div class="comic-project-cover" aria-hidden="true">
                         <span>{{ project.title.slice(0, 1) || "漫" }}</span>
                       </div>
@@ -578,7 +580,8 @@
                     </div>
                   </section>
 
-                  <section class="writing-shelf-grid">
+                  <section class="writing-shelf-grid" :class="{ 'is-empty': !writingBooks.length }">
+                    <p v-if="!writingBooks.length" class="writing-shelf-empty" role="status">暂无书籍</p>
                     <article
                       v-for="book in writingBooks"
                       :key="book.id"
@@ -591,6 +594,16 @@
                       @keydown.enter.prevent="openWritingBook(book.id)"
                       @keydown.space.prevent="openWritingBook(book.id)"
                     >
+                      <button
+                        type="button"
+                        class="shelf-card-delete"
+                        aria-label="删除书籍"
+                        @click.stop="deleteWritingBookFromShelf(book.id)"
+                        @keydown.enter.stop
+                        @keydown.space.stop
+                      >
+                        <GIcon name="delete" :size="12" />
+                      </button>
                       <div class="writing-book-cover" aria-hidden="true">
                         <span>{{ book.title.slice(0, 1) }}</span>
                       </div>
@@ -632,91 +645,61 @@
                       </div>
                     </header>
 
-                    <section class="comic-detail-layout">
-                      <aside class="comic-detail-rail">
-                        <div class="comic-project-profile">
-                          <div class="comic-project-cover comic-project-cover-large" :class="`is-${activeComicProject.coverTone}`" aria-hidden="true">
-                            <span>{{ activeComicProject.title.slice(0, 1) || "漫" }}</span>
-                          </div>
+                    <section
+                      class="writing-detail-layout comic-detail-layout"
+                      :class="{ 'is-profile-collapsed': ui.marketplace.comic.isProfileCollapsed }"
+                    >
+                      <aside class="writing-detail-rail comic-detail-rail" :aria-expanded="ui.marketplace.comic.isProfileCollapsed ? 'false' : 'true'">
+                        <button
+                          type="button"
+                          class="model-icon-button writing-profile-toggle"
+                          :aria-label="ui.marketplace.comic.isProfileCollapsed ? '展开项目信息' : '折叠项目信息'"
+                          :title="ui.marketplace.comic.isProfileCollapsed ? '展开项目信息' : '折叠项目信息'"
+                          @click="toggleComicProfileRail"
+                        >
+                          <GIcon :name="ui.marketplace.comic.isProfileCollapsed ? 'chevronRight' : 'chevronLeft'" />
+                        </button>
 
-                          <label class="field">
-                            <span class="field-label">形态</span>
-                            <select
-                              :value="activeComicProject.format"
-                              class="field-input writing-mini-select"
-                              @change="setComicProjectFormat($event.target.value)"
-                            >
-                              <option value="poster">单图海报</option>
-                              <option value="serial">连载漫画</option>
-                            </select>
-                          </label>
-
-                          <label class="field">
-                            <span class="field-label">画面</span>
-                            <select
-                              :value="activeComicProject.palette"
-                              class="field-input writing-mini-select"
-                              @change="setComicProjectPalette($event.target.value)"
-                            >
-                              <option value="monochrome">单色漫画</option>
-                              <option value="color">彩绘</option>
-                            </select>
-                          </label>
-
-                          <label class="field">
-                            <span class="field-label">类型</span>
-                            <input
-                              :value="activeComicProject.genre"
-                              class="field-input writing-mini-input"
-                              @input="setComicProjectGenre($event.target.value)"
-                            />
-                          </label>
-                        </div>
-
-                        <div class="writing-stat-list">
-                          <span class="pill pill-neutral">更新 {{ formatWritingBookUpdatedAt(activeComicProject.updatedAt) }}</span>
-                          <span class="pill pill-neutral">{{ activeComicProject.pageCount }} 页</span>
-                        </div>
-                      </aside>
-
-                      <main class="comic-main-stage">
-                        <article class="writing-editor-card comic-editor-card">
-                          <div class="writing-editor-head">
-                            <div>
-                              <p class="feature-kicker">Project Brief</p>
-                              <p class="model-section-title">项目设定</p>
+                        <div v-if="!ui.marketplace.comic.isProfileCollapsed" class="writing-rail-content comic-rail-content">
+                          <div class="comic-project-profile">
+                            <div class="comic-project-cover comic-project-cover-large" :class="`is-${activeComicProject.coverTone}`" aria-hidden="true">
+                              <span>{{ activeComicProject.title.slice(0, 1) || "漫" }}</span>
                             </div>
-                            <span class="status-pill">{{ activeComicProject.status }}</span>
-                          </div>
 
-                          <label class="field writing-intro-field">
-                            <span class="field-label">故事与画面目标</span>
-                            <textarea
-                              class="field-textarea writing-editor-textarea comic-project-textarea"
-                              :value="activeComicProject.summary"
-                              placeholder="主角、世界观、冲突、核心画面和这组漫画要留下的情绪。"
-                              @input="setComicProjectSummary($event.target.value)"
-                            ></textarea>
-                          </label>
+                            <label class="field">
+                              <span class="field-label">形态</span>
+                              <select
+                                :value="activeComicProject.format"
+                                class="field-input writing-mini-select"
+                                @change="setComicProjectFormat($event.target.value)"
+                              >
+                                <option value="poster">单图海报</option>
+                                <option value="serial">连载漫画</option>
+                              </select>
+                            </label>
 
-                          <label class="field writing-intro-field">
-                            <span class="field-label">画风与镜头</span>
-                            <textarea
-                              class="field-textarea writing-editor-textarea comic-project-textarea"
-                              :value="activeComicProject.visualStyle"
-                              placeholder="线条、色彩、构图、角色造型、分镜节奏和参考风格。"
-                              @input="setComicProjectVisualStyle($event.target.value)"
-                            ></textarea>
-                          </label>
-                        </article>
+                            <label class="field">
+                              <span class="field-label">画面</span>
+                              <select
+                                :value="activeComicProject.palette"
+                                class="field-input writing-mini-select"
+                                @change="setComicProjectPalette($event.target.value)"
+                              >
+                                <option value="monochrome">单色</option>
+                                <option value="color">彩绘</option>
+                              </select>
+                            </label>
 
-                        <article class="writing-editor-card comic-editor-card">
-                          <div class="writing-editor-head">
-                            <div>
-                              <p class="feature-kicker">{{ activeComicProject.format === 'serial' ? 'Serial Plan' : 'Poster Plan' }}</p>
-                              <p class="model-section-title">{{ activeComicProject.format === 'serial' ? '连载规划' : '海报构图' }}</p>
-                            </div>
-                            <label class="field comic-page-count-field">
+                            <label class="field">
+                              <span class="field-label">类型</span>
+                              <input
+                                :value="activeComicProject.genre"
+                                class="field-input writing-mini-input"
+                                @input="setComicProjectGenre($event.target.value)"
+                              />
+                            </label>
+
+                            <label class="field">
                               <span class="field-label">页数</span>
                               <input
                                 :value="activeComicProject.pageCount"
@@ -727,15 +710,249 @@
                                 @input="setComicProjectPageCount($event.target.value)"
                               />
                             </label>
+
+                            <div class="writing-profile-actions">
+                              <button
+                                type="button"
+                                class="writing-mini-text-button"
+                                :disabled="ui.marketplace.comic.isExporting"
+                                :title="`导出 ${activeComicExportFileName}`"
+                                @click="openComicExportDialog"
+                              >
+                                作品导出
+                              </button>
+                            </div>
                           </div>
 
-                          <textarea
-                            class="field-textarea writing-editor-textarea comic-plan-textarea"
-                            :value="activeComicProject.episodePlan"
-                            :placeholder="activeComicProject.format === 'serial' ? '按话数写下每话标题、关键事件、页数和结尾钩子。' : '写下主体、背景、人物站位、文字区域和最终出图比例。'"
-                            @input="setComicProjectEpisodePlan($event.target.value)"
-                          ></textarea>
-                        </article>
+                          <div class="comic-rail-footer">
+                            <div class="writing-stat-list">
+                              <span class="pill pill-neutral">更新 {{ formatWritingBookUpdatedAt(activeComicProject.updatedAt) }}</span>
+                              <span class="pill pill-neutral">{{ activeComicProject.pageCount }} 页</span>
+                              <span class="pill pill-neutral">{{ activeComicChapters.length }} 章</span>
+                            </div>
+                          </div>
+                        </div>
+                      </aside>
+
+                      <main class="writing-main-stage comic-main-stage">
+                        <div class="writing-tab-bar" role="tablist" aria-label="漫画项目详情模块">
+                          <button
+                            v-for="tab in COMIC_APP_TABS"
+                            :key="tab.id"
+                            type="button"
+                            class="writing-tab"
+                            :class="{ 'is-active': ui.marketplace.comic.activeTab === tab.id }"
+                            :aria-selected="ui.marketplace.comic.activeTab === tab.id ? 'true' : 'false'"
+                            @click="setComicTab(tab.id)"
+                          >
+                            <span>{{ tab.kicker }}</span>
+                            {{ tab.label }}
+                          </button>
+                        </div>
+
+                        <section class="writing-editor-grid comic-editor-grid">
+                          <article class="writing-editor-card comic-editor-card">
+                            <div class="writing-editor-head">
+                              <div>
+                                <p class="feature-kicker">{{ activeComicTabMeta.kicker }}</p>
+                                <p class="model-section-title">{{ activeComicTabMeta.fieldLabel }}</p>
+                              </div>
+                              <span class="status-pill">{{ activeComicProject.status }}</span>
+                            </div>
+
+                            <div v-if="ui.marketplace.comic.activeTab === 'intro'" class="writing-intro-stack">
+                              <label class="field writing-intro-field">
+                                <span class="field-label">故事与画面目标</span>
+                                <textarea
+                                  class="field-textarea writing-editor-textarea writing-intro-textarea"
+                                  :value="activeComicProject.summary"
+                                  placeholder="主角、世界观、冲突、核心画面和这组漫画要留下的情绪。"
+                                  @input="setComicProjectSummary($event.target.value)"
+                                ></textarea>
+                              </label>
+
+                              <label class="field writing-intro-field">
+                                <span class="field-label">画风与镜头</span>
+                                <textarea
+                                  class="field-textarea writing-editor-textarea writing-intro-textarea is-large"
+                                  :value="activeComicProject.visualStyle"
+                                  placeholder="线条、色彩、构图、角色造型、分镜节奏和参考风格。"
+                                  @input="setComicProjectVisualStyle($event.target.value)"
+                                ></textarea>
+                              </label>
+
+                              <label class="field writing-intro-field">
+                                <span class="field-label">{{ activeComicProject.format === 'serial' ? '连载总规划' : '海报构图规划' }}</span>
+                                <textarea
+                                  class="field-textarea writing-editor-textarea writing-intro-textarea is-large"
+                                  :value="activeComicProject.episodePlan"
+                                  :placeholder="activeComicProject.format === 'serial' ? '按篇章写下主要剧情、角色成长、每话节奏和结尾钩子。' : '写下主体、背景、人物站位、文字区域和最终出图比例。'"
+                                  @input="setComicProjectEpisodePlan($event.target.value)"
+                                ></textarea>
+                              </label>
+                            </div>
+
+                            <div v-else-if="ui.marketplace.comic.activeTab === 'outline'" class="writing-outline-board">
+                              <div class="writing-chapter-list-panel">
+                                <div class="writing-chapter-panel-head">
+                                  <div>
+                                    <p class="feature-kicker">Chapter List</p>
+                                    <p class="writing-panel-title">{{ activeComicChapters.length }} 个章节</p>
+                                  </div>
+                                  <button type="button" class="model-icon-button" aria-label="新增漫画章节" title="新增漫画章节" @click="createComicChapter">
+                                    <GIcon name="add" />
+                                  </button>
+                                </div>
+
+                                <div class="writing-chapter-list">
+                                  <button
+                                    v-for="(chapter, index) in activeComicChapters"
+                                    :key="chapter.id"
+                                    type="button"
+                                    class="writing-chapter-list-item"
+                                    :class="{
+                                      'is-active': activeComicChapter?.id === chapter.id,
+                                      'is-done': chapter.status === 'done',
+                                      'is-progress': chapter.status === 'inProgress'
+                                    }"
+                                    @click="selectComicChapter(chapter.id)"
+                                  >
+                                    <span class="writing-chapter-list-title-row">
+                                      <span class="writing-chapter-list-title">{{ getComicChapterDisplayTitle(chapter, index) }}</span>
+                                    </span>
+                                    <span class="writing-chapter-list-meta">
+                                      <span class="status-pill" :class="getComicChapterStatusClass(chapter.status)">
+                                        {{ getComicChapterStatusLabel(chapter.status) }}
+                                      </span>
+                                      <span>{{ chapter.content.length }} 字</span>
+                                    </span>
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div v-if="activeComicChapter" class="writing-chapter-summary-panel">
+                                <div class="writing-chapter-summary-head">
+                                  <div>
+                                    <p class="feature-kicker">Chapter Brief</p>
+                                    <p class="writing-panel-title">分镜简介</p>
+                                  </div>
+                                  <span class="status-pill" :class="getComicChapterStatusClass(activeComicChapter.status)">
+                                    {{ getComicChapterStatusLabel(activeComicChapter.status) }}
+                                  </span>
+                                </div>
+
+                                <label class="field">
+                                  <span class="field-label">章节标题</span>
+                                  <input
+                                    :value="activeComicChapter.title"
+                                    class="field-input"
+                                    @input="setComicChapterTitle(activeComicChapter, $event.target.value)"
+                                  />
+                                </label>
+
+                                <textarea
+                                  class="field-textarea writing-editor-textarea writing-chapter-summary-textarea"
+                                  :value="activeComicChapter.summary"
+                                  placeholder="写下本章画面目标、分镜顺序、角色动作、对白密度和结尾画面。"
+                                  @input="setComicChapterSummary(activeComicChapter, $event.target.value)"
+                                ></textarea>
+
+                                <div class="model-section-actions writing-chapter-summary-actions">
+                                  <button type="button" class="model-action-secondary" @click="goComicChapter(activeComicChapter.id)">
+                                    进入生成
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div v-else class="writing-chapter-workbench">
+                              <div v-if="activeComicChapter" class="writing-chapter-commandbar">
+                                <div class="writing-chapter-picker-row">
+                                  <div class="writing-chapter-picker">
+                                    <span class="field-label">当前章节</span>
+                                    <div class="writing-chapter-dropdown" :class="{ 'is-open': ui.marketplace.comic.isChapterPickerOpen }">
+                                      <button
+                                        type="button"
+                                        class="writing-chapter-dropdown-trigger"
+                                        :aria-expanded="ui.marketplace.comic.isChapterPickerOpen ? 'true' : 'false'"
+                                        aria-haspopup="listbox"
+                                        @click="toggleComicChapterPicker"
+                                      >
+                                        <span>{{ getComicChapterDisplayTitle(activeComicChapter, activeComicChapterIndex) }}</span>
+                                        <GIcon name="chevronDown" />
+                                      </button>
+
+                                      <div
+                                        v-if="ui.marketplace.comic.isChapterPickerOpen"
+                                        ref="comicChapterDropdownMenuRef"
+                                        class="writing-chapter-dropdown-menu"
+                                        role="listbox"
+                                      >
+                                        <button
+                                          v-for="entry in filteredComicChapterEntries"
+                                          :key="entry.chapter.id"
+                                          type="button"
+                                          class="writing-chapter-dropdown-item"
+                                          :class="{ 'is-active': activeComicChapter?.id === entry.chapter.id }"
+                                          role="option"
+                                          :aria-selected="activeComicChapter?.id === entry.chapter.id ? 'true' : 'false'"
+                                          @click="selectComicChapterFromPicker(entry.chapter.id)"
+                                        >
+                                          <span>{{ entry.title }}</span>
+                                          <small>
+                                            {{ getComicChapterStatusLabel(entry.chapter.status) }} / {{ entry.chapter.content.length }} 字
+                                          </small>
+                                        </button>
+                                        <p v-if="!filteredComicChapterEntries.length" class="writing-chapter-dropdown-empty">没有匹配章节</p>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <label class="field writing-chapter-search-field">
+                                    <span class="field-label">搜索</span>
+                                    <input
+                                      v-model="ui.marketplace.comic.chapterSearchQuery"
+                                      class="field-input writing-chapter-search-input"
+                                      placeholder="章节名"
+                                      @focus="setComicChapterPickerOpen(true)"
+                                    />
+                                  </label>
+                                </div>
+
+                                <span class="status-pill writing-chapter-status-pill" :class="getComicChapterStatusClass(activeComicChapter.status)">
+                                  {{ getComicChapterStatusLabel(activeComicChapter.status) }}
+                                </span>
+
+                                <button type="button" class="model-action writing-chapter-submit" @click="submitComicChapter">
+                                  提交
+                                </button>
+                              </div>
+
+                              <div v-if="activeComicChapter" class="writing-chapter-brief-strip">
+                                <strong>{{ getComicChapterDisplayTitle(activeComicChapter, activeComicChapterIndex) }}</strong>
+                                <p>{{ activeComicChapter.summary || "这个漫画章节还没有分镜简介。" }}</p>
+                              </div>
+
+                              <label v-if="activeComicChapter" class="field writing-intro-field">
+                                <span class="field-label">生成提示词</span>
+                                <textarea
+                                  class="field-textarea writing-editor-textarea comic-prompt-textarea"
+                                  :value="activeComicChapter.prompt"
+                                  placeholder="写下模型生成这一章漫画所需的画面、角色、镜头、对白和风格约束。"
+                                  @input="setComicChapterPrompt(activeComicChapter, $event.target.value)"
+                                ></textarea>
+                              </label>
+
+                              <textarea
+                                v-if="activeComicChapter"
+                                class="field-textarea writing-editor-textarea writing-chapter-draft-textarea"
+                                :value="activeComicChapter.content"
+                                placeholder="这里沉淀单章生成结果、分镜脚本或出图提示词。"
+                                @input="setComicChapterContent(activeComicChapter, $event.target.value)"
+                              ></textarea>
+                            </div>
+                          </article>
+                        </section>
                       </main>
                     </section>
                   </section>
@@ -808,14 +1025,7 @@
                                 @input="setWritingBookGenre($event.target.value)"
                               />
                             </label>
-                          </div>
-
-                          <div class="writing-method-card">
-                            <span class="field-label">篇幅策略</span>
-                            <strong>{{ activeWritingLengthProfile.scope }}</strong>
-                            <p>{{ activeWritingLengthProfile.method }}</p>
-                            <div class="writing-method-card-foot">
-                              <span>{{ activeWritingDoneChapterCount }} 章已完成</span>
+                            <div class="writing-profile-actions">
                               <button
                                 type="button"
                                 class="writing-mini-text-button"
@@ -824,6 +1034,15 @@
                               >
                                 书籍导出
                               </button>
+                            </div>
+                          </div>
+
+                          <div class="writing-method-card">
+                            <span class="field-label">篇幅策略</span>
+                            <strong>{{ activeWritingLengthProfile.scope }}</strong>
+                            <p>{{ activeWritingLengthProfile.method }}</p>
+                            <div class="writing-method-card-foot">
+                              <span>{{ activeWritingDoneChapterCount }} 章已完成</span>
                             </div>
                           </div>
 
@@ -3819,6 +4038,98 @@
 
     <Transition name="gordon-dialog-fade">
       <div
+        v-if="ui.marketplace.comic.isExportDialogOpen"
+        class="gordon-dialog-backdrop writing-export-backdrop"
+        @click.self="closeComicExportDialog"
+      >
+        <section class="gordon-dialog writing-export-dialog" role="dialog" aria-modal="true" aria-label="作品导出">
+          <div class="gordon-dialog-head">
+            <div class="gordon-dialog-mark writing-export-mark" aria-hidden="true">漫</div>
+
+            <div>
+              <p class="gordon-dialog-kicker">Export</p>
+              <h2 class="gordon-dialog-title">作品导出</h2>
+            </div>
+          </div>
+
+          <p class="gordon-dialog-message">
+            导出当前漫画项目的总介绍、目录和单章生成内容，文件名固定为 {{ activeComicExportFileName }}。
+          </p>
+
+          <div class="writing-export-panel">
+            <div class="writing-export-field">
+              <span class="gordon-dialog-field-label">文件类型</span>
+              <div class="writing-export-format-row" role="radiogroup" aria-label="导出文件类型">
+                <button
+                  type="button"
+                  class="writing-export-format-button is-active"
+                  aria-checked="true"
+                  role="radio"
+                  :disabled="ui.marketplace.comic.isExporting"
+                >
+                  Markdown
+                </button>
+              </div>
+            </div>
+
+            <div class="writing-export-field">
+              <span class="gordon-dialog-field-label">输出目录</span>
+              <div class="writing-export-directory-row">
+                <input
+                  class="gordon-dialog-input writing-export-directory-input"
+                  :value="ui.marketplace.comic.exportDirectory || '尚未选择目录'"
+                  readonly
+                />
+                <button
+                  type="button"
+                  class="gordon-dialog-button gordon-dialog-button-secondary"
+                  :disabled="ui.marketplace.comic.isExporting"
+                  @click="selectComicExportDirectory"
+                >
+                  选择目录
+                </button>
+              </div>
+            </div>
+
+            <div class="writing-export-summary">
+              <span>章节数量：{{ activeComicChapters.length }}</span>
+              <span>导出文件：{{ activeComicExportFileName }}</span>
+            </div>
+          </div>
+
+          <p
+            v-if="ui.marketplace.comic.exportFeedback"
+            class="writing-export-feedback"
+            :class="`is-${ui.marketplace.comic.exportFeedbackTone}`"
+          >
+            {{ ui.marketplace.comic.exportFeedback }}
+          </p>
+
+          <div class="gordon-dialog-actions">
+            <button
+              type="button"
+              class="gordon-dialog-button gordon-dialog-button-secondary"
+              :disabled="ui.marketplace.comic.isExporting"
+              @click="closeComicExportDialog"
+            >
+              取消
+            </button>
+
+            <button
+              type="button"
+              class="gordon-dialog-button gordon-dialog-button-primary"
+              :disabled="!canExportActiveComicProject"
+              @click="exportActiveComicProject"
+            >
+              {{ ui.marketplace.comic.isExporting ? "保存中" : "确认" }}
+            </button>
+          </div>
+        </section>
+      </div>
+    </Transition>
+
+    <Transition name="gordon-dialog-fade">
+      <div
         v-if="ui.marketplace.writing.isExportDialogOpen"
         class="gordon-dialog-backdrop writing-export-backdrop"
         @click.self="closeWritingExportDialog"
@@ -3970,10 +4281,20 @@ const COMIC_PROJECT_FORMAT_META = {
   serial: { label: "连载漫画", defaultPages: 24 }
 };
 const COMIC_PROJECT_PALETTE_META = {
-  monochrome: { label: "单色漫画" },
+  monochrome: { label: "单色" },
   color: { label: "彩绘" }
 };
 const COMIC_PROJECT_COVER_TONES = ["ink", "coral", "teal", "gold"];
+const COMIC_APP_TABS = [
+  { id: "intro", label: "总介绍", kicker: "Overview", fieldLabel: "漫画总介绍" },
+  { id: "outline", label: "目录", kicker: "Outline", fieldLabel: "章节与分镜目录" },
+  { id: "chapter", label: "单章生成", kicker: "Chapter", fieldLabel: "单章生成稿" }
+];
+const COMIC_CHAPTER_STATUS_META = {
+  todo: { label: "未开始", className: "is-cancelled" },
+  inProgress: { label: "进行中", className: "is-warning" },
+  done: { label: "已完成", className: "is-success" }
+};
 
 const BRAND_RANDOM_TEXTS = [
   "LIKEGORD",
@@ -4338,7 +4659,17 @@ function createMarketplaceState() {
     view: "apps",
     comic: {
       projects: [],
-      activeProjectId: null
+      activeProjectId: null,
+      activeTab: "intro",
+      activeChapterId: "",
+      isProfileCollapsed: false,
+      isChapterPickerOpen: false,
+      chapterSearchQuery: "",
+      isExportDialogOpen: false,
+      exportDirectory: "",
+      exportFeedback: "",
+      exportFeedbackTone: "neutral",
+      isExporting: false
     },
     writing: {
       books: [],
@@ -4720,6 +5051,7 @@ const commandInputRef = ref(null);
 const commandMessagesRef = ref(null);
 const gordonDialogPrimaryRef = ref(null);
 const gordonDialogInputRef = ref(null);
+const comicChapterDropdownMenuRef = ref(null);
 const writingChapterDropdownMenuRef = ref(null);
 const weeklyTaskRewriteIds = ref([]);
 
@@ -4815,6 +5147,34 @@ const modelEditorFields = computed(() => getProviderFields(ui.modelManagement.ed
 const comicProjects = computed(() => ui.marketplace.comic.projects ?? []);
 const activeComicProject = computed(
   () => comicProjects.value.find((project) => project.id === ui.marketplace.comic.activeProjectId) ?? comicProjects.value[0] ?? null
+);
+const activeComicTabMeta = computed(
+  () => COMIC_APP_TABS.find((tab) => tab.id === ui.marketplace.comic.activeTab) ?? COMIC_APP_TABS[0]
+);
+const activeComicChapters = computed(() => getComicChapters(activeComicProject.value));
+const activeComicChapter = computed(
+  () =>
+    activeComicChapters.value.find((chapter) => chapter.id === ui.marketplace.comic.activeChapterId) ??
+    activeComicChapters.value[0] ??
+    null
+);
+const activeComicChapterIndex = computed(() =>
+  Math.max(
+    0,
+    activeComicChapters.value.findIndex((chapter) => chapter.id === activeComicChapter.value?.id)
+  )
+);
+const activeComicExportFileName = computed(() => getComicExportFileName(activeComicProject.value));
+const filteredComicChapterEntries = computed(() =>
+  getFilteredComicChapterEntries(activeComicChapters.value, ui.marketplace.comic.chapterSearchQuery)
+);
+const canExportActiveComicProject = computed(
+  () =>
+    Boolean(
+      activeComicProject.value &&
+        String(ui.marketplace.comic.exportDirectory ?? "").trim() &&
+        !ui.marketplace.comic.isExporting
+    )
 );
 const writingBooks = computed(() => ui.marketplace.writing.books ?? []);
 const activeWritingBook = computed(
@@ -5025,6 +5385,49 @@ function normalizeComicProjectPageCount(value, fallback = 1) {
   return Math.min(999, Math.max(1, Math.round(Number.isFinite(numeric) ? numeric : fallback)));
 }
 
+function normalizeComicChapterStatusForUi(value) {
+  return COMIC_CHAPTER_STATUS_META[value] ? value : "todo";
+}
+
+function normalizeComicChapterForUi(chapter, index = 0) {
+  const now = new Date().toISOString();
+
+  return {
+    id: String(chapter?.id ?? "").trim() || createLocalId("comic_chapter"),
+    index: Math.max(1, Math.round(Number(chapter?.index ?? index + 1) || index + 1)),
+    title: String(chapter?.title ?? "").trim() || `第 ${index + 1} 章`,
+    summary: String(chapter?.summary ?? ""),
+    prompt: String(chapter?.prompt ?? ""),
+    content: String(chapter?.content ?? ""),
+    status: normalizeComicChapterStatusForUi(chapter?.status),
+    updatedAt: String(chapter?.updatedAt ?? "").trim() || now
+  };
+}
+
+function normalizeComicChaptersForUi(chapters = []) {
+  const normalizedChapters = (Array.isArray(chapters) ? chapters : [])
+    .map((chapter, index) => normalizeComicChapterForUi(chapter, index))
+    .sort((left, right) => left.index - right.index);
+
+  if (normalizedChapters.length) {
+    return normalizedChapters;
+  }
+
+  return [
+    normalizeComicChapterForUi(
+      {
+        index: 1,
+        title: "开场分镜",
+        summary: "写下这一章的场景目标、镜头顺序、角色动作和结尾画面。",
+        prompt: "基于总介绍生成开场分镜，明确画面、动作、对白和页数。",
+        content: "",
+        status: "inProgress"
+      },
+      0
+    )
+  ];
+}
+
 function normalizeComicProjectForUi(project, index = 0) {
   const now = new Date().toISOString();
   const format = normalizeComicProjectFormatForUi(project?.format);
@@ -5043,6 +5446,7 @@ function normalizeComicProjectForUi(project, index = 0) {
     visualStyle: String(project?.visualStyle ?? ""),
     episodePlan: String(project?.episodePlan ?? ""),
     pageCount: normalizeComicProjectPageCount(project?.pageCount, COMIC_PROJECT_FORMAT_META[format]?.defaultPages ?? 1),
+    chapters: normalizeComicChaptersForUi(project?.chapters),
     coverTone:
       String(project?.coverTone ?? "").trim() ||
       COMIC_PROJECT_COVER_TONES[index % COMIC_PROJECT_COVER_TONES.length] ||
@@ -5069,6 +5473,10 @@ function applyComicProjectsFromStorage(projects = [], options = {}) {
   if (!nextProject && ui.marketplace.view === "comicDetail") {
     ui.marketplace.view = "comicShelf";
   }
+
+  if (nextProject && !nextProject.chapters.some((chapter) => chapter.id === ui.marketplace.comic.activeChapterId)) {
+    ui.marketplace.comic.activeChapterId = nextProject.chapters[0]?.id ?? "";
+  }
 }
 
 function buildComicProjectSavePayload(project) {
@@ -5083,6 +5491,10 @@ function buildComicProjectSavePayload(project) {
     visualStyle: project.visualStyle,
     episodePlan: project.episodePlan,
     pageCount: normalizeComicProjectPageCount(project.pageCount),
+    chapters: getComicChapters(project).map((chapter, index) => ({
+      ...normalizeComicChapterForUi(chapter, index),
+      updatedAt: chapter.updatedAt
+    })),
     coverTone: project.coverTone,
     createdAt: project.createdAt,
     updatedAt: project.updatedAt
@@ -5094,14 +5506,19 @@ function scheduleComicProjectAutosave(projectId) {
     return;
   }
 
-  if (comicAutosaveTimer) {
-    clearTimeout(comicAutosaveTimer);
-  }
+  clearComicAutosaveTimer();
 
   comicAutosaveTimer = setTimeout(() => {
     comicAutosaveTimer = null;
     persistComicProjectById(projectId, { silent: true });
   }, WRITING_AUTOSAVE_DELAY);
+}
+
+function clearComicAutosaveTimer() {
+  if (comicAutosaveTimer) {
+    clearTimeout(comicAutosaveTimer);
+    comicAutosaveTimer = null;
+  }
 }
 
 function touchComicProject(project, options = {}) {
@@ -5165,6 +5582,123 @@ function getComicProjectFormatLabel(format) {
 
 function getComicProjectPaletteLabel(palette) {
   return COMIC_PROJECT_PALETTE_META[normalizeComicProjectPaletteForUi(palette)]?.label ?? "彩绘";
+}
+
+function getComicChapters(project) {
+  return Array.isArray(project?.chapters) ? project.chapters : [];
+}
+
+function getComicChapterDisplayTitle(chapter, index = 0) {
+  const order = Number(chapter?.index ?? index + 1);
+  const title = String(chapter?.title ?? "").trim();
+  return `第 ${Number.isFinite(order) && order > 0 ? order : index + 1} 章 ${title || "未命名分镜"}`;
+}
+
+function getComicChapterStatusLabel(status) {
+  return COMIC_CHAPTER_STATUS_META[status]?.label ?? COMIC_CHAPTER_STATUS_META.todo.label;
+}
+
+function getComicChapterStatusClass(status) {
+  return COMIC_CHAPTER_STATUS_META[status]?.className ?? COMIC_CHAPTER_STATUS_META.todo.className;
+}
+
+function getFilteredComicChapterEntries(chapters, query) {
+  const keyword = String(query ?? "").trim().toLowerCase();
+
+  return (Array.isArray(chapters) ? chapters : [])
+    .map((chapter, index) => ({
+      chapter,
+      index,
+      title: getComicChapterDisplayTitle(chapter, index)
+    }))
+    .filter((entry) => {
+      if (!keyword) {
+        return true;
+      }
+
+      return [entry.title, entry.chapter?.summary, getComicChapterStatusLabel(entry.chapter?.status)]
+        .map((value) => String(value ?? "").toLowerCase())
+        .some((value) => value.includes(keyword));
+    });
+}
+
+function trimComicExportTextBlock(value) {
+  return String(value ?? "").replace(/^(?:[ \t]*\r?\n)+/, "").replace(/[ \t\r\n]+$/, "");
+}
+
+function sanitizeComicExportTitle(value) {
+  return String(value ?? "")
+    .replace(/\.[^.]+$/, "")
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
+    .replace(/\s+/g, " ")
+    .replace(/[. ]+$/g, "")
+    .trim() || "未命名漫画项目";
+}
+
+function getComicExportFileName(project) {
+  return `${sanitizeComicExportTitle(project?.title)}.md`;
+}
+
+function buildComicProjectExportContent(project) {
+  const chapters = getComicChapters(project).slice().sort((left, right) => Number(left.index ?? 0) - Number(right.index ?? 0));
+  const lines = [`# ${sanitizeComicExportTitle(project?.title)}`, ""];
+  const summary = trimComicExportTextBlock(project?.summary ?? "");
+  const visualStyle = trimComicExportTextBlock(project?.visualStyle ?? "");
+  const episodePlan = trimComicExportTextBlock(project?.episodePlan ?? "");
+
+  lines.push("## 项目信息", "");
+  lines.push(`- 形态：${getComicProjectFormatLabel(project?.format)}`);
+  lines.push(`- 画面：${getComicProjectPaletteLabel(project?.palette)}`);
+  lines.push(`- 类型：${project?.genre || "漫画 / 待定类型"}`);
+  lines.push(`- 页数：${normalizeComicProjectPageCount(project?.pageCount)} 页`);
+  lines.push(`- 状态：${project?.status || "新建"}`, "");
+
+  if (summary) {
+    lines.push("## 总介绍", "", summary, "");
+  }
+
+  if (visualStyle) {
+    lines.push("## 画风与镜头", "", visualStyle, "");
+  }
+
+  if (episodePlan) {
+    lines.push(project?.format === "serial" ? "## 连载总规划" : "## 海报构图规划", "", episodePlan, "");
+  }
+
+  lines.push("## 目录", "");
+
+  if (chapters.length) {
+    chapters.forEach((chapter, index) => {
+      const title = getComicChapterDisplayTitle(chapter, index);
+      const chapterSummary = trimComicExportTextBlock(chapter.summary ?? "") || "暂无分镜简介";
+      lines.push(`- ${title}（${getComicChapterStatusLabel(chapter.status)}）：${chapterSummary}`);
+    });
+  } else {
+    lines.push("- 暂无章节");
+  }
+
+  lines.push("", "## 单章生成", "");
+
+  chapters.forEach((chapter, index) => {
+    const title = getComicChapterDisplayTitle(chapter, index);
+    const chapterSummary = trimComicExportTextBlock(chapter.summary ?? "");
+    const prompt = trimComicExportTextBlock(chapter.prompt ?? "");
+    const content = trimComicExportTextBlock(chapter.content ?? "");
+
+    lines.push(`### ${title}`, "");
+
+    if (chapterSummary) {
+      lines.push("#### 分镜简介", "", chapterSummary, "");
+    }
+
+    if (prompt) {
+      lines.push("#### 生成提示词", "", prompt, "");
+    }
+
+    lines.push("#### 生成稿", "", content || "暂无生成稿", "");
+  });
+
+  return `${lines.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
 }
 
 function normalizeWritingBookLengthForUi(value) {
@@ -6299,11 +6833,52 @@ function backComicMarketplace() {
 
 function openComicProject(projectId) {
   ui.marketplace.comic.activeProjectId = projectId;
+  ui.marketplace.comic.activeTab = "intro";
+  const project = comicProjects.value.find((entry) => entry.id === projectId) ?? null;
+  ui.marketplace.comic.activeChapterId = getComicChapters(project)[0]?.id ?? "";
   ui.marketplace.view = "comicDetail";
 }
 
 function backComicShelf() {
   ui.marketplace.view = "comicShelf";
+}
+
+async function deleteComicProjectFromShelf(projectId) {
+  if (!desktopApi?.deleteComicProject) {
+    setStatus("漫画项目仓储未就绪，暂时无法删除。", "danger");
+    return;
+  }
+
+  const project = comicProjects.value.find((entry) => entry.id === projectId) ?? null;
+  const confirmed = await showConfirmDialog({
+    tone: "danger",
+    title: "删除漫画项目",
+    message: `确认删除「${project?.title ?? "当前项目"}」吗？项目会移入系统回收站。`,
+    detail: "删除后会从项目架移除，可在系统回收站中找回备份文件。",
+    confirmText: "删除",
+    cancelText: "取消"
+  });
+
+  if (!confirmed) {
+    return;
+  }
+
+  clearComicAutosaveTimer();
+
+  if (comicQueuedSaveProjectId === projectId) {
+    comicQueuedSaveProjectId = null;
+  }
+
+  try {
+    const savedProjects = await desktopApi.deleteComicProject(projectId);
+    applyComicProjectsFromStorage(savedProjects, {
+      preferProjectId: ui.marketplace.comic.activeProjectId === projectId ? "" : ui.marketplace.comic.activeProjectId
+    });
+    setStatus("漫画项目已移入系统回收站。", "success");
+  } catch (error) {
+    console.error("Failed to delete comic project", error);
+    setStatus(`漫画项目删除失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+  }
 }
 
 async function createComicProject() {
@@ -6320,12 +6895,26 @@ async function createComicProject() {
     episodePlan: "单图海报：主体、背景、人物站位、标题区域和最终比例。",
     pageCount: 1,
     coverTone: COMIC_PROJECT_COVER_TONES[comicProjects.value.length % COMIC_PROJECT_COVER_TONES.length],
+    chapters: [
+      {
+        id: createLocalId("comic_chapter"),
+        index: 1,
+        title: "开场分镜",
+        summary: "写下这一章的场景目标、镜头顺序、角色动作和结尾画面。",
+        prompt: "基于总介绍生成开场分镜，明确画面、动作、对白和页数。",
+        content: "",
+        status: "inProgress",
+        updatedAt: now
+      }
+    ],
     createdAt: now,
     updatedAt: now
   };
 
   ui.marketplace.comic.projects = [project, ...comicProjects.value];
   workbench.comicProjects = ui.marketplace.comic.projects;
+  ui.marketplace.comic.activeTab = "intro";
+  ui.marketplace.comic.activeChapterId = project.chapters[0]?.id ?? "";
   openComicProject(project.id);
   setStatus("已创建一个漫画项目，正在写入本地项目库。", "success");
   await persistComicProjectById(project.id, { silent: false });
@@ -6339,10 +6928,13 @@ function setComicProjectField(field, value) {
   }
 
   if (field === "format") {
+    const previousFormat = normalizeComicProjectFormatForUi(project.format);
+    const previousDefaultPages = COMIC_PROJECT_FORMAT_META[previousFormat]?.defaultPages ?? 1;
     project.format = normalizeComicProjectFormatForUi(value);
+    const nextDefaultPages = COMIC_PROJECT_FORMAT_META[project.format]?.defaultPages ?? 1;
 
-    if (project.format === "poster" && !project.pageCount) {
-      project.pageCount = COMIC_PROJECT_FORMAT_META.poster.defaultPages;
+    if (!project.pageCount || project.pageCount === previousDefaultPages) {
+      project.pageCount = nextDefaultPages;
     }
   } else if (field === "palette") {
     project.palette = normalizeComicProjectPaletteForUi(value);
@@ -6389,6 +6981,228 @@ function setComicProjectPageCount(value) {
   setComicProjectField("pageCount", value);
 }
 
+function toggleComicProfileRail() {
+  ui.marketplace.comic.isProfileCollapsed = !ui.marketplace.comic.isProfileCollapsed;
+}
+
+function setComicTab(tabId) {
+  ui.marketplace.comic.activeTab = COMIC_APP_TABS.some((tab) => tab.id === tabId) ? tabId : "intro";
+}
+
+function selectComicChapter(chapterId) {
+  ui.marketplace.comic.activeChapterId = chapterId;
+}
+
+function setComicChapterPickerOpen(isOpen) {
+  ui.marketplace.comic.isChapterPickerOpen = Boolean(isOpen);
+
+  if (ui.marketplace.comic.isChapterPickerOpen) {
+    scrollComicChapterPickerToActive();
+  }
+}
+
+function toggleComicChapterPicker() {
+  setComicChapterPickerOpen(!ui.marketplace.comic.isChapterPickerOpen);
+}
+
+function selectComicChapterFromPicker(chapterId) {
+  selectComicChapter(chapterId);
+  ui.marketplace.comic.chapterSearchQuery = "";
+  setComicChapterPickerOpen(false);
+}
+
+async function scrollComicChapterPickerToActive() {
+  await nextTick();
+
+  const menu = comicChapterDropdownMenuRef.value;
+  const activeItem = menu?.querySelector?.(".writing-chapter-dropdown-item.is-active");
+
+  if (!menu || !activeItem) {
+    return;
+  }
+
+  const targetTop = activeItem.offsetTop - (menu.clientHeight - activeItem.clientHeight) / 2;
+  menu.scrollTop = Math.max(0, targetTop);
+}
+
+function touchComicChapter(chapter) {
+  const project = activeComicProject.value;
+
+  if (!project || !chapter) {
+    return;
+  }
+
+  chapter.updatedAt = new Date().toISOString();
+
+  if (chapter.status === "todo" && (String(chapter.prompt ?? "").trim() || String(chapter.content ?? "").trim())) {
+    chapter.status = "inProgress";
+  }
+
+  touchComicProject(project);
+}
+
+function createComicChapter() {
+  const project = activeComicProject.value;
+
+  if (!project) {
+    return;
+  }
+
+  const now = new Date().toISOString();
+  const chapters = getComicChapters(project);
+  const chapter = {
+    id: createLocalId("comic_chapter"),
+    index: chapters.length + 1,
+    title: `分镜章节 ${chapters.length + 1}`,
+    summary: "写下本章画面目标、分镜顺序、角色动作、对白密度和结尾画面。",
+    prompt: "基于总介绍和目录生成本章漫画分镜。",
+    content: "",
+    status: "todo",
+    updatedAt: now
+  };
+
+  project.chapters = [...chapters, chapter];
+  ui.marketplace.comic.activeChapterId = chapter.id;
+  ui.marketplace.comic.activeTab = "outline";
+  touchComicProject(project);
+}
+
+function setComicChapterTitle(chapter, value) {
+  if (!chapter) {
+    return;
+  }
+
+  chapter.title = String(value ?? "");
+  touchComicChapter(chapter);
+}
+
+function setComicChapterSummary(chapter, value) {
+  if (!chapter) {
+    return;
+  }
+
+  chapter.summary = String(value ?? "");
+  touchComicChapter(chapter);
+}
+
+function setComicChapterPrompt(chapter, value) {
+  if (!chapter) {
+    return;
+  }
+
+  chapter.prompt = String(value ?? "");
+  touchComicChapter(chapter);
+}
+
+function setComicChapterContent(chapter, value) {
+  if (!chapter) {
+    return;
+  }
+
+  chapter.content = String(value ?? "");
+  touchComicChapter(chapter);
+}
+
+function goComicChapter(chapterId) {
+  selectComicChapter(chapterId);
+  ui.marketplace.comic.chapterSearchQuery = "";
+  setComicChapterPickerOpen(false);
+  setComicTab("chapter");
+}
+
+function submitComicChapter() {
+  const chapter = activeComicChapter.value;
+
+  if (!chapter) {
+    return;
+  }
+
+  chapter.status = "done";
+  touchComicChapter(chapter);
+  setStatus("漫画章节已提交。", "success");
+}
+
+function setComicExportFeedback(text, tone = "neutral") {
+  ui.marketplace.comic.exportFeedback = String(text ?? "").trim();
+  ui.marketplace.comic.exportFeedbackTone = tone;
+}
+
+function openComicExportDialog() {
+  if (!activeComicProject.value) {
+    return;
+  }
+
+  ui.marketplace.comic.isExportDialogOpen = true;
+  setComicExportFeedback("", "neutral");
+}
+
+function closeComicExportDialog() {
+  if (ui.marketplace.comic.isExporting) {
+    return;
+  }
+
+  ui.marketplace.comic.isExportDialogOpen = false;
+  setComicExportFeedback("", "neutral");
+}
+
+async function selectComicExportDirectory() {
+  if (!desktopApi?.selectComicProjectExportDirectory) {
+    setComicExportFeedback("当前桌面桥接暂不支持选择输出目录。", "danger");
+    return;
+  }
+
+  try {
+    const directoryPath = await desktopApi.selectComicProjectExportDirectory();
+
+    if (directoryPath) {
+      ui.marketplace.comic.exportDirectory = directoryPath;
+      setComicExportFeedback("", "neutral");
+    }
+  } catch (error) {
+    console.error("Failed to select comic export directory", error);
+    setComicExportFeedback(`选择目录失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+  }
+}
+
+async function exportActiveComicProject() {
+  const project = activeComicProject.value;
+
+  if (!project || ui.marketplace.comic.isExporting) {
+    return;
+  }
+
+  if (!String(ui.marketplace.comic.exportDirectory ?? "").trim()) {
+    setComicExportFeedback("请先选择输出目录。", "warning");
+    return;
+  }
+
+  if (!desktopApi?.exportComicProject) {
+    setComicExportFeedback("当前桌面桥接暂不支持导出漫画项目。", "danger");
+    return;
+  }
+
+  try {
+    ui.marketplace.comic.isExporting = true;
+    setComicExportFeedback("正在保存作品文件...", "neutral");
+
+    const result = await desktopApi.exportComicProject({
+      directoryPath: ui.marketplace.comic.exportDirectory,
+      fileName: getComicExportFileName(project),
+      format: "md",
+      content: buildComicProjectExportContent(project)
+    });
+
+    ui.marketplace.comic.isExportDialogOpen = false;
+    setComicExportFeedback("", "neutral");
+    setStatus(`已导出漫画项目：${result.fileName ?? activeComicExportFileName.value}`, "success");
+  } catch (error) {
+    console.error("Failed to export comic project", error);
+    setComicExportFeedback(`导出失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+  } finally {
+    ui.marketplace.comic.isExporting = false;
+  }
+}
+
 function openWritingAppShelf() {
   activeFeature.value = FEATURE_MARKETPLACE;
   ui.marketplace.view = "writingShelf";
@@ -6401,6 +7215,44 @@ function backWritingMarketplace() {
   ui.marketplace.view = "apps";
   ui.marketplace.writing.aiOutput = "";
   setWritingFeedback("", "neutral");
+}
+
+async function deleteWritingBookFromShelf(bookId) {
+  if (!desktopApi?.deleteWritingBook) {
+    setStatus("书稿仓储未就绪，暂时无法删除。", "danger");
+    return;
+  }
+
+  const book = writingBooks.value.find((entry) => entry.id === bookId) ?? null;
+  const confirmed = await showConfirmDialog({
+    tone: "danger",
+    title: "删除书籍",
+    message: `确认删除「${book?.title ?? "当前书籍"}」吗？书稿目录会移入系统回收站。`,
+    detail: "删除后会从书架移除，可在系统回收站中恢复本地书稿目录。",
+    confirmText: "删除",
+    cancelText: "取消"
+  });
+
+  if (!confirmed) {
+    return;
+  }
+
+  clearWritingAutosaveTimer();
+
+  if (writingQueuedSave?.bookId === bookId) {
+    writingQueuedSave = null;
+  }
+
+  try {
+    const savedBooks = await desktopApi.deleteWritingBook(bookId);
+    applyWritingBooksFromStorage(savedBooks, {
+      preferBookId: ui.marketplace.writing.activeBookId === bookId ? "" : ui.marketplace.writing.activeBookId
+    });
+    setStatus("书籍已移入系统回收站。", "success");
+  } catch (error) {
+    console.error("Failed to delete writing book", error);
+    setStatus(`书籍删除失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+  }
 }
 
 function openWritingBook(bookId) {
@@ -13099,10 +13951,7 @@ onBeforeUnmount(() => {
   }
 
   clearWeeklyAutosaveTimer();
-  if (comicAutosaveTimer) {
-    clearTimeout(comicAutosaveTimer);
-    comicAutosaveTimer = null;
-  }
+  clearComicAutosaveTimer();
   clearWritingAutosaveTimer();
   disposeRobotRuntime();
   document.body.classList.remove("load-error");
