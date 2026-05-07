@@ -608,6 +608,25 @@ export interface WritingBookSaveOptions {
   mergeChapters?: boolean;
 }
 
+export type ComicProjectFormat = "poster" | "serial";
+export type ComicProjectPalette = "monochrome" | "color";
+
+export interface ComicProject {
+  id: string;
+  title: string;
+  format: ComicProjectFormat;
+  palette: ComicProjectPalette;
+  genre: string;
+  status: string;
+  summary: string;
+  visualStyle: string;
+  episodePlan: string;
+  pageCount: number;
+  coverTone: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type WritingBookExportFormat = "txt" | "md";
 
 export interface WritingBookExportRequest {
@@ -702,6 +721,7 @@ export interface WorkbenchSnapshot {
   databaseConnections: DatabaseConnectionItem[];
   workflowLibrary: WorkflowLibraryItem[];
   writingBooks: WritingBook[];
+  comicProjects: ComicProject[];
   skillDefinitions: SkillDefinition[];
   mcpServers: McpServerConfig[];
   agentProfiles: AgentProfile[];

@@ -961,7 +961,8 @@ canvas {
     var(--panel);
 }
 
-.writing-app-card {
+.writing-app-card,
+.comic-app-card {
   position: relative;
   overflow: hidden;
 }
@@ -982,6 +983,37 @@ canvas {
   pointer-events: none;
 }
 
+.comic-app-card {
+  background:
+    linear-gradient(150deg, rgba(255, 255, 255, 0.065), rgba(68, 156, 216, 0.045)),
+    var(--panel);
+}
+
+.comic-app-card:hover {
+  border-color: rgba(239, 120, 111, 0.26);
+  background:
+    linear-gradient(150deg, rgba(68, 156, 216, 0.11), rgba(239, 120, 111, 0.065)),
+    var(--panel);
+}
+
+.comic-app-card::after {
+  content: "";
+  position: absolute;
+  right: -18px;
+  bottom: -28px;
+  width: 118px;
+  height: 92px;
+  border: 1px solid rgba(247, 243, 235, 0.15);
+  border-radius: 16px;
+  background:
+    linear-gradient(90deg, rgba(247, 243, 235, 0.12) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(247, 243, 235, 0.12) 1px, transparent 1px),
+    linear-gradient(135deg, rgba(68, 156, 216, 0.22), rgba(239, 120, 111, 0.13));
+  background-size: 50% 50%, 100% 50%, auto;
+  transform: rotate(-8deg);
+  pointer-events: none;
+}
+
 .writing-app-mark,
 .writing-book-cover {
   display: grid;
@@ -999,6 +1031,211 @@ canvas {
   font-family: "Iowan Old Style", "Songti SC", serif;
   font-size: 24px;
   font-weight: 800;
+}
+
+.comic-app-mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 52px;
+  height: 70px;
+  overflow: hidden;
+  border: 1px solid rgba(247, 243, 235, 0.17);
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, rgba(18, 25, 35, 0.92), rgba(68, 156, 216, 0.34)),
+    rgba(255, 255, 255, 0.045);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.22);
+  color: #fff8ef;
+  font-family: "Iowan Old Style", "Songti SC", serif;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.comic-app-mark::before,
+.comic-app-mark::after {
+  content: "";
+  position: absolute;
+  border: 1px solid rgba(247, 243, 235, 0.18);
+  border-radius: 7px;
+  pointer-events: none;
+}
+
+.comic-app-mark::before {
+  inset: 8px 8px 36px;
+  background: rgba(247, 243, 235, 0.08);
+}
+
+.comic-app-mark::after {
+  inset: 39px 8px 8px;
+  background:
+    linear-gradient(120deg, transparent 0 45%, rgba(239, 120, 111, 0.2) 46% 54%, transparent 55%),
+    rgba(247, 243, 235, 0.06);
+}
+
+.comic-app-mark span {
+  position: relative;
+  z-index: 1;
+}
+
+.comic-shelf-head {
+  background:
+    linear-gradient(135deg, rgba(68, 156, 216, 0.12), rgba(239, 120, 111, 0.08)),
+    var(--panel);
+}
+
+.comic-project-grid {
+  align-content: start;
+}
+
+.comic-empty-panel {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 118px;
+  padding: 14px;
+  border: 1px dashed rgba(68, 156, 216, 0.28);
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgba(68, 156, 216, 0.08), rgba(255, 255, 255, 0.035)),
+    var(--panel);
+}
+
+.comic-empty-mark,
+.comic-project-cover {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 52px;
+  height: 70px;
+  overflow: hidden;
+  border: 1px solid rgba(247, 243, 235, 0.16);
+  border-radius: 12px;
+  background:
+    linear-gradient(90deg, rgba(247, 243, 235, 0.14) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(247, 243, 235, 0.14) 1px, transparent 1px),
+    linear-gradient(135deg, rgba(18, 25, 35, 0.9), rgba(68, 156, 216, 0.32));
+  background-size: 50% 50%, 100% 50%, auto;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.22);
+  color: #fff8ef;
+  font-family: "Iowan Old Style", "Songti SC", serif;
+  font-size: 23px;
+  font-weight: 800;
+}
+
+.comic-project-cover.is-coral,
+.comic-project-card.is-coral .comic-project-cover {
+  background:
+    linear-gradient(90deg, rgba(247, 243, 235, 0.12) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(247, 243, 235, 0.12) 1px, transparent 1px),
+    linear-gradient(135deg, rgba(239, 120, 111, 0.54), rgba(18, 25, 35, 0.82));
+}
+
+.comic-project-cover.is-teal,
+.comic-project-card.is-teal .comic-project-cover {
+  background:
+    linear-gradient(90deg, rgba(247, 243, 235, 0.13) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(247, 243, 235, 0.13) 1px, transparent 1px),
+    linear-gradient(135deg, rgba(92, 225, 194, 0.42), rgba(18, 25, 35, 0.86));
+}
+
+.comic-project-cover.is-gold,
+.comic-project-card.is-gold .comic-project-cover {
+  background:
+    linear-gradient(90deg, rgba(247, 243, 235, 0.13) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(247, 243, 235, 0.13) 1px, transparent 1px),
+    linear-gradient(135deg, rgba(245, 200, 107, 0.48), rgba(18, 25, 35, 0.84));
+}
+
+.comic-project-card {
+  position: relative;
+}
+
+.comic-project-card::after {
+  content: "";
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  width: 36px;
+  height: 24px;
+  border-right: 1px solid rgba(68, 156, 216, 0.24);
+  border-bottom: 1px solid rgba(68, 156, 216, 0.24);
+  border-radius: 0 0 10px;
+  pointer-events: none;
+}
+
+.comic-detail-shell {
+  min-height: 0;
+  height: 100%;
+}
+
+.comic-detail-head {
+  border-radius: 0;
+}
+
+.comic-detail-layout {
+  display: grid;
+  grid-template-columns: 236px minmax(0, 1fr);
+  min-height: 0;
+  height: 100%;
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.026);
+}
+
+.comic-detail-rail {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border-right: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, rgba(68, 156, 216, 0.07), transparent 42%),
+    rgba(255, 255, 255, 0.03);
+}
+
+.comic-project-profile {
+  display: grid;
+  gap: 10px;
+}
+
+.comic-project-cover-large {
+  width: 88px;
+  height: 118px;
+  border-radius: 16px;
+  font-size: 34px;
+}
+
+.comic-main-stage {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 0.86fr);
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  padding: 10px;
+  overflow: auto;
+}
+
+.comic-editor-card {
+  min-height: 0;
+}
+
+.comic-project-textarea {
+  min-height: 112px;
+}
+
+.comic-plan-textarea {
+  min-height: 0;
+  height: 100%;
+}
+
+.comic-page-count-field {
+  width: 94px;
 }
 
 .writing-book-cover {
@@ -7373,6 +7610,7 @@ canvas {
   .model-form,
   .marketplace-app-grid,
   .writing-shelf-grid,
+  .comic-detail-layout,
   .writing-detail-layout,
   .writing-editor-grid,
   .writing-outline-board,
@@ -7743,7 +7981,8 @@ canvas {
   }
 
   .marketplace-app-card,
-  .writing-book-card {
+  .writing-book-card,
+  .comic-empty-panel {
     grid-template-columns: 1fr;
   }
 

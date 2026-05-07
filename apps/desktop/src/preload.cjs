@@ -133,6 +133,8 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
     ipcRenderer.removeListener("gordon:workflow-library:progress", wrapped);
     workflowRunProgressListeners.delete(listenerId);
   },
+  listComicProjects: () => ipcRenderer.invoke("gordon:comic-projects:list"),
+  upsertComicProject: (project) => ipcRenderer.invoke("gordon:comic-projects:upsert", toPlainIpcData(project)),
   listWritingBooks: () => ipcRenderer.invoke("gordon:writing-books:list"),
   saveWritingBook: (book, options) => ipcRenderer.invoke("gordon:writing-books:save", toPlainIpcData(book), toPlainIpcData(options ?? {})),
   selectWritingBookExportDirectory: () => ipcRenderer.invoke("gordon:writing-books:select-export-directory"),

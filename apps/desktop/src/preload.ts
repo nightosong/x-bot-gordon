@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 
 import type {
   AgentProfile,
+  ComicProject,
   ModelBalanceQueryRequest,
   ModelBalanceSnapshot,
   AgentRunProgressEvent,
@@ -166,6 +167,9 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
     ipcRenderer.removeListener("gordon:workflow-library:progress", wrapped);
     workflowRunProgressListeners.delete(listenerId);
   },
+  listComicProjects: (): Promise<ComicProject[]> => ipcRenderer.invoke("gordon:comic-projects:list"),
+  upsertComicProject: (project: ComicProject): Promise<ComicProject[]> =>
+    ipcRenderer.invoke("gordon:comic-projects:upsert", toPlainIpcData(project)),
   listWritingBooks: (): Promise<WritingBook[]> => ipcRenderer.invoke("gordon:writing-books:list"),
   saveWritingBook: (book: WritingBook, options?: WritingBookSaveOptions): Promise<WritingBook[]> =>
     ipcRenderer.invoke("gordon:writing-books:save", toPlainIpcData(book), toPlainIpcData(options ?? {})),

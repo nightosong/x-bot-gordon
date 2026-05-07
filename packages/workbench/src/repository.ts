@@ -6,6 +6,9 @@ import { resolveFromRoot } from "../../shared/src/index.js";
 import type {
   AgentRunLog,
   AgentProfile,
+  ComicProject,
+  ComicProjectFormat,
+  ComicProjectPalette,
   CommandWorkshopSession,
   DatabaseConnectionItem,
   GithubSkillImportRequest,
@@ -103,6 +106,10 @@ function getAgentRunLogsFilePath(): string {
 
 function getCommandWorkshopSessionsFilePath(): string {
   return resolveFromRoot("data", "workbench", "command-workshop-sessions.json");
+}
+
+function getComicProjectsFilePath(): string {
+  return resolveFromRoot("data", "workbench", "comic-projects.json");
 }
 
 function getWritingBooksDirectoryPath(): string {
@@ -1928,6 +1935,58 @@ export async function listWritingBooks(): Promise<WritingBook[]> {
 export async function saveWritingBook(book: WritingBook, options: WritingBookSaveOptions = {}): Promise<WritingBook[]> {
   await writeWritingBook(book, options);
   return listWritingBooks();
+}
+
+const COMIC_PROJECT_FORMATS = new Set<ComicProjectFormat>(["poster", "serial"]);
+const COMIC_PROJECT_PALETTES = new Set<ComicProjectPalette>(["monochrome", "color"]);
+
+function normalizeComicProjectFormat(value: unknown): ComicProjectFormat {
+  const format = String(value ?? "").trim();
+  return COMIC_PROJECT_FORMATS.has(format as ComicProjectFormat) ? (format as ComicProjectFormat) : "poster";
+}
+
+function normalizeComicProjectPalette(value: unknown): ComicProjectPalette {
+  const palette = String(value ?? "").trim();
+  return COMIC_PROJECT_PALETTES.has(palette as ComicProjectPalette) ? (palette as ComicProjectPalette) : "color";
+}
+
+function normalizeComicProject(input: Partial<ComicProject> | null | undefined, index = 0): ComicProject {
+  const now = new Date().toISOString();
+  const createdAt = String(input?.createdAt ?? "").trim() || now;
+  const updatedAt = String(input?.updatedAt ?? "").trim() || createdAt;
+  const id = String(input?.id ?? "").trim() || `comic_project_${randomUUID()}`;
+
+  return {
+    id,
+    title: String(input?.title ?? "").trim() || `未命名漫画 ${index + 1}`,
+    format: normalizeComicProjectFormat(input?.format),
+    palette: normalizeComicProjectPalette(input?.palette),
+    genre: String(input?.genre ?? "").trim() || "漫画 / 待定类型",
+    status: String(input?.status ?? "").trim() || "新建",
+    summary: String(input?.summary ?? ""),
+    visualStyle: String(input?.visualStyle ?? ""),
+    episodePlan: String(input?.episodePlan ?? ""),
+    pageCount: Math.max(1, Math.round(Number(input?.pageCount ?? 1) || 1)),
+    coverTone: String(input?.coverTone ?? "").trim() || (index % 2 === 0 ? "ink" : "coral"),
+    createdAt,
+    updatedAt
+  };
+}
+
+export async function listComicProjects(): Promise<ComicProject[]> {
+  const projects = await readWorkbenchCollection<Partial<ComicProject>>(getComicProjectsFilePath());
+  return sortByUpdatedAtDescending(projects.map((project, index) => normalizeComicProject(project, index)));
+}
+
+export async function upsertComicProject(project: ComicProject): Promise<ComicProject[]> {
+  const current = await listComicProjects();
+  const normalizedProject = normalizeComicProject(project);
+  const nextProjects = current.some((entry) => entry.id === normalizedProject.id)
+    ? current.map((entry) => (entry.id === normalizedProject.id ? normalizedProject : entry))
+    : [normalizedProject, ...current];
+
+  await writeWorkbenchCollection(getComicProjectsFilePath(), sortByUpdatedAtDescending(nextProjects));
+  return listComicProjects();
 }
 
 function createWorkflowVariableBinding(

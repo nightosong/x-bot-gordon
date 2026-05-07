@@ -18,6 +18,7 @@ import {
   importSkillDefinitionFromGithub,
   listAgentProfiles,
   listCommandWorkshopSessions,
+  listComicProjects,
   listMcpServers,
   listSkillDefinitions,
   listWeeklyProgress,
@@ -31,6 +32,7 @@ import {
   toggleSkillDefinitionStatus,
   upsertAgentProfile,
   upsertCommandWorkshopSession,
+  upsertComicProject,
   upsertWorkflowLibraryItem,
   upsertMcpServer,
   upsertModelProfile,
@@ -1475,12 +1477,14 @@ app.whenReady().then(async () => {
   ipcMain.handle("gordon:workflow-library:cancel-run", async (_event, progressEventId) =>
     cancelWorkflowRecordRun(progressEventId)
   );
+  ipcMain.handle("gordon:comic-projects:list", async () => listComicProjects());
+  ipcMain.handle("gordon:comic-projects:upsert", async (_event, project) => upsertComicProject(project));
   ipcMain.handle("gordon:writing-books:list", async () => listWritingBooks());
   ipcMain.handle("gordon:writing-books:save", async (_event, book, options) => saveWritingBook(book, options));
   ipcMain.handle("gordon:writing-books:select-export-directory", async (event) => {
     const ownerWindow = BrowserWindow.fromWebContents(event.sender);
     const openDialogOptions = {
-      title: "选择笔墨生花导出目录",
+      title: "选择墨笔生花导出目录",
       properties: ["openDirectory", "createDirectory"]
     } satisfies Electron.OpenDialogOptions;
     const result = ownerWindow
