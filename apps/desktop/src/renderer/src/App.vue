@@ -710,18 +710,6 @@
                                 @input="setComicProjectPageCount($event.target.value)"
                               />
                             </label>
-
-                            <div class="writing-profile-actions">
-                              <button
-                                type="button"
-                                class="writing-mini-text-button"
-                                :disabled="ui.marketplace.comic.isExporting"
-                                :title="`导出 ${activeComicExportFileName}`"
-                                @click="openComicExportDialog"
-                              >
-                                作品导出
-                              </button>
-                            </div>
                           </div>
 
                           <div class="comic-rail-footer">
@@ -731,6 +719,18 @@
                               <span class="pill pill-neutral">{{ activeComicChapters.length }} 章</span>
                             </div>
                           </div>
+                        </div>
+
+                        <div v-if="!ui.marketplace.comic.isProfileCollapsed" class="writing-profile-actions">
+                          <button
+                            type="button"
+                            class="writing-mini-text-button"
+                            :disabled="ui.marketplace.comic.isExporting"
+                            :title="`导出 ${activeComicExportFileName}`"
+                            @click="openComicExportDialog"
+                          >
+                            作品导出
+                          </button>
                         </div>
                       </aside>
 
@@ -1025,16 +1025,6 @@
                                 @input="setWritingBookGenre($event.target.value)"
                               />
                             </label>
-                            <div class="writing-profile-actions">
-                              <button
-                                type="button"
-                                class="writing-mini-text-button"
-                                :disabled="isActiveWritingBookAiRunning"
-                                @click="openWritingExportDialog"
-                              >
-                                书籍导出
-                              </button>
-                            </div>
                           </div>
 
                           <div class="writing-method-card">
@@ -1050,6 +1040,17 @@
                             <span class="pill pill-neutral">更新 {{ formatWritingBookUpdatedAt(activeWritingBook.updatedAt) }}</span>
                             <span class="pill pill-neutral">总字数 {{ getWritingBookWordCount(activeWritingBook) }}</span>
                           </div>
+                        </div>
+
+                        <div v-if="!ui.marketplace.writing.isProfileCollapsed" class="writing-profile-actions">
+                          <button
+                            type="button"
+                            class="writing-mini-text-button"
+                            :disabled="isActiveWritingBookAiRunning"
+                            @click="openWritingExportDialog"
+                          >
+                            书籍导出
+                          </button>
                         </div>
                       </aside>
 

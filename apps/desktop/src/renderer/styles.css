@@ -1669,7 +1669,7 @@ canvas {
   display: grid;
   align-content: start;
   gap: 9px;
-  padding: 10px;
+  padding: 10px 10px 46px;
   border-right: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.025);
   overflow: auto;
@@ -1712,6 +1712,10 @@ canvas {
 }
 
 .writing-profile-actions {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 3;
   display: flex;
   justify-content: flex-end;
   min-height: 24px;
