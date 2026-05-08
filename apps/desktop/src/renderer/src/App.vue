@@ -4415,6 +4415,14 @@ import GIcon from "./components/GIcon.vue";
 import MorphingText from "./components/MorphingText.vue";
 import WeeklyTaskTree from "./components/WeeklyTaskTree.vue";
 import {
+  buildWritingAssistantPrompt as buildWritingAssistantPromptFromAssets,
+  buildWritingLongOutlineBatchPrompt as buildWritingLongOutlineBatchPromptFromAssets,
+  buildWritingLongOutlineMasterPrompt as buildWritingLongOutlineMasterPromptFromAssets,
+  createWritingPromptAssets,
+  getWritingTaskPromptSpec as getWritingTaskPromptSpecFromAssets,
+  loadWritingPromptAssets
+} from "./features/writing/writingPromptBuilder.js";
+import {
   BUILTIN_GORDON_AGENT_ID,
   PROVIDER_ORDER,
   WEEKLY_PROGRESS_STATUS_META,
@@ -4616,17 +4624,23 @@ const WRITING_AI_TASKS = {
   intro: [
     { id: "world", label: "世界观总设", goal: "补强时代、地理、制度、资源、禁忌和冲突源，让背景成为剧情发动机。" },
     { id: "character", label: "人物关系网", goal: "设计主角、对手、盟友、镜像人物和隐性债务，突出彼此之间的利益与情感牵连。" },
-    { id: "premise", label: "故事钩子", goal: "提炼一句不可忽视的核心命题，并扩写成具有出版级吸引力的故事简介。" }
+    { id: "premise", label: "故事钩子", goal: "提炼一句不可忽视的核心命题，并扩写成具有出版级吸引力的故事简介。" },
+    { id: "storyBible", label: "创作圣经", goal: "把主线、世界规则、人物弧光、伏笔账本和风格边界整理成后续章节可复用的创作基准。" }
   ],
   outline: [
     { id: "structure", label: "章节规划", goal: "按篇幅拆分幕、卷、章，给每一章明确冲突、信息增量、人物变化和结尾钩子。" },
+    { id: "plotEngine", label: "剧情推进", goal: "判断下一阶段该发生什么，明确冲突、转折、情绪目标、章节目标和读者期待兑现。" },
     { id: "foreshadow", label: "伏笔回收", goal: "设计伏笔、误导、反转和回收节奏，避免目录只是事件流水账。" },
-    { id: "rhythm", label: "节奏诊断", goal: "检查高潮、缓冲、揭秘、失败和胜利的分布，让故事曲线更有张力。" }
+    { id: "rhythm", label: "节奏诊断", goal: "检查高潮、缓冲、揭秘、失败和胜利的分布，让故事曲线更有张力。" },
+    { id: "continuity", label: "一致性审核", goal: "检查时间线、设定规则、人名关系、能力边界和未回收伏笔，避免长篇崩线。" }
   ],
   chapter: [
     { id: "draft", label: "章节初稿", goal: "根据当前目录与设定生成章节正文，要求场景具体、对白有锋芒、段落有推进。" },
     { id: "expand", label: "内容扩写", goal: "丰富感官细节、行动链、心理暗流和人物互动，不改变既有剧情方向。" },
-    { id: "polish", label: "文学润色", goal: "强化语言质感、节奏、意象和收束句，让章节更有记忆点。" }
+    { id: "dialogue", label: "对白增强", goal: "稳定人物声口，补强潜台词、冲突递进和对话中的行动变化。" },
+    { id: "climax", label: "高潮场面", goal: "生成战斗、对峙、打脸、反转或情绪爆发场面，保证爽点来自因果和代价。" },
+    { id: "polish", label: "文学润色", goal: "强化语言质感、节奏、意象和收束句，让章节更有记忆点。" },
+    { id: "review", label: "章节质检", goal: "按人物动机、因果链、节奏、伏笔、设定一致性和可读性检查当前章节。" }
   ]
 };
 const WRITING_OUTLINE_REWRITE_PATTERN =
@@ -4642,71 +4656,10 @@ const WRITING_MODEL_RETRY_BASE_DELAY_MS = 1200;
 const WRITING_MODEL_RETRY_MAX_DELAY_MS = 8000;
 const WRITING_CHAPTER_PREFIX_PATTERN = /^第\s*([0-9０-９一二三四五六七八九十百千万零〇两]+)\s*章\s*(?:[：:、.\-]\s*)?(.*)$/;
 const WRITING_PART_PREFIX_PATTERN = /^(?:第\s*)?([0-9０-９一二三四五六七八九十百千万零〇两]+)\s*(幕|卷)\s*(?:[：:、.\-·]\s*)?(.*)$/;
-const WRITING_CHAPTER_OUTPUT_DEFAULTS = [
-  "章节正文默认控制在 4000-5000 字；如果模型输出能力不足，优先保证场景完整和结尾钩子，不要压缩成提纲。",
-  "合理划分段落，包括第一段在内，每段开头都必须保留两个全角空格“　　”（两个汉字宽度）缩进。",
-  "章节正文开头不要输出章节标题，不要出现“第X章 XXXXX”。",
-  "只输出正文，不要附加创作说明、提纲、分析或 Markdown 标题。"
-];
 const WRITING_BOOK_EXPORT_FORMATS = [
   { id: "txt", label: "TXT" },
   { id: "md", label: "Markdown" }
 ];
-const WRITING_AI_TASK_PROMPTS = {
-  intro: {
-    world: {
-      role: "世界观架构师",
-      strategy: "从时代、地理、制度、资源、阶层、禁忌、技术或魔法规则里找到能持续制造剧情压力的发动机。",
-      output: "输出可直接放入故事介绍的大纲化设定，必须包含世界规则、主要矛盾、制度代价和可推进章节的冲突源。"
-    },
-    character: {
-      role: "人物关系设计师",
-      strategy: "把人物当作利益、情感、秘密和债务的网络来设计，避免只列人设标签。",
-      output: "输出人物关系网、核心人物弧线、对手镜像、盟友代价和至少三条可在后续章节回收的关系伏笔。"
-    },
-    premise: {
-      role: "出版级故事钩子编辑",
-      strategy: "提炼故事中最不可逃避的两难问题，让简介同时具备命题、冲突和读者悬念。",
-      output: "输出短简介、扩展简介和一句核心命题，语言要有吸引力，但不能牺牲故事因果。"
-    }
-  },
-  outline: {
-    structure: {
-      role: "长线目录架构师",
-      strategy:
-        "根据故事介绍、大纲指导、篇幅策略和作者要求生成最终章节目录。目录必须贴合整本小说的故事曲线，兼顾伏笔布设、反转节奏、人物弧光、因果连贯和卷/幕级高潮。中长篇如需要幕或卷，必须把幕/卷放在 parts，不要把幕/卷当成 chapter。若作者要求拆分、移除、插入或重排章节，直接输出变更后的最终目录，不要只给操作建议。",
-      output:
-        "必须输出一个 JSON 代码块，格式为 {\"parts\":[{\"index\":1,\"type\":\"act\",\"title\":\"幕或卷标题（不要包含第X幕/第X卷前缀）\",\"description\":\"本幕/卷整体故事设计\"}],\"chapters\":[{\"index\":1,\"partIndex\":1,\"title\":\"章节标题（不要包含第X章前缀）\",\"summary\":\"本章目标、主要冲突、信息增量、伏笔/回收、结尾钩子\"}]}。index 与 partIndex 必须是 integer；短篇可省略 parts 和 partIndex；JSON 外可以补充简短设计说明，但章节落盘只读取 JSON。"
-    },
-    foreshadow: {
-      role: "伏笔与回收编辑",
-      strategy: "检查目录里的承诺、误导、延迟满足和回收位置，让伏笔跨章节生长，而不是孤立出现。",
-      output: "输出伏笔布设表、回收节奏建议和需要改写的章节简介；如需要改目录，也附带包含 parts 以及 integer index / partIndex / 纯 title 的 chapters JSON。"
-    },
-    rhythm: {
-      role: "叙事节奏诊断师",
-      strategy: "检查章节之间的紧张、缓冲、揭秘、失败、胜利和余波分布，避免连续同质场景。",
-      output: "输出节奏诊断、章节顺序调整建议和每个阶段的高潮/低谷；如需要改目录，也附带包含 parts 以及 integer index / partIndex / 纯 title 的 chapters JSON。"
-    }
-  },
-  chapter: {
-    draft: {
-      role: "章节初稿主笔",
-      strategy: "从当前章节目标出发写场景，而不是泛写概述；每一段都要推进动作、信息或人物关系。",
-      output: "输出可直接作为正文的章节初稿，包含场景调度、对白张力、行动链、心理暗流和结尾钩子。"
-    },
-    expand: {
-      role: "内容扩写编辑",
-      strategy: "保留既有剧情方向，补强感官细节、行动因果、人物互动和潜台词。",
-      output: "输出扩写后的正文片段，避免空泛抒情，重点补足事件推进和人物变化。"
-    },
-    polish: {
-      role: "文学润色编辑",
-      strategy: "在不改变剧情事实的前提下调整句式、节奏、意象和段落收束。",
-      output: "输出润色后的正文，语言要更有记忆点，但保持可读性和叙事清晰。"
-    }
-  }
-};
 const WRITING_INTRO_SECTION_DEFINITIONS = {
   intro: {
     key: "intro",
@@ -4729,12 +4682,6 @@ const WRITING_CHAPTER_STATUS_META = {
   inProgress: { label: "进行中", className: "is-warning" },
   done: { label: "已完成", className: "is-success" }
 };
-const WRITING_MASTER_SYSTEM_PROMPT = [
-  `你是「${WRITING_APP_NAME}」里的大师级小说总编、故事架构师和文字教练。`,
-  "你的目标不是写普通顺滑文本，而是帮助作者设计能承受长篇推敲的故事：背景设定严密，人物关系有因果，情节曲折但不靠巧合，章节推进有明确的信息增量。",
-  "你必须根据短篇、中篇、长篇的不同叙事规律调整建议密度。",
-  "输出必须可直接放进写作项目，不写寒暄，不解释你在做什么。"
-].join("\n");
 const MODEL_BALANCE_QUERY_TEMPLATE = [
   "({",
   "  request: {",
@@ -4772,6 +4719,7 @@ const MODEL_USAGE_DAILY_WINDOW_DAYS = 30;
 const MODEL_USAGE_DAY_START_HOUR = 1;
 
 const desktopApi = window.gordonDesktop ?? null;
+const writingPromptAssets = reactive(createWritingPromptAssets());
 let splineApplicationClass = null;
 let splineApplicationPromise = null;
 let weeklyAutosaveTimer = null;
@@ -7776,10 +7724,11 @@ function setWritingTab(tabId) {
 }
 
 function getWritingTaskPromptSpec(tabId, taskId) {
-  return (
-    WRITING_AI_TASK_PROMPTS[tabId]?.[taskId] ??
-    WRITING_AI_TASK_PROMPTS[tabId]?.[(WRITING_AI_TASKS[tabId] ?? [])[0]?.id] ??
-    WRITING_AI_TASK_PROMPTS.intro.premise
+  return getWritingTaskPromptSpecFromAssets(
+    writingPromptAssets,
+    tabId,
+    taskId,
+    WRITING_AI_TASKS[tabId] ?? WRITING_AI_TASKS.intro
   );
 }
 
@@ -7931,6 +7880,68 @@ function buildWritingLongOutlineSeedContent(book, maxChapters = 36) {
     .join("\n\n");
 }
 
+function buildWritingChapterMemoryLine(book, chapter, index = 0) {
+  const partLabel = getWritingChapterPartLabel(book, chapter);
+  const statusLabel = getWritingChapterStatusLabel(chapter?.status);
+  const sourceText = String(chapter?.summary || chapter?.content || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const summary = truncateText(sourceText, 140) || "暂无摘要";
+
+  return `${getWritingChapterDisplayTitle(chapter, index)}${partLabel ? ` / ${partLabel}` : ""} / ${statusLabel}：${summary}`;
+}
+
+function buildWritingStoryMemoryContext(book, currentChapter = null) {
+  if (!book) {
+    return "(空)";
+  }
+
+  const chapters = getWritingChapters(book).sort(
+    (left, right) => normalizeWritingChapterIndex(left.index, 0) - normalizeWritingChapterIndex(right.index, 0)
+  );
+  const currentChapterIndex = currentChapter
+    ? chapters.findIndex((chapter) => chapter.id === currentChapter.id)
+    : -1;
+  const currentOrder = currentChapterIndex >= 0 ? normalizeWritingChapterIndex(chapters[currentChapterIndex].index, currentChapterIndex) : 0;
+  const recentChapters =
+    currentOrder > 0
+      ? chapters
+          .filter((chapter, index) => normalizeWritingChapterIndex(chapter.index, index) < currentOrder)
+          .slice(-6)
+      : chapters.filter((chapter) => chapter.status === "done").slice(-6);
+  const nextChapters =
+    currentOrder > 0
+      ? chapters
+          .filter((chapter, index) => normalizeWritingChapterIndex(chapter.index, index) > currentOrder)
+          .slice(0, 4)
+      : chapters.slice(0, 4);
+  const memoryKeywords = /(伏笔|未回收|秘密|悬念|钩子|误导|回收|规则|境界|能力|债务|承诺|禁忌)/;
+  const memoryNotes = chapters
+    .filter((chapter) => memoryKeywords.test(`${chapter.summary}\n${chapter.content}`))
+    .slice(-8);
+  const parts = getWritingBookParts(book)
+    .map((part) => `${getWritingPartDisplayLabel(part)}：${truncateText(String(part.description ?? "").replace(/\s+/g, " ").trim(), 120) || "暂无描述"}`)
+    .join("\n");
+
+  return [
+    parts ? `【幕/卷记忆】\n${parts}` : "",
+    recentChapters.length
+      ? `【最近已发生】\n${recentChapters.map((chapter, index) => buildWritingChapterMemoryLine(book, chapter, index)).join("\n")}`
+      : "【最近已发生】暂无已完成章节，请以故事介绍和目录为准。",
+    currentChapter
+      ? `【当前章节职责】\n${buildWritingChapterMemoryLine(book, currentChapter, currentChapterIndex >= 0 ? currentChapterIndex : 0)}`
+      : "",
+    nextChapters.length
+      ? `【后续承接】\n${nextChapters.map((chapter, index) => buildWritingChapterMemoryLine(book, chapter, index)).join("\n")}`
+      : "",
+    memoryNotes.length
+      ? `【伏笔与规则提醒】\n${memoryNotes.map((chapter, index) => buildWritingChapterMemoryLine(book, chapter, index)).join("\n")}`
+      : "【伏笔与规则提醒】暂无显式记录；如果本轮新增事实，输出时要把它写成可回收、可追踪的设定。"
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 function buildWritingAssistantPrompt({ book, tabId, task, instruction }) {
   if (!book) {
     return "";
@@ -7944,13 +7955,13 @@ function buildWritingAssistantPrompt({ book, tabId, task, instruction }) {
   const longOutlineRequest = getWritingLongOutlineRequest({ book, tabId, task, instruction });
   const shouldIgnoreOutline = !longOutlineRequest && shouldIgnoreExistingWritingOutline(instruction, task?.id);
   const introContent = buildWritingIntroContent(book) || "(空)";
+  const storyMemoryContent = buildWritingStoryMemoryContext(book, currentChapter);
   const outlineContent = longOutlineRequest
     ? buildWritingLongOutlineSeedContent(book)
     : shouldIgnoreOutline
       ? "(作者要求重改目录，本轮不代入已有章节目录。)"
       : buildWritingOutlineContent(book) || "(空)";
   const currentModuleContent = tabId === "outline" && (shouldIgnoreOutline || longOutlineRequest) ? outlineContent : content;
-  const chapterOutputDefaults = tabId === "chapter" ? ["章节生成默认项：", ...WRITING_CHAPTER_OUTPUT_DEFAULTS.map((item) => `- ${item}`)].join("\n") : "";
   const chapterContext =
     currentChapter
       ? [
@@ -7962,48 +7973,23 @@ function buildWritingAssistantPrompt({ book, tabId, task, instruction }) {
         ].join("\n")
       : "(空)";
 
-  return [
-    `你正在执行「${WRITING_APP_NAME}」的一次写作辅助任务。通用标准：大师级小说总编 + 故事架构师 + 文字教练。`,
-    "",
-    `作品：${book.title}`,
-    `篇幅：${lengthProfile.label}（${lengthProfile.scope}）`,
-    `类型：${book.genre || "未设定"}`,
-    `当前模块：${tabTitle}`,
-    `大师思路：${lengthProfile.method}`,
-    `本次任务：${task?.label ?? "综合辅助"} - ${task?.goal ?? "提升当前内容"}`,
-    `本任务设计者：${taskSpec.role}`,
-    instruction ? `作者额外要求：${instruction}` : "作者额外要求：无",
-    "",
-    "任务专属提示词：",
-    taskSpec.strategy,
-    "",
-    "输出要求：",
-    taskSpec.output,
-    chapterOutputDefaults,
-    longOutlineRequest ? "\n长篇扩展模式：\n" + buildWritingLongOutlineTargetContent(longOutlineRequest) : "",
-    "",
-    "故事介绍与规划：",
+  return buildWritingAssistantPromptFromAssets({
+    appName: WRITING_APP_NAME,
+    book,
+    lengthProfile,
+    tabTitle,
+    task,
+    taskSpec,
+    instruction,
+    promptAssets: writingPromptAssets,
+    chapterOutputDefaults: tabId === "chapter" ? writingPromptAssets.chapterOutputDefaults : [],
+    longOutlineContent: longOutlineRequest ? buildWritingLongOutlineTargetContent(longOutlineRequest) : "",
+    storyMemoryContent,
     introContent,
-    "",
-    "章节目录：",
     outlineContent,
-    "",
-    "当前选中章节：",
     chapterContext,
-    "",
-    `请围绕「${tabTitle}」输出可直接粘贴的内容。要求：`,
-    "- 不要寒暄，不要解释提示词。",
-    "- 保留并强化人物动机、因果链、伏笔和冲突。",
-    "- 如果是章节规划，必须输出最终目录，不输出“建议你可以怎么改”的中间建议。",
-    "- 章节规划的 chapters JSON 中，每个章节必须包含 integer 类型的 index；title 只写纯标题，不要包含“第X章”。",
-    "- 幕/卷不是章节；如需要幕或卷，必须输出 parts，并在章节里用 partIndex 关联，章节 index 仍然全书连续累加。",
-    "- 如果作者要求“第几章拆成几章 / 移除第几章 / 在第n章和第n+1章中间增加章节”，必须落实到最终 chapters JSON。",
-    "- 如果是章节，必须有场景动作、对白张力、心理暗流和段落节奏；正文开头不要带章节标题。",
-    "- 如果是介绍，必须补齐世界规则、核心矛盾、主要人物与主题命题。",
-    "",
-    "当前模块原文：",
-    currentModuleContent || "(空)"
-  ].join("\n");
+    currentModuleContent
+  });
 }
 
 function getWritingAssistantMaxOutputTokens(tabId, taskId) {
@@ -8385,68 +8371,36 @@ function buildWritingRecentChapterContext(book, partIndex, beforeIndex, limit = 
 function buildWritingLongOutlineMasterPrompt(book, request) {
   const partLabel = request.partType === "volume" ? "卷" : "幕";
 
-  return [
-    `你正在为「${WRITING_APP_NAME}」执行长篇小说总体规划任务。`,
-    "目标：先生成幕/卷级 Master Plan，不要输出章节列表。",
-    "",
-    `作品：${book.title}`,
-    `类型：${book.genre || "未设定"}`,
-    `作者要求：${request.instruction || "无"}`,
-    "",
-    "长篇目标：",
-    buildWritingLongOutlineTargetContent(request),
-    "",
-    "故事介绍与规划：",
-    buildWritingIntroContent(book) || "(空)",
-    "",
-    "现有目录种子：",
-    buildWritingLongOutlineSeedContent(book, 36),
-    "",
-    "输出 JSON 代码块，且只允许包含 parts 字段：",
-    `{"parts":[{"index":1,"type":"${request.partType}","title":"${partLabel}标题（不要包含第X${partLabel}前缀）","description":"本${partLabel}的故事目标、现实映照、主要冲突、人物变化、阶段高潮和伏笔安排"}]}`,
-    "",
-    `必须输出 exactly ${request.targetPartCount} 个 ${partLabel}；每个 description 要能支撑 ${request.minChaptersPerPart}-${request.maxChaptersPerPart} 章。`
-  ].join("\n");
+  return buildWritingLongOutlineMasterPromptFromAssets({
+    appName: WRITING_APP_NAME,
+    book,
+    request,
+    partLabel,
+    targetContent: buildWritingLongOutlineTargetContent(request),
+    introContent: buildWritingIntroContent(book) || "(空)",
+    seedContent: buildWritingLongOutlineSeedContent(book, 36),
+    promptAssets: writingPromptAssets
+  });
 }
 
 function buildWritingLongOutlineBatchPrompt(book, request, part, batchStartIndex, batchEndIndex) {
   const partLabel = request.partType === "volume" ? "卷" : "幕";
-  const expectedCount = batchEndIndex - batchStartIndex + 1;
 
-  return [
-    `你正在为「${WRITING_APP_NAME}」执行长篇小说章节目录分批规划任务。`,
-    "目标：只生成当前批次的章节 JSON，不要输出其它批次，不要输出解释。",
-    "",
-    `作品：${book.title}`,
-    `类型：${book.genre || "未设定"}`,
-    `作者要求：${request.instruction || "无"}`,
-    "",
-    "全书目标：",
-    buildWritingLongOutlineTargetContent(request),
-    "",
-    "故事介绍与规划：",
-    buildWritingIntroContent(book) || "(空)",
-    "",
-    "幕/卷总规划：",
-    buildWritingPartsContext(book),
-    "",
-    `当前${partLabel}：${getWritingPartDisplayLabel(part)}`,
-    part?.description || "暂无描述",
-    "",
-    "本幕/卷最近已生成章节：",
-    buildWritingRecentChapterContext(book, part.index, batchStartIndex),
-    "",
-    "本批次硬性要求：",
-    `- 必须输出 exactly ${expectedCount} 个 chapters。`,
-    `- index 必须从 ${batchStartIndex} 连续到 ${batchEndIndex}。`,
-    `- 每个 chapter 的 partIndex 必须是 ${part.index}。`,
-    "- title 只写纯标题，不要包含“第X章”。",
-    "- summary 要写清本章目标、主要冲突、信息增量、人物变化、伏笔/回收、结尾钩子和现实反思落点。",
-    "- 当前批次必须承接上一批，不要重复已有章节，不要提前收束整本书。",
-    "",
-    "输出 JSON 代码块，格式：",
-    `{"chapters":[{"index":${batchStartIndex},"partIndex":${part.index},"title":"章节标题","summary":"本章目标、主要冲突、信息增量、伏笔/回收、结尾钩子、现实反思落点"}]}`
-  ].join("\n");
+  return buildWritingLongOutlineBatchPromptFromAssets({
+    appName: WRITING_APP_NAME,
+    book,
+    request,
+    part,
+    partLabel,
+    batchStartIndex,
+    batchEndIndex,
+    targetContent: buildWritingLongOutlineTargetContent(request),
+    introContent: buildWritingIntroContent(book) || "(空)",
+    partsContext: buildWritingPartsContext(book),
+    partDisplayLabel: getWritingPartDisplayLabel(part),
+    recentChapterContext: buildWritingRecentChapterContext(book, part.index, batchStartIndex),
+    promptAssets: writingPromptAssets
+  });
 }
 
 function normalizeWritingLongBatchPlans(plans, part, batchStartIndex, batchEndIndex) {
@@ -8497,6 +8451,16 @@ function countWritingGeneratedTargetChapters(book, request) {
   }).length;
 }
 
+function getWritingMasterSystemPrompt() {
+  return (
+    writingPromptAssets.masterSystem ||
+    [
+      `你是「${WRITING_APP_NAME}」里的大师级小说总编、故事架构师和文字教练。`,
+      "输出必须可直接放进写作项目，不写寒暄，不解释你在做什么。"
+    ].join("\n")
+  );
+}
+
 async function invokeWritingAssistantModel(prompt, maxOutputTokens, temperature = 0.72, options = {}) {
   const maxRetries = Math.max(0, Number(options.maxRetries ?? 0) || 0);
   let retryAttempt = 0;
@@ -8517,7 +8481,7 @@ async function invokeWritingAssistantModel(prompt, maxOutputTokens, temperature 
         messages: [
           {
             role: "system",
-            content: WRITING_MASTER_SYSTEM_PROMPT
+            content: getWritingMasterSystemPrompt()
           },
           {
             role: "user",
@@ -9278,6 +9242,11 @@ async function applyWritingAssistantOutput(mode = "append") {
   }
 
   if (ui.marketplace.writing.activeTab === "chapter") {
+    if (activeWritingTask.value?.id === "review") {
+      setWritingFeedback("章节质检结果仅用于审阅，不自动写入正文。", "warning");
+      return;
+    }
+
     const chapter = activeWritingChapter.value ?? ensureWritingChapterSelection(book);
     const current = String(chapter?.content ?? "").trim();
     setWritingChapterContent(chapter, mode === "replace" ? output : [current, output].filter(Boolean).join("\n\n"));
@@ -11906,9 +11875,22 @@ async function bootstrapWorkbench() {
   }
 
   try {
-    const [snapshot, modelSettings] = await Promise.all([desktopApi.bootstrap(), desktopApi.listModelSettings()]);
+    const promptAssetsPromise = loadWritingPromptAssets(desktopApi).catch((error) => {
+      console.warn("Failed to load writing prompt assets", error);
+      return null;
+    });
+    const [snapshot, modelSettings, loadedWritingPromptAssets] = await Promise.all([
+      desktopApi.bootstrap(),
+      desktopApi.listModelSettings(),
+      promptAssetsPromise
+    ]);
+
+    if (loadedWritingPromptAssets) {
+      Object.assign(writingPromptAssets, loadedWritingPromptAssets);
+    }
+
     applyWorkbenchSnapshot(snapshot, modelSettings);
-    setStatus("工作台已就绪。", "success");
+    setStatus(loadedWritingPromptAssets ? "工作台已就绪。" : "工作台已就绪，写作提示词资产使用兜底配置。", loadedWritingPromptAssets ? "success" : "warning");
   } catch (error) {
     console.error("Failed to bootstrap workbench", error);
     setStatus(`工作台加载失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");

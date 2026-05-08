@@ -97,6 +97,8 @@ function toPlainIpcData<T>(value: T): T {
 
 contextBridge.exposeInMainWorld("gordonDesktop", {
   bootstrap: () => ipcRenderer.invoke("gordon:bootstrap"),
+  readPromptAssets: (promptIds: string[]): Promise<Record<string, string>> =>
+    ipcRenderer.invoke("gordon:prompt-assets:read", promptIds),
   listModelSettings: () => ipcRenderer.invoke("gordon:model-settings:list"),
   upsertModelProfile: (profile: ModelProfile) => ipcRenderer.invoke("gordon:model-settings:upsert", toPlainIpcData(profile)),
   activateModelProfile: (profileId: string) => ipcRenderer.invoke("gordon:model-settings:activate", profileId),

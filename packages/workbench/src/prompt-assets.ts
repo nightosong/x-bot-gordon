@@ -15,7 +15,11 @@ const PROMPT_ASSET_PATHS = {
   weeklyDailyReportGenerateSystem: ["prompts", "workbench", "weekly", "daily-report-generate.system.md"],
   weeklyReportGenerateSystem: ["prompts", "workbench", "weekly", "report-generate.system.md"],
   weeklyReportTemplateDefault: ["prompts", "workbench", "weekly", "report-template.default.md"],
-  weeklyReportTemplateLegacy: ["prompts", "workbench", "weekly", "report-template.legacy.md"]
+  weeklyReportTemplateLegacy: ["prompts", "workbench", "weekly", "report-template.legacy.md"],
+  writingMasterSystem: ["prompts", "workbench", "writing", "master.system.md"],
+  writingNarrativeCraftGuide: ["prompts", "workbench", "writing", "narrative-craft-guide.md"],
+  writingChapterOutputDefaults: ["prompts", "workbench", "writing", "chapter-output-defaults.md"],
+  writingAiTaskPrompts: ["prompts", "workbench", "writing", "ai-task-prompts.json"]
 } as const;
 
 export type PromptAssetId = keyof typeof PROMPT_ASSET_PATHS;
@@ -30,6 +34,10 @@ function normalizePromptMarkdown(markdown: string): string {
 
 export function resolvePromptAssetPath(promptId: PromptAssetId): string {
   return resolveFromRoot(...PROMPT_ASSET_PATHS[promptId]);
+}
+
+export function isPromptAssetId(value: string): value is PromptAssetId {
+  return Object.prototype.hasOwnProperty.call(PROMPT_ASSET_PATHS, value);
 }
 
 export function readPromptAsset(promptId: PromptAssetId): string {

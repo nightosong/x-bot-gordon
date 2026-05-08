@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import { callToolOnMcpServer, listToolsFromMcpServer, runAgent } from "../../../packages/agent/src/index.js";
 import { buildWorkbenchSnapshot } from "../../../packages/core/src/index.js";
+import { isPromptAssetId, readPromptAsset, type PromptAssetId } from "../../../packages/workbench/src/prompt-assets.js";
 import {
   deleteAgentProfile,
   deleteComicProject,
@@ -1405,6 +1406,23 @@ app.whenReady().then(async () => {
   }
 
   ipcMain.handle("gordon:bootstrap", async () => buildWorkbenchSnapshot());
+  ipcMain.handle("gordon:prompt-assets:read", async (_event, promptIds: unknown) => {
+    if (!Array.isArray(promptIds)) {
+      throw new Error("提示词资产读取参数必须是数组");
+    }
+
+    const assets: Partial<Record<PromptAssetId, string>> = {};
+
+    for (const promptId of promptIds) {
+      if (typeof promptId !== "string" || !isPromptAssetId(promptId)) {
+        throw new Error(`未知提示词资产：${String(promptId)}`);
+      }
+
+      assets[promptId] = readPromptAsset(promptId);
+    }
+
+    return assets;
+  });
   ipcMain.handle("gordon:model-settings:list", async () => toCloneableIpcValue(await listModelSettings()));
   ipcMain.handle("gordon:model-settings:upsert", async (_event, profile) =>
     toCloneableIpcValue(await upsertModelProfile(toCloneableIpcValue(profile)))
