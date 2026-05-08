@@ -4335,11 +4335,18 @@ import {
 } from "./features/shell/shellConfig.js";
 import {
   DAILY_REPORT_GUIDE_COPY,
-  WEEKLY_AUTOSAVE_DELAY,
-  WEEKLY_NO_RISK_PATTERN,
-  WEEKLY_RISK_KEYWORDS,
   createWeeklyState
 } from "./features/weekly/weeklyConfig.js";
+import { createWeeklyActions } from "./features/weekly/weeklyActions.js";
+import {
+  buildWeeklyDraftInsights,
+  getDailyReportHeadingTitle,
+  getWeeklyDraftSnapshot,
+  getWeeklyRecordTags,
+  getWeeklyReportTemplateOptionLabel,
+  getWeeklySelectedReportTemplate,
+  getWeeklyStatusToneClass
+} from "./features/weekly/weeklyRuntime.js";
 import {
   createDefaultWorkflowEnvironments,
   createWorkflowOutputDraft as createWorkflowOutputDraftFromConfig,
@@ -4410,16 +4417,11 @@ import {
   WEEKLY_PROGRESS_STATUS_META,
   buildCommandWorkshopArtifact,
   buildCommandWorkshopTitle,
-  cloneWeeklyProgressRecord,
-  createWeeklyDraftId,
-  createWeeklyProjectDraft,
-  createWeeklyTaskDraft,
   formatLocalDateTime,
   getProviderMeta,
   getSkillDisplayName,
   getMarkdownListLineMeta,
   getWeeklyProgressCompletionRate,
-  getWeeklyProgressStatusMeta,
   getSkillLocalMirrorDetail,
   getSkillOptionLabel,
   getSkillSourceDetail,
@@ -4430,7 +4432,6 @@ import {
   normalizeTagList,
   parseEnvText,
   renderRichText,
-  sanitizeWeeklyProgressRecord,
   sortCommandWorkshopSessions,
   stringifyEnvRecord,
   summarizeCommandWorkshopContent,
@@ -4470,9 +4471,6 @@ const desktopApi = window.gordonDesktop ?? null;
 const writingPromptAssets = reactive(createWritingPromptAssets());
 let splineApplicationClass = null;
 let splineApplicationPromise = null;
-let weeklyAutosaveTimer = null;
-let weeklySavedSnapshot = "";
-let weeklyAutosaveInFlight = false;
 let comicAutosaveTimer = null;
 let comicSaveInFlight = false;
 let comicQueuedSaveProjectId = null;
@@ -4480,7 +4478,6 @@ let writingAutosaveTimer = null;
 let writingSaveInFlight = false;
 let writingQueuedSave = null;
 let activeWritingModelRequestId = "";
-let weeklyReportCopyTimer = null;
 let agentProgressListenerId = null;
 let workflowProgressListenerId = null;
 const writingBookSaveVersions = new Map();
@@ -9619,671 +9616,6 @@ async function selectWorkflowEnvironment(environmentId) {
   await persistActiveWorkflowRuntimeConfig();
 }
 
-function clearWeeklyAutosaveTimer() {
-  if (weeklyAutosaveTimer) {
-    clearTimeout(weeklyAutosaveTimer);
-    weeklyAutosaveTimer = null;
-  }
-}
-
-function getWeeklyDraftSnapshot(record = ui.weekly.draft) {
-  const sanitized = sanitizeWeeklyProgressRecord(record);
-
-  if (!sanitized) {
-    return "";
-  }
-
-  return JSON.stringify({
-    projects: sanitized.projects,
-    reportTemplates: sanitized.reportTemplates,
-    selectedReportTemplateId: sanitized.selectedReportTemplateId,
-    reportTemplate: sanitized.reportTemplate,
-    generatedDailyReport: sanitized.generatedDailyReport,
-    generatedReport: sanitized.generatedReport,
-    content: sanitized.content
-  });
-}
-
-function markWeeklyDraftSaved(record = ui.weekly.draft) {
-  weeklySavedSnapshot = getWeeklyDraftSnapshot(record);
-}
-
-function clearWeeklyReportFeedback() {
-  ui.weekly.reportFeedbackText = "";
-  ui.weekly.reportFeedbackTone = "neutral";
-}
-
-function clearWeeklyReportCopyTimer() {
-  if (weeklyReportCopyTimer) {
-    clearTimeout(weeklyReportCopyTimer);
-    weeklyReportCopyTimer = null;
-  }
-}
-
-function resetWeeklyReportCopyState() {
-  clearWeeklyReportCopyTimer();
-  ui.weekly.reportCopyState = "idle";
-}
-
-function markWeeklyReportCopied() {
-  clearWeeklyReportCopyTimer();
-  ui.weekly.reportCopyState = "copied";
-  weeklyReportCopyTimer = setTimeout(() => {
-    ui.weekly.reportCopyState = "idle";
-    weeklyReportCopyTimer = null;
-  }, 1600);
-}
-
-function setWeeklyReportFeedback(text, tone = "neutral") {
-  ui.weekly.reportFeedbackText = String(text ?? "").trim();
-  ui.weekly.reportFeedbackTone = tone;
-}
-
-function setWeeklyReportingMode(mode) {
-  if (ui.weekly.reportingMode === mode) {
-    return;
-  }
-
-  ui.weekly.reportingMode = mode;
-  clearWeeklyReportFeedback();
-  resetWeeklyReportCopyState();
-}
-
-function setWeeklyReportOutputMode(mode) {
-  ui.weekly.reportOutputMode = mode === "edit" ? "edit" : "preview";
-}
-
-function getWeeklyTaskChildren(task) {
-  return Array.isArray(task?.children) ? task.children : [];
-}
-
-function hasWeeklyTaskContent(task) {
-  return Boolean(String(task?.title ?? "").trim() || String(task?.detail ?? "").trim() || getWeeklyTaskChildren(task).length);
-}
-
-function walkWeeklyTasks(tasks = [], visitor, parentTask = null) {
-  for (const task of Array.isArray(tasks) ? tasks : []) {
-    visitor(task, parentTask);
-    walkWeeklyTasks(getWeeklyTaskChildren(task), visitor, task);
-  }
-}
-
-function flattenWeeklyTasks(tasks = []) {
-  const flattened = [];
-  walkWeeklyTasks(tasks, (task) => {
-    flattened.push(task);
-  });
-  return flattened;
-}
-
-function getWeeklyTaskTimestamp(task, fieldName) {
-  return String(task?.[fieldName] ?? "").trim();
-}
-
-function touchWeeklyTask(task, timestamp = new Date().toISOString()) {
-  if (!task) {
-    return null;
-  }
-
-  if (!getWeeklyTaskTimestamp(task, "createdAt")) {
-    task.createdAt = timestamp;
-  }
-
-  task.updatedAt = timestamp;
-  return task;
-}
-
-function touchWeeklyTaskById(projectId, taskId, timestamp = new Date().toISOString()) {
-  const project = findWeeklyProjectById(projectId);
-
-  if (!project) {
-    return null;
-  }
-
-  const task = findWeeklyTaskContext(project.tasks, taskId)?.task ?? null;
-
-  if (!task) {
-    return null;
-  }
-
-  touchWeeklyTask(task, timestamp);
-  return task;
-}
-
-function getLocalDateKey(value) {
-  if (!value) {
-    return "";
-  }
-
-  const date = value instanceof Date ? value : new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
-
-function getDailyReportDateTitle(referenceDate = new Date()) {
-  const date = referenceDate instanceof Date ? referenceDate : new Date(referenceDate);
-
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    weekday: "short"
-  }).format(date);
-}
-
-function getDailyReportHeadingTitle(referenceDate = new Date()) {
-  const date = referenceDate instanceof Date ? referenceDate : new Date(referenceDate);
-  const year = String(date.getFullYear());
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-
-  return `${year}/${month}/${day} 日报`;
-}
-
-function filterWeeklyTasksToUpdatedBranches(tasks = [], todayKey = getLocalDateKey(new Date())) {
-  const filtered = [];
-
-  for (const task of Array.isArray(tasks) ? tasks : []) {
-    const children = getWeeklyTaskChildren(task);
-    const filteredChildren = filterWeeklyTasksToUpdatedBranches(children, todayKey);
-    const title = String(task?.title ?? "").trim();
-    const isUpdatedLeaf = !children.length && Boolean(title) && getLocalDateKey(task?.updatedAt) === todayKey;
-
-    if (!isUpdatedLeaf && !filteredChildren.length) {
-      continue;
-    }
-
-    filtered.push({
-      ...task,
-      title,
-      detail: String(task?.detail ?? "").trim(),
-      children: filteredChildren
-    });
-  }
-
-  return filtered;
-}
-
-function collectTodayUpdatedLeafTasks(projects = [], referenceDate = new Date()) {
-  const todayKey = getLocalDateKey(referenceDate);
-  const entries = [];
-
-  for (const project of Array.isArray(projects) ? projects : []) {
-    const projectTitle = String(project?.title ?? "").trim() || "未命名项目";
-
-    const visit = (tasks = [], path = []) => {
-      tasks.forEach((task, index) => {
-        const nextPath = [...path, index + 1];
-        const children = getWeeklyTaskChildren(task);
-        const title = String(task?.title ?? "").trim();
-
-        if (children.length) {
-          visit(children, nextPath);
-          return;
-        }
-
-        if (!title || getLocalDateKey(task?.updatedAt) !== todayKey) {
-          return;
-        }
-
-        entries.push({
-          projectTitle,
-          taskPath: nextPath.join("."),
-          title,
-          statusLabel: getWeeklyProgressStatusMeta(task?.status).label,
-          createdAt: getWeeklyTaskTimestamp(task, "createdAt"),
-          updatedAt: getWeeklyTaskTimestamp(task, "updatedAt")
-        });
-      });
-    };
-
-    visit(project.tasks);
-  }
-
-  return entries;
-}
-
-function serializeDailyReportTaskLines(tasks = [], depth = 1, todayKey = getLocalDateKey(new Date())) {
-  const lines = [];
-
-  for (const task of Array.isArray(tasks) ? tasks : []) {
-    const indent = "    ".repeat(depth);
-    const statusLabel = getWeeklyProgressStatusMeta(task?.status).label;
-    const title = String(task?.title ?? "").trim() || "未命名任务";
-
-    lines.push(`${indent}* ${title}（${statusLabel}）`);
-
-    const children = getWeeklyTaskChildren(task);
-
-    if (children.length) {
-      lines.push(...serializeDailyReportTaskLines(children, depth + 1, todayKey));
-    }
-  }
-
-  return lines;
-}
-
-function buildDailyReportMarkdown(record, referenceDate = new Date()) {
-  const todayKey = getLocalDateKey(referenceDate);
-  const entries = collectTodayUpdatedLeafTasks(record?.projects ?? [], referenceDate);
-
-  if (!entries.length) {
-    return {
-      entries,
-      markdown: ""
-    };
-  }
-
-  const lines = [];
-
-  for (const project of Array.isArray(record?.projects) ? record.projects : []) {
-    const projectTitle = String(project?.title ?? "").trim() || "未命名项目";
-    const filteredTasks = filterWeeklyTasksToUpdatedBranches(project?.tasks ?? [], todayKey);
-
-    if (!filteredTasks.length) {
-      continue;
-    }
-
-    lines.push(`* ${projectTitle}`);
-    lines.push(...serializeDailyReportTaskLines(filteredTasks, 1, todayKey));
-    lines.push("");
-  }
-
-  return {
-    entries,
-    markdown: lines.join("\n").trim()
-  };
-}
-
-function extractMarkdownListDepthSignature(value) {
-  return String(value ?? "")
-    .replace(/\r\n?/g, "\n")
-    .split("\n")
-    .map((line) => getMarkdownListLineMeta(line))
-    .filter(Boolean)
-    .map((meta) => Math.round((meta?.nestingIndent ?? 0) / 4))
-    .join(",");
-}
-
-function hasMatchingMarkdownHierarchy(sourceMarkdown, candidateMarkdown) {
-  return extractMarkdownListDepthSignature(sourceMarkdown) === extractMarkdownListDepthSignature(candidateMarkdown);
-}
-
-function buildDailyReportSourceContent(record) {
-  const entries = collectTodayUpdatedLeafTasks(record?.projects ?? []);
-
-  if (!entries.length) {
-    return {
-      entries,
-      content: ""
-    };
-  }
-
-  const todayKey = getLocalDateKey(new Date());
-  const lines = [];
-
-  for (const project of Array.isArray(record?.projects) ? record.projects : []) {
-    const projectTitle = String(project?.title ?? "").trim() || "未命名项目";
-    const filteredTasks = filterWeeklyTasksToUpdatedBranches(project?.tasks ?? [], todayKey);
-
-    if (!filteredTasks.length) {
-      continue;
-    }
-
-    lines.push(`* ${projectTitle}`);
-
-    if (String(project?.note ?? "").trim()) {
-      lines.push(...String(project.note).split("\n").map((line) => `    * 项目备注：${line.trim()}`));
-    }
-
-    lines.push(...serializeDailyReportTaskLines(filteredTasks, 1, todayKey));
-    lines.push("");
-  }
-
-  return {
-    entries,
-    content: lines.join("\n").trim()
-  };
-}
-
-function findWeeklyTaskContext(tasks = [], taskId, parentTask = null) {
-  const taskList = Array.isArray(tasks) ? tasks : [];
-
-  for (let index = 0; index < taskList.length; index += 1) {
-    const task = taskList[index];
-
-    if (task?.id === taskId) {
-      return {
-        task,
-        parentTask,
-        tasks: taskList,
-        index
-      };
-    }
-
-    const childContext = findWeeklyTaskContext(getWeeklyTaskChildren(task), taskId, task);
-
-    if (childContext) {
-      return childContext;
-    }
-  }
-
-  return null;
-}
-
-function removeWeeklyTaskFromCollection(tasks = [], taskId) {
-  const context = findWeeklyTaskContext(tasks, taskId);
-
-  if (!context) {
-    return false;
-  }
-
-  context.tasks.splice(context.index, 1);
-  return true;
-}
-
-function deriveWeeklyProjectStatus(tasks = []) {
-  const meaningfulTasks = flattenWeeklyTasks(tasks).filter((task) => hasWeeklyTaskContent(task));
-
-  if (!meaningfulTasks.length) {
-    return "in_progress";
-  }
-
-  if (meaningfulTasks.some((task) => task.status === "blocked")) {
-    return "blocked";
-  }
-
-  if (meaningfulTasks.every((task) => task.status === "completed")) {
-    return "completed";
-  }
-
-  if (meaningfulTasks.some((task) => task.status === "in_progress" || task.status === "completed")) {
-    return "in_progress";
-  }
-
-  return "planned";
-}
-
-function syncWeeklyProjectStatus(project) {
-  if (!project) {
-    return;
-  }
-
-  project.status = deriveWeeklyProjectStatus(project.tasks);
-}
-
-function getWeeklySelectedReportTemplate(draft = ui.weekly.draft) {
-  const templates = Array.isArray(draft?.reportTemplates) ? draft.reportTemplates : [];
-
-  if (!templates.length) {
-    return null;
-  }
-
-  return templates.find((template) => template.id === String(draft?.selectedReportTemplateId ?? "").trim()) ?? templates[0];
-}
-
-function syncWeeklySelectedReportTemplate(draft = ui.weekly.draft) {
-  if (!draft) {
-    return;
-  }
-
-  const selectedTemplate = getWeeklySelectedReportTemplate(draft);
-
-  if (!selectedTemplate) {
-    draft.selectedReportTemplateId = "";
-    draft.reportTemplate = String(draft.reportTemplate ?? "");
-    return;
-  }
-
-  if (draft.selectedReportTemplateId !== selectedTemplate.id) {
-    draft.selectedReportTemplateId = selectedTemplate.id;
-  }
-
-  const selectedContent = String(selectedTemplate.content ?? "");
-
-  if (draft.reportTemplate !== selectedContent) {
-    draft.reportTemplate = selectedContent;
-  }
-}
-
-function getWeeklyReportTemplateOptionLabel(template) {
-  const name = String(template?.name ?? "").trim() || (template?.builtin ? "默认模板" : "未命名模板");
-  return template?.builtin ? `${name}（默认）` : name;
-}
-
-function getNextWeeklyReportTemplateName(draft = ui.weekly.draft) {
-  const existingNames = new Set(
-    (Array.isArray(draft?.reportTemplates) ? draft.reportTemplates : [])
-      .map((template) => String(template?.name ?? "").trim())
-      .filter(Boolean)
-  );
-
-  let index = 1;
-  let candidate = `自定义模板 ${index}`;
-
-  while (existingNames.has(candidate)) {
-    index += 1;
-    candidate = `自定义模板 ${index}`;
-  }
-
-  return candidate;
-}
-
-function focusWeeklyProjectInput(projectId) {
-  nextTick(() => {
-    const input = document.querySelector(`[data-weekly-project-input="${projectId}"]`);
-
-    if (input instanceof HTMLInputElement) {
-      input.focus();
-      input.select();
-    }
-  });
-}
-
-function focusWeeklyTaskInput(taskId) {
-  nextTick(() => {
-    const input = document.querySelector(`[data-weekly-task-input="${taskId}"]`);
-
-    if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) {
-      input.focus();
-      input.select();
-      return;
-    }
-
-    if (input instanceof HTMLButtonElement) {
-      input.click();
-    }
-  });
-}
-
-function scheduleWeeklyAutosave() {
-  if (ui.weekly.view !== "editor" || !ui.weekly.draft) {
-    return;
-  }
-
-  clearWeeklyAutosaveTimer();
-  weeklyAutosaveTimer = setTimeout(() => {
-    handleWeeklySave({ silent: true, reason: "auto" });
-  }, WEEKLY_AUTOSAVE_DELAY);
-}
-
-function extractWeeklyMeaningfulLines(value) {
-  return String(value ?? "")
-    .split(/\r?\n/g)
-    .map((line) => line.trim().replace(/^[-*+•]\s*/, ""))
-    .filter(Boolean);
-}
-
-function getWeeklyFirstMeaningfulLine(value) {
-  return extractWeeklyMeaningfulLines(value)[0] ?? "";
-}
-
-function findWeeklyRiskNotes(value) {
-  return extractWeeklyMeaningfulLines(value).filter((line) => WEEKLY_RISK_KEYWORDS.some((keyword) => line.includes(keyword)));
-}
-
-function getWeeklyRecordTags(record) {
-  const metrics = getWeeklyProgressMetrics(record);
-  const tags = [`项目 ${metrics.projectCount}`, `任务 ${metrics.taskCount}`];
-
-  if (metrics.blockedTaskCount) {
-    tags.push(`风险 ${metrics.blockedTaskCount}`);
-  }
-
-  return tags;
-}
-
-function buildWeeklyInsightEntry(category, project, task, detail = "") {
-  const primary = task?.title?.trim() || detail || getWeeklyFirstMeaningfulLine(task?.detail) || project?.title?.trim() || "未命名事项";
-  const secondary = detail || getWeeklyFirstMeaningfulLine(task?.detail) || "";
-
-  return {
-    id: `${category}-${project?.id ?? "record"}-${task?.id ?? primary}`,
-    title: primary,
-    meta: project?.title?.trim() || "未命名项目",
-    detail: secondary && secondary !== primary ? secondary : ""
-  };
-}
-
-function dedupeWeeklyInsights(items) {
-  const seen = new Set();
-
-  return items.filter((item) => {
-    const key = `${item.meta}-${item.title}-${item.detail}`;
-
-    if (seen.has(key)) {
-      return false;
-    }
-
-    seen.add(key);
-    return true;
-  });
-}
-
-function buildWeeklyDraftInsights(record) {
-  const empty = {
-    qualityChecks: [
-      {
-        id: "result",
-        label: "本周有结论或结果",
-        done: false,
-        hint: "至少补 1 条阶段结果，周报才不会像流水账。"
-      },
-      {
-        id: "risk",
-        label: "风险与协调事项明确",
-        done: false,
-        hint: "如果当前无风险，建议补一句“当前暂无阻塞”。"
-      },
-      {
-        id: "next",
-        label: "下周动作可继续推进",
-        done: false,
-        hint: "为进行中项目至少补 1 条下周动作。"
-      },
-      {
-        id: "report",
-        label: "领导周报已准备",
-        done: false,
-        hint: "右侧生成后再人工确认一次，会更稳。"
-      }
-    ],
-    achievements: [],
-    risks: [],
-    nextSteps: []
-  };
-
-  if (!record) {
-    return empty;
-  }
-
-  const achievements = [];
-  const risks = [];
-  const nextSteps = [];
-  let hasNoRiskStatement = false;
-
-  for (const project of record.projects ?? []) {
-    const noteLines = extractWeeklyMeaningfulLines(project.note);
-    const riskNotes = findWeeklyRiskNotes(project.note);
-    const projectTasks = flattenWeeklyTasks(project.tasks).filter((task) => hasWeeklyTaskContent(task));
-
-    if (WEEKLY_NO_RISK_PATTERN.test(project.note)) {
-      hasNoRiskStatement = true;
-    }
-
-    if (project.note.trim() && !projectTasks.length) {
-      achievements.push(buildWeeklyInsightEntry("project-note", project, null, getWeeklyFirstMeaningfulLine(project.note)));
-    }
-
-    for (const riskLine of riskNotes) {
-      risks.push(buildWeeklyInsightEntry("risk-note", project, null, riskLine));
-    }
-
-    for (const task of projectTasks) {
-      if (task.status === "completed") {
-        achievements.push(buildWeeklyInsightEntry("achievement", project, task, getWeeklyFirstMeaningfulLine(task.detail)));
-        continue;
-      }
-
-      if (task.status === "blocked") {
-        risks.push(buildWeeklyInsightEntry("risk-task", project, task, getWeeklyFirstMeaningfulLine(task.detail)));
-        continue;
-      }
-
-      nextSteps.push(buildWeeklyInsightEntry("next-step", project, task, getWeeklyFirstMeaningfulLine(task.detail)));
-    }
-
-    if (!projectTasks.length && noteLines.length > 1) {
-      nextSteps.push(buildWeeklyInsightEntry("project-follow-up", project, null, noteLines[1]));
-    }
-  }
-
-  const uniqueAchievements = dedupeWeeklyInsights(achievements).slice(0, 6);
-  const uniqueRisks = dedupeWeeklyInsights(risks).slice(0, 6);
-  const uniqueNextSteps = dedupeWeeklyInsights(nextSteps).slice(0, 6);
-
-  return {
-    qualityChecks: [
-      {
-        id: "result",
-        label: "本周有结论或结果",
-        done: uniqueAchievements.length > 0,
-        hint: uniqueAchievements.length ? `已识别 ${uniqueAchievements.length} 条可汇报结果。` : "至少补 1 条阶段结果，周报才不会像流水账。"
-      },
-      {
-        id: "risk",
-        label: "风险与协调事项明确",
-        done: uniqueRisks.length > 0 || hasNoRiskStatement,
-        hint:
-          uniqueRisks.length > 0
-            ? `已识别 ${uniqueRisks.length} 条风险或待协调事项。`
-            : hasNoRiskStatement
-              ? "已明确写出当前无显式阻塞。"
-              : "如果当前无风险，建议补一句“当前暂无阻塞”。"
-      },
-      {
-        id: "next",
-        label: "下周动作可继续推进",
-        done: uniqueNextSteps.length > 0,
-        hint: uniqueNextSteps.length ? `已识别 ${uniqueNextSteps.length} 条下周动作。` : "为进行中项目至少补 1 条下周动作。"
-      },
-      {
-        id: "report",
-        label: "领导周报已准备",
-        done: Boolean(String(record.generatedReport ?? "").trim()),
-        hint: String(record.generatedReport ?? "").trim() ? "领导稿已经生成，建议再人工改一轮。" : "右侧生成后再人工确认一次，会更稳。"
-      }
-    ],
-    achievements: uniqueAchievements,
-    risks: uniqueRisks,
-    nextSteps: uniqueNextSteps
-  };
-}
-
 function getFeatureCardClass(entry, index) {
   const classes = ["feature-card", "tilt-card", `feature-card-${entry.tier}`];
 
@@ -10425,32 +9757,6 @@ function normalizeCommandWorkshopConfig(config = {}) {
     mcpToolName: hasAuthorizedServer ? mcpToolNameCandidate : "",
     mcpArgumentsText: String(config.mcpArgumentsText ?? "{}").trim() || "{}"
   };
-}
-
-function syncWeeklyEditorState() {
-  if (!activeWeeklyRecord.value) {
-    ui.weekly.draft = null;
-    weeklyTaskRewriteIds.value = [];
-    clearWeeklyReportFeedback();
-    resetWeeklyReportCopyState();
-    ui.weekly.isGeneratingReport = false;
-    ui.weekly.generatingReportKind = null;
-    markWeeklyDraftSaved(null);
-    return;
-  }
-
-  clearWeeklyAutosaveTimer();
-  ui.weekly.draft = cloneWeeklyProgressRecord(activeWeeklyRecord.value);
-  ui.weekly.draft?.projects?.forEach((project) => syncWeeklyProjectStatus(project));
-  syncWeeklySelectedReportTemplate(ui.weekly.draft);
-  ui.weekly.collapsedProjectIds = [];
-  ui.weekly.reportOutputMode = "preview";
-  weeklyTaskRewriteIds.value = [];
-  clearWeeklyReportFeedback();
-  resetWeeklyReportCopyState();
-  ui.weekly.isGeneratingReport = false;
-  ui.weekly.generatingReportKind = null;
-  markWeeklyDraftSaved(ui.weekly.draft);
 }
 
 function applyWorkbenchSnapshot(snapshot, modelSettings) {
@@ -11139,566 +10445,54 @@ async function handleModelDelete(profileId) {
   }
 }
 
-function openWeeklyRecord(recordId) {
-  ui.weekly.activeRecordId = recordId;
-  ui.weekly.view = "editor";
-  ui.weekly.editorView = "projects";
-  activeFeature.value = FEATURE_TASKS;
-  syncWeeklyEditorState();
-}
-
-function openLatestWeeklyRecord() {
-  if (workbench.weeklyProgress[0]) {
-    openWeeklyRecord(workbench.weeklyProgress[0].id);
-    return;
-  }
-
-  setActiveFeature(FEATURE_TASKS);
-}
-
-function closeWeeklyEditor() {
-  clearWeeklyAutosaveTimer();
-  ui.weekly.view = "list";
-  ui.weekly.draft = null;
-  ui.weekly.collapsedProjectIds = [];
-  ui.weekly.editorView = "projects";
-  ui.weekly.reportOutputMode = "preview";
-  clearWeeklyReportFeedback();
-  resetWeeklyReportCopyState();
-  weeklyTaskRewriteIds.value = [];
-  ui.weekly.isGeneratingReport = false;
-  ui.weekly.generatingReportKind = null;
-  markWeeklyDraftSaved(null);
-}
-
-function isWeeklyProjectCollapsed(projectId) {
-  return ui.weekly.collapsedProjectIds.includes(projectId);
-}
-
-function toggleWeeklyProjectCollapsed(projectId) {
-  if (isWeeklyProjectCollapsed(projectId)) {
-    ui.weekly.collapsedProjectIds = ui.weekly.collapsedProjectIds.filter((id) => id !== projectId);
-    return;
-  }
-
-  ui.weekly.collapsedProjectIds = [...ui.weekly.collapsedProjectIds, projectId];
-}
-
-function findWeeklyProjectById(projectId) {
-  return ui.weekly.draft?.projects?.find((project) => project.id === projectId) ?? null;
-}
-
-function addWeeklyProject() {
-  if (!ui.weekly.draft) {
-    return;
-  }
-
-  const project = createWeeklyProjectDraft();
-  ui.weekly.draft.projects.push(project);
-  ui.weekly.collapsedProjectIds = ui.weekly.collapsedProjectIds.filter((id) => id !== project.id);
-  focusWeeklyProjectInput(project.id);
-}
-
-function removeWeeklyProject(projectId) {
-  if (!ui.weekly.draft) {
-    return;
-  }
-
-  ui.weekly.draft.projects = ui.weekly.draft.projects.filter((project) => project.id !== projectId);
-  ui.weekly.collapsedProjectIds = ui.weekly.collapsedProjectIds.filter((id) => id !== projectId);
-}
-
-function addWeeklyTask(projectId, parentTaskId = null) {
-  const project = findWeeklyProjectById(projectId);
-
-  if (!project) {
-    return;
-  }
-
-  const task = createWeeklyTaskDraft();
-
-  if (parentTaskId) {
-    const context = findWeeklyTaskContext(project.tasks, parentTaskId);
-
-    if (context) {
-      if (!Array.isArray(context.task.children)) {
-        context.task.children = [];
-      }
-
-      context.task.children.push(task);
-    } else {
-      project.tasks.push(task);
-    }
-  } else {
-    project.tasks.push(task);
-  }
-
-  syncWeeklyProjectStatus(project);
-  ui.weekly.collapsedProjectIds = ui.weekly.collapsedProjectIds.filter((id) => id !== projectId);
-  focusWeeklyTaskInput(task.id);
-}
-
-function removeWeeklyTask(projectId, taskId) {
-  const project = findWeeklyProjectById(projectId);
-
-  if (!project) {
-    return;
-  }
-
-  removeWeeklyTaskFromCollection(project.tasks, taskId);
-  syncWeeklyProjectStatus(project);
-}
-
-function getWeeklyStatusToneClass(status) {
-  return `is-${getWeeklyProgressStatusMeta(status).tone}`;
-}
-
-function isWeeklyTaskRewriting(taskId) {
-  return weeklyTaskRewriteIds.value.includes(taskId);
-}
-
-function setWeeklyTaskRewriting(taskId, nextValue) {
-  if (nextValue) {
-    if (!weeklyTaskRewriteIds.value.includes(taskId)) {
-      weeklyTaskRewriteIds.value = [...weeklyTaskRewriteIds.value, taskId];
-    }
-
-    return;
-  }
-
-  weeklyTaskRewriteIds.value = weeklyTaskRewriteIds.value.filter((id) => id !== taskId);
-}
-
-function closeWeeklyDetailsMenu(trigger, selector) {
-  const source = trigger instanceof Event ? trigger.currentTarget : trigger;
-
-  if (!(source instanceof HTMLElement)) {
-    return;
-  }
-
-  const menu = source.closest(selector);
-
-  if (menu instanceof HTMLDetailsElement) {
-    menu.open = false;
-  }
-}
-
-function closeWeeklyStatusMenu(trigger) {
-  closeWeeklyDetailsMenu(trigger, ".weekly-task-status-menu");
-}
-
-function setWeeklyTaskStatus(projectId, taskId, nextStatus, event) {
-  const project = findWeeklyProjectById(projectId);
-
-  if (!project) {
-    return;
-  }
-
-  const task = findWeeklyTaskContext(project.tasks, taskId)?.task ?? null;
-
-  if (!task) {
-    return;
-  }
-
-  if (task.status === nextStatus) {
-    closeWeeklyStatusMenu(event);
-    return;
-  }
-
-  task.status = nextStatus;
-  touchWeeklyTask(task);
-  syncWeeklyProjectStatus(project);
-  closeWeeklyStatusMenu(event);
-}
-
-function closeWeeklyTaskActionMenu(trigger) {
-  closeWeeklyDetailsMenu(trigger, ".weekly-task-action-menu");
-}
-
-async function optimizeWeeklyTaskTitle(projectId, taskId, event) {
-  closeWeeklyTaskActionMenu(event);
-
-  if (!desktopApi || !ui.weekly.draft) {
-    setStatus("当前周报编辑器尚未就绪，暂无法优化任务表达。", "danger");
-    return;
-  }
-
-  const project = findWeeklyProjectById(projectId);
-  const task = project ? findWeeklyTaskContext(project.tasks, taskId)?.task ?? null : null;
-  const selectedText = String(task?.title ?? "").trim();
-  const childTaskTitles = getWeeklyTaskChildren(task)
-    .map((child) => String(child?.title ?? "").trim())
-    .filter(Boolean);
-
-  if (!task || !selectedText) {
-    setStatus("先填写任务内容，再使用优化功能。", "warning");
-    return;
-  }
-
-  if (isWeeklyTaskRewriting(taskId)) {
-    return;
-  }
-
-  try {
-    setWeeklyTaskRewriting(taskId, true);
-    setStatus("正在优化任务表达...", "neutral");
-
-    const currentDraft = sanitizeWeeklyProgressRecord(ui.weekly.draft);
-    const result = await desktopApi.rewriteWeeklyProgressItem({
-      selectedText,
-      fullContent: currentDraft?.content ?? "",
-      weekTitle: ui.weekly.draft.title,
-      childTaskTitles
-    });
-    const rewrittenText = String(result?.text ?? "").trim();
-
-    if (!rewrittenText) {
-      setStatus("优化未返回可用结果，请稍后再试。", "warning");
-      return;
-    }
-
-    const latestProject = findWeeklyProjectById(projectId);
-    const latestTask = latestProject ? findWeeklyTaskContext(latestProject.tasks, taskId)?.task ?? null : null;
-
-    if (!latestProject || !latestTask) {
-      setStatus("任务已变化，本次优化结果未回填。", "warning");
-      return;
-    }
-
-    latestTask.title = rewrittenText;
-    touchWeeklyTask(latestTask);
-    syncWeeklyProjectStatus(latestProject);
-    setStatus("任务表达已优化，请确认后自动保存。", "success");
-  } catch (error) {
-    console.error("Failed to optimize weekly task title", error);
-    setStatus(`任务优化失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
-  } finally {
-    setWeeklyTaskRewriting(taskId, false);
-  }
-}
-
-function handleWeeklyReportTemplateSelectionChange() {
-  syncWeeklySelectedReportTemplate(ui.weekly.draft);
-}
-
-async function addWeeklyReportTemplate() {
-  if (!ui.weekly.draft) {
-    return;
-  }
-
-  const baseTemplate = getWeeklySelectedReportTemplate(ui.weekly.draft);
-  const defaultName = getNextWeeklyReportTemplateName(ui.weekly.draft);
-  const nextName = await showInputDialog({
-    title: "新增周报模板",
-    message: "输入模板名称后会基于当前模板复制一份新模板。",
-    inputLabel: "模板名称",
-    inputValue: defaultName,
-    inputPlaceholder: "例如：项目周报",
-    confirmText: "新增",
-    cancelText: "取消"
-  });
-
-  if (nextName === null) {
-    return;
-  }
-
-  const normalizedName = String(nextName ?? "").trim() || defaultName;
-  const nextTemplate = {
-    id: createWeeklyDraftId("weekly_report_template"),
-    name: normalizedName,
-    content: String(baseTemplate?.content ?? ui.weekly.draft.reportTemplate ?? ""),
-    builtin: false
-  };
-
-  ui.weekly.draft.reportTemplates = [...(Array.isArray(ui.weekly.draft.reportTemplates) ? ui.weekly.draft.reportTemplates : []), nextTemplate];
-  ui.weekly.draft.selectedReportTemplateId = nextTemplate.id;
-  ui.weekly.draft.reportTemplate = nextTemplate.content;
-  setStatus(`已新增模板「${normalizedName}」。`, "success");
-}
-
-async function removeWeeklySelectedReportTemplate() {
-  if (!ui.weekly.draft || !weeklyCanDeleteSelectedReportTemplate.value) {
-    return;
-  }
-
-  const selectedTemplate = getWeeklySelectedReportTemplate(ui.weekly.draft);
-
-  if (!selectedTemplate || selectedTemplate.builtin) {
-    return;
-  }
-
-  const templateName = String(selectedTemplate.name ?? "").trim() || "未命名模板";
-  const confirmed = await showConfirmDialog({
-    tone: "danger",
-    title: "删除周报模板",
-    message: `确认删除模板「${templateName}」吗？删除后无法恢复。`,
-    confirmText: "删除",
-    cancelText: "取消"
-  });
-
-  if (!confirmed) {
-    return;
-  }
-
-  const templates = Array.isArray(ui.weekly.draft.reportTemplates) ? ui.weekly.draft.reportTemplates : [];
-  const templateIndex = templates.findIndex((template) => template.id === selectedTemplate.id);
-  const nextTemplates = templates.filter((template) => template.id !== selectedTemplate.id);
-  const fallbackTemplate = nextTemplates[templateIndex] ?? nextTemplates[templateIndex - 1] ?? nextTemplates[0] ?? null;
-
-  ui.weekly.draft.reportTemplates = nextTemplates;
-  ui.weekly.draft.selectedReportTemplateId = fallbackTemplate?.id ?? "";
-  ui.weekly.draft.reportTemplate = String(fallbackTemplate?.content ?? "");
-  setStatus("模板已删除。", "success");
-}
-
-async function handleWeeklySave(options = {}) {
-  if (!desktopApi || !activeWeeklyRecord.value || !ui.weekly.draft) {
-    setStatus("周记录尚未就绪，暂时无法保存。", "danger");
-    return;
-  }
-
-  const { silent = false, reason = "manual" } = options;
-  const snapshotBeforeSave = getWeeklyDraftSnapshot(ui.weekly.draft);
-
-  if (reason === "auto") {
-    if (!snapshotBeforeSave || snapshotBeforeSave === weeklySavedSnapshot || weeklyAutosaveInFlight) {
-      return;
-    }
-
-    weeklyAutosaveInFlight = true;
-  }
-
-  clearWeeklyAutosaveTimer();
-
-  try {
-    const nextRecord = {
-      ...sanitizeWeeklyProgressRecord(ui.weekly.draft),
-      id: activeWeeklyRecord.value.id,
-      updatedAt: new Date().toISOString()
-    };
-
-    workbench.weeklyProgress = await desktopApi.saveWeeklyProgress(nextRecord);
-    ui.weekly.activeRecordId = nextRecord.id;
-
-    if (ui.weekly.draft) {
-      ui.weekly.draft.updatedAt = nextRecord.updatedAt;
-      ui.weekly.draft.content = nextRecord.content;
-    }
-
-    weeklySavedSnapshot = snapshotBeforeSave;
-
-    const latestSnapshot = getWeeklyDraftSnapshot(ui.weekly.draft);
-
-    if (latestSnapshot !== weeklySavedSnapshot) {
-      scheduleWeeklyAutosave();
-    }
-
-    if (!silent) {
-      setStatus("任务笔记内容已保存。", "success");
-    } else {
-      setStatus("任务笔记已自动保存。", "success");
-    }
-  } catch (error) {
-    console.error("Failed to save weekly progress", error);
-    setStatus(`任务笔记保存失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
-  } finally {
-    if (reason === "auto") {
-      weeklyAutosaveInFlight = false;
-    }
-  }
-}
-
-async function handleWeeklyDelete(recordId) {
-  if (!desktopApi) {
-    return;
-  }
-
-  const confirmed = await showConfirmDialog({
-    tone: "danger",
-    title: "删除周记录",
-    message: "确认删除这条周记录吗？删除后无法恢复。",
-    confirmText: "删除",
-    cancelText: "取消"
-  });
-
-  if (!confirmed) {
-    return;
-  }
-
-  try {
-    workbench.weeklyProgress = await desktopApi.deleteWeeklyProgress(recordId);
-
-    if (ui.weekly.activeRecordId === recordId) {
-      ui.weekly.activeRecordId =
-        workbench.weeklyProgress.find((record) => record.status === "active")?.id ?? workbench.weeklyProgress[0]?.id ?? null;
-      closeWeeklyEditor();
-    }
-
-    setStatus("周记录已删除。", "success");
-  } catch (error) {
-    console.error("Failed to delete weekly progress", error);
-    setStatus(`周记录删除失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
-  }
-}
-
-async function handleWeeklyActiveReportGeneration() {
-  if (weeklyIsWeeklyReportMode.value) {
-    await handleWeeklyReportGeneration();
-    return;
-  }
-
-  await handleWeeklyDailyReportGeneration();
-}
-
-async function handleWeeklyDailyReportGeneration() {
-  if (!ui.weekly.draft || !activeWeeklyRecord.value) {
-    setWeeklyReportFeedback("当前周报表单尚未就绪，暂无法生成日报。", "danger");
-    setStatus("当前周报表单尚未就绪，暂无法生成日报。", "danger");
-    return;
-  }
-
-  if (ui.weekly.isGeneratingReport) {
-    return;
-  }
-
-  try {
-    resetWeeklyReportCopyState();
-    ui.weekly.isGeneratingReport = true;
-    ui.weekly.generatingReportKind = "daily";
-    if (document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur();
-    }
-    setWeeklyReportFeedback("正在整理今日日报...", "neutral");
-    setStatus("正在整理今日日报...", "neutral");
-    const sanitizedDraft = sanitizeWeeklyProgressRecord(ui.weekly.draft);
-    const { entries, markdown } = buildDailyReportMarkdown(sanitizedDraft);
-
-    if (!entries.length || !markdown) {
-      setWeeklyReportFeedback(`今天（${getDailyReportDateTitle()}）还没有检测到更新的子任务记录。`, "warning");
-      setStatus(`今天（${getDailyReportDateTitle()}）还没有检测到更新的子任务记录。`, "warning");
-      return;
-    }
-
-    const baseMarkdown = normalizeMarkdownForClipboard(markdown);
-    let finalMarkdown = baseMarkdown;
-    let feedbackText = "日报已按原任务层级生成。";
-    let feedbackTone = "success";
-
-    if (ui.weekly.dailyReportUseModelOptimization) {
-      if (!desktopApi || typeof desktopApi.generateDailyProgressReport !== "function") {
-        feedbackText = "当前版本尚未接通日报优化能力，已回退为原任务层级稿。";
-        feedbackTone = "warning";
-      } else {
-        try {
-          const result = await desktopApi.generateDailyProgressReport({
-            dateTitle: getDailyReportDateTitle(),
-            weekTitle: activeWeeklyRecord.value.title,
-            content: baseMarkdown
-          });
-          const optimizedMarkdown = normalizeMarkdownForClipboard(result.text);
-
-          if (optimizedMarkdown && hasMatchingMarkdownHierarchy(baseMarkdown, optimizedMarkdown)) {
-            finalMarkdown = optimizedMarkdown;
-            feedbackText = `日报已完成大模型优化（${result.profileLabel}）。`;
-          } else {
-            feedbackText = `大模型优化未通过层级校验，已回退为原任务层级稿（${result.profileLabel}）。`;
-            feedbackTone = "warning";
-          }
-        } catch (error) {
-          console.error("Failed to optimize daily report", error);
-          feedbackText = `大模型优化失败，已回退为原任务层级稿：${error instanceof Error ? error.message : "未知错误"}`;
-          feedbackTone = "warning";
-        }
-      }
-    }
-
-    ui.weekly.draft.generatedDailyReport = finalMarkdown;
-    resetWeeklyReportCopyState();
-    setWeeklyReportFeedback(feedbackText, feedbackTone);
-    setStatus(feedbackText, feedbackTone);
-  } catch (error) {
-    console.error("Failed to generate daily report", error);
-    setWeeklyReportFeedback(`日报生成失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
-    setStatus(`日报生成失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
-  } finally {
-    ui.weekly.isGeneratingReport = false;
-    ui.weekly.generatingReportKind = null;
-  }
-}
-
-async function handleWeeklyReportGeneration() {
-  if (!desktopApi || !ui.weekly.draft || !activeWeeklyRecord.value) {
-    setWeeklyReportFeedback("当前周报表单尚未就绪，暂无法生成周报。", "danger");
-    setStatus("当前周报表单尚未就绪，暂无法生成周报。", "danger");
-    return;
-  }
-
-  if (ui.weekly.isGeneratingReport) {
-    return;
-  }
-
-  const sanitizedDraft = sanitizeWeeklyProgressRecord(ui.weekly.draft);
-
-  if (!sanitizedDraft?.content.trim()) {
-    setWeeklyReportFeedback("当前还没有项目或任务，先补充任务笔记内容再生成周报。", "warning");
-    setStatus("当前还没有项目或任务，先补充任务笔记内容再生成周报。", "warning");
-    return;
-  }
-
-  if (!String(sanitizedDraft.reportTemplate ?? "").trim()) {
-    setWeeklyReportFeedback("当前模板内容为空，先补一版模板再生成周报。", "warning");
-    setStatus("当前模板内容为空，先补一版模板再生成周报。", "warning");
-    return;
-  }
-
-  try {
-    resetWeeklyReportCopyState();
-    ui.weekly.isGeneratingReport = true;
-    ui.weekly.generatingReportKind = "weekly";
-    if (document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur();
-    }
-    setWeeklyReportFeedback("正在生成周报...", "neutral");
-    setStatus("正在生成周报...", "neutral");
-    const result = await desktopApi.generateWeeklyProgressReport({
-      weekTitle: activeWeeklyRecord.value.title,
-      content: sanitizedDraft.content,
-      reportTemplate: sanitizedDraft.reportTemplate
-    });
-    ui.weekly.draft.generatedReport = normalizeMarkdownForClipboard(result.text);
-    resetWeeklyReportCopyState();
-    setWeeklyReportFeedback(`周报已生成（${result.profileLabel}）。`, "success");
-    setStatus(`周报已生成（${result.profileLabel}）。`, "success");
-  } catch (error) {
-    console.error("Failed to generate weekly report", error);
-    setWeeklyReportFeedback(`周报生成失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
-    setStatus(`周报生成失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
-  } finally {
-    ui.weekly.isGeneratingReport = false;
-    ui.weekly.generatingReportKind = null;
-  }
-}
-
-async function handleWeeklyReportOutputCopy() {
-  if (ui.weekly.isGeneratingReport) {
-    return;
-  }
-
-  try {
-    const normalizedText = normalizeMarkdownForClipboard(weeklyReportOutputContent.value);
-
-    if (normalizedText !== weeklyReportOutputContent.value) {
-      weeklyReportOutputContent.value = normalizedText;
-    }
-
-    await copyTextToClipboard(normalizedText);
-    markWeeklyReportCopied();
-    setStatus(`${weeklyReportModeLabel.value}已清洗并复制，可直接粘贴到飞书。`, "success");
-  } catch (error) {
-    resetWeeklyReportCopyState();
-    setStatus(`复制失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
-  }
-}
+const {
+  addWeeklyProject,
+  addWeeklyReportTemplate,
+  addWeeklyTask,
+  closeWeeklyEditor,
+  disposeWeeklyRuntime,
+  handleWeeklyActiveReportGeneration,
+  handleWeeklyDelete,
+  handleWeeklyDraftSnapshotChange,
+  handleWeeklyReportOutputCopy,
+  handleWeeklyReportTemplateSelectionChange,
+  handleWeeklySave,
+  handleWeeklySelectedReportTemplateIdChange,
+  isWeeklyProjectCollapsed,
+  isWeeklyTaskRewriting,
+  openLatestWeeklyRecord,
+  openWeeklyRecord,
+  optimizeWeeklyTaskTitle,
+  removeWeeklyProject,
+  removeWeeklySelectedReportTemplate,
+  removeWeeklyTask,
+  resetWeeklyReportCopyState,
+  setWeeklyReportingMode,
+  setWeeklyReportOutputMode,
+  setWeeklyTaskStatus,
+  syncWeeklyEditorState,
+  toggleWeeklyProjectCollapsed,
+  touchWeeklyTaskById
+} = createWeeklyActions({
+  activeFeature,
+  activeWeeklyRecord,
+  copyTextToClipboard,
+  desktopApi,
+  featureTasksId: FEATURE_TASKS,
+  nextTick,
+  normalizeMarkdownForClipboard,
+  setActiveFeature,
+  setStatus,
+  showConfirmDialog,
+  showInputDialog,
+  ui,
+  weeklyCanDeleteSelectedReportTemplate,
+  weeklyIsWeeklyReportMode,
+  weeklyReportModeLabel,
+  weeklyReportOutputContent,
+  weeklyTaskRewriteIds,
+  workbench
+});
 
 function openCommandWorkspace() {
   activeFeature.value = FEATURE_COMMAND_WORKSHOP;
@@ -12895,13 +11689,7 @@ watch(
 
 watch(
   () => ui.weekly.draft?.selectedReportTemplateId,
-  () => {
-    if (!ui.weekly.draft) {
-      return;
-    }
-
-    syncWeeklySelectedReportTemplate(ui.weekly.draft);
-  }
+  handleWeeklySelectedReportTemplateIdChange
 );
 
 watch(
@@ -12916,11 +11704,7 @@ watch(
 watch(
   () => getWeeklyDraftSnapshot(ui.weekly.draft),
   (nextSnapshot) => {
-    if (!ui.weekly.draft || ui.weekly.view !== "editor" || !nextSnapshot || nextSnapshot === weeklySavedSnapshot) {
-      return;
-    }
-
-    scheduleWeeklyAutosave();
+    handleWeeklyDraftSnapshotChange(nextSnapshot);
   }
 );
 
@@ -12954,7 +11738,7 @@ onBeforeUnmount(() => {
     workflowProgressListenerId = null;
   }
 
-  clearWeeklyAutosaveTimer();
+  disposeWeeklyRuntime();
   clearComicAutosaveTimer();
   clearWritingAutosaveTimer();
   disposeRobotRuntime();
