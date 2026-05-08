@@ -835,6 +835,7 @@
               </article>
 
               <WritingAiDrawer
+                v-if="ui.marketplace.writing.isAiDrawerOpen"
                 :state="ui.marketplace.writing"
                 :active-writing-task="activeWritingTask"
                 :active-writing-task-options="activeWritingTaskOptions"
@@ -1109,6 +1110,7 @@ const {
   activeWritingChapterIndex,
   activeWritingChapters,
   activeWritingDoneChapterCount,
+  activeWritingExportFileName,
   activeWritingIntroSections,
   activeWritingLengthProfile,
   activeWritingLongOutlineRequest,
@@ -1202,9 +1204,13 @@ const {
   setComicProjectVisualStyle,
   setComicTab,
   setWritingAiDrawerOpen,
+  setWritingBookGenre,
+  setWritingBookLength,
+  setWritingBookTitle,
   setWritingChapterContent,
   setWritingChapterPickerOpen,
   setWritingChapterSummary,
+  setWritingChapterTitle,
   setWritingExportFormat,
   setWritingIntroField,
   setWritingTab,

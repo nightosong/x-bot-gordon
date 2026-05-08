@@ -5618,14 +5618,10 @@ canvas {
   justify-content: flex-end;
 }
 
-.workflow-library-index-section {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-}
-
 .workflow-library-card-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-content: start;
   gap: 14px;
 }
 

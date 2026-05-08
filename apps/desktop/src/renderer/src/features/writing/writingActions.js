@@ -1453,6 +1453,7 @@ function setWritingTab(tabId) {
     normalizeWritingBookLengthForUi,
     normalizeWritingBookPart,
     normalizeWritingBookPartsForUi,
+    normalizeWritingBookPartTypeForUi,
     normalizeWritingChapterDraftOutput,
     normalizeWritingChapterIndex,
     normalizeWritingChapterStatusForUi,

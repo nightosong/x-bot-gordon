@@ -16,45 +16,32 @@
         </div>
       </section>
 
-      <section class="model-section workflow-library-index-section">
-        <div class="model-section-head">
-          <div>
-            <p class="feature-kicker">Library</p>
-            <p class="model-section-title">工作流</p>
+      <div v-if="workflowLibraryCards.length" class="workflow-library-card-grid">
+        <article
+          v-for="entry in workflowLibraryCards"
+          :key="entry.id"
+          class="workflow-library-card"
+          role="button"
+          tabindex="0"
+          :aria-label="`打开 ${entry.title}`"
+          @click="openWorkflowCard(entry.id)"
+          @keydown.enter.prevent="openWorkflowCard(entry.id)"
+          @keydown.space.prevent="openWorkflowCard(entry.id)"
+        >
+          <div class="workflow-library-card-body">
+            <p class="workflow-library-card-title">{{ entry.title }}</p>
+            <p class="workflow-library-card-subtitle">{{ getWorkflowCardCountLabel(entry) }}</p>
           </div>
 
-          <div class="model-section-actions">
-            <span class="pill pill-neutral">当前 {{ workflowLibraryCards.length }} 张</span>
+          <div class="extension-tag-row workflow-library-card-tags">
+            <span v-for="tag in entry.tags.slice(0, 2)" :key="tag" class="pill pill-neutral">{{ tag }}</span>
           </div>
-        </div>
+        </article>
+      </div>
 
-        <div v-if="workflowLibraryCards.length" class="workflow-library-card-grid">
-          <article
-            v-for="entry in workflowLibraryCards"
-            :key="entry.id"
-            class="workflow-library-card"
-            role="button"
-            tabindex="0"
-            :aria-label="`打开 ${entry.title}`"
-            @click="openWorkflowCard(entry.id)"
-            @keydown.enter.prevent="openWorkflowCard(entry.id)"
-            @keydown.space.prevent="openWorkflowCard(entry.id)"
-          >
-            <div class="workflow-library-card-body">
-              <p class="workflow-library-card-title">{{ entry.title }}</p>
-              <p class="workflow-library-card-subtitle">{{ getWorkflowCardCountLabel(entry) }}</p>
-            </div>
-
-            <div class="extension-tag-row workflow-library-card-tags">
-              <span v-for="tag in entry.tags.slice(0, 2)" :key="tag" class="pill pill-neutral">{{ tag }}</span>
-            </div>
-          </article>
-        </div>
-
-        <div v-else class="model-empty">
-          <p class="model-empty-copy">当前还没有 workflow 卡片，后续可以继续在本地仓储里补充更多工作流。</p>
-        </div>
-      </section>
+      <div v-else class="model-empty">
+        <p class="model-empty-copy">当前还没有 workflow 卡片，后续可以继续在本地仓储里补充更多工作流。</p>
+      </div>
     </template>
 
     <div v-else class="workflow-library-detail-shell">

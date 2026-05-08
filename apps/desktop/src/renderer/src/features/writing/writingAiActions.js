@@ -39,9 +39,15 @@ export function createWritingAiActions({
   getWritingChapterDisplayTitle,
   getWritingChapterPart,
   getWritingChapterPartLabel,
+  getWritingChapterStatusLabel,
   getWritingChapters,
   getWritingIntroFieldValue,
+  getWritingPartDisplayLabel,
+  getWritingTabTitle,
+  getPreferredWritingChapter,
   normalizePositiveInteger,
+  normalizeWritingBookPart,
+  normalizeWritingBookPartTypeForUi,
   normalizeWritingChapterDraftOutput,
   normalizeWritingChapterIndex,
   normalizeWritingOutlinePlannerJobForUi,
@@ -49,6 +55,7 @@ export function createWritingAiActions({
   persistWritingBookById,
   selectWritingChapter,
   setStatus,
+  setWritingAiTaskPickerOpen,
   setWritingChapterContent,
   setWritingChapterSummary,
   setWritingFeedback,
@@ -56,6 +63,7 @@ export function createWritingAiActions({
   splitWritingBookPartTitlePrefix,
   splitWritingChapterTitlePrefix,
   touchWritingBook,
+  truncateText,
   ui,
   writingPromptAssets
 }) {
@@ -234,6 +242,48 @@ function buildWritingLongOutlineSeedContent(book, maxChapters = 36) {
     .join("\n\n");
 }
 
+function buildWritingRelevantOutlineContent(book, currentChapter = null, windowSize = 8) {
+  if (!book) {
+    return "(空)";
+  }
+
+  const chapters = getWritingChapters(book).sort(
+    (left, right) => normalizeWritingChapterIndex(left.index, 0) - normalizeWritingChapterIndex(right.index, 0)
+  );
+  const currentIndex = currentChapter
+    ? chapters.findIndex((chapter) => chapter.id === currentChapter.id)
+    : -1;
+  const safeCurrentIndex = currentIndex >= 0 ? currentIndex : Math.min(chapters.length - 1, 0);
+  const startIndex = Math.max(0, safeCurrentIndex - windowSize);
+  const endIndex = Math.min(chapters.length, safeCurrentIndex + windowSize + 1);
+  const visibleChapters = chapters.slice(startIndex, endIndex);
+  const currentPartIndex = currentChapter?.partIndex ?? visibleChapters.find((chapter) => chapter.partIndex)?.partIndex ?? null;
+  const partsContent = getWritingBookParts(book)
+    .filter((part) => !currentPartIndex || part.index === currentPartIndex)
+    .map((part) => `${getWritingPartDisplayLabel(part)}：${truncateText(String(part.description ?? "").replace(/\s+/g, " ").trim(), 220) || "暂无描述"}`)
+    .join("\n");
+  const omittedBefore = startIndex;
+  const omittedAfter = Math.max(0, chapters.length - endIndex);
+  const chapterLines = visibleChapters.map((chapter, index) => {
+    const chapterIndex = chapters.findIndex((entry) => entry.id === chapter.id);
+    const displayIndex = chapterIndex >= 0 ? chapterIndex : startIndex + index;
+    const partLabel = getWritingChapterPartLabel(book, chapter);
+    const summary = truncateText(String(chapter.summary ?? "").replace(/\s+/g, " ").trim(), 180) || "暂无简介";
+
+    return `${getWritingChapterDisplayTitle(chapter, displayIndex)}${partLabel ? ` / ${partLabel}` : ""} / ${getWritingChapterStatusLabel(chapter.status)}：${summary}`;
+  });
+
+  return [
+    "以下是当前章节附近的目录窗口，不是全书完整目录；用于保持前后承接与设定一致。",
+    partsContent ? `【当前幕/卷】\n${partsContent}` : "",
+    omittedBefore ? `... 已省略前文 ${omittedBefore} 章 ...` : "",
+    chapterLines.length ? `【邻近章节】\n${chapterLines.join("\n")}` : "【邻近章节】暂无章节目录。",
+    omittedAfter ? `... 已省略后续 ${omittedAfter} 章 ...` : ""
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 function buildWritingChapterMemoryLine(book, chapter, index = 0) {
   const partLabel = getWritingChapterPartLabel(book, chapter);
   const statusLabel = getWritingChapterStatusLabel(chapter?.status);
@@ -314,8 +364,15 @@ function buildWritingAssistantPrompt({ book, tabId, task, instruction }) {
     ? buildWritingLongOutlineSeedContent(book)
     : shouldIgnoreOutline
       ? "(作者要求重改目录，本轮不代入已有章节目录。)"
-      : buildWritingOutlineContent(book) || "(空)";
-  const currentModuleContent = tabId === "outline" && (shouldIgnoreOutline || longOutlineRequest) ? outlineContent : content;
+      : tabId === "chapter"
+        ? buildWritingRelevantOutlineContent(book, currentChapter)
+        : buildWritingOutlineContent(book) || "(空)";
+  const currentModuleContent =
+    tabId === "outline" && (shouldIgnoreOutline || longOutlineRequest)
+      ? outlineContent
+      : tabId === "chapter"
+        ? "(见上方当前选中章节正文；此处不重复注入，避免长篇章节任务上下文过大。)"
+        : content;
   const chapterContext =
     currentChapter
       ? [
