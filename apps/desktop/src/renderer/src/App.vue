@@ -1408,141 +1408,30 @@
                             </div>
                           </article>
 
-                          <aside v-if="ui.marketplace.writing.isAiDrawerOpen" class="writing-ai-card writing-ai-drawer">
-                            <div class="writing-ai-head">
-                              <div>
-                                <p class="feature-kicker">AI Copilot</p>
-                                <p class="model-section-title">大师辅助</p>
-                              </div>
-                            </div>
-
-                            <div class="field writing-ai-task-field">
-                              <span class="field-label">辅助任务</span>
-                              <div class="writing-ai-task-dropdown" :class="{ 'is-open': ui.marketplace.writing.isAiTaskPickerOpen }">
-                                <button
-                                  type="button"
-                                  class="writing-ai-task-dropdown-trigger"
-                                  :aria-expanded="ui.marketplace.writing.isAiTaskPickerOpen ? 'true' : 'false'"
-                                  aria-haspopup="listbox"
-                                  @click="toggleWritingAiTaskPicker"
-                                >
-                                  <span>{{ activeWritingTask?.label ?? "选择任务" }}</span>
-                                  <GIcon name="chevronDown" />
-                                </button>
-
-                                <div v-if="ui.marketplace.writing.isAiTaskPickerOpen" class="writing-ai-task-dropdown-menu" role="listbox">
-                                  <button
-                                    v-for="task in activeWritingTaskOptions"
-                                    :key="task.id"
-                                    type="button"
-                                    class="writing-ai-task-dropdown-item"
-                                    :class="{ 'is-active': activeWritingTask?.id === task.id }"
-                                    role="option"
-                                    :aria-selected="activeWritingTask?.id === task.id ? 'true' : 'false'"
-                                    @click="selectWritingAiTask(task.id)"
-                                  >
-                                    <span>{{ task.label }}</span>
-                                    <small>{{ task.goal }}</small>
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-
-                            <label class="field">
-                              <span class="field-label">额外要求</span>
-                              <textarea
-                                v-model="ui.marketplace.writing.aiInstruction"
-                                class="field-textarea writing-ai-input"
-                                placeholder="例如：更黑暗、更史诗；补一条反派线；第 3 章必须反转。"
-                              ></textarea>
-                            </label>
-
-                            <section class="writing-prompt-preview" :class="{ 'is-open': ui.marketplace.writing.isPromptPreviewOpen }">
-                              <button
-                                type="button"
-                                class="writing-prompt-preview-toggle"
-                                :aria-expanded="ui.marketplace.writing.isPromptPreviewOpen ? 'true' : 'false'"
-                                @click="toggleWritingPromptPreview"
-                              >
-                                <span>提示词预览</span>
-                                <GIcon name="chevronDown" />
-                              </button>
-                              <div v-if="ui.marketplace.writing.isPromptPreviewOpen" class="writing-prompt-preview-body">
-                                <pre>{{ activeWritingPromptPreview }}</pre>
-                              </div>
-                            </section>
-
-                            <section v-if="activeWritingLongOutlineRequest || activeWritingOutlinePlannerJob" class="writing-outline-planner-card">
-                              <div class="writing-outline-planner-head">
-                                <div>
-                                  <p class="feature-kicker">Long Plan</p>
-                                  <p class="writing-outline-planner-title">
-                                    {{ activeWritingOutlinePlannerJob ? getWritingOutlinePlannerStatusLabel(activeWritingOutlinePlannerJob) : "长篇分批规划" }}
-                                  </p>
-                                </div>
-                                <span
-                                  v-if="activeWritingOutlinePlannerJob"
-                                  class="status-pill"
-                                  :class="getWritingOutlinePlannerStatusClass(activeWritingOutlinePlannerJob)"
-                                >
-                                  {{ getWritingOutlinePlannerProgressPercent(activeWritingOutlinePlannerJob) }}%
-                                </span>
-                              </div>
-                              <p v-if="activeWritingLongOutlineRequest" class="writing-outline-planner-copy">
-                                {{ buildWritingLongOutlineTargetContent(activeWritingLongOutlineRequest) }}
-                              </p>
-                              <p v-if="activeWritingOutlinePlannerJob" class="writing-outline-planner-copy">
-                                {{ getWritingOutlinePlannerProgressCopy(activeWritingOutlinePlannerJob) }}
-                              </p>
-                              <div v-if="activeWritingOutlinePlannerJob" class="writing-outline-planner-progress" aria-hidden="true">
-                                <span :style="{ width: `${getWritingOutlinePlannerProgressPercent(activeWritingOutlinePlannerJob)}%` }"></span>
-                              </div>
-                              <p v-if="getWritingOutlinePlannerRetryCopy(activeWritingOutlinePlannerJob)" class="writing-outline-planner-retry">
-                                {{ getWritingOutlinePlannerRetryCopy(activeWritingOutlinePlannerJob) }}
-                              </p>
-                              <div v-if="canResumeWritingOutlinePlanner(activeWritingBook, activeWritingOutlinePlannerJob)" class="writing-outline-planner-actions">
-                                <button
-                                  type="button"
-                                  class="model-action-secondary writing-outline-planner-resume"
-                                  :disabled="ui.marketplace.writing.isAiRunning"
-                                  @click="resumeWritingOutlinePlanningJob"
-                                >
-                                  继续规划
-                                </button>
-                              </div>
-                              <p v-if="activeWritingOutlinePlannerJob?.error || activeWritingOutlinePlannerJob?.lastError" class="writing-outline-planner-error">
-                                {{ activeWritingOutlinePlannerJob.error || activeWritingOutlinePlannerJob.lastError }}
-                              </p>
-                            </section>
-
-                            <div class="writing-ai-run-row">
-                              <button type="button" class="model-action writing-ai-run" :disabled="ui.marketplace.writing.isAiRunning" @click="generateWritingAssistantOutput">
-                                {{ getWritingAiRunButtonLabel() }}
-                              </button>
-                            </div>
-
-                            <div class="writing-ai-output">
-                              <div class="writing-ai-output-head">
-                                <span class="field-label">AI 输出</span>
-                                <span v-if="ui.marketplace.writing.aiFeedback" class="status-pill" :class="getWritingAiFeedbackClass()">
-                                  {{ ui.marketplace.writing.aiFeedback }}
-                                </span>
-                              </div>
-                              <textarea
-                                v-model="ui.marketplace.writing.aiOutput"
-                                class="field-textarea writing-ai-output-textarea"
-                                placeholder="生成结果会出现在这里。"
-                              ></textarea>
-                              <div class="model-section-actions">
-                                <button type="button" class="model-action-secondary" :disabled="!ui.marketplace.writing.aiOutput" @click="applyWritingAssistantOutput('append')">
-                                  追加
-                                </button>
-                                <button type="button" class="model-action-secondary" :disabled="!ui.marketplace.writing.aiOutput" @click="applyWritingAssistantOutput('replace')">
-                                  替换
-                                </button>
-                              </div>
-                            </div>
-                          </aside>
+                          <WritingAiDrawer
+                            :state="ui.marketplace.writing"
+                            :active-writing-task="activeWritingTask"
+                            :active-writing-task-options="activeWritingTaskOptions"
+                            :active-writing-prompt-preview="activeWritingPromptPreview"
+                            :active-writing-long-outline-request="activeWritingLongOutlineRequest"
+                            :active-writing-outline-planner-job="activeWritingOutlinePlannerJob"
+                            :active-writing-book="activeWritingBook"
+                            :toggle-writing-ai-task-picker="toggleWritingAiTaskPicker"
+                            :select-writing-ai-task="selectWritingAiTask"
+                            :toggle-writing-prompt-preview="toggleWritingPromptPreview"
+                            :build-writing-long-outline-target-content="buildWritingLongOutlineTargetContent"
+                            :get-writing-outline-planner-status-label="getWritingOutlinePlannerStatusLabel"
+                            :get-writing-outline-planner-status-class="getWritingOutlinePlannerStatusClass"
+                            :get-writing-outline-planner-progress-percent="getWritingOutlinePlannerProgressPercent"
+                            :get-writing-outline-planner-progress-copy="getWritingOutlinePlannerProgressCopy"
+                            :get-writing-outline-planner-retry-copy="getWritingOutlinePlannerRetryCopy"
+                            :can-resume-writing-outline-planner="canResumeWritingOutlinePlanner"
+                            :resume-writing-outline-planning-job="resumeWritingOutlinePlanningJob"
+                            :get-writing-ai-run-button-label="getWritingAiRunButtonLabel"
+                            :generate-writing-assistant-output="generateWritingAssistantOutput"
+                            :get-writing-ai-feedback-class="getWritingAiFeedbackClass"
+                            :apply-writing-assistant-output="applyWritingAssistantOutput"
+                          />
                         </section>
                       </main>
 
@@ -4414,6 +4303,68 @@ import robotSceneUrl from "../assets/spline-backups/home-robot-scene.splinecode?
 import GIcon from "./components/GIcon.vue";
 import MorphingText from "./components/MorphingText.vue";
 import WeeklyTaskTree from "./components/WeeklyTaskTree.vue";
+import { createCommandDraft, createCommandWorkshopState } from "./features/command-workshop/commandWorkshopState.js";
+import {
+  COMIC_APP_NAME,
+  COMIC_APP_TABS,
+  COMIC_CHAPTER_STATUS_META,
+  COMIC_PROJECT_COVER_TONES,
+  COMIC_PROJECT_FORMAT_META,
+  COMIC_PROJECT_PALETTE_META,
+  MARKETPLACE_APP_COUNT,
+  createMarketplaceState
+} from "./features/marketplace/marketplaceConfig.js";
+import {
+  BRAND_RANDOM_TEXTS,
+  FEATURE_COMMAND_WORKSHOP,
+  FEATURE_ENTRIES,
+  FEATURE_EXTENSIONS_MANAGEMENT,
+  FEATURE_HOME,
+  FEATURE_MARKETPLACE,
+  FEATURE_MODEL_MANAGEMENT,
+  FEATURE_PLACEHOLDERS,
+  FEATURE_TASKS,
+  FEATURE_WORKFLOW_LIBRARY,
+  HOME_SETTINGS_ITEMS
+} from "./features/shell/shellConfig.js";
+import {
+  DAILY_REPORT_GUIDE_COPY,
+  WEEKLY_AUTOSAVE_DELAY,
+  WEEKLY_NO_RISK_PATTERN,
+  WEEKLY_RISK_KEYWORDS,
+  createWeeklyState
+} from "./features/weekly/weeklyConfig.js";
+import {
+  WORKFLOW_CURL_BODY_OPTIONS,
+  WORKFLOW_DEFAULT_ENVIRONMENTS,
+  createDefaultWorkflowEnvironments,
+  createWorkflowOutputDraft as createWorkflowOutputDraftFromConfig,
+  createWorkflowRecordDraft as createWorkflowRecordDraftFromConfig,
+  createWorkflowState as createWorkflowStateFromConfig,
+  createWorkflowStepDraft as createWorkflowStepDraftFromConfig
+} from "./features/workflow-library/workflowConfig.js";
+import {
+  WRITING_AI_TASKS,
+  WRITING_APP_NAME,
+  WRITING_APP_TABS,
+  WRITING_AUTOSAVE_DELAY,
+  WRITING_BOOK_EXPORT_FORMATS,
+  WRITING_CHAPTER_MAX_OUTPUT_TOKENS,
+  WRITING_CHAPTER_PREFIX_PATTERN,
+  WRITING_CHAPTER_STATUS_META,
+  WRITING_INTRO_SECTION_DEFINITIONS,
+  WRITING_LENGTH_PROFILES,
+  WRITING_LONG_OUTLINE_BATCH_MAX_TOKENS,
+  WRITING_LONG_OUTLINE_BATCH_SIZE,
+  WRITING_LONG_OUTLINE_MASTER_MAX_TOKENS,
+  WRITING_MODEL_MAX_RETRY_ATTEMPTS,
+  WRITING_MODEL_RETRY_BASE_DELAY_MS,
+  WRITING_MODEL_RETRY_MAX_DELAY_MS,
+  WRITING_OUTLINE_EXPANSION_PATTERN,
+  WRITING_OUTLINE_REWRITE_PATTERN,
+  WRITING_PART_PREFIX_PATTERN
+} from "./features/writing/writingConfig.js";
+import WritingAiDrawer from "./features/writing/WritingAiDrawer.vue";
 import {
   buildWritingAssistantPrompt as buildWritingAssistantPromptFromAssets,
   buildWritingLongOutlineBatchPrompt as buildWritingLongOutlineBatchPromptFromAssets,
@@ -4455,233 +4406,6 @@ import {
   truncateText
 } from "./lib/presenter.js";
 
-const FEATURE_HOME = "home";
-const FEATURE_MARKETPLACE = "marketplace";
-const FEATURE_TASKS = "tasks";
-const FEATURE_WORKFLOW_LIBRARY = "workflow-library";
-const FEATURE_COMMAND_WORKSHOP = "command-workshop";
-const FEATURE_MODEL_MANAGEMENT = "model-management";
-const FEATURE_EXTENSIONS_MANAGEMENT = "extensions-management";
-const WRITING_APP_NAME = "墨笔生花";
-const COMIC_APP_NAME = "丹青溢彩";
-const MARKETPLACE_APP_COUNT = 2;
-const COMIC_PROJECT_FORMAT_META = {
-  poster: { label: "单图海报", defaultPages: 1 },
-  serial: { label: "连载漫画", defaultPages: 24 }
-};
-const COMIC_PROJECT_PALETTE_META = {
-  monochrome: { label: "单色" },
-  color: { label: "彩绘" }
-};
-const COMIC_PROJECT_COVER_TONES = ["ink", "coral", "teal", "gold"];
-const COMIC_APP_TABS = [
-  { id: "intro", label: "总介绍", kicker: "Overview", fieldLabel: "漫画总介绍" },
-  { id: "outline", label: "目录", kicker: "Outline", fieldLabel: "章节与分镜目录" },
-  { id: "chapter", label: "单章生成", kicker: "Chapter", fieldLabel: "单章生成稿" }
-];
-const COMIC_CHAPTER_STATUS_META = {
-  todo: { label: "未开始", className: "is-cancelled" },
-  inProgress: { label: "进行中", className: "is-warning" },
-  done: { label: "已完成", className: "is-success" }
-};
-
-const BRAND_RANDOM_TEXTS = [
-  "LIKEGORD",
-  // Games
-  "PALWORLD",
-  "DIVINITY",
-  "DEADCELLS",
-  "DARKSOULS",
-  "ZELDA",
-  "STARWARS",
-  "CYBERPUNK",
-  "WILDHUNT",
-  "MINECRAFT",
-  "MARIOKART",
-  "LOSTARK",
-  "ONLYUP",
-  "ELDENRING",
-  "BLACKMYTH",
-  "GENSHIN",
-  "STARAIL",
-  "TWOFUS",
-  "HALFLIFE",
-  "VALORANT",
-  "FORTNITE",
-  "OVERWATCH",
-  // Slogon
-  "DOMINATE",
-  "LEGEND",
-  "VICTORY",
-  // Famous
-  "HOLMES",
-  "OPTIMUS",
-  "ARAGORN",
-  "ULTRAMAN",
-  "SUPERMAN",
-  "DEADPOOL",
-  "VENOM",
-  "GODZILLA",
-  "THANOS",
-  "SMAUG",
-  "WOLVERINE",
-  // Anime
-  "ARCANE",
-  "SWORDART",
-  "ONEPIECE",
-  "NARUTO",
-  "SASUKE",
-  "PHANTOM",
-  "VALKYRIE",
-  "ALCHEMIST",
-  "ECLIPSE",
-  "OBSIDIAN",
-];
-
-const FEATURE_ENTRIES = [
-  {
-    id: FEATURE_HOME,
-    kicker: "Home",
-    title: "首页",
-    tier: "flat"
-  },
-  {
-    id: FEATURE_MARKETPLACE,
-    kicker: "Market",
-    title: "应用广场",
-    tier: "wide"
-  },
-  {
-    id: FEATURE_TASKS,
-    kicker: "Tasks",
-    title: "任务笔记",
-    tier: "default"
-  },
-  {
-    id: FEATURE_WORKFLOW_LIBRARY,
-    kicker: "workflow",
-    title: "流程中心",
-    tier: "wide"
-  },
-  {
-    id: FEATURE_COMMAND_WORKSHOP,
-    kicker: "Command",
-    title: "命令工坊",
-    tier: "default"
-  }
-];
-
-const HOME_SETTINGS_ITEMS = [
-  {
-    id: FEATURE_MODEL_MANAGEMENT,
-    title: "模型管理",
-  },
-  {
-    id: FEATURE_EXTENSIONS_MANAGEMENT,
-    title: "能力拓展",
-  }
-];
-
-const FEATURE_PLACEHOLDERS = {
-  [FEATURE_MARKETPLACE]: {
-    title: "应用广场",
-    description: "这里会继续承接应用发现、工具接入和能力分发。"
-  }
-};
-
-const WEEKLY_RISK_KEYWORDS = ["风险", "问题", "阻塞", "受阻", "卡点", "依赖", "待协调", "延期", "等待"];
-const WEEKLY_NO_RISK_PATTERN = /(暂无风险|无风险|无阻塞|暂无阻塞|未发现阻塞|风险可控)/;
-const WEEKLY_AUTOSAVE_DELAY = 700;
-const WRITING_AUTOSAVE_DELAY = 700;
-const DAILY_REPORT_GUIDE_COPY = [
-  "系统会自动遍历今天有更新的叶子任务。",
-  "更新范围包括：修改任务内容、修改任务状态。",
-  "输出结果会按项目归组，仅保留今天推进过的任务清单。"
-].join("\n");
-const WRITING_APP_TABS = [
-  { id: "intro", label: "故事介绍", kicker: "Premise", fieldLabel: "设定与故事介绍" },
-  { id: "outline", label: "书籍目录", kicker: "Outline", fieldLabel: "卷章结构与目录" },
-  { id: "chapter", label: "章节编写", kicker: "Chapter", fieldLabel: "当前章节正文" }
-];
-const WRITING_LENGTH_PROFILES = {
-  short: {
-    label: "短篇",
-    scope: "一口气完成的强冲击叙事",
-    method: "只保留一个核心矛盾、一个决定性转折和一个余震结尾；背景只写会改变结局的设定。"
-  },
-  medium: {
-    label: "中篇",
-    scope: "多幕式成长与反转",
-    method: "用 3-5 个阶段推进人物关系和真相揭露；每一幕都要让主角付出不可逆代价。"
-  },
-  long: {
-    label: "长篇",
-    scope: "严密世界观与群像长线",
-    method: "先搭建时代、制度、利益网络和多阵营目标，再用卷级悬念、人物弧光和伏笔回收驱动章节。"
-  }
-};
-const WRITING_AI_TASKS = {
-  intro: [
-    { id: "world", label: "世界观总设", goal: "补强时代、地理、制度、资源、禁忌和冲突源，让背景成为剧情发动机。" },
-    { id: "character", label: "人物关系网", goal: "设计主角、对手、盟友、镜像人物和隐性债务，突出彼此之间的利益与情感牵连。" },
-    { id: "premise", label: "故事钩子", goal: "提炼一句不可忽视的核心命题，并扩写成具有出版级吸引力的故事简介。" },
-    { id: "storyBible", label: "创作圣经", goal: "把主线、世界规则、人物弧光、伏笔账本和风格边界整理成后续章节可复用的创作基准。" }
-  ],
-  outline: [
-    { id: "structure", label: "章节规划", goal: "按篇幅拆分幕、卷、章，给每一章明确冲突、信息增量、人物变化和结尾钩子。" },
-    { id: "plotEngine", label: "剧情推进", goal: "判断下一阶段该发生什么，明确冲突、转折、情绪目标、章节目标和读者期待兑现。" },
-    { id: "foreshadow", label: "伏笔回收", goal: "设计伏笔、误导、反转和回收节奏，避免目录只是事件流水账。" },
-    { id: "rhythm", label: "节奏诊断", goal: "检查高潮、缓冲、揭秘、失败和胜利的分布，让故事曲线更有张力。" },
-    { id: "continuity", label: "一致性审核", goal: "检查时间线、设定规则、人名关系、能力边界和未回收伏笔，避免长篇崩线。" }
-  ],
-  chapter: [
-    { id: "draft", label: "章节初稿", goal: "根据当前目录与设定生成章节正文，要求场景具体、对白有锋芒、段落有推进。" },
-    { id: "expand", label: "内容扩写", goal: "丰富感官细节、行动链、心理暗流和人物互动，不改变既有剧情方向。" },
-    { id: "dialogue", label: "对白增强", goal: "稳定人物声口，补强潜台词、冲突递进和对话中的行动变化。" },
-    { id: "climax", label: "高潮场面", goal: "生成战斗、对峙、打脸、反转或情绪爆发场面，保证爽点来自因果和代价。" },
-    { id: "polish", label: "文学润色", goal: "强化语言质感、节奏、意象和收束句，让章节更有记忆点。" },
-    { id: "review", label: "章节质检", goal: "按人物动机、因果链、节奏、伏笔、设定一致性和可读性检查当前章节。" }
-  ]
-};
-const WRITING_OUTLINE_REWRITE_PATTERN =
-  /(重改|重写|重做|重构|重新设计|重新规划|从零|推翻|不要参考|不参考|不代入|不用已有|忽略已有|全新目录|新的目录|替换目录)/;
-const WRITING_OUTLINE_EXPANSION_PATTERN =
-  /(扩写|扩充|扩展|拓展|增加到|加到|分为|分成|拆成|每幕|每一幕|每卷|每一卷|几百章|上千章|千章|百章|长篇规划)/;
-const WRITING_LONG_OUTLINE_BATCH_SIZE = 20;
-const WRITING_LONG_OUTLINE_MASTER_MAX_TOKENS = 5200;
-const WRITING_LONG_OUTLINE_BATCH_MAX_TOKENS = 8200;
-const WRITING_CHAPTER_MAX_OUTPUT_TOKENS = 7600;
-const WRITING_MODEL_MAX_RETRY_ATTEMPTS = 5;
-const WRITING_MODEL_RETRY_BASE_DELAY_MS = 1200;
-const WRITING_MODEL_RETRY_MAX_DELAY_MS = 8000;
-const WRITING_CHAPTER_PREFIX_PATTERN = /^第\s*([0-9０-９一二三四五六七八九十百千万零〇两]+)\s*章\s*(?:[：:、.\-]\s*)?(.*)$/;
-const WRITING_PART_PREFIX_PATTERN = /^(?:第\s*)?([0-9０-９一二三四五六七八九十百千万零〇两]+)\s*(幕|卷)\s*(?:[：:、.\-·]\s*)?(.*)$/;
-const WRITING_BOOK_EXPORT_FORMATS = [
-  { id: "txt", label: "TXT" },
-  { id: "md", label: "Markdown" }
-];
-const WRITING_INTRO_SECTION_DEFINITIONS = {
-  intro: {
-    key: "intro",
-    label: "简短介绍",
-    placeholder: "用几段话写清故事核心命题、主角处境、主要矛盾和读者会被什么牵引。"
-  },
-  outlineGuide: {
-    key: "outlineGuide",
-    label: "大纲指导",
-    placeholder: "写下中篇结构的阶段、转折、人物变化和主要伏笔，帮助后续目录不散。"
-  },
-  seriesPlan: {
-    key: "seriesPlan",
-    label: "详细大纲指导",
-    placeholder: "写下长篇整体规划：分部、分卷、每一部的完整故事目标、核心阵营变化和最终回收。"
-  }
-};
-const WRITING_CHAPTER_STATUS_META = {
-  todo: { label: "未开始", className: "is-cancelled" },
-  inProgress: { label: "进行中", className: "is-warning" },
-  done: { label: "已完成", className: "is-success" }
-};
 const MODEL_BALANCE_QUERY_TEMPLATE = [
   "({",
   "  request: {",
@@ -4708,13 +4432,6 @@ const MODEL_BALANCE_QUERY_TEMPLATE = [
   "});"
 ].join("\n");
 
-const WORKFLOW_DEFAULT_ENVIRONMENTS = [
-  { id: "dev", label: "DEV", baseUrl: "" },
-  { id: "test", label: "TEST", baseUrl: "" },
-  { id: "pre", label: "PRE", baseUrl: "" },
-  { id: "prod", label: "PROD", baseUrl: "" }
-];
-const WORKFLOW_CURL_BODY_OPTIONS = new Set(["-d", "--data", "--data-raw", "--data-binary", "--data-urlencode", "--json"]);
 const MODEL_USAGE_DAILY_WINDOW_DAYS = 30;
 const MODEL_USAGE_DAY_START_HOUR = 1;
 
@@ -4770,157 +4487,20 @@ function createModelEditorState(provider = "openai", profile = null) {
   };
 }
 
-function createWeeklyState() {
-  return {
-    view: "list",
-    activeRecordId: null,
-    draft: null,
-    collapsedProjectIds: [],
-    editorView: "projects",
-    reportingMode: "daily",
-    reportOutputMode: "preview",
-    reportFeedbackText: "",
-    reportFeedbackTone: "neutral",
-    reportCopyState: "idle",
-    dailyReportUseModelOptimization: false,
-    isGeneratingReport: false,
-    generatingReportKind: null
-  };
-}
-
-function createMarketplaceState() {
-  return {
-    view: "apps",
-    comic: {
-      projects: [],
-      activeProjectId: null,
-      activeTab: "intro",
-      activeChapterId: "",
-      isProfileCollapsed: false,
-      isChapterPickerOpen: false,
-      chapterSearchQuery: "",
-      isExportDialogOpen: false,
-      exportDirectory: "",
-      exportFeedback: "",
-      exportFeedbackTone: "neutral",
-      isExporting: false
-    },
-    writing: {
-      books: [],
-      activeBookId: null,
-      activeTab: "intro",
-      activeChapterId: "",
-      aiTaskId: "world",
-      aiInstruction: "",
-      aiOutput: "",
-      aiFeedback: "",
-      aiFeedbackTone: "neutral",
-      isAiRunning: false,
-      aiRunningBookId: "",
-      outlinePlannerCancelRequested: false,
-      uploadFeedback: "",
-      isProfileCollapsed: false,
-      isAiDrawerOpen: false,
-      isAiTaskPickerOpen: false,
-      isPromptPreviewOpen: false,
-      isChapterPickerOpen: false,
-      chapterSearchQuery: "",
-      isExportDialogOpen: false,
-      exportFormat: "txt",
-      exportDirectory: "",
-      exportFeedback: "",
-      exportFeedbackTone: "neutral",
-      isExporting: false,
-      submittedChapterId: "",
-      submittedChapterContentSnapshot: ""
-    }
-  };
-}
-
-function createCommandDraft(agentProfileId = "") {
-  return {
-    agentProfileId,
-    skillId: "",
-    autoSelectMcp: true,
-    mcpServerId: "",
-    mcpToolName: "",
-    mcpArgumentsText: "{}"
-  };
-}
-
 function createWorkflowState() {
-  return {
-    view: "library",
-    activeCardId: null,
-    activeRecordId: null,
-    copiedStepId: null,
-    bodyStepId: null,
-    bodyDraftText: "",
-    bodyFeedbackText: "",
-    bodyFeedbackTone: "neutral",
-    bodyPanelCollapsed: false,
-    apiKeyVisible: false,
-    searchQuery: "",
-    editingRecordId: null,
-    isRunning: false,
-    isCancelling: false,
-    runResult: null,
-    activeProgressEventId: null,
-    expandedStepIds: [],
-    isSavingRecord: false,
-    recordDraft: createWorkflowRecordDraft()
-  };
-}
-
-function createDefaultWorkflowEnvironments(seedBaseUrl = "", seedApiKey = "") {
-  return WORKFLOW_DEFAULT_ENVIRONMENTS.map((environment) => ({
-    ...environment,
-    baseUrl: environment.id === "prod" ? seedBaseUrl : "",
-    apiKey: environment.id === "prod" ? seedApiKey : ""
-  }));
+  return createWorkflowStateFromConfig(createLocalId);
 }
 
 function createWorkflowStepDraft(overrides = {}) {
-  const successValues = Array.isArray(overrides.successValues) ? overrides.successValues : [];
-  const failureValues = Array.isArray(overrides.failureValues) ? overrides.failureValues : [];
-
-  return {
-    id: overrides.id ?? createLocalId("workflow_step_draft"),
-    name: overrides.name ?? "",
-    curl: overrides.curl ?? "",
-    waitBeforeMs: String(overrides.waitBeforeMs ?? 0),
-    executionMode: overrides.executionMode ?? (overrides.completionPath ? "polling" : "once"),
-    pollIntervalMs: String(overrides.pollIntervalMs ?? 5000),
-    maxAttempts: String(overrides.maxAttempts ?? 20),
-    completionPath: overrides.completionPath ?? "",
-    successValuesText: successValues.join(", "),
-    failureValuesText: failureValues.join(", "),
-    produces: (Array.isArray(overrides.produces) ? overrides.produces : []).map((binding) => createWorkflowOutputDraft(binding))
-  };
+  return createWorkflowStepDraftFromConfig(overrides, createLocalId);
 }
 
 function createWorkflowOutputDraft(overrides = {}) {
-  return {
-    id: overrides.id ?? createLocalId("workflow_output_draft"),
-    name: overrides.name ?? "",
-    path: overrides.path ?? ""
-  };
+  return createWorkflowOutputDraftFromConfig(overrides, createLocalId);
 }
 
 function createWorkflowRecordDraft() {
-  return {
-    name: "",
-    scenario: "",
-    mode: "single",
-    tagsText: "curl, API",
-    pollIntervalMs: "3000",
-    maxAttempts: "20",
-    activeEnvironmentId: "prod",
-    apiKey: "",
-    environments: createDefaultWorkflowEnvironments(),
-    steps: [createWorkflowStepDraft()],
-    notes: ""
-  };
+  return createWorkflowRecordDraftFromConfig(createLocalId);
 }
 
 function buildCommandWorkshopLiveArtifact(progress) {
@@ -5233,19 +4813,7 @@ const ui = reactive({
   weekly: createWeeklyState(),
   workflow: createWorkflowState(),
   dialog: createGordonDialogState(),
-  command: {
-    view: "list",
-    composerView: "input",
-    activeSessionId: null,
-    activeProgressEventId: null,
-    form: createCommandDraft(),
-    draftInput: "",
-    attachments: [],
-    availableMcpTools: [],
-    isRunning: false,
-    isInputComposing: false,
-    liveProgress: null
-  },
+  command: createCommandWorkshopState(),
   extensions: createExtensionsState()
 });
 
