@@ -761,6 +761,12 @@ canvas {
   grid-template-columns: minmax(0, 1fr);
 }
 
+.models-grid-subpage,
+.extensions-editor-grid {
+  grid-row: 1 / -1;
+  height: 100%;
+}
+
 .models-grid-immersive {
   gap: 0;
   height: 100%;
@@ -785,6 +791,38 @@ canvas {
   border: 0;
   border-radius: 0;
   background: transparent;
+}
+
+.model-subpage-section,
+.extensions-shell .extension-subpage-section {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.model-subpage-section.model-section-scroll,
+.extensions-shell .extension-subpage-section.model-section-scroll {
+  overflow: hidden;
+}
+
+.model-subpage-section .model-editor,
+.extensions-shell .extension-subpage-section .model-editor {
+  height: 100%;
+}
+
+.model-subpage-head.workflow-library-detail-head {
+  flex: 0 0 auto;
+}
+
+.model-subpage-section .model-form,
+.model-subpage-section .model-usage-content,
+.extensions-shell .extension-subpage-section .extension-form {
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
 }
 
 .model-section-head {
@@ -3770,6 +3808,11 @@ canvas {
   padding: 0;
 }
 
+.extensions-shell.extensions-shell-subpage {
+  gap: 0;
+  padding: 0;
+}
+
 .extensions-shell .models-hero {
   align-items: center;
   gap: 12px;
@@ -3975,6 +4018,10 @@ canvas {
 
 .extensions-shell .model-editor {
   gap: 12px;
+}
+
+.extensions-shell .model-editor-unified {
+  gap: 18px;
 }
 
 .extensions-shell .extension-form {

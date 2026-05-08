@@ -111,7 +111,13 @@
                   </span>
                 </section>
 
-                <div class="models-grid models-grid-single">
+                <div
+                  class="models-grid models-grid-single"
+                  :class="{
+                    'models-grid-subpage':
+                      ui.modelManagement.view === 'editor' || ui.modelManagement.view === 'usage'
+                  }"
+                >
                   <section v-if="ui.modelManagement.view === 'list'" class="model-section">
                     <div class="model-section-head">
                       <div>
@@ -243,10 +249,10 @@
                     </div>
                   </section>
 
-                  <section v-else-if="ui.modelManagement.view === 'usage'" class="model-section model-section-scroll">
+                  <section v-else-if="ui.modelManagement.view === 'usage'" class="model-section model-section-scroll model-subpage-section">
                     <div class="model-editor model-editor-unified model-usage-panel">
-                      <div class="model-section-head model-section-head-leading model-section-head-editor">
-                        <div class="model-section-head-start">
+                      <div class="workflow-library-detail-head model-subpage-head">
+                        <div class="workflow-library-detail-head-side">
                           <button
                             type="button"
                             class="model-icon-button weekly-back-button"
@@ -258,12 +264,11 @@
                           </button>
                         </div>
 
-                        <div class="model-section-title-block model-section-title-block-centered">
-                          <p class="feature-kicker">Usage</p>
-                          <p class="model-section-title">数据统计</p>
+                        <div class="workflow-library-detail-head-center">
+                          <p class="workflow-library-detail-title">数据统计</p>
                         </div>
 
-                        <div class="model-section-actions model-section-actions-end">
+                        <div class="workflow-library-detail-head-side workflow-library-detail-head-side-end">
                           <span v-if="activeModelUsageProfile" class="pill pill-neutral">
                             {{ activeModelUsageProfile.displayName }}
                           </span>
@@ -323,7 +328,7 @@
                             </div>
 
                             <div class="model-usage-daily-list">
-                              <div v-for="day in modelUsageDailySeries" :key="`${day.dateKey}-row`" class="model-usage-row">
+                              <div v-for="day in modelUsageDailyListSeries" :key="`${day.dateKey}-row`" class="model-usage-row">
                                 <span>{{ day.label }}</span>
                                 <strong>{{ formatBalanceNumber(day.used) }} / {{ formatOptionalBalanceNumber(day.remaining) }}</strong>
                               </div>
@@ -394,10 +399,10 @@
                     </div>
                   </section>
 
-                  <section v-else class="model-section model-section-scroll">
+                  <section v-else class="model-section model-section-scroll model-subpage-section">
                     <div class="model-editor model-editor-unified">
-                      <div class="model-section-head model-section-head-leading model-section-head-editor">
-                        <div class="model-section-head-start">
+                      <div class="workflow-library-detail-head model-subpage-head">
+                        <div class="workflow-library-detail-head-side">
                           <button
                             type="button"
                             class="model-icon-button weekly-back-button"
@@ -409,12 +414,11 @@
                           </button>
                         </div>
 
-                        <div class="model-section-title-block model-section-title-block-centered">
-                          <p class="feature-kicker">Configuration</p>
-                          <p class="model-section-title">编辑配置</p>
+                        <div class="workflow-library-detail-head-center">
+                          <p class="workflow-library-detail-title">编辑配置</p>
                         </div>
 
-                        <div class="model-section-actions model-section-actions-end">
+                        <div class="workflow-library-detail-head-side workflow-library-detail-head-side-end">
                           <span class="pill pill-neutral">{{ getProviderMeta(ui.modelManagement.editor.provider).label }}</span>
                         </div>
                       </div>
@@ -3335,7 +3339,13 @@
 
           <template v-else-if="activeFeature === FEATURE_EXTENSIONS_MANAGEMENT">
             <div class="workspace-stage workspace-stage-scroll">
-              <div class="models-shell extensions-shell" :class="{ 'extensions-shell-home': ui.extensions.view === 'list' }">
+              <div
+                class="models-shell extensions-shell"
+                :class="{
+                  'extensions-shell-home': ui.extensions.view === 'list',
+                  'extensions-shell-subpage': ui.extensions.view === 'editor'
+                }"
+              >
                 <section v-if="ui.extensions.view === 'list'" class="models-hero">
                   <div>
                     <p class="feature-kicker">Capability Expansion</p>
@@ -3643,15 +3653,37 @@
 
                 <template v-else-if="ui.extensions.view === 'editor'">
                   <div class="models-grid models-grid-single extensions-editor-grid">
-                    <section class="model-section model-section-scroll extension-section extension-section-editor">
-                      <div class="model-editor extension-editor">
-                        <div class="model-section-head model-section-head-leading">
-                          <div class="model-section-leading">
-                            <button type="button" class="model-action-secondary" @click="closeExtensionPanels">返回列表</button>
-                            <div>
-                              <p class="feature-kicker">Capability Editor</p>
-                              <p class="model-section-title">{{ getExtensionEditorTitle() }}</p>
-                            </div>
+                    <section class="model-section model-section-scroll extension-section extension-section-editor extension-subpage-section">
+                      <div class="model-editor extension-editor model-editor-unified">
+                        <div class="workflow-library-detail-head model-subpage-head">
+                          <div class="workflow-library-detail-head-side">
+                            <button
+                              type="button"
+                              class="model-icon-button weekly-back-button"
+                              aria-label="返回列表"
+                              title="返回列表"
+                              @click="closeExtensionPanels"
+                            >
+                              <GIcon name="return" />
+                            </button>
+                          </div>
+
+                          <div class="workflow-library-detail-head-center">
+                            <p class="workflow-library-detail-title">{{ getExtensionEditorTitle() }}</p>
+                          </div>
+
+                          <div class="workflow-library-detail-head-side workflow-library-detail-head-side-end">
+                            <span class="pill pill-neutral">
+                              {{
+                                ui.extensions.editor.kind === "agent"
+                                  ? "Agent"
+                                  : ui.extensions.editor.kind === "skill"
+                                    ? "Skill"
+                                    : ui.extensions.editor.kind === "skill-import"
+                                      ? "Skill 导入"
+                                      : "MCP"
+                              }}
+                            </span>
                           </div>
                         </div>
 
@@ -5281,7 +5313,10 @@ const isWorkspaceImmersive = computed(
     (activeFeature.value === FEATURE_TASKS && ui.weekly.view === "editor") ||
     (activeFeature.value === FEATURE_MARKETPLACE && ui.marketplace.view !== "apps") ||
     (activeFeature.value === FEATURE_WORKFLOW_LIBRARY && ui.workflow.view !== "library") ||
-    (activeFeature.value === FEATURE_COMMAND_WORKSHOP && ui.command.view === "chat")
+    (activeFeature.value === FEATURE_COMMAND_WORKSHOP && ui.command.view === "chat") ||
+    (activeFeature.value === FEATURE_MODEL_MANAGEMENT &&
+      (ui.modelManagement.view === "editor" || ui.modelManagement.view === "usage")) ||
+    (activeFeature.value === FEATURE_EXTENSIONS_MANAGEMENT && ui.extensions.view === "editor")
 );
 
 const providerOptions = computed(() =>
@@ -5309,6 +5344,7 @@ const modelUsageHistoryEntries = computed(() => getModelUsageHistoryEntries(acti
 const modelUsageDailySeries = computed(() =>
   buildModelUsageDailySeries(modelUsageHistoryEntries.value, MODEL_USAGE_DAILY_WINDOW_DAYS)
 );
+const modelUsageDailyListSeries = computed(() => [...modelUsageDailySeries.value].reverse());
 const modelUsageSummary = computed(() => buildModelUsageSummary(modelUsageDailySeries.value, modelUsageHistoryEntries.value));
 const isActiveModelUsageLoading = computed(() =>
   Boolean(activeModelUsageProfile.value && modelBalanceRuntime.historyLoadingByProfileId[activeModelUsageProfile.value.id])
