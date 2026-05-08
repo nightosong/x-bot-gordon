@@ -705,6 +705,11 @@ canvas {
   padding: clamp(12px, 1vw, 16px);
 }
 
+.models-shell-home {
+  gap: 18px;
+  padding: 0;
+}
+
 .models-hero {
   display: flex;
   align-items: flex-start;
@@ -888,8 +893,8 @@ canvas {
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   height: 100%;
-  padding: 10px;
-  gap: 8px;
+  padding: 0;
+  gap: 18px;
 }
 
 .marketplace-shell-detail {
@@ -2855,6 +2860,10 @@ canvas {
   min-height: 0;
 }
 
+.model-editor-unified .model-usage-content {
+  gap: 18px;
+}
+
 .model-usage-summary-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -3495,6 +3504,14 @@ canvas {
   min-height: 0;
 }
 
+.model-editor-unified {
+  gap: 18px;
+}
+
+.model-editor-unified > .model-section-head {
+  margin-bottom: 0;
+}
+
 .model-editor-compact {
   grid-template-rows: auto auto;
 }
@@ -3748,6 +3765,11 @@ canvas {
   padding: 10px 12px 12px;
 }
 
+.extensions-shell.extensions-shell-home {
+  gap: 18px;
+  padding: 0;
+}
+
 .extensions-shell .models-hero {
   align-items: center;
   gap: 12px;
@@ -3778,6 +3800,10 @@ canvas {
 
 .extensions-shell .models-grid {
   gap: 12px;
+}
+
+.extensions-shell.extensions-shell-home .models-grid {
+  gap: 18px;
 }
 
 .extensions-list-toolbar {
@@ -4055,10 +4081,10 @@ canvas {
 .weekly-shell {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
-  gap: clamp(14px, 1.4vw, 18px);
+  gap: 18px;
   min-height: 0;
   height: 100%;
-  padding: clamp(12px, 1vw, 16px);
+  padding: 0;
 }
 
 .weekly-shell-editor {
@@ -5524,10 +5550,10 @@ canvas {
 .workflow-library-shell {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  gap: 12px;
+  gap: 18px;
   min-height: 0;
   height: 100%;
-  padding: 12px;
+  padding: 0;
 }
 
 .workflow-library-shell-detail {

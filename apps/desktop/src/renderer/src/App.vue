@@ -92,7 +92,15 @@
 
           <template v-else-if="activeFeature === FEATURE_MODEL_MANAGEMENT">
             <div class="workspace-stage workspace-stage-scroll">
-              <div class="models-shell">
+              <div
+                class="models-shell"
+                :class="{
+                  'models-shell-home':
+                    ui.modelManagement.view === 'list' ||
+                    ui.modelManagement.view === 'editor' ||
+                    ui.modelManagement.view === 'usage'
+                }"
+              >
                 <section v-if="ui.modelManagement.view === 'list'" class="models-hero">
                   <div>
                     <p class="feature-kicker">Model Management</p>
@@ -236,7 +244,7 @@
                   </section>
 
                   <section v-else-if="ui.modelManagement.view === 'usage'" class="model-section model-section-scroll">
-                    <div class="model-editor model-usage-panel">
+                    <div class="model-editor model-editor-unified model-usage-panel">
                       <div class="model-section-head model-section-head-leading model-section-head-editor">
                         <div class="model-section-head-start">
                           <button
@@ -387,7 +395,7 @@
                   </section>
 
                   <section v-else class="model-section model-section-scroll">
-                    <div class="model-editor">
+                    <div class="model-editor model-editor-unified">
                       <div class="model-section-head model-section-head-leading model-section-head-editor">
                         <div class="model-section-head-start">
                           <button
@@ -482,12 +490,6 @@
                             placeholder="({ request: { url: 'https://xxxxx', method: 'GET' }, extractor: function (raw) { return { remaining: 0, used: 0, unit: 'USD' }; } });"
                           ></textarea>
 
-                          <p class="field-hint">
-                            支持 `cc-switch` 风格协议；`request.url` 直接写在代码里即可，`API Key` 模板变量
-                            <code v-pre>{{apiKey}}</code>
-                            会在查询时自动注入。
-                          </p>
-
                           <div class="model-balance-preview" :class="{ 'is-error': ui.modelManagement.editor.balanceQueryError }">
                             <div class="model-balance-widget-head">
                               <span class="model-balance-time">
@@ -536,7 +538,6 @@
                               {{ model }}
                             </button>
                           </div>
-                          <p class="field-hint">后续这里也可以继续扩成真正的模型市场与推荐列表。</p>
                         </div>
 
                         <div class="form-actions">
@@ -3334,7 +3335,7 @@
 
           <template v-else-if="activeFeature === FEATURE_EXTENSIONS_MANAGEMENT">
             <div class="workspace-stage workspace-stage-scroll">
-              <div class="models-shell extensions-shell">
+              <div class="models-shell extensions-shell" :class="{ 'extensions-shell-home': ui.extensions.view === 'list' }">
                 <section v-if="ui.extensions.view === 'list'" class="models-hero">
                   <div>
                     <p class="feature-kicker">Capability Expansion</p>
