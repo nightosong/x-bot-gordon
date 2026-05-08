@@ -15,6 +15,7 @@ import {
   getWeeklySelectedReportTemplate,
   getWeeklyTaskChildren,
   hasMatchingMarkdownHierarchy,
+  normalizeMarkdownForClipboard,
   removeWeeklyTaskFromCollection,
   syncWeeklyProjectStatus,
   syncWeeklySelectedReportTemplate,
@@ -38,17 +39,12 @@ export function createWeeklyActions({
   documentRef = globalThis.document,
   desktopApi,
   featureTasksId,
-  normalizeMarkdownForClipboard,
   nextTick,
   setActiveFeature,
   setStatus,
   showConfirmDialog,
   showInputDialog,
   ui,
-  weeklyCanDeleteSelectedReportTemplate,
-  weeklyIsWeeklyReportMode,
-  weeklyReportModeLabel,
-  weeklyReportOutputContent,
   weeklyTaskRewriteIds,
   workbench
 }) {
@@ -68,6 +64,31 @@ export function createWeeklyActions({
 
   function getActiveWeeklyRecord() {
     return readRef(activeWeeklyRecord);
+  }
+
+  function isWeeklyReportMode() {
+    return ui.weekly.reportingMode !== "daily";
+  }
+
+  function getWeeklyReportModeLabel() {
+    return isWeeklyReportMode() ? "周报" : "日报";
+  }
+
+  function getWeeklyReportOutputContent() {
+    return isWeeklyReportMode() ? ui.weekly.draft?.generatedReport ?? "" : ui.weekly.draft?.generatedDailyReport ?? "";
+  }
+
+  function setWeeklyReportOutputContent(value) {
+    if (!ui.weekly.draft) {
+      return;
+    }
+
+    if (isWeeklyReportMode()) {
+      ui.weekly.draft.generatedReport = String(value ?? "");
+      return;
+    }
+
+    ui.weekly.draft.generatedDailyReport = String(value ?? "");
   }
 
   function findWeeklyProjectById(projectId) {
@@ -512,13 +533,10 @@ export function createWeeklyActions({
   }
 
   async function removeWeeklySelectedReportTemplate() {
-    if (!ui.weekly.draft || !readRef(weeklyCanDeleteSelectedReportTemplate)) {
-      return;
-    }
-
+    const templates = Array.isArray(ui.weekly.draft?.reportTemplates) ? ui.weekly.draft.reportTemplates : [];
     const selectedTemplate = getWeeklySelectedReportTemplate(ui.weekly.draft);
 
-    if (!selectedTemplate || selectedTemplate.builtin) {
+    if (!ui.weekly.draft || templates.length <= 1 || !selectedTemplate || selectedTemplate.builtin) {
       return;
     }
 
@@ -535,7 +553,6 @@ export function createWeeklyActions({
       return;
     }
 
-    const templates = Array.isArray(ui.weekly.draft.reportTemplates) ? ui.weekly.draft.reportTemplates : [];
     const templateIndex = templates.findIndex((template) => template.id === selectedTemplate.id);
     const nextTemplates = templates.filter((template) => template.id !== selectedTemplate.id);
     const fallbackTemplate = nextTemplates[templateIndex] ?? nextTemplates[templateIndex - 1] ?? nextTemplates[0] ?? null;
@@ -639,7 +656,7 @@ export function createWeeklyActions({
   }
 
   async function handleWeeklyActiveReportGeneration() {
-    if (readRef(weeklyIsWeeklyReportMode)) {
+    if (isWeeklyReportMode()) {
       await handleWeeklyReportGeneration();
       return;
     }
@@ -782,15 +799,16 @@ export function createWeeklyActions({
     }
 
     try {
-      const normalizedText = normalizeMarkdownForClipboard(weeklyReportOutputContent.value);
+      const currentOutput = getWeeklyReportOutputContent();
+      const normalizedText = normalizeMarkdownForClipboard(currentOutput);
 
-      if (normalizedText !== weeklyReportOutputContent.value) {
-        weeklyReportOutputContent.value = normalizedText;
+      if (normalizedText !== currentOutput) {
+        setWeeklyReportOutputContent(normalizedText);
       }
 
       await copyTextToClipboard(normalizedText);
       markWeeklyReportCopied();
-      setStatus(`${readRef(weeklyReportModeLabel)}已清洗并复制，可直接粘贴到飞书。`, "success");
+      setStatus(`${getWeeklyReportModeLabel()}已清洗并复制，可直接粘贴到飞书。`, "success");
     } catch (error) {
       resetWeeklyReportCopyState();
       setStatus(`复制失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");

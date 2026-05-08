@@ -24,6 +24,106 @@ export function getWeeklyDraftSnapshot(record) {
   });
 }
 
+export function normalizeMarkdownForClipboard(value) {
+  const oddSpacePattern = /[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g;
+  const zeroWidthPattern = /[\u200B-\u200D\u2060\uFEFF]/g;
+  const bulletLikePattern = /^[ \t]*[•●▪◦‣・·]\s+/;
+  const statusSuffixPattern = /(?:（|\()(已完成|进行中|待开始|受阻)(?:）|\))\s*$/;
+  const normalizeListIndent = (indentWidth = 0) => {
+    const width = Number.isFinite(indentWidth) ? Number(indentWidth) : 0;
+
+    if (!width) {
+      return "";
+    }
+
+    return "    ".repeat(Math.max(1, Math.round(width / 4)));
+  };
+
+  const normalizedLines = String(value ?? "")
+    .replace(/\r\n?/g, "\n")
+    .replace(zeroWidthPattern, "")
+    .replace(oddSpacePattern, " ")
+    .replace(/\t/g, "    ")
+    .replace(/((?:（|\()(?:已完成|进行中|待开始|受阻)(?:）|\)))(?=\\?[*+-]\s+)/g, "$1\n")
+    .replace(/(\S)[ ]{2,}(?=(?:\\?[*+-]|\d+(?:\.\d+)*\.?|\d+\))\s+)/g, "$1\n")
+    .split("\n")
+    .map((line) => {
+      let normalizedLine = line.replace(/[ ]+$/g, "");
+
+      normalizedLine = normalizedLine.replace(/^([ ]*)\\([*+-])\s+/, "$1$2 ");
+
+      if (bulletLikePattern.test(normalizedLine)) {
+        normalizedLine = normalizedLine.replace(/^([ ]*)[•●▪◦‣・·]\s+/, "$1* ");
+      }
+
+      normalizedLine = normalizedLine.replace(/^([ ]*)([*+-])\s+/, "$1$2 ");
+      normalizedLine = normalizedLine.replace(/^([ ]*)(\d+)[\.\)]\s+/, "$1$2. ");
+      normalizedLine = normalizedLine.replace(/^(#{1,6})([^\s#])/, "$1 $2");
+      normalizedLine = normalizedLine.replace(/^([ ]*)>([^\s>])/, "$1> $2");
+
+      const listMeta = getMarkdownListLineMeta(normalizedLine);
+
+      if (listMeta?.ordered) {
+        normalizedLine = `${normalizeListIndent(listMeta.nestingIndent)}${listMeta.marker} ${listMeta.text.trim()}`;
+      }
+
+      return normalizedLine;
+    });
+
+  const repairedLines = [];
+  let hasActiveProject = false;
+
+  for (let index = 0; index < normalizedLines.length; index += 1) {
+    const line = normalizedLines[index];
+
+    if (!line.trim()) {
+      const previousNonEmptyLine = [...repairedLines].reverse().find((item) => item.trim());
+      const nextNonEmptyLine = normalizedLines.slice(index + 1).find((item) => item.trim());
+      const isBlankLineInsideListBlock = Boolean(
+        previousNonEmptyLine &&
+          nextNonEmptyLine &&
+          getMarkdownListLineMeta(previousNonEmptyLine) &&
+          getMarkdownListLineMeta(nextNonEmptyLine)
+      );
+
+      if (isBlankLineInsideListBlock) {
+        continue;
+      }
+
+      if (repairedLines[repairedLines.length - 1] !== "") {
+        repairedLines.push("");
+      }
+
+      continue;
+    }
+
+    const listMeta = getMarkdownListLineMeta(line);
+
+    if (!listMeta) {
+      repairedLines.push(line);
+      continue;
+    }
+
+    const content = listMeta.text.trim();
+
+    if (!listMeta.ordered && !listMeta.nestingIndent && statusSuffixPattern.test(content) && hasActiveProject) {
+      repairedLines.push(`    * ${content}`);
+      continue;
+    }
+
+    if (listMeta.ordered) {
+      repairedLines.push(`${normalizeListIndent(listMeta.nestingIndent)}${listMeta.marker} ${content}`);
+      hasActiveProject = !listMeta.nestingIndent;
+      continue;
+    }
+
+    repairedLines.push(`${normalizeListIndent(listMeta.nestingIndent)}* ${content}`);
+    hasActiveProject = !listMeta.nestingIndent && !statusSuffixPattern.test(content);
+  }
+
+  return repairedLines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 export function getWeeklyTaskChildren(task) {
   return Array.isArray(task?.children) ? task.children : [];
 }
