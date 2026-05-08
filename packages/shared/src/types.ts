@@ -308,6 +308,20 @@ export interface ModelBalanceSnapshot {
   queriedAt: string;
 }
 
+export type ModelBalanceHistorySource = "manual" | "scheduled";
+
+export interface ModelBalanceHistoryEntry {
+  id: string;
+  profileId: string;
+  profileName: string;
+  provider: ProviderKind;
+  model: string;
+  snapshot: ModelBalanceSnapshot;
+  source: ModelBalanceHistorySource;
+  recordedAt: string;
+  updatedAt: string;
+}
+
 export interface SkillDefinition {
   id: string;
   name: string;
@@ -446,6 +460,7 @@ export interface ModelTextResponse {
 export interface ModelBalanceQueryRequest {
   profile: ModelProfile;
   persistResult?: boolean;
+  historySource?: ModelBalanceHistorySource;
 }
 
 export interface AgentRunLog extends ModelTextResponse {

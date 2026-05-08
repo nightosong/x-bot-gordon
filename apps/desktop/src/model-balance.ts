@@ -1,6 +1,6 @@
 import { Script, createContext } from "node:vm";
 
-import { saveModelProfileBalanceSnapshot } from "../../../packages/workbench/src/index.js";
+import { appendModelBalanceHistoryEntry, saveModelProfileBalanceSnapshot } from "../../../packages/workbench/src/index.js";
 import type { ModelBalanceQueryRequest, ModelBalanceSnapshot, ModelProfile } from "../../../packages/shared/src/index.js";
 
 const BALANCE_PROTOCOL_EVAL_TIMEOUT_MS = 1200;
@@ -262,6 +262,7 @@ export async function queryModelBalance(request: ModelBalanceQueryRequest): Prom
 
   if (request.persistResult && profile.id) {
     await saveModelProfileBalanceSnapshot(profile.id, balanceSnapshot);
+    await appendModelBalanceHistoryEntry(profile, balanceSnapshot, request.historySource ?? "manual");
   }
 
   return balanceSnapshot;

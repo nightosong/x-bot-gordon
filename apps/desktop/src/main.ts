@@ -21,6 +21,7 @@ import {
   listAgentProfiles,
   listCommandWorkshopSessions,
   listComicProjects,
+  listModelBalanceHistory,
   listMcpServers,
   listSkillDefinitions,
   listWeeklyProgress,
@@ -59,6 +60,10 @@ const appIconPath = path.join(desktopAssetDir, appIconFileName);
 const modelTextAbortControllers = new Map<string, AbortController>();
 const MAIN_WINDOW_MIN_WIDTH = 1180;
 const MAIN_WINDOW_MIN_HEIGHT = 760;
+const MODEL_BALANCE_POLL_INTERVAL_MS = 60 * 60 * 1000;
+const MODEL_BALANCE_INITIAL_POLL_DELAY_MS = 60 * 1000;
+let modelBalancePollingTimer: NodeJS.Timeout | null = null;
+let modelBalancePollingInFlight = false;
 
 type GordonConfirmWindowTone = "neutral" | "warning" | "danger";
 
@@ -1342,6 +1347,54 @@ async function createMainWindow(): Promise<void> {
   await window.loadFile(path.join(currentDir, "renderer", "index.html"));
 }
 
+async function pollModelBalanceUsage(): Promise<void> {
+  if (modelBalancePollingInFlight) {
+    return;
+  }
+
+  modelBalancePollingInFlight = true;
+
+  try {
+    const settings = await listModelSettings();
+    const profiles = settings.profiles.filter(
+      (profile) => profile.apiKey?.trim() && String(profile.balanceQueryCode ?? "").trim()
+    );
+
+    for (const profile of profiles) {
+      try {
+        await queryModelBalance({
+          profile,
+          persistResult: true,
+          historySource: "scheduled"
+        });
+      } catch (error) {
+        console.warn(
+          `[model-balance] scheduled usage polling failed for ${profile.displayName}:`,
+          error instanceof Error ? error.message : error
+        );
+      }
+    }
+  } catch (error) {
+    console.warn("[model-balance] scheduled usage polling failed:", error instanceof Error ? error.message : error);
+  } finally {
+    modelBalancePollingInFlight = false;
+  }
+}
+
+function startModelBalanceUsagePolling(): void {
+  if (modelBalancePollingTimer) {
+    return;
+  }
+
+  modelBalancePollingTimer = setInterval(() => {
+    void pollModelBalanceUsage();
+  }, MODEL_BALANCE_POLL_INTERVAL_MS);
+
+  setTimeout(() => {
+    void pollModelBalanceUsage();
+  }, MODEL_BALANCE_INITIAL_POLL_DELAY_MS);
+}
+
 app.whenReady().then(async () => {
   if (process.platform === "darwin" && app.dock) {
     const dockIcon = nativeImage.createFromPath(appIconPath);
@@ -1352,15 +1405,22 @@ app.whenReady().then(async () => {
   }
 
   ipcMain.handle("gordon:bootstrap", async () => buildWorkbenchSnapshot());
-  ipcMain.handle("gordon:model-settings:list", async () => listModelSettings());
-  ipcMain.handle("gordon:model-settings:upsert", async (_event, profile) => upsertModelProfile(profile));
+  ipcMain.handle("gordon:model-settings:list", async () => toCloneableIpcValue(await listModelSettings()));
+  ipcMain.handle("gordon:model-settings:upsert", async (_event, profile) =>
+    toCloneableIpcValue(await upsertModelProfile(toCloneableIpcValue(profile)))
+  );
   ipcMain.handle("gordon:model-settings:activate", async (_event, profileId: string) =>
-    activateModelProfile(profileId)
+    toCloneableIpcValue(await activateModelProfile(profileId))
   );
   ipcMain.handle("gordon:model-settings:toggle-status", async (_event, profileId: string) =>
-    toggleModelProfileStatus(profileId)
+    toCloneableIpcValue(await toggleModelProfileStatus(profileId))
   );
-  ipcMain.handle("gordon:model-settings:delete", async (_event, profileId: string) => deleteModelProfile(profileId));
+  ipcMain.handle("gordon:model-settings:delete", async (_event, profileId: string) =>
+    toCloneableIpcValue(await deleteModelProfile(profileId))
+  );
+  ipcMain.handle("gordon:model:balance-history", async (_event, profileId?: string) =>
+    toCloneableIpcValue(await listModelBalanceHistory(profileId))
+  );
   ipcMain.handle("gordon:model:invoke-text", async (_event, request) => {
     const requestId = typeof request?.requestId === "string" && request.requestId.trim() ? request.requestId.trim() : "";
     const abortController = requestId ? new AbortController() : null;
@@ -1389,7 +1449,9 @@ app.whenReady().then(async () => {
     modelTextAbortControllers.delete(normalizedRequestId);
     return true;
   });
-  ipcMain.handle("gordon:model:query-balance", async (_event, request) => queryModelBalance(request));
+  ipcMain.handle("gordon:model:query-balance", async (_event, request) =>
+    toCloneableIpcValue(await queryModelBalance(toCloneableIpcValue(request)))
+  );
   ipcMain.handle("gordon:skills:list", async () => listSkillDefinitions());
   ipcMain.handle("gordon:skills:upsert", async (_event, skill) => upsertSkillDefinition(skill));
   ipcMain.handle("gordon:skills:import-from-github", async (_event, request) => importSkillDefinitionFromGithub(request));
@@ -1618,12 +1680,20 @@ app.whenReady().then(async () => {
   );
 
   await createMainWindow();
+  startModelBalanceUsagePolling();
 
   app.on("activate", async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       await createMainWindow();
     }
   });
+});
+
+app.on("before-quit", () => {
+  if (modelBalancePollingTimer) {
+    clearInterval(modelBalancePollingTimer);
+    modelBalancePollingTimer = null;
+  }
 });
 
 app.on("window-all-closed", () => {

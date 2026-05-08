@@ -15,6 +15,8 @@ import type {
   DatabaseConnectionItem,
   GithubSkillImportRequest,
   McpServerConfig,
+  ModelBalanceHistoryEntry,
+  ModelBalanceHistorySource,
   ModelBalanceSnapshot,
   ModelProfile,
   ModelSettings,
@@ -108,6 +110,10 @@ function getAgentRunLogsFilePath(): string {
 
 function getCommandWorkshopSessionsFilePath(): string {
   return resolveFromRoot("data", "workbench", "command-workshop-sessions.json");
+}
+
+function getModelBalanceHistoryFilePath(): string {
+  return resolveFromRoot("data", "workbench", "model-balance-history.json");
 }
 
 function getComicProjectsFilePath(): string {
@@ -1296,6 +1302,96 @@ export async function saveModelProfileBalanceSnapshot(
   return nextSettings;
 }
 
+const MODEL_BALANCE_HISTORY_RETENTION_DAYS = 95;
+
+function sortModelBalanceHistory(entries: ModelBalanceHistoryEntry[]): ModelBalanceHistoryEntry[] {
+  return [...entries].sort((left, right) => right.recordedAt.localeCompare(left.recordedAt));
+}
+
+function normalizeModelBalanceHistoryEntry(input: Partial<ModelBalanceHistoryEntry>): ModelBalanceHistoryEntry | null {
+  const profileId = String(input.profileId ?? "").trim();
+  const snapshot = input.snapshot;
+  const recordedAt = String(input.recordedAt ?? snapshot?.queriedAt ?? "").trim();
+
+  if (!profileId || !snapshot || !recordedAt) {
+    return null;
+  }
+
+  const updatedAt = String(input.updatedAt ?? recordedAt).trim() || recordedAt;
+
+  return {
+    id: String(input.id ?? "").trim() || `model_balance_${randomUUID()}`,
+    profileId,
+    profileName: String(input.profileName ?? "").trim() || "未命名模型",
+    provider: input.provider ?? "openai_like",
+    model: String(input.model ?? "").trim(),
+    snapshot: {
+      planName: snapshot.planName,
+      remaining: Number(snapshot.remaining),
+      used: Number(snapshot.used),
+      total: snapshot.total == null ? null : Number(snapshot.total),
+      unit: String(snapshot.unit ?? "USD").trim() || "USD",
+      queriedAt: String(snapshot.queriedAt ?? recordedAt).trim() || recordedAt
+    },
+    source: input.source === "scheduled" ? "scheduled" : "manual",
+    recordedAt,
+    updatedAt
+  };
+}
+
+export async function listModelBalanceHistory(profileId?: string): Promise<ModelBalanceHistoryEntry[]> {
+  const normalizedProfileId = String(profileId ?? "").trim();
+  const entries = (await readWorkbenchCollection<Partial<ModelBalanceHistoryEntry>>(getModelBalanceHistoryFilePath()))
+    .map(normalizeModelBalanceHistoryEntry)
+    .filter((entry): entry is ModelBalanceHistoryEntry => Boolean(entry));
+
+  return sortModelBalanceHistory(
+    normalizedProfileId ? entries.filter((entry) => entry.profileId === normalizedProfileId) : entries
+  );
+}
+
+export async function appendModelBalanceHistoryEntry(
+  profile: ModelProfile,
+  balanceSnapshot: ModelBalanceSnapshot,
+  source: ModelBalanceHistorySource = "manual"
+): Promise<ModelBalanceHistoryEntry[]> {
+  const timestamp = balanceSnapshot.queriedAt || new Date().toISOString();
+  const entry: ModelBalanceHistoryEntry = {
+    id: `model_balance_${randomUUID()}`,
+    profileId: profile.id,
+    profileName: profile.displayName,
+    provider: profile.provider,
+    model: profile.model,
+    snapshot: balanceSnapshot,
+    source,
+    recordedAt: timestamp,
+    updatedAt: timestamp
+  };
+  const retentionStartMs = Date.now() - MODEL_BALANCE_HISTORY_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  const current = await listModelBalanceHistory();
+  const nextEntries = sortModelBalanceHistory([entry, ...current]).filter((item) => {
+    const recordedAtMs = Date.parse(item.recordedAt);
+    return Number.isNaN(recordedAtMs) || recordedAtMs >= retentionStartMs;
+  });
+
+  await writeWorkbenchCollection(getModelBalanceHistoryFilePath(), nextEntries);
+  return listModelBalanceHistory(profile.id);
+}
+
+async function deleteModelBalanceHistoryForProfile(profileId: string): Promise<void> {
+  const normalizedProfileId = String(profileId ?? "").trim();
+
+  if (!normalizedProfileId) {
+    return;
+  }
+
+  const current = await listModelBalanceHistory();
+  await writeWorkbenchCollection(
+    getModelBalanceHistoryFilePath(),
+    current.filter((entry) => entry.profileId !== normalizedProfileId)
+  );
+}
+
 export async function activateModelProfile(profileId: string): Promise<ModelSettings> {
   const current = await listModelSettings();
 
@@ -1330,6 +1426,7 @@ export async function deleteModelProfile(profileId: string): Promise<ModelSettin
   };
 
   await saveModelSettings(nextSettings);
+  await deleteModelBalanceHistoryForProfile(profileId);
   return nextSettings;
 }
 

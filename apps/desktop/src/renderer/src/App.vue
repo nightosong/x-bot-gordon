@@ -166,6 +166,15 @@
                                 </span>
                                 <button
                                   type="button"
+                                  class="model-icon-button model-balance-refresh-button model-balance-stats-button"
+                                  :aria-label="`查看 ${profile.displayName} 的用量统计`"
+                                  title="用量统计"
+                                  @click.stop="openModelUsageStats(profile)"
+                                >
+                                  <GIcon name="stats" />
+                                </button>
+                                <button
+                                  type="button"
                                   class="model-icon-button model-balance-refresh-button"
                                   :class="{ 'is-loading': isModelBalanceRefreshing(profile.id) }"
                                   :disabled="isModelBalanceRefreshing(profile.id)"
@@ -223,6 +232,101 @@
 
                         <p v-if="profile.notes" class="model-card-copy">{{ profile.notes }}</p>
                       </article>
+                    </div>
+                  </section>
+
+                  <section v-else-if="ui.modelManagement.view === 'usage'" class="model-section model-section-scroll">
+                    <div class="model-editor model-usage-panel">
+                      <div class="model-section-head model-section-head-leading model-section-head-editor">
+                        <div class="model-section-head-start">
+                          <button
+                            type="button"
+                            class="model-icon-button weekly-back-button"
+                            aria-label="返回列表"
+                            title="返回列表"
+                            @click="backModelManagement"
+                          >
+                            <GIcon name="return" />
+                          </button>
+                        </div>
+
+                        <div class="model-section-title-block model-section-title-block-centered">
+                          <p class="feature-kicker">Usage</p>
+                          <p class="model-section-title">数据统计</p>
+                        </div>
+
+                        <div class="model-section-actions model-section-actions-end">
+                          <span v-if="activeModelUsageProfile" class="pill pill-neutral">
+                            {{ activeModelUsageProfile.displayName }}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div v-if="activeModelUsageProfile" class="model-usage-content">
+                        <div class="model-usage-summary-grid">
+                          <article class="model-usage-metric">
+                            <span>近 30 天消耗</span>
+                            <strong>{{ formatBalanceNumber(modelUsageSummary.totalUsed) }} {{ modelUsageSummary.unit }}</strong>
+                          </article>
+                          <article class="model-usage-metric">
+                            <span>日均消耗</span>
+                            <strong>{{ formatBalanceNumber(modelUsageSummary.averageUsed) }} {{ modelUsageSummary.unit }}</strong>
+                          </article>
+                          <article class="model-usage-metric">
+                            <span>峰值日</span>
+                            <strong>{{ formatBalanceNumber(modelUsageSummary.maxUsed) }} {{ modelUsageSummary.unit }}</strong>
+                          </article>
+                          <article class="model-usage-metric">
+                            <span>最新账面</span>
+                            <strong>{{ modelUsageSummary.latestUsageText }}</strong>
+                          </article>
+                        </div>
+
+                        <section class="model-usage-chart-card">
+                          <div class="model-usage-card-head">
+                            <div>
+                              <p class="feature-kicker">Daily Usage</p>
+                              <p class="model-section-title">近 30 天每日用量</p>
+                            </div>
+                            <span class="pill pill-neutral">{{ modelUsageSummary.sampleCount }} 次采样</span>
+                          </div>
+
+                          <div v-if="isActiveModelUsageLoading" class="model-empty">
+                            <p class="model-empty-copy">正在加载用量历史...</p>
+                          </div>
+
+                          <div v-else-if="activeModelUsageError" class="model-empty model-usage-error">
+                            <p class="model-empty-copy">{{ activeModelUsageError }}</p>
+                          </div>
+
+                          <template v-else>
+                            <div class="model-usage-chart" aria-label="近 30 天每日模型用量">
+                              <div
+                                v-for="day in modelUsageDailySeries"
+                                :key="day.dateKey"
+                                class="model-usage-day"
+                                :title="`${day.label}：${formatBalanceNumber(day.used)} ${day.unit}`"
+                              >
+                                <div class="model-usage-bar-track">
+                                  <span class="model-usage-bar-fill" :style="{ height: getModelUsageBarHeight(day) }"></span>
+                                </div>
+                                <span class="model-usage-day-label">{{ day.shortLabel }}</span>
+                              </div>
+                            </div>
+
+                            <div class="model-usage-daily-list">
+                              <div v-for="day in modelUsageDailySeries" :key="`${day.dateKey}-row`" class="model-usage-row">
+                                <span>{{ day.label }}</span>
+                                <strong>{{ formatBalanceNumber(day.used) }} / {{ formatOptionalBalanceNumber(day.remaining) }}</strong>
+                              </div>
+                            </div>
+                          </template>
+                        </section>
+                      </div>
+
+                      <div v-else class="model-empty">
+                        <p class="model-empty-copy">当前模型配置不存在，返回列表后重新选择。</p>
+                      </div>
                     </div>
                   </section>
 
@@ -307,9 +411,15 @@
                         </div>
                       </div>
 
-                      <form class="model-form" @submit.prevent="handleModelEditorSave">
+                      <form class="model-form" @submit.prevent="handleModelEditorSave" @input="markModelEditorDirty" @change="markModelEditorDirty">
                         <template v-for="field in modelEditorFields" :key="field.key">
-                          <label class="field" :class="{ 'field-full': field.full }">
+                          <label
+                            class="field"
+                            :class="{
+                              'field-full': field.full,
+                              'model-config-endpoint-field': field.key === 'baseUrl' || field.key === 'apiKey'
+                            }"
+                          >
                             <span class="field-label">{{ field.label }}</span>
 
                             <textarea
@@ -318,6 +428,25 @@
                               class="field-textarea"
                               :placeholder="field.placeholder"
                             ></textarea>
+
+                            <div v-else-if="field.key === 'apiKey'" class="field-secret-input">
+                              <input
+                                v-model="ui.modelManagement.editor.values[field.key]"
+                                class="field-input"
+                                :type="ui.modelManagement.editor.apiKeyVisible ? 'text' : 'password'"
+                                :placeholder="field.placeholder"
+                                :required="field.required"
+                              />
+                              <button
+                                type="button"
+                                class="model-icon-button field-secret-toggle"
+                                :aria-label="ui.modelManagement.editor.apiKeyVisible ? '隐藏 API Key' : '显示 API Key'"
+                                :title="ui.modelManagement.editor.apiKeyVisible ? '隐藏 API Key' : '显示 API Key'"
+                                @click="ui.modelManagement.editor.apiKeyVisible = !ui.modelManagement.editor.apiKeyVisible"
+                              >
+                                <GIcon :name="ui.modelManagement.editor.apiKeyVisible ? 'eyeOff' : 'eye'" />
+                              </button>
+                            </div>
 
                             <input
                               v-else
@@ -333,14 +462,16 @@
                           <div class="balance-field-head">
                             <span class="field-label">余额查询提取器代码</span>
                             <div class="balance-field-actions">
-                              <button type="button" class="model-action-secondary" @click="fillModelBalanceQueryTemplate">填充示例</button>
+                              <button type="button" class="model-action-secondary model-editor-mini-action" @click="fillModelBalanceQueryTemplate">
+                                填充示例
+                              </button>
                               <button
                                 type="button"
-                                class="model-action-secondary"
+                                class="model-action-secondary model-editor-mini-action"
                                 :disabled="ui.modelManagement.editor.isBalanceQuerying"
                                 @click="handleModelEditorBalanceQuery"
                               >
-                                {{ ui.modelManagement.editor.isBalanceQuerying ? "查询中..." : "立即查询余额" }}
+                                {{ ui.modelManagement.editor.isBalanceQuerying ? "查询中..." : "查询余额" }}
                               </button>
                             </div>
                           </div>
@@ -400,7 +531,7 @@
                               :key="model"
                               type="button"
                               class="popular-chip"
-                              @click="ui.modelManagement.editor.values.model = model"
+                              @click="selectPopularModel(model)"
                             >
                               {{ model }}
                             </button>
@@ -409,8 +540,24 @@
                         </div>
 
                         <div class="form-actions">
-                          <button type="button" class="model-action-secondary" @click="backModelManagement">取消</button>
-                          <button type="submit" class="model-action">保存配置</button>
+                          <button type="button" class="model-action-secondary model-editor-mini-action" @click.prevent="backModelManagement">
+                            取消
+                          </button>
+                          <button
+                            type="button"
+                            class="model-action model-editor-mini-action model-editor-save-button"
+                            :class="{ 'is-saved': ui.modelManagement.editor.saveState === 'saved' }"
+                            :disabled="ui.modelManagement.editor.isSaving"
+                            @click.prevent="handleModelEditorSave"
+                          >
+                            <GIcon
+                              v-if="ui.modelManagement.editor.isSaving || ui.modelManagement.editor.saveState === 'saved'"
+                              :name="ui.modelManagement.editor.isSaving ? 'loading' : 'check'"
+                              :spin="ui.modelManagement.editor.isSaving"
+                              :size="12"
+                            />
+                            {{ ui.modelManagement.editor.isSaving ? "保存中" : "保存" }}
+                          </button>
                         </div>
                       </form>
                     </div>
@@ -4588,6 +4735,8 @@ const WORKFLOW_DEFAULT_ENVIRONMENTS = [
   { id: "prod", label: "PROD", baseUrl: "" }
 ];
 const WORKFLOW_CURL_BODY_OPTIONS = new Set(["-d", "--data", "--data-raw", "--data-binary", "--data-urlencode", "--json"]);
+const MODEL_USAGE_DAILY_WINDOW_DAYS = 30;
+const MODEL_USAGE_DAY_START_HOUR = 1;
 
 const desktopApi = window.gordonDesktop ?? null;
 let splineApplicationClass = null;
@@ -4633,7 +4782,10 @@ function createModelEditorState(provider = "openai", profile = null) {
     balanceQueryResult: profile?.balanceSnapshot ?? null,
     balanceQueryError: "",
     isBalanceQuerying: false,
-    lastBalanceQueryCode: profile?.balanceQueryCode ?? ""
+    lastBalanceQueryCode: profile?.balanceQueryCode ?? "",
+    apiKeyVisible: false,
+    isSaving: false,
+    saveState: "idle"
   };
 }
 
@@ -4906,9 +5058,9 @@ function createExtensionsState() {
 function getProviderFields(provider) {
   const commonFields = [
     { key: "displayName", label: "配置名称", placeholder: "例如：OpenAI 主账号", required: true, full: false },
-    { key: "model", label: "模型名称", placeholder: "例如：gpt-4.1", required: true, full: false },
-    { key: "apiKey", label: "API Key", placeholder: "sk-...", required: true, full: true }
+    { key: "model", label: "模型名称", placeholder: "例如：gpt-4.1", required: true, full: false }
   ];
+  const apiKeyField = { key: "apiKey", label: "API Key", placeholder: "sk-...", required: true, full: true };
   const openAiCompatibleProviders = new Set([
     "openai_like",
     "doubao",
@@ -4922,7 +5074,8 @@ function getProviderFields(provider) {
   if (provider === "openai") {
     return [
       ...commonFields,
-      { key: "baseUrl", label: "Base URL", placeholder: "可留空，默认官方地址", required: false, full: false },
+      { key: "baseUrl", label: "Base URL", placeholder: "可留空，默认官方地址", required: false, full: true },
+      apiKeyField,
       { key: "organization", label: "Organization", placeholder: "可选", required: false, full: false },
       { key: "notes", label: "备注", placeholder: "补充配置说明", required: false, full: true, textarea: true }
     ];
@@ -4931,6 +5084,7 @@ function getProviderFields(provider) {
   if (provider === "google") {
     return [
       ...commonFields,
+      apiKeyField,
       { key: "project", label: "Project", placeholder: "例如：gordon-prod", required: false, full: false },
       { key: "location", label: "Location", placeholder: "例如：us-central1", required: false, full: false },
       { key: "notes", label: "备注", placeholder: "补充配置说明", required: false, full: true, textarea: true }
@@ -4940,7 +5094,8 @@ function getProviderFields(provider) {
   if (provider === "azure") {
     return [
       ...commonFields,
-      { key: "baseUrl", label: "Base URL", placeholder: "Azure OpenAI / Azure AI 推理终端地址", required: true, full: false },
+      { key: "baseUrl", label: "Base URL", placeholder: "Azure OpenAI / Azure AI 推理终端地址", required: true, full: true },
+      apiKeyField,
       { key: "notes", label: "备注", placeholder: "可补充资源组、区域或部署说明", required: false, full: true, textarea: true }
     ];
   }
@@ -4948,7 +5103,8 @@ function getProviderFields(provider) {
   if (provider === "anthropic") {
     return [
       ...commonFields,
-      { key: "baseUrl", label: "Base URL", placeholder: "可留空，默认官方地址", required: false, full: false },
+      { key: "baseUrl", label: "Base URL", placeholder: "可留空，默认官方地址", required: false, full: true },
+      apiKeyField,
       { key: "notes", label: "备注", placeholder: "补充配置说明", required: false, full: true, textarea: true }
     ];
   }
@@ -4956,14 +5112,16 @@ function getProviderFields(provider) {
   if (openAiCompatibleProviders.has(provider)) {
     return [
       ...commonFields,
-      { key: "baseUrl", label: "Base URL", placeholder: "兼容 OpenAI 的服务地址", required: true, full: false },
+      { key: "baseUrl", label: "Base URL", placeholder: "兼容 OpenAI 的服务地址", required: true, full: true },
+      apiKeyField,
       { key: "notes", label: "备注", placeholder: "可补充厂商网关、环境或线路说明", required: false, full: true, textarea: true }
     ];
   }
 
   return [
     ...commonFields,
-    { key: "baseUrl", label: "Base URL", placeholder: "自定义网关地址", required: true, full: false },
+    { key: "baseUrl", label: "Base URL", placeholder: "自定义网关地址", required: true, full: true },
+    apiKeyField,
     { key: "notes", label: "备注", placeholder: "例如：DeepSeek / Kimi / Qwen / Doubao", required: false, full: true, textarea: true }
   ];
 }
@@ -5078,13 +5236,17 @@ const workbench = reactive({
 const modelBalanceRuntime = reactive({
   loadingByProfileId: {},
   snapshotByProfileId: {},
-  feedbackByProfileId: {}
+  feedbackByProfileId: {},
+  historyByProfileId: {},
+  historyLoadingByProfileId: {},
+  historyErrorByProfileId: {}
 });
 
 const ui = reactive({
   modelManagement: {
     view: "list",
-    editor: createModelEditorState("openai")
+    editor: createModelEditorState("openai"),
+    usageProfileId: ""
   },
   marketplace: createMarketplaceState(),
   weekly: createWeeklyState(),
@@ -5138,6 +5300,20 @@ const providerOptions = computed(() =>
 
 const activeModel = computed(() =>
   workbench.modelSettings.profiles.find((profile) => profile.id === workbench.modelSettings.activeProfileId) ?? null
+);
+const activeModelUsageProfile = computed(() =>
+  workbench.modelSettings.profiles.find((profile) => profile.id === ui.modelManagement.usageProfileId) ?? null
+);
+const modelUsageHistoryEntries = computed(() => getModelUsageHistoryEntries(activeModelUsageProfile.value));
+const modelUsageDailySeries = computed(() =>
+  buildModelUsageDailySeries(modelUsageHistoryEntries.value, MODEL_USAGE_DAILY_WINDOW_DAYS)
+);
+const modelUsageSummary = computed(() => buildModelUsageSummary(modelUsageDailySeries.value, modelUsageHistoryEntries.value));
+const isActiveModelUsageLoading = computed(() =>
+  Boolean(activeModelUsageProfile.value && modelBalanceRuntime.historyLoadingByProfileId[activeModelUsageProfile.value.id])
+);
+const activeModelUsageError = computed(() =>
+  activeModelUsageProfile.value ? modelBalanceRuntime.historyErrorByProfileId[activeModelUsageProfile.value.id] ?? "" : ""
 );
 
 const enabledAgentProfiles = computed(() => workbench.agentProfiles.filter((profile) => profile.enabled));
@@ -5261,6 +5437,171 @@ function formatBalanceNumber(value) {
   return Number.isFinite(numeric) ? numeric.toFixed(2) : "--";
 }
 
+function formatOptionalBalanceNumber(value) {
+  return value == null ? "--" : formatBalanceNumber(value);
+}
+
+function getModelUsageLocalDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getModelUsageDayStart(value = new Date()) {
+  const date = value instanceof Date ? new Date(value) : new Date(value);
+
+  if (date.getHours() < MODEL_USAGE_DAY_START_HOUR) {
+    date.setDate(date.getDate() - 1);
+  }
+
+  date.setHours(MODEL_USAGE_DAY_START_HOUR, 0, 0, 0);
+  return date;
+}
+
+function formatModelUsageDayLabel(date) {
+  return `${date.getMonth() + 1}/${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function getModelUsageHistoryEntries(profile) {
+  if (!profile?.id) {
+    return [];
+  }
+
+  const history = [...(modelBalanceRuntime.historyByProfileId[profile.id] ?? [])];
+  const snapshot = getModelBalanceSnapshot(profile);
+
+  if (snapshot?.queriedAt && !history.some((entry) => entry.snapshot?.queriedAt === snapshot.queriedAt)) {
+    history.push({
+      id: `runtime_${profile.id}_${snapshot.queriedAt}`,
+      profileId: profile.id,
+      profileName: profile.displayName,
+      provider: profile.provider,
+      model: profile.model,
+      snapshot,
+      source: "manual",
+      recordedAt: snapshot.queriedAt,
+      updatedAt: snapshot.queriedAt
+    });
+  }
+
+  return history
+    .filter((entry) => entry?.snapshot?.queriedAt)
+    .sort((left, right) => Date.parse(left.snapshot.queriedAt) - Date.parse(right.snapshot.queriedAt));
+}
+
+function buildModelUsageDayWindows(dayCount) {
+  const currentDayStart = getModelUsageDayStart(new Date());
+
+  return Array.from({ length: dayCount }, (_item, index) => {
+    const start = new Date(currentDayStart);
+    start.setDate(currentDayStart.getDate() - (dayCount - index - 1));
+    const end = new Date(start);
+    end.setDate(start.getDate() + 1);
+
+    return {
+      dateKey: getModelUsageLocalDateKey(start),
+      start,
+      end,
+      label: formatModelUsageDayLabel(start),
+      shortLabel: String(start.getDate()).padStart(2, "0")
+    };
+  });
+}
+
+function toUsageSnapshotPoint(entry) {
+  const queriedAt = new Date(entry?.snapshot?.queriedAt ?? entry?.recordedAt ?? "");
+  const used = Number(entry?.snapshot?.used);
+  const remaining = Number(entry?.snapshot?.remaining);
+  const total = Number(entry?.snapshot?.total);
+
+  if (Number.isNaN(queriedAt.getTime()) || !Number.isFinite(used)) {
+    return null;
+  }
+
+  return {
+    queriedAt,
+    used,
+    remaining: Number.isFinite(remaining) ? remaining : null,
+    total: Number.isFinite(total) ? total : null,
+    unit: String(entry?.snapshot?.unit ?? "USD").trim() || "USD"
+  };
+}
+
+function buildModelUsageDailySeries(entries, dayCount = MODEL_USAGE_DAILY_WINDOW_DAYS) {
+  const points = (Array.isArray(entries) ? entries : [])
+    .map(toUsageSnapshotPoint)
+    .filter(Boolean)
+    .sort((left, right) => left.queriedAt.getTime() - right.queriedAt.getTime());
+
+  return buildModelUsageDayWindows(dayCount).map((day) => {
+    const pointsBeforeDay = points.filter((point) => point.queriedAt < day.start);
+    const pointsInDay = points.filter((point) => point.queriedAt >= day.start && point.queriedAt < day.end);
+    const baseline = pointsBeforeDay[pointsBeforeDay.length - 1] ?? null;
+    let previousUsed = baseline?.used ?? pointsInDay[0]?.used ?? null;
+    let used = 0;
+
+    pointsInDay.forEach((point) => {
+      if (previousUsed == null) {
+        previousUsed = point.used;
+        return;
+      }
+
+      const delta = point.used - previousUsed;
+
+      if (delta >= 0) {
+        used += delta;
+      } else {
+        used += Math.max(0, point.used);
+      }
+
+      previousUsed = point.used;
+    });
+
+    const latestPoint = pointsInDay[pointsInDay.length - 1] ?? baseline;
+
+    return {
+      ...day,
+      used,
+      remaining: latestPoint?.remaining ?? null,
+      total: latestPoint?.total ?? null,
+      unit: latestPoint?.unit ?? "USD",
+      sampleCount: pointsInDay.length
+    };
+  });
+}
+
+function buildModelUsageSummary(days, entries) {
+  const normalizedDays = Array.isArray(days) ? days : [];
+  const normalizedEntries = Array.isArray(entries) ? entries : [];
+  const totalUsed = normalizedDays.reduce((sum, day) => sum + Math.max(0, Number(day.used) || 0), 0);
+  const maxUsed = normalizedDays.reduce((max, day) => Math.max(max, Number(day.used) || 0), 0);
+  const latestEntry = normalizedEntries[normalizedEntries.length - 1] ?? null;
+  const latestSnapshot = latestEntry?.snapshot ?? null;
+  const unit = latestSnapshot?.unit ?? normalizedDays.find((day) => day.unit)?.unit ?? "USD";
+
+  return {
+    totalUsed,
+    averageUsed: normalizedDays.length ? totalUsed / normalizedDays.length : 0,
+    maxUsed,
+    unit,
+    sampleCount: normalizedEntries.length,
+    latestUsageText: latestSnapshot
+      ? `${formatBalanceNumber(latestSnapshot.used)} / ${formatBalanceNumber(latestSnapshot.remaining)}`
+      : "-- / --"
+  };
+}
+
+function getModelUsageBarHeight(day) {
+  const maxUsed = modelUsageSummary.value.maxUsed;
+
+  if (!maxUsed || !day?.used) {
+    return "0%";
+  }
+
+  return `${Math.max(7, Math.round((day.used / maxUsed) * 100))}%`;
+}
+
 function getModelBalanceSnapshot(profile) {
   return modelBalanceRuntime.snapshotByProfileId[profile?.id] ?? profile?.balanceSnapshot ?? null;
 }
@@ -5295,6 +5636,24 @@ function syncModelBalanceRuntimeFromProfiles(profiles = []) {
   Object.keys(modelBalanceRuntime.feedbackByProfileId).forEach((profileId) => {
     if (!profileIds.has(profileId)) {
       delete modelBalanceRuntime.feedbackByProfileId[profileId];
+    }
+  });
+
+  Object.keys(modelBalanceRuntime.historyByProfileId).forEach((profileId) => {
+    if (!profileIds.has(profileId)) {
+      delete modelBalanceRuntime.historyByProfileId[profileId];
+    }
+  });
+
+  Object.keys(modelBalanceRuntime.historyLoadingByProfileId).forEach((profileId) => {
+    if (!profileIds.has(profileId)) {
+      delete modelBalanceRuntime.historyLoadingByProfileId[profileId];
+    }
+  });
+
+  Object.keys(modelBalanceRuntime.historyErrorByProfileId).forEach((profileId) => {
+    if (!profileIds.has(profileId)) {
+      delete modelBalanceRuntime.historyErrorByProfileId[profileId];
     }
   });
 
@@ -11882,6 +12241,43 @@ async function handleWorkflowCurlCopy(step) {
   }
 }
 
+async function loadModelBalanceUsageHistory(profileId) {
+  const normalizedProfileId = String(profileId ?? "").trim();
+
+  if (!normalizedProfileId) {
+    return;
+  }
+
+  if (!desktopApi?.listModelBalanceHistory) {
+    modelBalanceRuntime.historyErrorByProfileId[normalizedProfileId] = "桌面桥接未就绪，暂时无法读取用量历史。";
+    return;
+  }
+
+  modelBalanceRuntime.historyLoadingByProfileId[normalizedProfileId] = true;
+  modelBalanceRuntime.historyErrorByProfileId[normalizedProfileId] = "";
+
+  try {
+    modelBalanceRuntime.historyByProfileId[normalizedProfileId] = await desktopApi.listModelBalanceHistory(normalizedProfileId);
+  } catch (error) {
+    console.error("Failed to load model balance usage history", error);
+    modelBalanceRuntime.historyErrorByProfileId[normalizedProfileId] =
+      error instanceof Error ? error.message : "用量历史读取失败。";
+  } finally {
+    modelBalanceRuntime.historyLoadingByProfileId[normalizedProfileId] = false;
+  }
+}
+
+async function openModelUsageStats(profile) {
+  if (!profile?.id) {
+    return;
+  }
+
+  activeFeature.value = FEATURE_MODEL_MANAGEMENT;
+  ui.modelManagement.usageProfileId = profile.id;
+  ui.modelManagement.view = "usage";
+  await loadModelBalanceUsageHistory(profile.id);
+}
+
 function openModelCreatePicker() {
   activeFeature.value = FEATURE_MODEL_MANAGEMENT;
   ui.modelManagement.view = "picker";
@@ -11902,6 +12298,18 @@ function openModelEditor(profile) {
 function backModelManagement() {
   ui.modelManagement.view = "list";
   ui.modelManagement.editor = createModelEditorState("openai");
+  ui.modelManagement.usageProfileId = "";
+}
+
+function markModelEditorDirty() {
+  if (ui.modelManagement.editor.saveState === "saved") {
+    ui.modelManagement.editor.saveState = "idle";
+  }
+}
+
+function selectPopularModel(model) {
+  ui.modelManagement.editor.values.model = model;
+  markModelEditorDirty();
 }
 
 function fillModelBalanceQueryTemplate() {
@@ -11909,6 +12317,7 @@ function fillModelBalanceQueryTemplate() {
   ui.modelManagement.editor.balanceQueryError = "";
   ui.modelManagement.editor.balanceQueryResult = null;
   ui.modelManagement.editor.lastBalanceQueryCode = "";
+  markModelEditorDirty();
 }
 
 async function handleModelEditorBalanceQuery() {
@@ -11933,10 +12342,10 @@ async function handleModelEditorBalanceQuery() {
   ui.modelManagement.editor.balanceQueryError = "";
 
   try {
-    const balanceSnapshot = await desktopApi.queryModelBalance({
+    const balanceSnapshot = await desktopApi.queryModelBalance(toPlainIpcData({
       profile: payload,
       persistResult: false
-    });
+    }));
     ui.modelManagement.editor.balanceQueryResult = balanceSnapshot;
     ui.modelManagement.editor.lastBalanceQueryCode = payload.balanceQueryCode;
     setStatus("余额查询成功。", "success");
@@ -11950,7 +12359,12 @@ async function handleModelEditorBalanceQuery() {
 }
 
 async function handleModelEditorSave() {
+  if (ui.modelManagement.editor.isSaving) {
+    return;
+  }
+
   if (!desktopApi) {
+    ui.modelManagement.editor.saveState = "idle";
     setStatus("桌面桥接未就绪，暂无法保存模型配置。", "danger");
     return;
   }
@@ -11960,6 +12374,7 @@ async function handleModelEditorSave() {
   );
 
   if (missingField) {
+    ui.modelManagement.editor.saveState = "idle";
     setStatus(`请先填写 ${missingField.label}。`, "warning");
     return;
   }
@@ -11967,13 +12382,20 @@ async function handleModelEditorSave() {
   const payload = buildModelEditorPayload();
 
   try {
-    await desktopApi.upsertModelProfile(payload);
+    ui.modelManagement.editor.isSaving = true;
+    ui.modelManagement.editor.saveState = "saving";
+    await desktopApi.upsertModelProfile(toPlainIpcData(payload));
+    ui.modelManagement.editor.profileId = payload.id;
+    ui.modelManagement.editor.mode = "edit";
     await refreshWorkbenchSnapshot();
-    backModelManagement();
+    ui.modelManagement.editor.saveState = "saved";
     setStatus("模型配置已保存。", "success");
   } catch (error) {
     console.error("Failed to save model profile", error);
+    ui.modelManagement.editor.saveState = "idle";
     setStatus(`模型配置保存失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+  } finally {
+    ui.modelManagement.editor.isSaving = false;
   }
 }
 
@@ -11998,11 +12420,15 @@ async function handleModelBalanceRefresh(profile) {
 
   try {
     setModelBalanceFeedback(profile.id, "请求已发出，等待接口返回...", "neutral");
-    const balanceSnapshot = await desktopApi.queryModelBalance({
+    const balanceSnapshot = await desktopApi.queryModelBalance(toPlainIpcData({
       profile: profilePayload,
-      persistResult: true
-    });
+      persistResult: true,
+      historySource: "manual"
+    }));
     applyModelBalanceSnapshot(profile.id, balanceSnapshot);
+    if (ui.modelManagement.view === "usage" && ui.modelManagement.usageProfileId === profile.id) {
+      await loadModelBalanceUsageHistory(profile.id);
+    }
     setModelBalanceFeedback(profile.id, "余额刷新成功。", "success");
     setStatus(`已刷新 ${profile.displayName} 的余额。`, "success");
   } catch (error) {

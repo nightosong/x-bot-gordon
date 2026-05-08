@@ -5,6 +5,7 @@ import type {
   ComicProjectExportRequest,
   ComicProjectExportResult,
   ComicProject,
+  ModelBalanceHistoryEntry,
   ModelBalanceQueryRequest,
   ModelBalanceSnapshot,
   AgentRunProgressEvent,
@@ -97,14 +98,16 @@ function toPlainIpcData<T>(value: T): T {
 contextBridge.exposeInMainWorld("gordonDesktop", {
   bootstrap: () => ipcRenderer.invoke("gordon:bootstrap"),
   listModelSettings: () => ipcRenderer.invoke("gordon:model-settings:list"),
-  upsertModelProfile: (profile: ModelProfile) => ipcRenderer.invoke("gordon:model-settings:upsert", profile),
+  upsertModelProfile: (profile: ModelProfile) => ipcRenderer.invoke("gordon:model-settings:upsert", toPlainIpcData(profile)),
   activateModelProfile: (profileId: string) => ipcRenderer.invoke("gordon:model-settings:activate", profileId),
   toggleModelProfileStatus: (profileId: string) => ipcRenderer.invoke("gordon:model-settings:toggle-status", profileId),
   deleteModelProfile: (profileId: string) => ipcRenderer.invoke("gordon:model-settings:delete", profileId),
   invokeModelText: (request: ModelTextRequest) => ipcRenderer.invoke("gordon:model:invoke-text", request),
   cancelModelText: (requestId: string) => ipcRenderer.invoke("gordon:model:cancel-text", requestId),
   queryModelBalance: (request: ModelBalanceQueryRequest): Promise<ModelBalanceSnapshot> =>
-    ipcRenderer.invoke("gordon:model:query-balance", request),
+    ipcRenderer.invoke("gordon:model:query-balance", toPlainIpcData(request)),
+  listModelBalanceHistory: (profileId?: string): Promise<ModelBalanceHistoryEntry[]> =>
+    ipcRenderer.invoke("gordon:model:balance-history", profileId),
   listSkillDefinitions: () => ipcRenderer.invoke("gordon:skills:list"),
   upsertSkillDefinition: (skill: SkillDefinition) => ipcRenderer.invoke("gordon:skills:upsert", skill),
   importSkillDefinitionFromGithub: (request: GithubSkillImportRequest) =>

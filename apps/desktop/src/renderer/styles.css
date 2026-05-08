@@ -2780,7 +2780,7 @@ canvas {
 
 .model-balance-widget-head {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   column-gap: 8px;
   min-width: 0;
@@ -2840,6 +2840,149 @@ canvas {
 .model-balance-refresh-button.is-loading .action-icon {
   animation: model-balance-spin 0.9s linear infinite;
   transform-origin: center;
+}
+
+.model-usage-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+}
+
+.model-usage-content {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
+}
+
+.model-usage-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.model-usage-metric {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(247, 243, 235, 0.1);
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.08), rgba(68, 156, 216, 0.045)),
+    rgba(255, 255, 255, 0.035);
+}
+
+.model-usage-metric span {
+  color: rgba(247, 243, 235, 0.58);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.model-usage-metric strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-usage-chart-card {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  min-height: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.model-usage-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.model-usage-chart {
+  display: grid;
+  grid-template-columns: repeat(30, minmax(9px, 1fr));
+  align-items: end;
+  gap: 5px;
+  min-height: 210px;
+  padding: 10px 2px 0;
+}
+
+.model-usage-day {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 7px;
+  min-width: 0;
+  height: 100%;
+}
+
+.model-usage-bar-track {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  min-height: 172px;
+  overflow: hidden;
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.018)),
+    rgba(8, 15, 24, 0.28);
+}
+
+.model-usage-bar-fill {
+  display: block;
+  width: 100%;
+  min-height: 0;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(92, 225, 194, 0.9), rgba(68, 156, 216, 0.58));
+  box-shadow: 0 -8px 18px rgba(92, 225, 194, 0.12);
+  transition: height 180ms ease;
+}
+
+.model-usage-day-label {
+  color: rgba(247, 243, 235, 0.5);
+  font-size: 9px;
+  line-height: 1;
+  text-align: center;
+}
+
+.model-usage-daily-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  max-height: 138px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.model-usage-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid rgba(247, 243, 235, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+  color: rgba(247, 243, 235, 0.62);
+  font-size: 10.5px;
+}
+
+.model-usage-row strong {
+  color: rgba(188, 248, 234, 0.9);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.model-usage-error {
+  border-color: rgba(255, 141, 119, 0.18);
+  background: rgba(255, 141, 119, 0.055);
 }
 
 .model-balance-widget-copy,
@@ -3011,6 +3154,33 @@ canvas {
   background: rgba(245, 200, 107, 0.16);
   border-color: rgba(245, 200, 107, 0.24);
   color: #ffe6b0;
+}
+
+.model-editor-mini-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 11px;
+  border-radius: 999px;
+  font-family: "Avenir Next Condensed", "Avenir Next", sans-serif;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055);
+}
+
+.model-editor-save-button.is-saved {
+  border-color: rgba(92, 225, 194, 0.3);
+  background: rgba(92, 225, 194, 0.2);
+  color: #c9fff0;
+}
+
+.model-editor-save-button .action-icon {
+  width: 12px;
+  height: 12px;
 }
 
 .gordon-dialog-backdrop {
@@ -3426,6 +3596,11 @@ canvas {
   grid-column: 1 / -1;
 }
 
+.model-form > .model-config-endpoint-field {
+  justify-self: start;
+  width: 66.666%;
+}
+
 .field-label {
   color: rgba(247, 243, 235, 0.9);
   font-size: 13px;
@@ -3459,6 +3634,40 @@ canvas {
 .field-textarea:focus {
   border-color: rgba(92, 225, 194, 0.32);
   box-shadow: 0 0 0 3px rgba(92, 225, 194, 0.08);
+}
+
+.field-secret-input {
+  position: relative;
+  min-width: 0;
+}
+
+.field-secret-input .field-input {
+  padding-right: 44px;
+}
+
+.field-secret-toggle {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  border-radius: 9px;
+  color: rgba(247, 243, 235, 0.64);
+  transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
+  transform: translateY(-50%);
+}
+
+.field-secret-toggle:hover,
+.field-secret-toggle:focus-visible {
+  transform: translateY(-50%);
+}
+
+.field-secret-toggle .action-icon {
+  width: 14px;
+  height: 14px;
+  transition: none;
 }
 
 .popular-models {
@@ -3830,6 +4039,7 @@ canvas {
 }
 
 .form-actions {
+  z-index: 8;
   display: flex;
   justify-content: flex-end;
   gap: 10px;
@@ -3839,6 +4049,7 @@ canvas {
   padding-top: 12px;
   padding-bottom: 4px;
   background: linear-gradient(180deg, rgba(10, 19, 31, 0), rgba(10, 19, 31, 0.96) 28%);
+  pointer-events: auto;
 }
 
 .weekly-shell {
@@ -7696,6 +7907,10 @@ canvas {
     grid-template-columns: 1fr;
   }
 
+  .model-form > .model-config-endpoint-field {
+    width: 100%;
+  }
+
   .writing-detail-head {
     grid-template-columns: auto minmax(0, 1fr) auto;
   }
@@ -7903,6 +8118,15 @@ canvas {
   .model-balance-widget {
     width: auto;
     min-width: 0;
+  }
+
+  .model-usage-summary-grid,
+  .model-usage-daily-list {
+    grid-template-columns: 1fr;
+  }
+
+  .model-usage-chart {
+    gap: 3px;
   }
 
   .balance-field-head {

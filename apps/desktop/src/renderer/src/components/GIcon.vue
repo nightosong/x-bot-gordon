@@ -13,6 +13,7 @@
 import { computed } from "vue";
 import {
   ArrowLeft,
+  BarChart3,
   BookOpen,
   Check,
   ChevronDown,
@@ -81,6 +82,7 @@ const ICONS = {
   return: ArrowLeft,
   settings: Settings,
   sparkles: Sparkles,
+  stats: BarChart3,
   upload: Upload,
   stop: Square
 };

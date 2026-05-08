@@ -1,6 +1,7 @@
 export { workModules } from "./modules.js";
 export {
   appendAgentRunLog,
+  appendModelBalanceHistoryEntry,
   deleteAgentProfile,
   deleteComicProject,
   deleteCommandWorkshopSession,
@@ -19,6 +20,7 @@ export {
   listDatabaseConnections,
   listWorkflowLibrary,
   listModelSettings,
+  listModelBalanceHistory,
   listSkillDefinitions,
   listTasks,
   listWeeklyProgress,
