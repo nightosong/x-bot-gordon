@@ -460,14 +460,16 @@ function updateWritingOutlinePlannerJob(book, updates = {}) {
   return book.outlinePlannerJob;
 }
 
-function cancelWritingOutlinePlanningJob() {
+function cancelWritingAssistantRun() {
+  const isOutlinePlanning = activeWritingOutlinePlannerJob.value?.status === "running";
+
   ui.marketplace.writing.outlinePlannerCancelRequested = true;
   if (activeWritingModelRequestId && desktopApi?.cancelModelText) {
     desktopApi.cancelModelText(activeWritingModelRequestId).catch((error) => {
       console.warn("Failed to cancel writing model request", error);
     });
   }
-  setWritingFeedback("正在停止分批规划，当前请求会尽快中断。", "warning");
+  setWritingFeedback(isOutlinePlanning ? "正在停止分批规划，当前请求会尽快中断。" : "正在停止生成任务，当前请求会尽快中断。", "warning");
 }
 
 function isWritingAssistantAbortError(error) {
@@ -1374,6 +1376,10 @@ async function generateWritingAssistantOutput() {
       0.72
     );
 
+    if (ui.marketplace.writing.outlinePlannerCancelRequested) {
+      throw createWritingAbortError();
+    }
+
     ui.marketplace.writing.aiOutput =
       ui.marketplace.writing.activeTab === "chapter"
         ? normalizeWritingChapterDraftOutput(result?.text ?? "")
@@ -1382,12 +1388,18 @@ async function generateWritingAssistantOutput() {
     setStatus(`${WRITING_APP_NAME}已生成建议。`, "success");
   } catch (error) {
     console.error("Failed to generate writing assistant output", error);
-    const message = error instanceof Error ? error.message : "未知错误";
-    setWritingFeedback(`生成失败：${message}`, "danger");
-    setStatus(`${WRITING_APP_NAME}生成失败：${message}`, "danger");
+    if (isWritingAssistantAbortError(error) || ui.marketplace.writing.outlinePlannerCancelRequested) {
+      setWritingFeedback("生成任务已停止。", "warning");
+      setStatus(`${WRITING_APP_NAME}生成任务已停止。`, "warning");
+    } else {
+      const message = error instanceof Error ? error.message : "未知错误";
+      setWritingFeedback(`生成失败：${message}`, "danger");
+      setStatus(`${WRITING_APP_NAME}生成失败：${message}`, "danger");
+    }
   } finally {
     ui.marketplace.writing.isAiRunning = false;
     ui.marketplace.writing.aiRunningBookId = "";
+    ui.marketplace.writing.outlinePlannerCancelRequested = false;
   }
 }
 
@@ -1832,7 +1844,7 @@ async function applyWritingAssistantOutput(mode = "append") {
     buildWritingRecentChapterContext,
     buildWritingStoryMemoryContext,
     canResumeWritingOutlinePlanner,
-    cancelWritingOutlinePlanningJob,
+    cancelWritingAssistantRun,
     countWritingGeneratedTargetChapters,
     createWritingAbortError,
     createWritingOutlinePlannerJob,

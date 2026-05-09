@@ -323,12 +323,26 @@ function extractErrorMessage(payload: unknown): string | null {
 }
 
 async function parseErrorResponse(response: Response): Promise<string> {
+  const fallback = `HTTP ${response.status}`;
+  let text = "";
+
   try {
-    const payload = (await response.json()) as unknown;
-    return extractErrorMessage(payload) ?? `HTTP ${response.status}`;
+    text = await response.text();
   } catch {
-    const text = await response.text();
-    return text.trim() || `HTTP ${response.status}`;
+    return fallback;
+  }
+
+  const trimmedText = text.trim();
+
+  if (!trimmedText) {
+    return fallback;
+  }
+
+  try {
+    const payload = JSON.parse(trimmedText) as unknown;
+    return extractErrorMessage(payload) ?? fallback;
+  } catch {
+    return trimmedText;
   }
 }
 

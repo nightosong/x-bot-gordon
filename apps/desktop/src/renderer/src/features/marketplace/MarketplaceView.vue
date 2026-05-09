@@ -862,7 +862,7 @@
           </main>
 
           <div v-if="isActiveWritingBookAiRunning" class="writing-ai-busy-shield" role="status" aria-live="polite">
-            <div class="writing-ai-busy-card" :class="{ 'has-stop': isWritingOutlinePlannerRunning(activeWritingOutlinePlannerJob) }">
+            <div class="writing-ai-busy-card has-stop">
               <span class="writing-ai-busy-orbit" aria-hidden="true">
                 <i></i>
                 <i></i>
@@ -873,12 +873,11 @@
                 <p>{{ getWritingBusyDescription() }}</p>
               </div>
               <button
-                v-if="isWritingOutlinePlannerRunning(activeWritingOutlinePlannerJob)"
                 type="button"
                 class="writing-ai-busy-stop"
                 aria-label="停止任务"
                 title="停止任务"
-                @click="cancelWritingOutlinePlanningJob"
+                @click="cancelWritingAssistantRun"
               >
                 <GIcon name="stop" :size="15" />
               </button>
@@ -1217,7 +1216,7 @@ const {
   applyWritingAssistantOutput,
   buildWritingLongOutlineTargetContent,
   canResumeWritingOutlinePlanner,
-  cancelWritingOutlinePlanningJob,
+  cancelWritingAssistantRun,
   generateWritingAssistantOutput,
   getWritingAiRunButtonLabel,
   getWritingBusyDescription,

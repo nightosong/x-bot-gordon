@@ -13,6 +13,16 @@ import {
   WRITING_PART_PREFIX_PATTERN
 } from "./writingConfig.js";
 
+const BEIJING_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
+  timeZone: "Asia/Shanghai",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23"
+});
+
 function writeRef(target, value) {
   if (target && typeof target === "object" && "value" in target) {
     target.value = value;
@@ -1519,11 +1529,13 @@ function formatWritingBookUpdatedAt(value) {
     return "刚刚";
   }
 
-  try {
-    return formatLocalDateTime(value);
-  } catch {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
     return String(value);
   }
+
+  return `${BEIJING_DATE_TIME_FORMATTER.format(date)}`;
 }
 
 function getWritingBookCompleteness(book) {
