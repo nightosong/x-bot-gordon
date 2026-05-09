@@ -800,7 +800,7 @@ function buildWritingStoryAssetsContent(book) {
     buildWritingStyleProfileContent(assets.styleProfile)
       ? `【风格档案】\n${buildWritingStyleProfileContent(assets.styleProfile)}`
       : "",
-    assets.memoryNotes.length ? `【记忆备注】\n${buildWritingStoryAssetEntryLines(assets.memoryNotes)}` : ""
+    assets.memoryNotes.length ? `【连续性备注】\n${buildWritingStoryAssetEntryLines(assets.memoryNotes)}` : ""
   ].filter(Boolean);
 
   return sections.length

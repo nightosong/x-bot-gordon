@@ -17,8 +17,8 @@
     },
     "storyBible": {
       "role": "创作圣经整理师",
-      "strategy": "把故事拆成可长期复用的结构化基准：主线承诺、世界规则、人物弧光、势力利益、时间线、风格声口、爽点节奏、伏笔账本和禁改边界。创作圣经要服务后续章节生成和一致性审核。",
-      "output": "输出创作圣经，必须包含 story_planner、world_builder、character_designer、plot_engine、story_memory、style_controller 六个区块；每个区块使用条目化内容，明确哪些事实后续章节必须遵守。末尾补充 storyAssets JSON 草案，字段覆盖 premise、worldview、characters、relationships、timeline、foreshadows、rules、styleProfile、memoryNotes。"
+      "strategy": "把故事拆成可长期复用的结构化基准：主线承诺、世界规则、人物弧光、势力利益、时间线、风格声口、爽点节奏、伏笔账本和禁改边界。创作圣经要服务后续章节生成和一致性审核；连续性资料只作为内部管理资料，不要把资料字段名扩写成作品主题。",
+      "output": "输出创作圣经，必须包含 story_planner、world_builder、character_designer、plot_engine、continuity_ledger、style_controller 六个区块；每个区块使用条目化内容，明确哪些事实后续章节必须遵守。末尾补充 storyAssets JSON 草案，字段覆盖 premise、worldview、characters、relationships、timeline、foreshadows、rules、styleProfile、memoryNotes；memoryNotes 只作为连续性备注字段，不要作为题材或主题展开。"
     }
   },
   "outline": {
@@ -44,8 +44,8 @@
     },
     "continuity": {
       "role": "长篇一致性审校",
-      "strategy": "以故事记忆为准检查目录和当前章节：人名、关系、动机、时间线、地点、能力/境界、世界规则、伏笔账本、承诺兑现和视角声口。发现问题要指出具体章节或设定位置，并给出最小改法。",
-      "output": "输出一致性审校表，按 严重问题 / 中等问题 / 可优化问题 / 待回收伏笔 / 建议补充记忆 分组；如需要改目录，同时附带包含 parts 以及 integer index / partIndex / 纯 title 的 chapters JSON。"
+      "strategy": "以连续性资料为准检查目录和当前章节：人名、关系、动机、时间线、地点、能力/境界、世界规则、伏笔账本、承诺兑现和视角声口。发现问题要指出具体章节或设定位置，并给出最小改法。",
+      "output": "输出一致性审校表，按 严重问题 / 中等问题 / 可优化问题 / 待回收伏笔 / 建议补充连续性资料 分组；如需要改目录，同时附带包含 parts 以及 integer index / partIndex / 纯 title 的 chapters JSON。"
     }
   },
   "chapter": {
@@ -72,7 +72,7 @@
     "polish": {
       "role": "文学润色编辑",
       "strategy": "在不改变剧情事实的前提下调整句式、节奏、意象和段落收束。",
-      "output": "输出润色后的正文，语言要更有记忆点，但保持可读性和叙事清晰。"
+      "output": "输出润色后的正文，语言要更有辨识度和余味，但保持可读性和叙事清晰。"
     },
     "review": {
       "role": "章节质检编辑",

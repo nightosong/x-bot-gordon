@@ -333,7 +333,7 @@ function buildWritingStoryMemoryContext(book, currentChapter = null) {
 
   return [
     structuredAssets ? `【结构化故事资产】\n${structuredAssets}` : "",
-    parts ? `【幕/卷记忆】\n${parts}` : "",
+    parts ? `【幕/卷设定账本】\n${parts}` : "",
     recentChapters.length
       ? `【最近已发生】\n${recentChapters.map((chapter, index) => buildWritingChapterMemoryLine(book, chapter, index)).join("\n")}`
       : "【最近已发生】暂无已完成章节，请以故事介绍和目录为准。",
@@ -345,7 +345,7 @@ function buildWritingStoryMemoryContext(book, currentChapter = null) {
       : "",
     memoryNotes.length
       ? `【伏笔与规则提醒】\n${memoryNotes.map((chapter, index) => buildWritingChapterMemoryLine(book, chapter, index)).join("\n")}`
-      : "【伏笔与规则提醒】暂无显式记录；如果本轮新增事实，输出时要把它写成可回收、可追踪的设定。"
+      : "【伏笔与规则提醒】暂无显式记录；如果本轮新增长线事实，输出时要把它写成可回收、可追踪的设定。"
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -886,10 +886,11 @@ function buildWritingStoryMemoryUpdatePrompt(book, chapter, appliedOutput) {
     : "当前章节";
 
   return [
-    `你正在为「${WRITING_APP_NAME}」执行 story_memory 记忆更新任务。`,
+    `你正在为「${WRITING_APP_NAME}」执行连续性资料更新任务。`,
     "目标：从刚刚写入的章节正文中抽取后续必须遵守或可以回收的结构化故事资产。",
     "",
     "只记录稳定事实，不收录一次性辞藻、普通动作或不会影响后续的细节。",
+    "连续性资料、设定账本、storyAssets 和 memoryNotes 是内部管理资料，不要把这些资料名扩写成作品主题、角色能力或世界观机制。",
     "如果没有新增内容，对应数组返回空数组。",
     "",
     `作品：${book.title}`,
@@ -978,7 +979,7 @@ async function updateWritingStoryMemoryFromChapter(book, chapter, appliedOutput)
   }
 
   try {
-    setWritingFeedback("正文已写入，正在更新故事记忆...", "neutral");
+    setWritingFeedback("正文已写入，正在更新连续性资料...", "neutral");
     const result = await invokeWritingAssistantModel(
       buildWritingStoryMemoryUpdatePrompt(book, chapter, appliedOutput),
       2600,
@@ -995,7 +996,7 @@ async function updateWritingStoryMemoryFromChapter(book, chapter, appliedOutput)
     return "updated";
   } catch (error) {
     console.warn("Failed to update writing story memory", error);
-    setWritingFeedback(`正文已写入，但故事记忆更新失败：${getWritingErrorMessage(error)}`, "warning");
+    setWritingFeedback(`正文已写入，但连续性资料更新失败：${getWritingErrorMessage(error)}`, "warning");
     return "failed";
   }
 }
@@ -1821,7 +1822,7 @@ async function applyWritingAssistantOutput(mode = "append") {
   }
 
   if (memoryUpdateStatus === "updated") {
-    setWritingFeedback(mode === "replace" ? "已替换正文，并更新故事记忆。" : "已追加正文，并更新故事记忆。", "success");
+    setWritingFeedback(mode === "replace" ? "已替换正文，并更新连续性资料。" : "已追加正文，并更新连续性资料。", "success");
     return;
   }
 

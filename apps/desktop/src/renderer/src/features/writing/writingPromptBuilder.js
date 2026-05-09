@@ -117,7 +117,7 @@ export function buildWritingAssistantPrompt({
     chapterOutputContent,
     longOutlineContent ? "\n长篇扩展模式：\n" + longOutlineContent : "",
     "",
-    "故事记忆与一致性上下文：",
+    "连续性资料与一致性上下文：",
     storyMemoryContent,
     "",
     "故事介绍与规划：",
@@ -138,6 +138,8 @@ export function buildWritingAssistantPrompt({
     "- 如果作者要求“第几章拆成几章 / 移除第几章 / 在第n章和第n+1章中间增加章节”，必须落实到最终 chapters JSON。",
     "- 如果是章节，必须有场景动作、对白张力、心理暗流和段落节奏；正文开头不要带章节标题。",
     "- 如果是介绍，必须补齐世界规则、核心矛盾、主要人物与主题命题。",
+    "- 连续性资料、设定账本、storyAssets 和 memoryNotes 是内部写作资料，不是作品主题；除非作者明确要求或当前项目已写明，不要默认把“记忆、失忆、遗忘、档案”设为核心设定。",
+    "- 新建或扩展故事介绍时，优先为当前作品选择区别于已有项目的核心机制；书名意象可保留为氛围，不要自动扩展成同质世界观。",
     "",
     "当前模块原文：",
     currentModuleContent || "(空)"
