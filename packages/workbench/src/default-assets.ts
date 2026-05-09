@@ -13,6 +13,7 @@ export const BUILTIN_KARPATHY_SKILL_ID = "builtin:skill:karpathy-guidelines";
 export const BUILTIN_SELF_IMPROVEMENT_SKILL_ID = "builtin:skill:self-improvement";
 export const BUILTIN_DEEP_RESEARCH_SKILL_ID = "builtin:skill:deep-research";
 export const BUILTIN_SKILL_CREATOR_SKILL_ID = "builtin:skill:skill-creator";
+export const BUILTIN_WRITING_SKILL_ID = "builtin:skill:writing";
 
 const BUILTIN_UPDATED_AT = "2026-04-27T10:30:00.000Z";
 const BUILTIN_PLAN_SKILL_PATH = resolveFromRoot("skills", "plan");
@@ -22,6 +23,7 @@ const BUILTIN_KARPATHY_SKILL_PATH = resolveFromRoot("skills", "karpathy-guidelin
 const BUILTIN_SELF_IMPROVEMENT_SKILL_PATH = resolveFromRoot("skills", "self-improvement");
 const BUILTIN_DEEP_RESEARCH_SKILL_PATH = resolveFromRoot("skills", "deep-research");
 const BUILTIN_SKILL_CREATOR_SKILL_PATH = resolveFromRoot("skills", "skill-creator");
+const BUILTIN_WRITING_SKILL_PATH = resolveFromRoot("skills", "writing");
 const BUILTIN_PLAN_SKILL_PROMPT = readPromptAsset("builtinSkillPlanPrompt");
 const BUILTIN_CODE_SKILL_PROMPT = readPromptAsset("builtinSkillCodePrompt");
 const BUILTIN_REVIEW_SKILL_PROMPT = readPromptAsset("builtinSkillReviewPrompt");
@@ -29,6 +31,7 @@ const BUILTIN_KARPATHY_SKILL_PROMPT = readPromptAsset("builtinSkillKarpathyPromp
 const BUILTIN_SELF_IMPROVEMENT_SKILL_PROMPT = readPromptAsset("builtinSkillSelfImprovementPrompt");
 const BUILTIN_DEEP_RESEARCH_SKILL_PROMPT = readPromptAsset("builtinSkillDeepResearchPrompt");
 const BUILTIN_SKILL_CREATOR_SKILL_PROMPT = readPromptAsset("builtinSkillCreatorPrompt");
+const BUILTIN_WRITING_SKILL_PROMPT = readPromptAsset("builtinSkillWritingPrompt");
 const BUILTIN_GORDON_AGENT_SYSTEM_PROMPT = readPromptAsset("builtinAgentGordonSystem");
 
 function shellEscape(value: string): string {
@@ -139,6 +142,20 @@ export function getBuiltinSkillDefinitions(): SkillDefinition[] {
       source: {
         type: "manual",
         localPath: BUILTIN_SKILL_CREATOR_SKILL_PATH
+      },
+      enabled: true,
+      updatedAt: BUILTIN_UPDATED_AT
+    },
+    {
+      id: BUILTIN_WRITING_SKILL_ID,
+      name: "writing",
+      description: "面向长文本小说创作的复合工作流 Skill，覆盖规划、世界观、人物、剧情、章节、记忆、风格和一致性审核。",
+      tags: ["writing", "novel", "workflow"],
+      kind: "prompt",
+      promptTemplate: BUILTIN_WRITING_SKILL_PROMPT,
+      source: {
+        type: "manual",
+        localPath: BUILTIN_WRITING_SKILL_PATH
       },
       enabled: true,
       updatedAt: BUILTIN_UPDATED_AT

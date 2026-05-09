@@ -31,6 +31,7 @@ export function createWritingAiActions({
   activeWritingTask,
   buildWritingIntroContent,
   buildWritingOutlineContent,
+  buildWritingStoryAssetsContent,
   createLocalId,
   desktopApi,
   ensureWritingChapterSelection,
@@ -45,12 +46,14 @@ export function createWritingAiActions({
   getWritingPartDisplayLabel,
   getWritingTabTitle,
   getPreferredWritingChapter,
+  mergeWritingStoryAssets,
   normalizePositiveInteger,
   normalizeWritingBookPart,
   normalizeWritingBookPartTypeForUi,
   normalizeWritingChapterDraftOutput,
   normalizeWritingChapterIndex,
   normalizeWritingOutlinePlannerJobForUi,
+  normalizeWritingStoryAssetsForUi,
   parseWritingChapterIndex,
   persistWritingBookById,
   selectWritingChapter,
@@ -326,8 +329,10 @@ function buildWritingStoryMemoryContext(book, currentChapter = null) {
   const parts = getWritingBookParts(book)
     .map((part) => `${getWritingPartDisplayLabel(part)}：${truncateText(String(part.description ?? "").replace(/\s+/g, " ").trim(), 120) || "暂无描述"}`)
     .join("\n");
+  const structuredAssets = typeof buildWritingStoryAssetsContent === "function" ? buildWritingStoryAssetsContent(book) : "";
 
   return [
+    structuredAssets ? `【结构化故事资产】\n${structuredAssets}` : "",
     parts ? `【幕/卷记忆】\n${parts}` : "",
     recentChapters.length
       ? `【最近已发生】\n${recentChapters.map((chapter, index) => buildWritingChapterMemoryLine(book, chapter, index)).join("\n")}`
@@ -870,6 +875,127 @@ function getWritingMasterSystemPrompt() {
       "输出必须可直接放进写作项目，不写寒暄，不解释你在做什么。"
     ].join("\n")
   );
+}
+
+function buildWritingStoryMemoryUpdatePrompt(book, chapter, appliedOutput) {
+  const chapterIndex = getWritingChapters(book).findIndex((entry) => entry.id === chapter?.id);
+  const chapterTitle = chapter
+    ? getWritingChapterDisplayTitle(chapter, chapterIndex >= 0 ? chapterIndex : 0)
+    : "当前章节";
+
+  return [
+    `你正在为「${WRITING_APP_NAME}」执行 story_memory 记忆更新任务。`,
+    "目标：从刚刚写入的章节正文中抽取后续必须遵守或可以回收的结构化故事资产。",
+    "",
+    "只记录稳定事实，不收录一次性辞藻、普通动作或不会影响后续的细节。",
+    "如果没有新增内容，对应数组返回空数组。",
+    "",
+    `作品：${book.title}`,
+    `类型：${book.genre || "未设定"}`,
+    "",
+    "已有结构化故事资产：",
+    typeof buildWritingStoryAssetsContent === "function" ? buildWritingStoryAssetsContent(book) : "(空)",
+    "",
+    "故事介绍与规划：",
+    buildWritingIntroContent(book) || "(空)",
+    "",
+    "邻近目录：",
+    buildWritingRelevantOutlineContent(book, chapter, 4),
+    "",
+    "当前章节：",
+    `标题：${chapterTitle}`,
+    `简介：${chapter?.summary || "(空)"}`,
+    "",
+    "刚写入的正文：",
+    truncateText(String(appliedOutput ?? ""), 9000),
+    "",
+    "输出 JSON 代码块，且只允许包含 storyAssets 字段：",
+    `{"storyAssets":{"premise":"","worldview":[{"title":"","detail":"","tags":[],"chapterIndex":${chapter?.index ?? 1}}],"characters":[{"name":"","role":"","goal":"","fear":"","secret":"","growthArc":"","relationships":[],"tags":[],"status":"active"}],"relationships":[{"title":"","detail":"","tags":[]}],"timeline":[{"title":"","detail":"","tags":[],"chapterIndex":${chapter?.index ?? 1}}],"foreshadows":[{"title":"","setup":"","payoff":"","status":"open","chapterIndex":${chapter?.index ?? 1},"tags":[]}],"rules":[{"title":"","detail":"","tags":[]}],"styleProfile":{"voice":"","pacing":"","genreSignals":[],"taboos":[]},"memoryNotes":[{"title":"","detail":"","tags":[],"chapterIndex":${chapter?.index ?? 1}}]}}`
+  ].join("\n");
+}
+
+function parseWritingJsonObjectPayload(value) {
+  const text = String(value ?? "").trim();
+  const candidates = Array.from(text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi))
+    .map((match) => match[1]?.trim())
+    .filter(Boolean);
+  const firstObjectIndex = text.indexOf("{");
+  const lastObjectIndex = text.lastIndexOf("}");
+
+  if (firstObjectIndex >= 0 && lastObjectIndex > firstObjectIndex) {
+    candidates.push(text.slice(firstObjectIndex, lastObjectIndex + 1));
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+      // Continue with next candidate.
+    }
+  }
+
+  return null;
+}
+
+function parseWritingStoryMemoryPayload(value, book) {
+  const parsed = parseWritingJsonObjectPayload(value);
+  const source = parsed?.storyAssets && typeof parsed.storyAssets === "object" ? parsed.storyAssets : parsed;
+
+  if (!source || typeof source !== "object") {
+    return null;
+  }
+
+  const normalizedAssets = typeof normalizeWritingStoryAssetsForUi === "function"
+    ? normalizeWritingStoryAssetsForUi(source, book?.id ?? "writing_book")
+    : source;
+  const hasContent = Boolean(
+    normalizedAssets.premise ||
+      normalizedAssets.worldview?.length ||
+      normalizedAssets.characters?.length ||
+      normalizedAssets.relationships?.length ||
+      normalizedAssets.timeline?.length ||
+      normalizedAssets.foreshadows?.length ||
+      normalizedAssets.rules?.length ||
+      normalizedAssets.styleProfile?.voice ||
+      normalizedAssets.styleProfile?.pacing ||
+      normalizedAssets.styleProfile?.genreSignals?.length ||
+      normalizedAssets.styleProfile?.taboos?.length ||
+      normalizedAssets.memoryNotes?.length
+  );
+
+  return hasContent ? normalizedAssets : null;
+}
+
+async function updateWritingStoryMemoryFromChapter(book, chapter, appliedOutput) {
+  if (!book || !chapter || !desktopApi?.invokeModelText || typeof mergeWritingStoryAssets !== "function") {
+    return "skipped";
+  }
+
+  try {
+    setWritingFeedback("正文已写入，正在更新故事记忆...", "neutral");
+    const result = await invokeWritingAssistantModel(
+      buildWritingStoryMemoryUpdatePrompt(book, chapter, appliedOutput),
+      2600,
+      0.2
+    );
+    const nextAssets = parseWritingStoryMemoryPayload(result?.text ?? "", book);
+
+    if (!nextAssets) {
+      return "empty";
+    }
+
+    mergeWritingStoryAssets(book, nextAssets);
+    await persistWritingBookById(book.id, { silent: true });
+    return "updated";
+  } catch (error) {
+    console.warn("Failed to update writing story memory", error);
+    setWritingFeedback(`正文已写入，但故事记忆更新失败：${getWritingErrorMessage(error)}`, "warning");
+    return "failed";
+  }
 }
 
 async function invokeWritingAssistantModel(prompt, maxOutputTokens, temperature = 0.72, options = {}) {
@@ -1652,6 +1778,8 @@ async function applyWritingAssistantOutput(mode = "append") {
     return;
   }
 
+  let memoryUpdateStatus = "";
+
   if (ui.marketplace.writing.activeTab === "chapter") {
     if (activeWritingTask.value?.id === "review") {
       setWritingFeedback("章节质检结果仅用于审阅，不自动写入正文。", "warning");
@@ -1661,6 +1789,7 @@ async function applyWritingAssistantOutput(mode = "append") {
     const chapter = activeWritingChapter.value ?? ensureWritingChapterSelection(book);
     const current = String(chapter?.content ?? "").trim();
     setWritingChapterContent(chapter, mode === "replace" ? output : [current, output].filter(Boolean).join("\n\n"));
+    memoryUpdateStatus = await updateWritingStoryMemoryFromChapter(book, chapter, output);
   } else if (ui.marketplace.writing.activeTab === "outline") {
     if (await applyWritingChapterPlanOutput(book, output, mode)) {
       return;
@@ -1673,6 +1802,15 @@ async function applyWritingAssistantOutput(mode = "append") {
     const targetKey = book.length === "short" ? "intro" : book.length === "long" ? "seriesPlan" : "outlineGuide";
     const current = getWritingIntroFieldValue(book, targetKey).trim();
     setWritingIntroField(book, targetKey, mode === "replace" ? output : [current, output].filter(Boolean).join("\n\n"));
+  }
+
+  if (memoryUpdateStatus === "failed") {
+    return;
+  }
+
+  if (memoryUpdateStatus === "updated") {
+    setWritingFeedback(mode === "replace" ? "已替换正文，并更新故事记忆。" : "已追加正文，并更新故事记忆。", "success");
+    return;
   }
 
   setWritingFeedback(mode === "replace" ? "已用 AI 输出替换当前模块。" : "已把 AI 输出追加到当前模块。", "success");

@@ -564,6 +564,62 @@ export interface WritingBookPart {
   description: string;
 }
 
+export interface WritingStoryAssetEntry {
+  id: string;
+  title: string;
+  detail: string;
+  tags: string[];
+  chapterIndex?: number;
+  status?: string;
+  updatedAt: string;
+}
+
+export interface WritingCharacterAsset {
+  id: string;
+  name: string;
+  role: string;
+  goal: string;
+  fear: string;
+  secret: string;
+  growthArc: string;
+  relationships: string[];
+  tags: string[];
+  status: string;
+  updatedAt: string;
+}
+
+export interface WritingForeshadowAsset {
+  id: string;
+  title: string;
+  setup: string;
+  payoff: string;
+  status: string;
+  chapterIndex?: number;
+  payoffChapterIndex?: number;
+  tags: string[];
+  updatedAt: string;
+}
+
+export interface WritingStyleProfile {
+  voice: string;
+  pacing: string;
+  genreSignals: string[];
+  taboos: string[];
+}
+
+export interface WritingStoryAssets {
+  premise: string;
+  worldview: WritingStoryAssetEntry[];
+  characters: WritingCharacterAsset[];
+  relationships: WritingStoryAssetEntry[];
+  timeline: WritingStoryAssetEntry[];
+  foreshadows: WritingForeshadowAsset[];
+  rules: WritingStoryAssetEntry[];
+  styleProfile: WritingStyleProfile;
+  memoryNotes: WritingStoryAssetEntry[];
+  updatedAt: string;
+}
+
 export interface WritingOutlinePlannerJob {
   id: string;
   status: WritingOutlinePlannerStatus;
@@ -614,6 +670,7 @@ export interface WritingBook {
   outlineGuide: string;
   seriesPlan: string;
   parts: WritingBookPart[];
+  storyAssets: WritingStoryAssets;
   outlinePlannerJob?: WritingOutlinePlannerJob;
   chapters: WritingChapter[];
   directoryName?: string;

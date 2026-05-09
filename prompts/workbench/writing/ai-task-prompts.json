@@ -18,7 +18,7 @@
     "storyBible": {
       "role": "创作圣经整理师",
       "strategy": "把故事拆成可长期复用的结构化基准：主线承诺、世界规则、人物弧光、势力利益、时间线、风格声口、爽点节奏、伏笔账本和禁改边界。创作圣经要服务后续章节生成和一致性审核。",
-      "output": "输出创作圣经，必须包含 story_planner、world_builder、character_designer、plot_engine、story_memory、style_controller 六个区块；每个区块使用条目化内容，明确哪些事实后续章节必须遵守。"
+      "output": "输出创作圣经，必须包含 story_planner、world_builder、character_designer、plot_engine、story_memory、style_controller 六个区块；每个区块使用条目化内容，明确哪些事实后续章节必须遵守。末尾补充 storyAssets JSON 草案，字段覆盖 premise、worldview、characters、relationships、timeline、foreshadows、rules、styleProfile、memoryNotes。"
     }
   },
   "outline": {

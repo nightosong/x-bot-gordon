@@ -1,5 +1,5 @@
 import path from "node:path";
-import { access, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 
 import { resolveFromRoot } from "../../shared/src/index.js";
@@ -37,10 +37,15 @@ import type {
   WritingBookPart,
   WritingBookPartType,
   WritingChapter,
+  WritingCharacterAsset,
+  WritingForeshadowAsset,
   WritingOutlinePlannerJob,
   WritingOutlinePlannerStatus,
   WritingBookSaveOptions,
   WritingChapterStatus,
+  WritingStoryAssetEntry,
+  WritingStoryAssets,
+  WritingStyleProfile,
   WorkTask
 } from "../../shared/src/index.js";
 import {
@@ -95,6 +100,9 @@ function getSkillDefinitionsFilePath(): string {
 function getSkillsRootDirectoryPath(): string {
   return resolveFromRoot("skills");
 }
+
+const SKILL_MARKDOWN_FILE_NAME = "SKILL.md";
+const SKILL_DISCOVERY_IGNORED_DIRECTORIES = new Set([".git", "node_modules"]);
 
 function getMcpServersFilePath(): string {
   return resolveFromRoot("data", "workbench", "mcp-servers.json");
@@ -300,8 +308,161 @@ function inferImportedSkillHandlerRef(metadata: Record<string, string>): string 
   return handlerRef ?? "";
 }
 
+function normalizeSkillLocalPathKey(localPath: string | null | undefined): string {
+  const trimmed = localPath?.trim();
+  return trimmed ? path.resolve(trimmed).normalize() : "";
+}
+
+function getSkillRelativeRootPath(localDirectory: string): string {
+  const relativePath = path.relative(getSkillsRootDirectoryPath(), localDirectory).replace(/\\/g, "/");
+
+  if (!relativePath || relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    throw new Error("检测到非法 Skill 本地目录");
+  }
+
+  return relativePath;
+}
+
+function buildDiscoveredLocalSkillId(relativeSkillRootPath: string): string {
+  return `local:skill:${encodeURIComponent(relativeSkillRootPath)}`;
+}
+
+function extractImportedSkillTags(metadata: Record<string, string>): string[] {
+  const rawTags = metadata.tags?.trim() || metadata.tag?.trim() || "";
+
+  if (!rawTags) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      rawTags
+        .split(/[,，\s]+/)
+        .map((tag) => tag.trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+async function buildDiscoveredLocalSkillDefinition(localDirectory: string, skillFilePath: string): Promise<SkillDefinition | null> {
+  const markdown = await readFile(skillFilePath, "utf8");
+  const { body, metadata } = extractMarkdownFrontmatter(markdown);
+  const promptTemplate = body.trim();
+
+  if (!promptTemplate) {
+    return null;
+  }
+
+  const relativeSkillRootPath = getSkillRelativeRootPath(localDirectory);
+  const skillFileStat = await stat(skillFilePath);
+  const inferredName =
+    metadata.name?.trim() ||
+    extractMarkdownHeading(promptTemplate) ||
+    relativeSkillRootPath.split("/").filter(Boolean).at(-1) ||
+    "Local Skill";
+  const description = metadata.description?.trim() || extractMarkdownSummary(promptTemplate);
+
+  return {
+    id: buildDiscoveredLocalSkillId(relativeSkillRootPath),
+    name: inferredName,
+    description,
+    tags: extractImportedSkillTags(metadata),
+    kind: inferImportedSkillKind(promptTemplate, metadata),
+    promptTemplate,
+    handlerRef: inferImportedSkillHandlerRef(metadata),
+    source: {
+      type: "manual",
+      localPath: localDirectory
+    },
+    enabled: true,
+    updatedAt: skillFileStat.mtime.toISOString()
+  };
+}
+
+async function discoverLocalSkillDefinitions(): Promise<SkillDefinition[]> {
+  const skillsRootDirectory = getSkillsRootDirectoryPath();
+  const discoveredSkills: SkillDefinition[] = [];
+
+  const walkDirectory = async (directoryPath: string): Promise<void> => {
+    let entries: Array<{ name: string; isFile(): boolean; isDirectory(): boolean }>;
+
+    try {
+      entries = await readdir(directoryPath, { withFileTypes: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return;
+      }
+
+      throw error;
+    }
+
+    const skillFile = entries.find((entry) => entry.isFile() && entry.name.toLowerCase() === "skill.md");
+
+    if (skillFile) {
+      const discoveredSkill = await buildDiscoveredLocalSkillDefinition(directoryPath, path.join(directoryPath, skillFile.name));
+
+      if (discoveredSkill) {
+        discoveredSkills.push(discoveredSkill);
+      }
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory() || SKILL_DISCOVERY_IGNORED_DIRECTORIES.has(entry.name)) {
+        continue;
+      }
+
+      await walkDirectory(path.join(directoryPath, entry.name));
+    }
+  };
+
+  await walkDirectory(skillsRootDirectory);
+
+  return discoveredSkills.sort((left, right) => {
+    const leftPath = getSkillRelativeRootPath(left.source?.localPath ?? "");
+    const rightPath = getSkillRelativeRootPath(right.source?.localPath ?? "");
+    return leftPath.localeCompare(rightPath);
+  });
+}
+
+function mergeDiscoveredSkillDefinitions(
+  registeredSkills: SkillDefinition[],
+  discoveredSkills: SkillDefinition[]
+): SkillDefinition[] {
+  const nextSkills: SkillDefinition[] = [];
+  const skillIds = new Set<string>();
+  const localPathKeys = new Set<string>();
+
+  const appendSkill = (skill: SkillDefinition): void => {
+    const localPathKey = normalizeSkillLocalPathKey(skill.source?.localPath);
+
+    if (skillIds.has(skill.id) || (localPathKey && localPathKeys.has(localPathKey))) {
+      return;
+    }
+
+    nextSkills.push(skill);
+    skillIds.add(skill.id);
+
+    if (localPathKey) {
+      localPathKeys.add(localPathKey);
+    }
+  };
+
+  registeredSkills.forEach(appendSkill);
+  discoveredSkills.forEach(appendSkill);
+
+  return nextSkills;
+}
+
+function isBuiltinSkillLocalPath(localPath: string): boolean {
+  const localPathKey = normalizeSkillLocalPathKey(localPath);
+
+  return getBuiltinSkillDefinitions().some((skill) => normalizeSkillLocalPathKey(skill.source?.localPath) === localPathKey);
+}
+
 function getGithubSkillRootPath(skillFilePath: string): string {
-  return skillFilePath.endsWith("SKILL.md") ? skillFilePath.slice(0, -"SKILL.md".length).replace(/\/+$/, "") : skillFilePath;
+  return skillFilePath.endsWith(SKILL_MARKDOWN_FILE_NAME)
+    ? skillFilePath.slice(0, -SKILL_MARKDOWN_FILE_NAME.length).replace(/\/+$/, "")
+    : skillFilePath;
 }
 
 async function resolveAvailableSkillLocalDirectory(
@@ -1657,6 +1818,164 @@ function normalizeWritingBookParts(input: unknown, bookId: string): WritingBookP
     .sort((left, right) => left.index - right.index);
 }
 
+function normalizeStringList(input: unknown): string[] {
+  if (Array.isArray(input)) {
+    return input.map((item) => String(item ?? "").trim()).filter(Boolean);
+  }
+
+  return String(input ?? "")
+    .split(/[,\n，、]/g)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function normalizeOptionalChapterIndex(value: unknown): number | undefined {
+  return value === null || value === undefined || value === "" ? undefined : normalizeWritingChapterIndex(value, 0);
+}
+
+function normalizeWritingStoryAssetEntry(
+  input: Partial<WritingStoryAssetEntry> | Record<string, unknown> | null | undefined,
+  index: number,
+  bookId: string,
+  group: string
+): WritingStoryAssetEntry | null {
+  const timestamp = String(input?.updatedAt ?? new Date().toISOString());
+  const title = String(input?.title ?? (input as Record<string, unknown> | undefined)?.name ?? (input as Record<string, unknown> | undefined)?.key ?? "").trim();
+  const detail = String(
+    input?.detail ??
+      (input as Record<string, unknown> | undefined)?.description ??
+      (input as Record<string, unknown> | undefined)?.summary ??
+      (input as Record<string, unknown> | undefined)?.value ??
+      ""
+  ).trim();
+  const chapterIndex = normalizeOptionalChapterIndex(input?.chapterIndex ?? (input as Record<string, unknown> | undefined)?.chapter);
+
+  if (!title && !detail) {
+    return null;
+  }
+
+  return {
+    id: String(input?.id ?? `${bookId}_${group}_${index + 1}`),
+    title: title || `未命名${group} ${index + 1}`,
+    detail,
+    tags: normalizeStringList(input?.tags),
+    ...(chapterIndex ? { chapterIndex } : {}),
+    ...(input?.status ? { status: String(input.status) } : {}),
+    updatedAt: timestamp
+  };
+}
+
+function normalizeWritingStoryAssetEntries(input: unknown, bookId: string, group: string): WritingStoryAssetEntry[] {
+  return (Array.isArray(input) ? input : [])
+    .map((entry, index) => normalizeWritingStoryAssetEntry(entry as Partial<WritingStoryAssetEntry>, index, bookId, group))
+    .filter((entry): entry is WritingStoryAssetEntry => Boolean(entry));
+}
+
+function normalizeWritingCharacterAsset(
+  input: Partial<WritingCharacterAsset> | Record<string, unknown> | null | undefined,
+  index: number,
+  bookId: string
+): WritingCharacterAsset | null {
+  const name = String(input?.name ?? (input as Record<string, unknown> | undefined)?.title ?? "").trim();
+  const relationships = normalizeStringList(input?.relationships);
+
+  if (
+    !name &&
+    !input?.role &&
+    !input?.goal &&
+    !input?.fear &&
+    !input?.secret &&
+    !input?.growthArc &&
+    !(input as Record<string, unknown> | undefined)?.growth_arc &&
+    !relationships.length
+  ) {
+    return null;
+  }
+
+  return {
+    id: String(input?.id ?? `${bookId}_character_${index + 1}`),
+    name: name || `未命名人物 ${index + 1}`,
+    role: String(input?.role ?? "").trim(),
+    goal: String(input?.goal ?? "").trim(),
+    fear: String(input?.fear ?? "").trim(),
+    secret: String(input?.secret ?? "").trim(),
+    growthArc: String(input?.growthArc ?? (input as Record<string, unknown> | undefined)?.growth_arc ?? "").trim(),
+    relationships,
+    tags: normalizeStringList(input?.tags),
+    status: String(input?.status ?? "active"),
+    updatedAt: String(input?.updatedAt ?? new Date().toISOString())
+  };
+}
+
+function normalizeWritingCharacterAssets(input: unknown, bookId: string): WritingCharacterAsset[] {
+  return (Array.isArray(input) ? input : [])
+    .map((entry, index) => normalizeWritingCharacterAsset(entry as Partial<WritingCharacterAsset>, index, bookId))
+    .filter((entry): entry is WritingCharacterAsset => Boolean(entry));
+}
+
+function normalizeWritingForeshadowAsset(
+  input: Partial<WritingForeshadowAsset> | Record<string, unknown> | null | undefined,
+  index: number,
+  bookId: string
+): WritingForeshadowAsset | null {
+  const title = String(input?.title ?? (input as Record<string, unknown> | undefined)?.name ?? "").trim();
+  const setup = String(input?.setup ?? (input as Record<string, unknown> | undefined)?.detail ?? "").trim();
+  const payoff = String(
+    input?.payoff ??
+      (input as Record<string, unknown> | undefined)?.plannedPayoff ??
+      (input as Record<string, unknown> | undefined)?.payoffPlan ??
+      ""
+  ).trim();
+  const chapterIndex = normalizeOptionalChapterIndex(input?.chapterIndex ?? (input as Record<string, unknown> | undefined)?.setupChapterIndex);
+  const payoffChapterIndex = normalizeOptionalChapterIndex(input?.payoffChapterIndex);
+
+  if (!title && !setup && !payoff) {
+    return null;
+  }
+
+  return {
+    id: String(input?.id ?? `${bookId}_foreshadow_${index + 1}`),
+    title: title || setup || `未命名伏笔 ${index + 1}`,
+    setup,
+    payoff,
+    status: String(input?.status ?? "open"),
+    ...(chapterIndex ? { chapterIndex } : {}),
+    ...(payoffChapterIndex ? { payoffChapterIndex } : {}),
+    tags: normalizeStringList(input?.tags),
+    updatedAt: String(input?.updatedAt ?? new Date().toISOString())
+  };
+}
+
+function normalizeWritingForeshadowAssets(input: unknown, bookId: string): WritingForeshadowAsset[] {
+  return (Array.isArray(input) ? input : [])
+    .map((entry, index) => normalizeWritingForeshadowAsset(entry as Partial<WritingForeshadowAsset>, index, bookId))
+    .filter((entry): entry is WritingForeshadowAsset => Boolean(entry));
+}
+
+function normalizeWritingStyleProfile(input: Partial<WritingStyleProfile> | null | undefined): WritingStyleProfile {
+  return {
+    voice: String(input?.voice ?? "").trim(),
+    pacing: String(input?.pacing ?? "").trim(),
+    genreSignals: normalizeStringList(input?.genreSignals),
+    taboos: normalizeStringList(input?.taboos)
+  };
+}
+
+function normalizeWritingStoryAssets(input: Partial<WritingStoryAssets> | null | undefined, bookId: string): WritingStoryAssets {
+  return {
+    premise: String(input?.premise ?? "").trim(),
+    worldview: normalizeWritingStoryAssetEntries(input?.worldview, bookId, "worldview"),
+    characters: normalizeWritingCharacterAssets(input?.characters, bookId),
+    relationships: normalizeWritingStoryAssetEntries(input?.relationships, bookId, "relationship"),
+    timeline: normalizeWritingStoryAssetEntries(input?.timeline, bookId, "timeline"),
+    foreshadows: normalizeWritingForeshadowAssets(input?.foreshadows, bookId),
+    rules: normalizeWritingStoryAssetEntries(input?.rules, bookId, "rule"),
+    styleProfile: normalizeWritingStyleProfile(input?.styleProfile),
+    memoryNotes: normalizeWritingStoryAssetEntries(input?.memoryNotes, bookId, "memory"),
+    updatedAt: String(input?.updatedAt ?? new Date().toISOString())
+  };
+}
+
 function normalizeWritingOutlinePlannerJob(input: Partial<WritingOutlinePlannerJob> | null | undefined): WritingOutlinePlannerJob | undefined {
   if (!input || typeof input !== "object") {
     return undefined;
@@ -1717,6 +2036,7 @@ function normalizeWritingBookConfig(input: Partial<WritingBook> | null | undefin
     outlineGuide: String(input?.outlineGuide ?? ""),
     seriesPlan: String(input?.seriesPlan ?? ""),
     parts: normalizeWritingBookParts(input?.parts, id),
+    storyAssets: normalizeWritingStoryAssets(input?.storyAssets, id),
     ...(outlinePlannerJob ? { outlinePlannerJob } : {})
   };
 }
@@ -2391,7 +2711,9 @@ export async function upsertWorkflowLibraryItem(item: WorkflowLibraryItem): Prom
 
 export async function listSkillDefinitions(): Promise<SkillDefinition[]> {
   const userSkills = sortByUpdatedAtDescending(await readWorkbenchCollection<SkillDefinition>(getSkillDefinitionsFilePath()));
-  return mergeBuiltinEntries(getBuiltinSkillDefinitions(), userSkills);
+  const registeredSkills = mergeBuiltinEntries(getBuiltinSkillDefinitions(), userSkills);
+  const discoveredSkills = await discoverLocalSkillDefinitions();
+  return mergeDiscoveredSkillDefinitions(registeredSkills, discoveredSkills);
 }
 
 export async function upsertSkillDefinition(skill: SkillDefinition): Promise<SkillDefinition[]> {
@@ -2464,15 +2786,21 @@ export async function toggleSkillDefinitionStatus(skillId: string): Promise<Skil
   }
 
   const current = sortByUpdatedAtDescending(await readWorkbenchCollection<SkillDefinition>(getSkillDefinitionsFilePath()));
-  const nextSkills = current.map((skill) =>
-    skill.id === skillId
-      ? {
-          ...skill,
-          enabled: !skill.enabled,
-          updatedAt: new Date().toISOString()
-        }
-      : skill
-  );
+  const existingSkill = current.find((skill) => skill.id === skillId);
+  const targetSkill = existingSkill ?? (await listSkillDefinitions()).find((skill) => skill.id === skillId);
+
+  if (!targetSkill || isBuiltinWorkbenchEntry(targetSkill.id)) {
+    return listSkillDefinitions();
+  }
+
+  const updatedSkill = {
+    ...targetSkill,
+    enabled: !targetSkill.enabled,
+    updatedAt: new Date().toISOString()
+  };
+  const nextSkills = existingSkill
+    ? current.map((skill) => (skill.id === skillId ? updatedSkill : skill))
+    : [updatedSkill, ...current];
 
   await writeWorkbenchCollection(getSkillDefinitionsFilePath(), sortByUpdatedAtDescending(nextSkills));
   return listSkillDefinitions();
@@ -2484,12 +2812,12 @@ export async function deleteSkillDefinition(skillId: string): Promise<SkillDefin
   }
 
   const current = sortByUpdatedAtDescending(await readWorkbenchCollection<SkillDefinition>(getSkillDefinitionsFilePath()));
-  const target = current.find((skill) => skill.id === skillId);
+  const target = current.find((skill) => skill.id === skillId) ?? (await listSkillDefinitions()).find((skill) => skill.id === skillId);
   const nextSkills = current.filter((skill) => skill.id !== skillId);
 
   const localPath = target?.source?.localPath?.trim();
 
-  if (localPath && isPathInsideDirectory(getSkillsRootDirectoryPath(), localPath)) {
+  if (localPath && isPathInsideDirectory(getSkillsRootDirectoryPath(), localPath) && !isBuiltinSkillLocalPath(localPath)) {
     await rm(localPath, { recursive: true, force: true });
   }
 

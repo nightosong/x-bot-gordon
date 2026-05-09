@@ -229,6 +229,170 @@ function normalizeWritingBookPartsForUi(parts = [], bookId = "writing_book") {
     .sort((left, right) => left.index - right.index);
 }
 
+function normalizeStringList(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item ?? "").trim()).filter(Boolean);
+  }
+
+  return String(value ?? "")
+    .split(/[,\n，、]/g)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function uniqueStringList(...lists) {
+  const seen = new Set();
+  const result = [];
+
+  lists.flat().forEach((item) => {
+    const text = String(item ?? "").trim();
+    const key = text.toLowerCase();
+
+    if (!text || seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+    result.push(text);
+  });
+
+  return result;
+}
+
+function normalizeWritingStoryAssetKey(value) {
+  return String(value ?? "")
+    .replace(/\s+/g, "")
+    .toLowerCase();
+}
+
+function normalizeOptionalStoryChapterIndex(value) {
+  return value === null || value === undefined || value === "" ? undefined : normalizeWritingChapterIndex(value, 0);
+}
+
+function normalizeWritingStoryAssetEntry(entry, index = 0, bookId = "writing_book", group = "asset") {
+  const source = entry && typeof entry === "object" ? entry : {};
+  const title = String(source.title ?? source.name ?? source.key ?? "").trim();
+  const detail = String(source.detail ?? source.description ?? source.summary ?? source.value ?? "").trim();
+  const chapterIndex = normalizeOptionalStoryChapterIndex(source.chapterIndex ?? source.chapter);
+
+  if (!title && !detail) {
+    return null;
+  }
+
+  return {
+    id: String(source.id ?? "").trim() || `${bookId}_${group}_${index + 1}`,
+    title: title || `未命名${group} ${index + 1}`,
+    detail,
+    tags: normalizeStringList(source.tags),
+    ...(chapterIndex ? { chapterIndex } : {}),
+    ...(source.status ? { status: String(source.status) } : {}),
+    updatedAt: String(source.updatedAt ?? new Date().toISOString())
+  };
+}
+
+function normalizeWritingStoryAssetEntries(entries = [], bookId = "writing_book", group = "asset") {
+  return (Array.isArray(entries) ? entries : [])
+    .map((entry, index) => normalizeWritingStoryAssetEntry(entry, index, bookId, group))
+    .filter(Boolean);
+}
+
+function normalizeWritingCharacterAsset(entry, index = 0, bookId = "writing_book") {
+  const source = entry && typeof entry === "object" ? entry : {};
+  const name = String(source.name ?? source.title ?? "").trim();
+
+  if (
+    !name &&
+    !source.role &&
+    !source.goal &&
+    !source.fear &&
+    !source.secret &&
+    !source.growthArc &&
+    !source.growth_arc &&
+    !normalizeStringList(source.relationships).length
+  ) {
+    return null;
+  }
+
+  return {
+    id: String(source.id ?? "").trim() || `${bookId}_character_${index + 1}`,
+    name: name || `未命名人物 ${index + 1}`,
+    role: String(source.role ?? "").trim(),
+    goal: String(source.goal ?? "").trim(),
+    fear: String(source.fear ?? "").trim(),
+    secret: String(source.secret ?? "").trim(),
+    growthArc: String(source.growthArc ?? source.growth_arc ?? "").trim(),
+    relationships: normalizeStringList(source.relationships),
+    tags: normalizeStringList(source.tags),
+    status: String(source.status ?? "active"),
+    updatedAt: String(source.updatedAt ?? new Date().toISOString())
+  };
+}
+
+function normalizeWritingCharacterAssets(entries = [], bookId = "writing_book") {
+  return (Array.isArray(entries) ? entries : [])
+    .map((entry, index) => normalizeWritingCharacterAsset(entry, index, bookId))
+    .filter(Boolean);
+}
+
+function normalizeWritingForeshadowAsset(entry, index = 0, bookId = "writing_book") {
+  const source = entry && typeof entry === "object" ? entry : {};
+  const title = String(source.title ?? source.name ?? "").trim();
+  const setup = String(source.setup ?? source.detail ?? "").trim();
+  const payoff = String(source.payoff ?? source.plannedPayoff ?? source.payoffPlan ?? "").trim();
+  const chapterIndex = normalizeOptionalStoryChapterIndex(source.chapterIndex ?? source.setupChapterIndex);
+  const payoffChapterIndex = normalizeOptionalStoryChapterIndex(source.payoffChapterIndex);
+
+  if (!title && !setup && !payoff) {
+    return null;
+  }
+
+  return {
+    id: String(source.id ?? "").trim() || `${bookId}_foreshadow_${index + 1}`,
+    title: title || setup || `未命名伏笔 ${index + 1}`,
+    setup,
+    payoff,
+    status: String(source.status ?? "open"),
+    ...(chapterIndex ? { chapterIndex } : {}),
+    ...(payoffChapterIndex ? { payoffChapterIndex } : {}),
+    tags: normalizeStringList(source.tags),
+    updatedAt: String(source.updatedAt ?? new Date().toISOString())
+  };
+}
+
+function normalizeWritingForeshadowAssets(entries = [], bookId = "writing_book") {
+  return (Array.isArray(entries) ? entries : [])
+    .map((entry, index) => normalizeWritingForeshadowAsset(entry, index, bookId))
+    .filter(Boolean);
+}
+
+function normalizeWritingStyleProfileForUi(profile = {}) {
+  const source = profile && typeof profile === "object" ? profile : {};
+
+  return {
+    voice: String(source.voice ?? "").trim(),
+    pacing: String(source.pacing ?? "").trim(),
+    genreSignals: normalizeStringList(source.genreSignals),
+    taboos: normalizeStringList(source.taboos)
+  };
+}
+
+function normalizeWritingStoryAssetsForUi(assets = {}, bookId = "writing_book") {
+  const source = assets && typeof assets === "object" ? assets : {};
+
+  return {
+    premise: String(source.premise ?? "").trim(),
+    worldview: normalizeWritingStoryAssetEntries(source.worldview, bookId, "worldview"),
+    characters: normalizeWritingCharacterAssets(source.characters, bookId),
+    relationships: normalizeWritingStoryAssetEntries(source.relationships, bookId, "relationship"),
+    timeline: normalizeWritingStoryAssetEntries(source.timeline, bookId, "timeline"),
+    foreshadows: normalizeWritingForeshadowAssets(source.foreshadows, bookId),
+    rules: normalizeWritingStoryAssetEntries(source.rules, bookId, "rule"),
+    styleProfile: normalizeWritingStyleProfileForUi(source.styleProfile),
+    memoryNotes: normalizeWritingStoryAssetEntries(source.memoryNotes, bookId, "memory"),
+    updatedAt: String(source.updatedAt ?? new Date().toISOString())
+  };
+}
+
 function normalizePositiveInteger(value, fallbackValue = 1) {
   const parsedValue = Number(value);
   return Number.isInteger(parsedValue) && parsedValue > 0 ? parsedValue : fallbackValue;
@@ -288,6 +452,7 @@ function normalizeWritingBookForUi(book, index = 0) {
     seriesPlan: String(book?.seriesPlan ?? ""),
     directoryName: typeof book?.directoryName === "string" ? book.directoryName : undefined,
     parts: normalizeWritingBookPartsForUi(book?.parts, bookId),
+    storyAssets: normalizeWritingStoryAssetsForUi(book?.storyAssets, bookId),
     outlinePlannerJob: normalizeWritingOutlinePlannerJobForUi(book?.outlinePlannerJob),
     chapters: []
   };
@@ -550,6 +715,226 @@ function buildWritingIntroContent(book) {
     })
     .filter(Boolean)
     .join("\n\n");
+}
+
+function truncateWritingStoryAssetText(value, maxLength = 240) {
+  const text = String(value ?? "").replace(/\s+/g, " ").trim();
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+function buildWritingStoryAssetEntryLines(entries = []) {
+  return entries
+    .map((entry) => {
+      const tags = entry.tags?.length ? ` / ${entry.tags.join("、")}` : "";
+      const status = entry.status ? ` / ${entry.status}` : "";
+      const chapter = entry.chapterIndex ? ` / 第${entry.chapterIndex}章` : "";
+      const detail = truncateWritingStoryAssetText(entry.detail);
+      return `- ${entry.title}${chapter}${status}${tags}${detail ? `：${detail}` : ""}`;
+    })
+    .join("\n");
+}
+
+function buildWritingCharacterAssetLines(characters = []) {
+  return characters
+    .map((character) => {
+      const facts = [
+        character.role ? `身份：${character.role}` : "",
+        character.goal ? `目标：${character.goal}` : "",
+        character.fear ? `恐惧：${character.fear}` : "",
+        character.secret ? `秘密：${character.secret}` : "",
+        character.growthArc ? `成长线：${character.growthArc}` : "",
+        character.relationships?.length ? `关系：${character.relationships.join("；")}` : ""
+      ].filter(Boolean);
+      return `- ${character.name}${facts.length ? ` / ${facts.join(" / ")}` : ""}`;
+    })
+    .join("\n");
+}
+
+function buildWritingForeshadowAssetLines(foreshadows = []) {
+  return foreshadows
+    .map((foreshadow) => {
+      const setupChapter = foreshadow.chapterIndex ? ` / 埋设：第${foreshadow.chapterIndex}章` : "";
+      const payoffChapter = foreshadow.payoffChapterIndex ? ` / 回收：第${foreshadow.payoffChapterIndex}章` : "";
+      return [
+        `- ${foreshadow.title}${setupChapter}${payoffChapter} / ${foreshadow.status}`,
+        foreshadow.setup ? `  setup：${truncateWritingStoryAssetText(foreshadow.setup)}` : "",
+        foreshadow.payoff ? `  payoff：${truncateWritingStoryAssetText(foreshadow.payoff)}` : ""
+      ]
+        .filter(Boolean)
+        .join("\n");
+    })
+    .join("\n");
+}
+
+function buildWritingStyleProfileContent(profile = {}) {
+  return [
+    profile.voice ? `- voice：${profile.voice}` : "",
+    profile.pacing ? `- pacing：${profile.pacing}` : "",
+    profile.genreSignals?.length ? `- genreSignals：${profile.genreSignals.join("、")}` : "",
+    profile.taboos?.length ? `- taboos：${profile.taboos.join("、")}` : ""
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function buildWritingStoryAssetsContent(book) {
+  const assets = normalizeWritingStoryAssetsForUi(book?.storyAssets, book?.id ?? "writing_book");
+  const sections = [
+    assets.premise ? `【故事命题】\n${assets.premise}` : "",
+    assets.worldview.length ? `【世界观资产】\n${buildWritingStoryAssetEntryLines(assets.worldview)}` : "",
+    assets.rules.length ? `【规则边界】\n${buildWritingStoryAssetEntryLines(assets.rules)}` : "",
+    assets.characters.length ? `【人物资产】\n${buildWritingCharacterAssetLines(assets.characters)}` : "",
+    assets.relationships.length ? `【关系资产】\n${buildWritingStoryAssetEntryLines(assets.relationships)}` : "",
+    assets.timeline.length ? `【时间线】\n${buildWritingStoryAssetEntryLines(assets.timeline)}` : "",
+    assets.foreshadows.length ? `【伏笔账本】\n${buildWritingForeshadowAssetLines(assets.foreshadows)}` : "",
+    buildWritingStyleProfileContent(assets.styleProfile)
+      ? `【风格档案】\n${buildWritingStyleProfileContent(assets.styleProfile)}`
+      : "",
+    assets.memoryNotes.length ? `【记忆备注】\n${buildWritingStoryAssetEntryLines(assets.memoryNotes)}` : ""
+  ].filter(Boolean);
+
+  return sections.length
+    ? sections.join("\n\n")
+    : "暂无结构化故事资产；本轮如产生必须长期遵守的事实，需要写入 storyAssets。";
+}
+
+function mergeWritingStoryAssetEntries(existingEntries = [], incomingEntries = [], bookId = "writing_book", group = "asset") {
+  const existing = normalizeWritingStoryAssetEntries(existingEntries, bookId, group);
+  const incoming = normalizeWritingStoryAssetEntries(incomingEntries, bookId, group);
+  const existingByKey = new Map(existing.map((entry) => [normalizeWritingStoryAssetKey(entry.title), entry]));
+
+  incoming.forEach((entry) => {
+    const key = normalizeWritingStoryAssetKey(entry.title || entry.detail);
+    const current = existingByKey.get(key);
+
+    if (!key) {
+      return;
+    }
+
+    if (!current) {
+      existingByKey.set(key, entry);
+      return;
+    }
+
+    existingByKey.set(key, {
+      ...current,
+      title: entry.title || current.title,
+      detail: entry.detail || current.detail,
+      tags: uniqueStringList(current.tags, entry.tags),
+      chapterIndex: entry.chapterIndex ?? current.chapterIndex,
+      status: entry.status || current.status,
+      updatedAt: new Date().toISOString()
+    });
+  });
+
+  return Array.from(existingByKey.values());
+}
+
+function mergeWritingCharacterAssets(existingEntries = [], incomingEntries = [], bookId = "writing_book") {
+  const existing = normalizeWritingCharacterAssets(existingEntries, bookId);
+  const incoming = normalizeWritingCharacterAssets(incomingEntries, bookId);
+  const existingByKey = new Map(existing.map((entry) => [normalizeWritingStoryAssetKey(entry.name), entry]));
+
+  incoming.forEach((entry) => {
+    const key = normalizeWritingStoryAssetKey(entry.name);
+    const current = existingByKey.get(key);
+
+    if (!key) {
+      return;
+    }
+
+    if (!current) {
+      existingByKey.set(key, entry);
+      return;
+    }
+
+    existingByKey.set(key, {
+      ...current,
+      role: entry.role || current.role,
+      goal: entry.goal || current.goal,
+      fear: entry.fear || current.fear,
+      secret: entry.secret || current.secret,
+      growthArc: entry.growthArc || current.growthArc,
+      relationships: uniqueStringList(current.relationships, entry.relationships),
+      tags: uniqueStringList(current.tags, entry.tags),
+      status: entry.status || current.status,
+      updatedAt: new Date().toISOString()
+    });
+  });
+
+  return Array.from(existingByKey.values());
+}
+
+function mergeWritingForeshadowAssets(existingEntries = [], incomingEntries = [], bookId = "writing_book") {
+  const existing = normalizeWritingForeshadowAssets(existingEntries, bookId);
+  const incoming = normalizeWritingForeshadowAssets(incomingEntries, bookId);
+  const existingByKey = new Map(existing.map((entry) => [normalizeWritingStoryAssetKey(entry.title || entry.setup), entry]));
+
+  incoming.forEach((entry) => {
+    const key = normalizeWritingStoryAssetKey(entry.title || entry.setup);
+    const current = existingByKey.get(key);
+
+    if (!key) {
+      return;
+    }
+
+    if (!current) {
+      existingByKey.set(key, entry);
+      return;
+    }
+
+    existingByKey.set(key, {
+      ...current,
+      title: entry.title || current.title,
+      setup: entry.setup || current.setup,
+      payoff: entry.payoff || current.payoff,
+      status: entry.status || current.status,
+      chapterIndex: entry.chapterIndex ?? current.chapterIndex,
+      payoffChapterIndex: entry.payoffChapterIndex ?? current.payoffChapterIndex,
+      tags: uniqueStringList(current.tags, entry.tags),
+      updatedAt: new Date().toISOString()
+    });
+  });
+
+  return Array.from(existingByKey.values());
+}
+
+function mergeWritingStyleProfile(existingProfile = {}, incomingProfile = {}) {
+  const existing = normalizeWritingStyleProfileForUi(existingProfile);
+  const incoming = normalizeWritingStyleProfileForUi(incomingProfile);
+
+  return {
+    voice: incoming.voice || existing.voice,
+    pacing: incoming.pacing || existing.pacing,
+    genreSignals: uniqueStringList(existing.genreSignals, incoming.genreSignals),
+    taboos: uniqueStringList(existing.taboos, incoming.taboos)
+  };
+}
+
+function mergeWritingStoryAssets(book, incomingAssets = {}) {
+  if (!book) {
+    return null;
+  }
+
+  const bookId = book.id ?? "writing_book";
+  const current = normalizeWritingStoryAssetsForUi(book.storyAssets, bookId);
+  const incoming = normalizeWritingStoryAssetsForUi(incomingAssets, bookId);
+
+  book.storyAssets = {
+    premise: incoming.premise || current.premise,
+    worldview: mergeWritingStoryAssetEntries(current.worldview, incoming.worldview, bookId, "worldview"),
+    characters: mergeWritingCharacterAssets(current.characters, incoming.characters, bookId),
+    relationships: mergeWritingStoryAssetEntries(current.relationships, incoming.relationships, bookId, "relationship"),
+    timeline: mergeWritingStoryAssetEntries(current.timeline, incoming.timeline, bookId, "timeline"),
+    foreshadows: mergeWritingForeshadowAssets(current.foreshadows, incoming.foreshadows, bookId),
+    rules: mergeWritingStoryAssetEntries(current.rules, incoming.rules, bookId, "rule"),
+    styleProfile: mergeWritingStyleProfile(current.styleProfile, incoming.styleProfile),
+    memoryNotes: mergeWritingStoryAssetEntries(current.memoryNotes, incoming.memoryNotes, bookId, "memory"),
+    updatedAt: new Date().toISOString()
+  };
+
+  touchWritingBook(book, { persist: false });
+  return book.storyAssets;
 }
 
 function getWritingChapters(book) {
@@ -1301,6 +1686,7 @@ async function createWritingBook() {
     outlineGuide: "把故事拆成开始、失控、反转和收束四个阶段，每个阶段都要写清冲突升级和人物变化。",
     seriesPlan: "",
     parts: [],
+    storyAssets: normalizeWritingStoryAssetsForUi({}, createLocalId("writing_story_assets")),
     chapters: [
       {
         id: createLocalId("writing_chapter"),
@@ -1344,6 +1730,8 @@ async function handleWritingBookUpload(event) {
       intro: `从「${file.name}」导入。建议先让 AI 帮你整理故事简介、人物关系和世界观。`,
       outlineGuide: "待整理目录。可以在目录 Tab 里使用「章节规划」生成结构。",
       seriesPlan: "",
+      parts: [],
+      storyAssets: normalizeWritingStoryAssetsForUi({}, createLocalId("writing_story_assets")),
       chapters: [
         {
           id: createLocalId("writing_chapter_upload"),
@@ -1412,6 +1800,7 @@ function setWritingTab(tabId) {
     buildWritingBookExportContent,
     buildWritingIntroContent,
     buildWritingOutlineContent,
+    buildWritingStoryAssetsContent,
     canExportActiveWritingBook,
     clearWritingAutosaveTimer,
     clearWritingChapterSubmitConfirmation,
@@ -1448,6 +1837,7 @@ function setWritingTab(tabId) {
     handleWritingBookUpload,
     isActiveWritingBookAiRunning,
     isWritingChapterSubmitConfirmed,
+    mergeWritingStoryAssets,
     normalizePositiveInteger,
     normalizeWritingBookForUi,
     normalizeWritingBookLengthForUi,
@@ -1459,6 +1849,7 @@ function setWritingTab(tabId) {
     normalizeWritingChapterStatusForUi,
     normalizeWritingExportFormat,
     normalizeWritingOutlinePlannerJobForUi,
+    normalizeWritingStoryAssetsForUi,
     openWritingAppShelf,
     openWritingBook,
     openWritingExportDialog,
