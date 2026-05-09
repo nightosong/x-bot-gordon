@@ -4,90 +4,12 @@
     <div class="ambient ambient-two"></div>
 
     <main class="dashboard">
-      <section class="left-column">
-        <section class="brand-panel">
-          <div class="brand-panel-head">
-            <div class="brand-lockup">
-              <div class="brand-row">
-                <MorphingText
-                  class="brand-title"
-                  base-text="GORDON"
-                  :random-texts="BRAND_RANDOM_TEXTS"
-                  aria-label="GORDON"
-                />
-              </div>
-            </div>
-
-            <details
-              ref="homeSettingsMenuRef"
-              class="home-settings-menu"
-              :class="{ 'has-active-selection': isHomeSettingsFeature(activeFeature) }"
-            >
-              <summary aria-label="打开设置菜单">
-                <GIcon name="settings" class="home-settings-trigger-gear" />
-              </summary>
-
-              <div class="home-settings-menu-panel">
-                <button
-                  v-for="item in HOME_SETTINGS_ITEMS"
-                  :key="item.id"
-                  type="button"
-                  class="home-settings-item"
-                  :class="{ 'is-active': activeFeature === item.id }"
-                  @click="handleFeatureSelect(item.id)"
-                >
-                  <span class="home-settings-item-title">{{ item.title }}</span>
-                  <span class="home-settings-item-copy">{{ item.copy }}</span>
-                </button>
-              </div>
-            </details>
-          </div>
-        </section>
-
-        <section class="feature-panel">
-          <div class="feature-board">
-            <article
-              v-for="(entry, index) in FEATURE_ENTRIES"
-              :key="entry.id"
-              :class="getFeatureCardClass(entry, index)"
-              :data-graffiti="entry.kicker"
-              role="button"
-              tabindex="0"
-              :aria-label="`查看${entry.title}`"
-              @click="handleFeatureSelect(entry.id)"
-              @keydown.enter.prevent="handleFeatureSelect(entry.id)"
-              @keydown.space.prevent="handleFeatureSelect(entry.id)"
-              @pointermove="handleCardPointerMove"
-              @pointerleave="handleCardPointerLeave"
-              @pointercancel="handleCardPointerLeave"
-              @pointerup="handleCardPointerLeave"
-            >
-              <span class="feature-graffiti" aria-hidden="true" :data-text="entry.kicker"></span>
-
-              <div v-if="entry.tier === 'flat'" class="feature-card-flat-row">
-                <div>
-                  <p class="feature-kicker">{{ entry.kicker }}</p>
-                  <p class="feature-title">{{ entry.title }}</p>
-                </div>
-              </div>
-
-              <template v-else>
-                <p class="feature-kicker">{{ entry.kicker }}</p>
-                <p class="feature-title">{{ entry.title }}</p>
-              </template>
-            </article>
-          </div>
-        </section>
-      </section>
+      <ShellNavigation :active-feature="activeFeature" @select="handleFeatureSelect" />
 
       <section class="right-column">
         <section class="workspace-panel" :class="{ 'workspace-panel-flush': isWorkspaceImmersive }">
           <template v-if="activeFeature === FEATURE_HOME">
-            <div class="workspace-stage robot-stage">
-              <div class="robot-frame">
-                <canvas ref="robotCanvasRef" class="robot-canvas" aria-label="Gordon robot"></canvas>
-              </div>
-            </div>
+            <HomeRobotStage :set-status="setStatus" />
           </template>
 
           <template v-else-if="activeFeature === FEATURE_MODEL_MANAGEMENT">
@@ -311,84 +233,27 @@
       </section>
     </main>
 
-    <Transition name="gordon-dialog-fade">
-      <div v-if="ui.dialog.open" class="gordon-dialog-backdrop" @click.self="handleGordonDialogBackdrop">
-        <section
-          class="gordon-dialog"
-          :class="[`is-${ui.dialog.tone}`, `is-${ui.dialog.kind}`]"
-          role="dialog"
-          aria-modal="true"
-          :aria-label="ui.dialog.title"
-        >
-          <div class="gordon-dialog-head">
-            <div class="gordon-dialog-mark" aria-hidden="true">
-              <GIcon :name="ui.dialog.tone === 'danger' ? 'delete' : ui.dialog.kind === 'confirm' ? 'settings' : 'more'" />
-            </div>
-
-            <div>
-              <p class="gordon-dialog-kicker">
-                {{ ui.dialog.kind === "confirm" ? "Confirm" : ui.dialog.kind === "input" ? "Input" : "Notice" }}
-              </p>
-              <h2 class="gordon-dialog-title">{{ ui.dialog.title }}</h2>
-            </div>
-          </div>
-
-          <p v-if="ui.dialog.message" class="gordon-dialog-message">{{ ui.dialog.message }}</p>
-
-          <div v-if="ui.dialog.detailLines.length" class="gordon-dialog-detail">
-            <p v-for="line in ui.dialog.detailLines" :key="line">{{ line }}</p>
-          </div>
-
-          <label v-if="ui.dialog.kind === 'input'" class="gordon-dialog-field">
-            <span class="gordon-dialog-field-label">{{ ui.dialog.inputLabel }}</span>
-            <input
-              ref="gordonDialogInputRef"
-              v-model="ui.dialog.inputValue"
-              class="gordon-dialog-input"
-              type="text"
-              :placeholder="ui.dialog.inputPlaceholder"
-              @keydown.enter.prevent="resolveGordonDialog(true)"
-            />
-          </label>
-
-          <div class="gordon-dialog-actions">
-            <button
-              v-if="ui.dialog.kind !== 'alert'"
-              type="button"
-              class="gordon-dialog-button gordon-dialog-button-secondary"
-              @click="resolveGordonDialog(false)"
-            >
-              {{ ui.dialog.cancelText }}
-            </button>
-
-            <button
-              ref="gordonDialogPrimaryRef"
-              type="button"
-              class="gordon-dialog-button gordon-dialog-button-primary"
-              @click="resolveGordonDialog(true)"
-            >
-              {{ ui.dialog.confirmText }}
-            </button>
-          </div>
-        </section>
-      </div>
-    </Transition>
+    <GordonDialog
+      :dialog="gordonDialog"
+      @backdrop="handleGordonDialogBackdrop"
+      @resolve="resolveGordonDialog"
+    />
 
   </div>
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { computed, nextTick, reactive, ref } from "vue";
 
-import robotSceneUrl from "../assets/spline-backups/home-robot-scene.splinecode?url";
-import GIcon from "./components/GIcon.vue";
-import MorphingText from "./components/MorphingText.vue";
+import GordonDialog from "./components/GordonDialog.vue";
+import { useGordonDialog } from "./composables/useGordonDialog.js";
 import { createCommandWorkshopActions } from "./features/command-workshop/commandWorkshopActions.js";
 import { createCommandWorkshopState } from "./features/command-workshop/commandWorkshopState.js";
 import CommandWorkshopView from "./features/command-workshop/CommandWorkshopView.vue";
 import { createExtensionsActions, createExtensionsState } from "./features/extensions/extensionsActions.js";
 import ExtensionsManagementView from "./features/extensions/ExtensionsManagementView.vue";
 import { createComicActions } from "./features/marketplace/comicActions.js";
+import { createMarketplaceViewContext } from "./features/marketplace/marketplaceContext.js";
 import MarketplaceView from "./features/marketplace/MarketplaceView.vue";
 import { createMarketplaceState } from "./features/marketplace/marketplaceConfig.js";
 import ModelManagementView from "./features/model-management/ModelManagementView.vue";
@@ -398,18 +263,19 @@ import {
   createModelManagementState
 } from "./features/model-management/modelManagementActions.js";
 import {
-  BRAND_RANDOM_TEXTS,
   FEATURE_COMMAND_WORKSHOP,
-  FEATURE_ENTRIES,
   FEATURE_EXTENSIONS_MANAGEMENT,
   FEATURE_HOME,
   FEATURE_MARKETPLACE,
   FEATURE_MODEL_MANAGEMENT,
   FEATURE_PLACEHOLDERS,
   FEATURE_TASKS,
-  FEATURE_WORKFLOW_LIBRARY,
-  HOME_SETTINGS_ITEMS
+  FEATURE_WORKFLOW_LIBRARY
 } from "./features/shell/shellConfig.js";
+import HomeRobotStage from "./features/shell/HomeRobotStage.vue";
+import { setupRootWatchers } from "./features/shell/rootWatchers.js";
+import ShellNavigation from "./features/shell/ShellNavigation.vue";
+import { createWorkbenchRuntime } from "./features/shell/workbenchRuntime.js";
 import { createWeeklyState } from "./features/weekly/weeklyConfig.js";
 import { createWeeklyActions } from "./features/weekly/weeklyActions.js";
 import WeeklyWorkbench from "./features/weekly/WeeklyWorkbench.vue";
@@ -424,6 +290,7 @@ import {
 } from "./features/writing/writingPromptBuilder.js";
 import {
   formatLocalDateTime,
+  formatFailureKind,
   getProviderMeta,
   getSkillDisplayName,
   getSkillLocalMirrorDetail,
@@ -431,89 +298,18 @@ import {
   getSkillSourceDetail,
   getSkillSourceLabel,
   isBuiltinWorkbenchItem,
-  renderRichText,
   truncateText
 } from "./lib/presenter.js";
+import { createRichTextClickHandler, copyTextToClipboard } from "./lib/clipboard.js";
+import { createLocalId } from "./lib/ids.js";
+import { toPlainIpcData } from "./lib/ipc.js";
 
 const desktopApi = window.gordonDesktop ?? null;
 const writingPromptAssets = reactive(createWritingPromptAssets());
-let splineApplicationClass = null;
-let splineApplicationPromise = null;
-let agentProgressListenerId = null;
-let workflowProgressListenerId = null;
-
-function toPlainIpcData(value, fallback = value) {
-  const visited = new WeakSet();
-
-  function normalize(input) {
-    if (input === null || input === undefined) {
-      return input;
-    }
-
-    if (typeof input === "string" || typeof input === "number" || typeof input === "boolean") {
-      return input;
-    }
-
-    if (typeof input === "bigint" || typeof input === "symbol" || typeof input === "function") {
-      return String(input);
-    }
-
-    if (input instanceof Date) {
-      return input.toISOString();
-    }
-
-    if (input instanceof Error) {
-      return {
-        name: input.name,
-        message: input.message,
-        stack: input.stack ?? ""
-      };
-    }
-
-    if (Array.isArray(input)) {
-      return input.map((item) => normalize(item));
-    }
-
-    if (input instanceof Map) {
-      return Object.fromEntries(Array.from(input.entries()).map(([key, entryValue]) => [String(key), normalize(entryValue)]));
-    }
-
-    if (input instanceof Set) {
-      return Array.from(input.values()).map((item) => normalize(item));
-    }
-
-    if (typeof input !== "object") {
-      return String(input);
-    }
-
-    if (visited.has(input)) {
-      return "[Circular]";
-    }
-
-    visited.add(input);
-
-    const output = {};
-
-    for (const [key, entryValue] of Object.entries(input)) {
-      output[key] = normalize(entryValue);
-    }
-
-    return output;
-  }
-
-  try {
-    return normalize(value);
-  } catch {
-    return fallback;
-  }
-}
+let workbenchRuntime = null;
 
 const activeFeature = ref(FEATURE_HOME);
-const homeSettingsMenuRef = ref(null);
-const robotCanvasRef = ref(null);
 const commandWorkshopViewRef = ref(null);
-const gordonDialogPrimaryRef = ref(null);
-const gordonDialogInputRef = ref(null);
 const comicChapterDropdownMenuRef = ref(null);
 const writingChapterDropdownMenuRef = ref(null);
 const weeklyTaskRewriteIds = ref([]);
@@ -542,17 +338,19 @@ const ui = reactive({
   marketplace: createMarketplaceState(),
   weekly: createWeeklyState(),
   workflow: createWorkflowState(),
-  dialog: createGordonDialogState(),
   command: createCommandWorkshopState(),
   extensions: createExtensionsState()
 });
 
-const robotRuntimeState = {
-  app: null,
-  canvas: null,
-  resizeObserver: null,
-  loadToken: 0
-};
+const {
+  dialog: gordonDialog,
+  handleGordonDialogBackdrop,
+  handleGordonDialogKeydown,
+  resolveGordonDialog,
+  showAlertDialog,
+  showConfirmDialog,
+  showInputDialog
+} = useGordonDialog();
 
 const isWorkspaceImmersive = computed(
   () =>
@@ -566,8 +364,14 @@ const isWorkspaceImmersive = computed(
 );
 
 const enabledAgentProfiles = computed(() => workbench.agentProfiles.filter((profile) => profile.enabled));
-const enabledSkills = computed(() => workbench.skillDefinitions.filter((skill) => skill.enabled));
-const enabledMcpServers = computed(() => workbench.mcpServers.filter((server) => server.enabled));
+
+async function bootstrapWorkbench() {
+  return workbenchRuntime?.bootstrapWorkbench();
+}
+
+async function refreshWorkbenchSnapshot() {
+  return workbenchRuntime?.refreshWorkbenchSnapshot();
+}
 
 const {
   activeModel,
@@ -612,55 +416,7 @@ const {
   workbench
 });
 
-const {
-  activeComicChapter,
-  activeComicChapterIndex,
-  activeComicChapters,
-  activeComicExportFileName,
-  activeComicProject,
-  activeComicTabMeta,
-  applyComicProjectsFromStorage,
-  backComicMarketplace,
-  backComicShelf,
-  canExportActiveComicProject,
-  clearComicAutosaveTimer,
-  closeComicExportDialog,
-  comicProjects,
-  createComicChapter,
-  createComicProject,
-  deleteComicProjectFromShelf,
-  exportActiveComicProject,
-  filteredComicChapterEntries,
-  getComicChapterDisplayTitle,
-  getComicChapterStatusClass,
-  getComicChapterStatusLabel,
-  getComicProjectFormatLabel,
-  getComicProjectPaletteLabel,
-  goComicChapter,
-  openComicAppShelf,
-  openComicExportDialog,
-  openComicProject,
-  selectComicChapter,
-  selectComicChapterFromPicker,
-  selectComicExportDirectory,
-  setComicChapterContent,
-  setComicChapterPickerOpen,
-  setComicChapterPrompt,
-  setComicChapterSummary,
-  setComicChapterTitle,
-  setComicProjectEpisodePlan,
-  setComicProjectFormat,
-  setComicProjectGenre,
-  setComicProjectPageCount,
-  setComicProjectPalette,
-  setComicProjectSummary,
-  setComicProjectTitle,
-  setComicProjectVisualStyle,
-  setComicTab,
-  submitComicChapter,
-  toggleComicChapterPicker,
-  toggleComicProfileRail
-} = createComicActions({
+const comicActions = createComicActions({
   activeFeature,
   comicChapterDropdownMenuRef,
   createLocalId,
@@ -674,110 +430,11 @@ const {
 });
 
 const {
-  activeWritingBook,
-  activeWritingChapter,
-  activeWritingChapterIndex,
-  activeWritingChapters,
-  activeWritingContent,
-  activeWritingDoneChapterCount,
-  activeWritingDoneChapters,
-  activeWritingExportFileName,
-  activeWritingIntroSections,
-  activeWritingLengthProfile,
-  activeWritingOutlinePlannerJob,
-  activeWritingTabMeta,
-  activeWritingTask,
-  activeWritingTaskOptions,
-  applyWritingBooksFromStorage,
-  backWritingMarketplace,
-  backWritingShelf,
-  buildWritingBookExportContent,
-  buildWritingIntroContent,
-  buildWritingOutlineContent,
-  buildWritingStoryAssetsContent,
-  canExportActiveWritingBook,
-  clearWritingAutosaveTimer,
-  clearWritingChapterSubmitConfirmation,
-  closeWritingExportDialog,
-  createWritingBook,
-  createWritingChapter,
-  deleteWritingBookFromShelf,
-  ensureWritingChapterSelection,
-  exportActiveWritingBook,
-  filteredWritingChapterEntries,
-  formatWritingBookUpdatedAt,
-  getDoneWritingChapters,
-  getPreferredWritingChapter,
-  getWritingAiFeedbackClass,
-  getWritingBookContent,
-  getWritingBookParts,
-  getWritingBookWordCount,
-  getWritingChapterDisplayTitle,
-  getWritingChapterPart,
-  getWritingChapterPartLabel,
-  getWritingChapterStatusClass,
-  getWritingChapterStatusLabel,
-  getWritingChapterWordCount,
-  getWritingChapters,
-  getWritingExportFileName,
-  getWritingIntroFieldValue,
-  getWritingIntroSections,
-  getWritingLengthLabel,
-  getWritingPartDisplayLabel,
-  getWritingTabTitle,
-  getWritingTabWordCount,
-  goWritingChapter,
-  handleWritingBookUpload,
-  isActiveWritingBookAiRunning,
-  isWritingChapterSubmitConfirmed,
-  mergeWritingStoryAssets,
-  normalizePositiveInteger,
-  normalizeWritingBookForUi,
-  normalizeWritingBookLengthForUi,
-  normalizeWritingBookPart,
-  normalizeWritingBookPartsForUi,
-  normalizeWritingBookPartTypeForUi,
-  normalizeWritingChapterDraftOutput,
-  normalizeWritingChapterIndex,
-  normalizeWritingChapterStatusForUi,
-  normalizeWritingExportFormat,
-  normalizeWritingOutlinePlannerJobForUi,
-  normalizeWritingStoryAssetsForUi,
-  openWritingAppShelf,
-  openWritingBook,
-  openWritingExportDialog,
-  parseWritingChapterIndex,
-  persistWritingBookById,
-  selectPreferredWritingChapter,
-  selectWritingChapter,
-  selectWritingChapterFromPicker,
-  selectWritingExportDirectory,
-  selectWritingAiTask,
-  setWritingAiDrawerOpen,
-  setWritingAiTaskPickerOpen,
-  setWritingBookContent,
-  setWritingBookGenre,
-  setWritingBookLength,
-  setWritingBookTitle,
-  setWritingChapterContent,
-  setWritingChapterPickerOpen,
-  setWritingChapterSummary,
-  setWritingChapterTitle,
-  setWritingExportFormat,
-  setWritingFeedback,
-  setWritingIntroField,
-  setWritingTab,
-  splitWritingBookPartTitlePrefix,
-  splitWritingChapterTitlePrefix,
-  submitWritingChapter,
-  syncWritingBookSaveVersions,
-  toggleWritingAiTaskPicker,
-  toggleWritingChapterPicker,
-  toggleWritingProfileRail,
-  toggleWritingPromptPreview,
-  touchWritingBook,
-  writingBooks
-} = createWritingActions({
+  applyComicProjectsFromStorage,
+  clearComicAutosaveTimer
+} = comicActions;
+
+const writingActions = createWritingActions({
   activeFeature,
   createLocalId,
   desktopApi,
@@ -792,24 +449,52 @@ const {
 });
 
 const {
-  activeWritingLongOutlineRequest,
-  activeWritingPromptPreview,
-  applyWritingAssistantOutput,
-  buildWritingLongOutlineTargetContent,
-  cancelWritingOutlinePlanningJob,
-  canResumeWritingOutlinePlanner,
-  generateWritingAssistantOutput,
-  getWritingAiRunButtonLabel,
-  getWritingBusyDescription,
-  getWritingBusyTitle,
-  getWritingOutlinePlannerProgressCopy,
-  getWritingOutlinePlannerProgressPercent,
-  getWritingOutlinePlannerRetryCopy,
-  getWritingOutlinePlannerStatusClass,
-  getWritingOutlinePlannerStatusLabel,
-  isWritingOutlinePlannerRunning,
-  resumeWritingOutlinePlanningJob
-} = createWritingAiActions({
+  activeWritingBook,
+  activeWritingChapter,
+  activeWritingChapterIndex,
+  activeWritingChapters,
+  activeWritingLengthProfile,
+  activeWritingOutlinePlannerJob,
+  activeWritingTask,
+  applyWritingBooksFromStorage,
+  buildWritingIntroContent,
+  buildWritingOutlineContent,
+  buildWritingStoryAssetsContent,
+  clearWritingAutosaveTimer,
+  ensureWritingChapterSelection,
+  getPreferredWritingChapter,
+  getWritingBookContent,
+  getWritingBookParts,
+  getWritingChapterDisplayTitle,
+  getWritingChapterPart,
+  getWritingChapterPartLabel,
+  getWritingChapterStatusLabel,
+  getWritingChapters,
+  getWritingIntroFieldValue,
+  getWritingPartDisplayLabel,
+  getWritingTabTitle,
+  mergeWritingStoryAssets,
+  normalizePositiveInteger,
+  normalizeWritingBookPart,
+  normalizeWritingBookPartTypeForUi,
+  normalizeWritingChapterDraftOutput,
+  normalizeWritingChapterIndex,
+  normalizeWritingOutlinePlannerJobForUi,
+  normalizeWritingStoryAssetsForUi,
+  parseWritingChapterIndex,
+  persistWritingBookById,
+  selectWritingChapter,
+  setWritingAiTaskPickerOpen,
+  setWritingChapterContent,
+  setWritingChapterSummary,
+  setWritingFeedback,
+  setWritingIntroField,
+  splitWritingBookPartTitlePrefix,
+  splitWritingChapterTitlePrefix,
+  touchWritingBook
+} = writingActions;
+
+const writingAiActions = createWritingAiActions({
   activeWritingBook,
   activeWritingChapter,
   activeWritingChapterIndex,
@@ -859,135 +544,15 @@ const {
   writingPromptAssets
 });
 
-
-const marketplaceViewContext = {
-  activeComicChapter,
-  activeComicChapterIndex,
-  activeComicChapters,
-  activeComicExportFileName,
-  activeComicProject,
-  activeComicTabMeta,
-  activeWritingBook,
-  activeWritingChapter,
-  activeWritingChapterIndex,
-  activeWritingChapters,
-  activeWritingDoneChapterCount,
-  activeWritingExportFileName,
-  activeWritingIntroSections,
-  activeWritingLengthProfile,
-  activeWritingLongOutlineRequest,
-  activeWritingOutlinePlannerJob,
-  activeWritingPromptPreview,
-  activeWritingTabMeta,
-  activeWritingTask,
-  activeWritingTaskOptions,
-  applyWritingAssistantOutput,
-  backComicMarketplace,
-  backComicShelf,
-  backWritingMarketplace,
-  backWritingShelf,
-  buildWritingLongOutlineTargetContent,
-  canExportActiveComicProject,
-  canExportActiveWritingBook,
-  canResumeWritingOutlinePlanner,
-  cancelWritingOutlinePlanningJob,
-  closeComicExportDialog,
-  closeWritingExportDialog,
+const marketplaceViewContext = createMarketplaceViewContext({
+  comicActions,
   comicChapterDropdownMenuRef,
-  comicProjects,
-  createComicChapter,
-  createComicProject,
-  createWritingBook,
-  createWritingChapter,
-  deleteComicProjectFromShelf,
-  deleteWritingBookFromShelf,
-  exportActiveComicProject,
-  exportActiveWritingBook,
-  filteredComicChapterEntries,
-  filteredWritingChapterEntries,
-  formatWritingBookUpdatedAt,
-  generateWritingAssistantOutput,
-  getComicChapterDisplayTitle,
-  getComicChapterStatusClass,
-  getComicChapterStatusLabel,
-  getComicProjectFormatLabel,
-  getComicProjectPaletteLabel,
-  getWritingAiFeedbackClass,
-  getWritingAiRunButtonLabel,
-  getWritingBookWordCount,
-  getWritingBusyDescription,
-  getWritingBusyTitle,
-  getWritingChapterDisplayTitle,
-  getWritingChapterPartLabel,
-  getWritingChapterStatusClass,
-  getWritingChapterStatusLabel,
-  getWritingChapterWordCount,
-  getWritingIntroFieldValue,
-  getWritingLengthLabel,
-  getWritingOutlinePlannerProgressCopy,
-  getWritingOutlinePlannerProgressPercent,
-  getWritingOutlinePlannerRetryCopy,
-  getWritingOutlinePlannerStatusClass,
-  getWritingOutlinePlannerStatusLabel,
-  getWritingTabWordCount,
-  goComicChapter,
-  goWritingChapter,
-  handleWritingBookUpload,
-  isActiveWritingBookAiRunning,
-  isWritingChapterSubmitConfirmed,
-  isWritingOutlinePlannerRunning,
-  openComicAppShelf,
-  openComicExportDialog,
-  openComicProject,
-  openWritingAppShelf,
-  openWritingBook,
-  openWritingExportDialog,
-  resumeWritingOutlinePlanningJob,
-  selectComicChapter,
-  selectComicChapterFromPicker,
-  selectComicExportDirectory,
-  selectWritingAiTask,
-  selectWritingChapter,
-  selectWritingChapterFromPicker,
-  selectWritingExportDirectory,
-  setComicChapterContent,
-  setComicChapterPickerOpen,
-  setComicChapterPrompt,
-  setComicChapterSummary,
-  setComicChapterTitle,
-  setComicProjectEpisodePlan,
-  setComicProjectFormat,
-  setComicProjectGenre,
-  setComicProjectPageCount,
-  setComicProjectPalette,
-  setComicProjectSummary,
-  setComicProjectTitle,
-  setComicProjectVisualStyle,
-  setComicTab,
-  setWritingAiDrawerOpen,
-  setWritingBookGenre,
-  setWritingBookLength,
-  setWritingBookTitle,
-  setWritingChapterContent,
-  setWritingChapterPickerOpen,
-  setWritingChapterSummary,
-  setWritingChapterTitle,
-  setWritingExportFormat,
-  setWritingIntroField,
-  setWritingTab,
-  submitComicChapter,
-  submitWritingChapter,
-  toggleComicChapterPicker,
-  toggleComicProfileRail,
-  toggleWritingAiTaskPicker,
-  toggleWritingChapterPicker,
-  toggleWritingProfileRail,
-  toggleWritingPromptPreview,
   truncateText,
   ui,
-  writingBooks,
+  writingActions,
+  writingAiActions,
   writingChapterDropdownMenuRef
-};
+});
 const activeWeeklyRecord = computed(() =>
   workbench.weeklyProgress.find((record) => record.id === ui.weekly.activeRecordId) ?? null
 );
@@ -1154,193 +719,9 @@ const {
   workbench
 });
 
-function createGordonDialogState() {
-  return {
-    open: false,
-    kind: "alert",
-    tone: "neutral",
-    title: "",
-    message: "",
-    detailLines: [],
-    inputLabel: "名称",
-    inputValue: "",
-    inputPlaceholder: "",
-    confirmText: "确认",
-    cancelText: "取消",
-    resolve: null
-  };
-}
-
-function normalizeGordonDialogDetail(detail) {
-  if (Array.isArray(detail)) {
-    return detail.map((line) => String(line ?? "").trim()).filter(Boolean);
-  }
-
-  const normalized = String(detail ?? "").trim();
-  return normalized ? [normalized] : [];
-}
-
-function resetGordonDialog() {
-  Object.assign(ui.dialog, createGordonDialogState());
-}
-
-function openGordonDialog(options = {}) {
-  if (typeof ui.dialog.resolve === "function") {
-    ui.dialog.resolve(false);
-  }
-
-  return new Promise((resolve) => {
-    Object.assign(ui.dialog, {
-      ...createGordonDialogState(),
-      open: true,
-      kind: options.kind ?? "alert",
-      tone: options.tone ?? "neutral",
-      title: String(options.title ?? "Gordon"),
-      message: String(options.message ?? ""),
-      detailLines: normalizeGordonDialogDetail(options.detail),
-      inputLabel: String(options.inputLabel ?? "名称"),
-      inputValue: String(options.inputValue ?? ""),
-      inputPlaceholder: String(options.inputPlaceholder ?? ""),
-      confirmText: String(options.confirmText ?? (options.kind === "confirm" ? "确认" : "知道了")),
-      cancelText: String(options.cancelText ?? "取消"),
-      resolve
-    });
-
-    void nextTick(() => {
-      if (ui.dialog.kind === "input" && gordonDialogInputRef.value instanceof HTMLInputElement) {
-        gordonDialogInputRef.value.focus();
-        gordonDialogInputRef.value.select();
-      } else if (gordonDialogPrimaryRef.value instanceof HTMLElement) {
-        gordonDialogPrimaryRef.value.focus();
-      }
-    });
-  });
-}
-
-function showConfirmDialog(options = {}) {
-  return openGordonDialog({
-    kind: "confirm",
-    tone: options.tone ?? "warning",
-    confirmText: options.confirmText ?? "确认",
-    cancelText: options.cancelText ?? "取消",
-    ...options
-  });
-}
-
-function showAlertDialog(options = {}) {
-  return openGordonDialog({
-    kind: "alert",
-    tone: options.tone ?? "warning",
-    confirmText: options.confirmText ?? "知道了",
-    ...options
-  });
-}
-
-function showInputDialog(options = {}) {
-  return openGordonDialog({
-    kind: "input",
-    tone: options.tone ?? "neutral",
-    confirmText: options.confirmText ?? "确认",
-    cancelText: options.cancelText ?? "取消",
-    ...options
-  });
-}
-
-function resolveGordonDialog(confirmed) {
-  const resolver = ui.dialog.resolve;
-  const kind = ui.dialog.kind;
-  const inputValue = ui.dialog.inputValue;
-  resetGordonDialog();
-
-  if (typeof resolver === "function") {
-    if (kind === "alert") {
-      resolver(true);
-    } else if (kind === "input") {
-      resolver(confirmed ? inputValue : null);
-    } else {
-      resolver(Boolean(confirmed));
-    }
-  }
-}
-
-function handleGordonDialogBackdrop() {
-  if (ui.dialog.kind === "alert") {
-    resolveGordonDialog(true);
-  }
-}
-
-function handleGordonDialogKeydown(event) {
-  if (!ui.dialog.open || event.key !== "Escape") {
-    return;
-  }
-
-  event.preventDefault();
-  resolveGordonDialog(false);
-}
-
 function setStatus(text, tone = "neutral") {
   status.text = text;
   status.tone = tone;
-}
-
-function createLocalId(prefix) {
-  return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
-}
-
-function getFeatureCardClass(entry, index) {
-  const classes = ["feature-card", "tilt-card", `feature-card-${entry.tier}`];
-
-  if (entry.tier !== "flat") {
-    classes.push(index % 2 === 1 ? "feature-card-align-right" : "feature-card-align-left");
-  }
-
-  if (entry.id === activeFeature.value) {
-    classes.push("is-active");
-  }
-
-  return classes;
-}
-
-function resetTiltCard(card) {
-  if (!(card instanceof HTMLElement)) {
-    return;
-  }
-
-  card.style.setProperty("--rotate-x", "0deg");
-  card.style.setProperty("--rotate-y", "0deg");
-  card.style.setProperty("--lift", "0px");
-}
-
-function handleCardPointerMove(event) {
-  const card = event.currentTarget;
-
-  if (!(card instanceof HTMLElement)) {
-    return;
-  }
-
-  const bounds = card.getBoundingClientRect();
-  const offsetX = event.clientX - bounds.left;
-  const offsetY = event.clientY - bounds.top;
-  const rotateY = ((offsetX / bounds.width) - 0.5) * 10;
-  const rotateX = (0.5 - (offsetY / bounds.height)) * 10;
-
-  card.style.setProperty("--rotate-x", `${rotateX.toFixed(2)}deg`);
-  card.style.setProperty("--rotate-y", `${rotateY.toFixed(2)}deg`);
-  card.style.setProperty("--lift", "-4px");
-}
-
-function handleCardPointerLeave(event) {
-  resetTiltCard(event.currentTarget);
-}
-
-function isHomeSettingsFeature(featureId) {
-  return featureId === FEATURE_MODEL_MANAGEMENT || featureId === FEATURE_EXTENSIONS_MANAGEMENT;
-}
-
-function closeHomeSettingsMenu() {
-  if (homeSettingsMenuRef.value) {
-    homeSettingsMenuRef.value.open = false;
-  }
 }
 
 function resolveBoundModelName(modelProfileId) {
@@ -1387,88 +768,8 @@ function getAuthorizedMcpServersForAgent(agentId) {
   return workbench.mcpServers.filter((server) => agent.allowedMcpServerIds.includes(server.id) && server.enabled);
 }
 
-function applyWorkbenchSnapshot(snapshot, modelSettings) {
-  workbench.snapshot = snapshot;
-  workbench.modelSettings = modelSettings;
-  syncModelBalanceRuntimeFromProfiles(modelSettings?.profiles ?? []);
-  workbench.weeklyProgress = [...(snapshot?.weeklyProgress ?? [])];
-  workbench.workflowLibrary = [...(snapshot?.workflowLibrary ?? [])];
-  applyWritingBooksFromStorage(snapshot?.writingBooks ?? []);
-  applyComicProjectsFromStorage(snapshot?.comicProjects ?? []);
-  workbench.skillDefinitions = [...(snapshot?.skillDefinitions ?? [])];
-  workbench.mcpServers = [...(snapshot?.mcpServers ?? [])];
-  workbench.agentProfiles = [...(snapshot?.agentProfiles ?? [])];
-  workbench.agentRunLogs = [...(snapshot?.agentRunLogs ?? [])];
-  workbench.commandSessions = normalizeCommandWorkshopSessions(snapshot?.commandWorkshopSessions ?? []);
-
-  if (!ui.weekly.activeRecordId || !workbench.weeklyProgress.some((record) => record.id === ui.weekly.activeRecordId)) {
-    ui.weekly.activeRecordId =
-      workbench.weeklyProgress.find((record) => record.status === "active")?.id ?? workbench.weeklyProgress[0]?.id ?? null;
-  }
-
-  if (ui.weekly.view === "editor") {
-    syncWeeklyEditorState();
-  }
-
-  syncWorkflowSelection();
-
-  if (workbench.commandSessions.length) {
-    const nextSession =
-      workbench.commandSessions.find((session) => session.id === ui.command.activeSessionId) ?? workbench.commandSessions[0];
-
-    ui.command.activeSessionId = nextSession?.id ?? null;
-    ui.command.form = normalizeCommandWorkshopConfig(nextSession ?? ui.command.form);
-  } else {
-    ui.command.activeSessionId = null;
-    ui.command.form = normalizeCommandWorkshopConfig(ui.command.form);
-
-    if (activeFeature.value === FEATURE_COMMAND_WORKSHOP) {
-      ui.command.view = "chat";
-    }
-  }
-}
-
-async function bootstrapWorkbench() {
-  if (!desktopApi) {
-    setStatus("桌面桥接未就绪，当前只显示静态壳层。", "warning");
-    return;
-  }
-
-  try {
-    const promptAssetsPromise = loadWritingPromptAssets(desktopApi).catch((error) => {
-      console.warn("Failed to load writing prompt assets", error);
-      return null;
-    });
-    const [snapshot, modelSettings, loadedWritingPromptAssets] = await Promise.all([
-      desktopApi.bootstrap(),
-      desktopApi.listModelSettings(),
-      promptAssetsPromise
-    ]);
-
-    if (loadedWritingPromptAssets) {
-      Object.assign(writingPromptAssets, loadedWritingPromptAssets);
-    }
-
-    applyWorkbenchSnapshot(snapshot, modelSettings);
-    setStatus(loadedWritingPromptAssets ? "工作台已就绪。" : "工作台已就绪，写作提示词资产使用兜底配置。", loadedWritingPromptAssets ? "success" : "warning");
-  } catch (error) {
-    console.error("Failed to bootstrap workbench", error);
-    setStatus(`工作台加载失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
-  }
-}
-
-async function refreshWorkbenchSnapshot() {
-  if (!desktopApi) {
-    return;
-  }
-
-  const [snapshot, modelSettings] = await Promise.all([desktopApi.bootstrap(), desktopApi.listModelSettings()]);
-  applyWorkbenchSnapshot(snapshot, modelSettings);
-}
-
 function setActiveFeature(featureId) {
   activeFeature.value = featureId;
-  closeHomeSettingsMenu();
 
   if (featureId === FEATURE_MODEL_MANAGEMENT) {
     backModelManagement();
@@ -1546,281 +847,47 @@ const {
   workbench
 });
 
-async function copyTextToClipboard(value) {
-  const text = String(value ?? "");
-
-  if (!text) {
-    throw new Error("没有可复制的内容");
-  }
-
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-
-  const textarea = document.createElement("textarea");
-  textarea.value = text;
-  textarea.setAttribute("readonly", "true");
-  textarea.style.position = "fixed";
-  textarea.style.opacity = "0";
-  textarea.style.pointerEvents = "none";
-
-  document.body.append(textarea);
-  textarea.select();
-
-  const copied = document.execCommand("copy");
-  textarea.remove();
-
-  if (!copied) {
-    throw new Error("当前环境不支持剪贴板复制");
-  }
-}
-
-async function handleRichTextClick(event) {
-  const target = event.target instanceof Element ? event.target.closest("[data-command-copy-code]") : null;
-
-  if (!target) {
-    return;
-  }
-
-  const codeElement = target.closest(".command-code-block")?.querySelector("code");
-  const content = codeElement?.textContent ?? "";
-
-  if (!content) {
-    return;
-  }
-
-  try {
-    await copyTextToClipboard(content);
-    setStatus("代码已复制。", "success");
-  } catch (error) {
-    setStatus(`复制失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
-  }
-}
-
-function formatFailureKind(failureKind) {
-  if (failureKind === "schema_mismatch") {
-    return "Schema 不匹配";
-  }
-
-  if (failureKind === "tool_unavailable") {
-    return "工具不可用";
-  }
-
-  if (failureKind === "tool_execution") {
-    return "工具执行失败";
-  }
-
-  return "未知失败";
-}
-
-function disposeRobotRuntime() {
-  robotRuntimeState.loadToken += 1;
-
-  if (robotRuntimeState.resizeObserver) {
-    robotRuntimeState.resizeObserver.disconnect();
-    robotRuntimeState.resizeObserver = null;
-  }
-
-  if (robotRuntimeState.app) {
-    robotRuntimeState.app.dispose();
-    robotRuntimeState.app = null;
-  }
-
-  robotRuntimeState.canvas = null;
-}
-
-async function loadSplineApplication() {
-  if (splineApplicationClass) {
-    return splineApplicationClass;
-  }
-
-  if (!splineApplicationPromise) {
-    splineApplicationPromise = import("@splinetool/runtime").then((module) => {
-      splineApplicationClass = module.Application;
-      return splineApplicationClass;
-    });
-  }
-
-  return splineApplicationPromise;
-}
-
-async function syncRobotRuntime() {
-  if (activeFeature.value !== FEATURE_HOME) {
-    disposeRobotRuntime();
-    return;
-  }
-
-  const canvas = robotCanvasRef.value;
-
-  if (!(canvas instanceof HTMLCanvasElement)) {
-    disposeRobotRuntime();
-    return;
-  }
-
-  if (robotRuntimeState.canvas === canvas && robotRuntimeState.app) {
-    return;
-  }
-
-  const token = robotRuntimeState.loadToken + 1;
-  disposeRobotRuntime();
-
-  let SplineApplication = null;
-
-  try {
-    SplineApplication = await loadSplineApplication();
-  } catch (error) {
-    console.error("Failed to load Gordon robot runtime", error);
-
-    if (token === robotRuntimeState.loadToken) {
-      setStatus("机器人运行时加载失败。", "danger");
-    }
-
-    return;
-  }
-
-  if (token !== robotRuntimeState.loadToken || activeFeature.value !== FEATURE_HOME) {
-    return;
-  }
-
-  const app = new SplineApplication(canvas, {
-    renderMode: "continuous"
-  });
-
-  const resize = () => {
-    const bounds = canvas.getBoundingClientRect();
-    const width = Math.max(1, Math.round(bounds.width));
-    const height = Math.max(1, Math.round(bounds.height));
-    app.setSize(width, height);
-  };
-
-  robotRuntimeState.app = app;
-  robotRuntimeState.canvas = canvas;
-  robotRuntimeState.resizeObserver = new ResizeObserver(resize);
-  robotRuntimeState.resizeObserver.observe(canvas);
-  resize();
-
-  try {
-    await app.load(robotSceneUrl);
-
-    if (token !== robotRuntimeState.loadToken) {
-      app.dispose();
-    }
-  } catch (error) {
-    console.error("Failed to load Gordon robot scene", error);
-
-    if (token === robotRuntimeState.loadToken) {
-      setStatus("机器人场景加载失败。", "danger");
-    }
-  }
-}
-
-watch(
-  () => status.tone,
-  (tone) => {
-    document.body.classList.toggle("load-error", tone === "danger");
-  },
-  { immediate: true }
-);
-
-watch(
+workbenchRuntime = createWorkbenchRuntime({
   activeFeature,
-  async () => {
-    await nextTick();
-    await syncRobotRuntime();
-
-    if (activeFeature.value === FEATURE_COMMAND_WORKSHOP && ui.command.view === "chat") {
-      scrollCommandToBottom();
-    }
-  },
-  { immediate: false }
-);
-
-watch(
-  () => ui.command.view,
-  async (view) => {
-    if (activeFeature.value === FEATURE_COMMAND_WORKSHOP && view === "chat") {
-      await nextTick();
-      scrollCommandToBottom();
-      focusCommandInput();
-    }
-  }
-);
-
-watch(
-  () => ui.command.composerView,
-  (view) => {
-    if (view === "input") {
-      focusCommandInput();
-    }
-  }
-);
-
-watch(
-  activeCommandMessages,
-  () => {
-    if (activeFeature.value === FEATURE_COMMAND_WORKSHOP && ui.command.view === "chat") {
-      scrollCommandToBottom();
-    }
-  },
-  { deep: true }
-);
-
-watch(
-  () => ui.weekly.draft?.selectedReportTemplateId,
-  handleWeeklySelectedReportTemplateIdChange
-);
-
-watch(
-  () => `${ui.workflow.view}:${ui.workflow.activeCardId ?? ""}:${ui.workflow.activeRecordId ?? ""}`,
-  () => {
-    if (ui.workflow.view === "run") {
-      syncWorkflowBodyDraftFromActiveStep({ force: true });
-    }
-  }
-);
-
-watch(
-  () => getWeeklyDraftSnapshot(ui.weekly.draft),
-  (nextSnapshot) => {
-    handleWeeklyDraftSnapshotChange(nextSnapshot);
-  }
-);
-
-onMounted(async () => {
-  window.addEventListener("keydown", handleGordonDialogKeydown);
-
-  if (desktopApi?.onAgentRunProgress) {
-    agentProgressListenerId = desktopApi.onAgentRunProgress(handleAgentRunProgress);
-  }
-
-  if (desktopApi?.onWorkflowRunProgress) {
-    workflowProgressListenerId = desktopApi.onWorkflowRunProgress(handleWorkflowRunProgress);
-  }
-
-  await bootstrapWorkbench();
-  ui.command.form = normalizeCommandWorkshopConfig(ui.command.form);
-  await nextTick();
-  await syncRobotRuntime();
+  applyComicProjectsFromStorage,
+  applyWritingBooksFromStorage,
+  desktopApi,
+  featureCommandWorkshopId: FEATURE_COMMAND_WORKSHOP,
+  loadWritingPromptAssets,
+  normalizeCommandWorkshopConfig,
+  normalizeCommandWorkshopSessions,
+  setStatus,
+  syncModelBalanceRuntimeFromProfiles,
+  syncWeeklyEditorState,
+  syncWorkflowSelection,
+  ui,
+  workbench,
+  writingPromptAssets
 });
 
-onBeforeUnmount(() => {
-  window.removeEventListener("keydown", handleGordonDialogKeydown);
+const handleRichTextClick = createRichTextClickHandler({ setStatus });
 
-  if (agentProgressListenerId && desktopApi?.offAgentRunProgress) {
-    desktopApi.offAgentRunProgress(agentProgressListenerId);
-    agentProgressListenerId = null;
-  }
-
-  if (workflowProgressListenerId && desktopApi?.offWorkflowRunProgress) {
-    desktopApi.offWorkflowRunProgress(workflowProgressListenerId);
-    workflowProgressListenerId = null;
-  }
-
-  disposeWeeklyRuntime();
-  clearComicAutosaveTimer();
-  clearWritingAutosaveTimer();
-  disposeRobotRuntime();
-  document.body.classList.remove("load-error");
+setupRootWatchers({
+  activeCommandMessages,
+  activeFeature,
+  bootstrapWorkbench,
+  clearComicAutosaveTimer,
+  clearWritingAutosaveTimer,
+  desktopApi,
+  disposeWeeklyRuntime,
+  featureCommandWorkshopId: FEATURE_COMMAND_WORKSHOP,
+  focusCommandInput,
+  getWeeklyDraftSnapshot,
+  handleAgentRunProgress,
+  handleGordonDialogKeydown,
+  handleWeeklyDraftSnapshotChange,
+  handleWeeklySelectedReportTemplateIdChange,
+  handleWorkflowRunProgress,
+  nextTick,
+  normalizeCommandWorkshopConfig,
+  scrollCommandToBottom,
+  status,
+  syncWorkflowBodyDraftFromActiveStep,
+  ui
 });
 </script>

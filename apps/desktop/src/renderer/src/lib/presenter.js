@@ -348,6 +348,22 @@ export function getSkillLocalMirrorDetail(skill) {
   return skill?.source?.localPath?.trim() || "";
 }
 
+export function formatFailureKind(failureKind) {
+  if (failureKind === "schema_mismatch") {
+    return "Schema 不匹配";
+  }
+
+  if (failureKind === "tool_unavailable") {
+    return "工具不可用";
+  }
+
+  if (failureKind === "tool_execution") {
+    return "工具执行失败";
+  }
+
+  return "未知失败";
+}
+
 export function normalizeWeeklyProgressItemStatus(status) {
   return Object.prototype.hasOwnProperty.call(WEEKLY_PROGRESS_STATUS_META, status) ? status : "planned";
 }
