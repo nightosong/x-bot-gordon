@@ -47,7 +47,7 @@ export function createMarketplaceState() {
       activeBookId: null,
       activeTab: "intro",
       activeChapterId: "",
-      aiTaskId: "world",
+      aiTaskId: "premise",
       aiInstruction: "",
       aiOutput: "",
       aiFeedback: "",

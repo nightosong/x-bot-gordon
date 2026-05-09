@@ -8,7 +8,7 @@
     </div>
 
     <div class="field writing-ai-task-field">
-      <span class="field-label">辅助任务</span>
+      <span class="field-label">写作动作</span>
       <div class="writing-ai-task-dropdown" :class="{ 'is-open': state.isAiTaskPickerOpen }">
         <button
           type="button"
@@ -20,6 +20,7 @@
           <span>{{ activeWritingTask?.label ?? "选择任务" }}</span>
           <GIcon name="chevronDown" />
         </button>
+        <p v-if="activeWritingTaskTarget" class="writing-ai-task-target">{{ activeWritingTaskTarget }}</p>
 
         <div v-if="state.isAiTaskPickerOpen" class="writing-ai-task-dropdown-menu" role="listbox">
           <button
@@ -34,6 +35,7 @@
           >
             <span>{{ task.label }}</span>
             <small>{{ task.goal }}</small>
+            <em v-if="getWritingTaskTarget(task)">{{ getWritingTaskTarget(task) }}</em>
           </button>
         </div>
       </div>
@@ -179,6 +181,15 @@ const props = defineProps({
 
 const isAiInstructionOpen = ref(Boolean(props.state.aiInstruction?.trim()));
 const hasAiInstruction = computed(() => Boolean(props.state.aiInstruction?.trim()));
+const activeWritingTaskTarget = computed(() => getWritingTaskTarget(props.activeWritingTask));
+
+function getWritingTaskTarget(task) {
+  if (task?.id === "storySetup") {
+    return props.activeWritingBook?.length === "long" ? "写入：详细大纲指导" : "写入：大纲指导";
+  }
+
+  return String(task?.target ?? "");
+}
 
 function toggleAiInstructionOpen() {
   isAiInstructionOpen.value = !isAiInstructionOpen.value;

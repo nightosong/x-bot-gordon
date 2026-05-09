@@ -1506,10 +1506,22 @@ canvas {
 
 .writing-detail-head .model-section-actions {
   justify-self: end;
+  flex-wrap: nowrap;
+  align-items: center;
+  min-width: max-content;
+}
+
+.writing-detail-head .model-section-actions .pill {
+  white-space: nowrap;
+}
+
+.writing-detail-head .writing-ai-float-trigger {
+  flex: 0 0 34px;
 }
 
 .writing-title-input {
   width: min(460px, 44vw);
+  max-width: 100%;
   border: 0;
   outline: 0;
   background: transparent;
@@ -2469,6 +2481,14 @@ canvas {
   color: rgba(92, 225, 194, 0.78);
 }
 
+.writing-ai-task-target {
+  margin: 6px 0 0;
+  color: rgba(188, 248, 234, 0.68);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 .writing-ai-task-dropdown.is-open .writing-ai-task-dropdown-trigger,
 .writing-ai-task-dropdown-trigger:hover {
   border-color: rgba(92, 225, 194, 0.28);
@@ -2528,6 +2548,14 @@ canvas {
   color: rgba(247, 243, 235, 0.54);
   font-size: 10.5px;
   line-height: 1.45;
+}
+
+.writing-ai-task-dropdown-item em {
+  color: rgba(188, 248, 234, 0.62);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1.35;
 }
 
 .writing-ai-instruction {

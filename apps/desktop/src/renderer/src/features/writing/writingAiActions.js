@@ -4,6 +4,7 @@ import {
   WRITING_AI_TASKS,
   WRITING_APP_NAME,
   WRITING_CHAPTER_MAX_OUTPUT_TOKENS,
+  WRITING_INTRO_SECTION_DEFINITIONS,
   WRITING_LENGTH_PROFILES,
   WRITING_LONG_OUTLINE_BATCH_MAX_TOKENS,
   WRITING_LONG_OUTLINE_BATCH_SIZE,
@@ -21,7 +22,9 @@ import {
   getWritingTaskPromptSpec as getWritingTaskPromptSpecFromAssets
 } from "./writingPromptBuilder.js";
 
-const WRITING_REVIEW_ONLY_TASK_IDS = new Set(["openingAudit", "openingReview", "review"]);
+const WRITING_REVIEW_ONLY_TASK_IDS = new Set(["openingAudit", "outlineAudit", "openingReview", "review"]);
+const WRITING_INTRO_PLANNING_TASK_IDS = new Set(["storySetup", "world", "character", "storyBible"]);
+const WRITING_INTRO_SUMMARY_TASK_IDS = new Set(["premise"]);
 
 export function createWritingAiActions({
   activeWritingBook,
@@ -415,11 +418,37 @@ function getWritingAssistantMaxOutputTokens(tabId, taskId) {
     return 6200;
   }
 
+  if (tabId === "intro" && taskId === "storySetup") {
+    return 3600;
+  }
+
+  if (tabId === "outline" && taskId === "outlineAudit") {
+    return 3200;
+  }
+
   if (tabId === "chapter") {
     return WRITING_CHAPTER_MAX_OUTPUT_TOKENS;
   }
 
   return 2600;
+}
+
+function getWritingIntroOutputTargetKey(book, taskId) {
+  if (WRITING_INTRO_SUMMARY_TASK_IDS.has(taskId)) {
+    return "intro";
+  }
+
+  if (WRITING_INTRO_PLANNING_TASK_IDS.has(taskId)) {
+    return book?.length === "long" ? "seriesPlan" : "outlineGuide";
+  }
+
+  return book?.length === "short" ? "intro" : book?.length === "long" ? "seriesPlan" : "outlineGuide";
+}
+
+function getWritingIntroOutputTargetLabel(book, taskId) {
+  const targetKey = getWritingIntroOutputTargetKey(book, taskId);
+
+  return WRITING_INTRO_SECTION_DEFINITIONS[targetKey]?.label ?? "故事介绍";
 }
 
 function createWritingOutlinePlannerJob(request, book = null) {
@@ -1794,9 +1823,10 @@ async function applyWritingAssistantOutput(mode = "append") {
   }
 
   let memoryUpdateStatus = "";
+  let appliedTargetLabel = "";
 
   if (WRITING_REVIEW_ONLY_TASK_IDS.has(activeWritingTask.value?.id)) {
-    setWritingFeedback("自评/质检结果仅用于审阅，不自动写入正文或设定。", "warning");
+    setWritingFeedback("体检/质检结果仅用于审阅，不自动写入正文或设定。", "warning");
     return;
   }
 
@@ -1814,9 +1844,10 @@ async function applyWritingAssistantOutput(mode = "append") {
     const current = String(chapter?.summary ?? "").trim();
     setWritingChapterSummary(chapter, mode === "replace" ? output : [current, output].filter(Boolean).join("\n\n"));
   } else {
-    const targetKey = book.length === "short" ? "intro" : book.length === "long" ? "seriesPlan" : "outlineGuide";
+    const targetKey = getWritingIntroOutputTargetKey(book, activeWritingTask.value?.id);
     const current = getWritingIntroFieldValue(book, targetKey).trim();
     setWritingIntroField(book, targetKey, mode === "replace" ? output : [current, output].filter(Boolean).join("\n\n"));
+    appliedTargetLabel = getWritingIntroOutputTargetLabel(book, activeWritingTask.value?.id);
   }
 
   if (memoryUpdateStatus === "failed") {
@@ -1825,6 +1856,11 @@ async function applyWritingAssistantOutput(mode = "append") {
 
   if (memoryUpdateStatus === "updated") {
     setWritingFeedback(mode === "replace" ? "已替换正文，并更新连续性资料。" : "已追加正文，并更新连续性资料。", "success");
+    return;
+  }
+
+  if (appliedTargetLabel) {
+    setWritingFeedback(mode === "replace" ? `已替换「${appliedTargetLabel}」。` : `已追加到「${appliedTargetLabel}」。`, "success");
     return;
   }
 
