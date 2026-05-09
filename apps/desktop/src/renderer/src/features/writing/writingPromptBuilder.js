@@ -1,6 +1,7 @@
 export const WRITING_PROMPT_ASSET_IDS = [
   "writingMasterSystem",
   "writingNarrativeCraftGuide",
+  "writingSelfReviewGuide",
   "writingChapterOutputDefaults",
   "writingAiTaskPrompts"
 ];
@@ -35,6 +36,7 @@ export function createWritingPromptAssets() {
   return {
     masterSystem: "",
     narrativeCraftGuide: "",
+    selfReviewGuide: "",
     chapterOutputDefaults: [],
     taskPrompts: {}
   };
@@ -44,6 +46,7 @@ export function normalizeWritingPromptAssets(rawAssets = {}) {
   return {
     masterSystem: normalizeText(rawAssets.writingMasterSystem),
     narrativeCraftGuide: normalizeText(rawAssets.writingNarrativeCraftGuide),
+    selfReviewGuide: normalizeText(rawAssets.writingSelfReviewGuide),
     chapterOutputDefaults: parseMarkdownList(rawAssets.writingChapterOutputDefaults),
     taskPrompts: parseTaskPrompts(rawAssets.writingAiTaskPrompts)
   };
@@ -93,6 +96,7 @@ export function buildWritingAssistantPrompt({
   const defaults = Array.isArray(chapterOutputDefaults) ? chapterOutputDefaults : promptAssets?.chapterOutputDefaults ?? [];
   const chapterOutputContent = defaults.length ? ["章节生成默认项：", ...defaults.map((item) => `- ${item}`)].join("\n") : "";
   const craftGuide = promptAssets?.narrativeCraftGuide || "(写作知识资产尚未加载。)";
+  const selfReviewGuide = promptAssets?.selfReviewGuide || "(自评知识资产尚未加载。)";
 
   return [
     `你正在执行「${appName}」的一次写作辅助任务。通用标准：大师级小说总编 + 故事架构师 + 文字教练。`,
@@ -111,6 +115,9 @@ export function buildWritingAssistantPrompt({
     "",
     "创作知识内核：",
     craftGuide,
+    "",
+    "自我评判内核：",
+    selfReviewGuide,
     "",
     "输出要求：",
     taskSpec.output,
@@ -170,6 +177,9 @@ export function buildWritingLongOutlineMasterPrompt({
     "创作知识内核：",
     promptAssets?.narrativeCraftGuide || "(写作知识资产尚未加载。)",
     "",
+    "自我评判内核：",
+    promptAssets?.selfReviewGuide || "(自评知识资产尚未加载。)",
+    "",
     "故事介绍与规划：",
     introContent || "(空)",
     "",
@@ -213,6 +223,9 @@ export function buildWritingLongOutlineBatchPrompt({
     "",
     "创作知识内核：",
     promptAssets?.narrativeCraftGuide || "(写作知识资产尚未加载。)",
+    "",
+    "自我评判内核：",
+    promptAssets?.selfReviewGuide || "(自评知识资产尚未加载。)",
     "",
     "故事介绍与规划：",
     introContent || "(空)",

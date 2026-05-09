@@ -21,6 +21,8 @@ import {
   getWritingTaskPromptSpec as getWritingTaskPromptSpecFromAssets
 } from "./writingPromptBuilder.js";
 
+const WRITING_REVIEW_ONLY_TASK_IDS = new Set(["openingAudit", "openingReview", "review"]);
+
 export function createWritingAiActions({
   activeWritingBook,
   activeWritingChapter,
@@ -1793,12 +1795,12 @@ async function applyWritingAssistantOutput(mode = "append") {
 
   let memoryUpdateStatus = "";
 
-  if (ui.marketplace.writing.activeTab === "chapter") {
-    if (activeWritingTask.value?.id === "review") {
-      setWritingFeedback("章节质检结果仅用于审阅，不自动写入正文。", "warning");
-      return;
-    }
+  if (WRITING_REVIEW_ONLY_TASK_IDS.has(activeWritingTask.value?.id)) {
+    setWritingFeedback("自评/质检结果仅用于审阅，不自动写入正文或设定。", "warning");
+    return;
+  }
 
+  if (ui.marketplace.writing.activeTab === "chapter") {
     const chapter = activeWritingChapter.value ?? ensureWritingChapterSelection(book);
     const current = String(chapter?.content ?? "").trim();
     setWritingChapterContent(chapter, mode === "replace" ? output : [current, output].filter(Boolean).join("\n\n"));

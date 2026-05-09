@@ -19,6 +19,7 @@ const PROMPT_ASSET_PATHS = {
   weeklyReportTemplateLegacy: ["prompts", "workbench", "weekly", "report-template.legacy.md"],
   writingMasterSystem: ["prompts", "workbench", "writing", "master.system.md"],
   writingNarrativeCraftGuide: ["prompts", "workbench", "writing", "narrative-craft-guide.md"],
+  writingSelfReviewGuide: ["prompts", "workbench", "writing", "self-review-guide.md"],
   writingChapterOutputDefaults: ["prompts", "workbench", "writing", "chapter-output-defaults.md"],
   writingAiTaskPrompts: ["prompts", "workbench", "writing", "ai-task-prompts.json"]
 } as const;
