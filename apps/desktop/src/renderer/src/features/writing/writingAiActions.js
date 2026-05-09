@@ -726,7 +726,7 @@ function getWritingBusyDescription() {
     return `本地已落盘 ${job.generatedChapterCount}/${job.targetChapterCount} 章；当前在第 ${job.currentPartIndex} ${partLabel}，生成第 ${job.currentBatchStartIndex}-${job.currentBatchEndIndex} 章。可以返回书架或切换到其他书籍，任务会继续在后台执行。`;
   }
 
-  return "任务已在后台执行，可以切换到其他页面，完成后会回到大师辅助输出区。";
+  return "任务已在后台执行，可以切换到其他页面，完成后会回到添香小筑输出区。";
 }
 
 function buildWritingPartsContext(book) {

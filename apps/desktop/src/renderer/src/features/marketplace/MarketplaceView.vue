@@ -194,7 +194,6 @@
             <div class="writing-book-card-foot">
               <span class="pill">{{ book.status }}</span>
               <span class="pill pill-neutral">{{ getWritingBookWordCount(book) }} 字</span>
-              <span class="pill pill-neutral">完整度 {{ getWritingBookCompleteness(book) }}%</span>
             </div>
           </div>
         </article>
@@ -556,6 +555,15 @@
           <div class="model-section-actions">
             <span class="pill">{{ activeWritingLengthProfile.label }}</span>
             <span class="pill pill-neutral">{{ getWritingTabWordCount() }} 字</span>
+            <button
+              type="button"
+              class="model-icon-button writing-ai-float-trigger"
+              :aria-label="ui.marketplace.writing.isAiDrawerOpen ? '收起添香小筑' : '打开添香小筑'"
+              :title="ui.marketplace.writing.isAiDrawerOpen ? '收起添香小筑' : '打开添香小筑'"
+              @click="setWritingAiDrawerOpen(!ui.marketplace.writing.isAiDrawerOpen)"
+            >
+              <GIcon name="sparkles" />
+            </button>
           </div>
         </header>
 
@@ -657,15 +665,6 @@
                   </div>
                   <div class="writing-editor-tools">
                     <span class="status-pill">{{ getWritingTabWordCount() }} 字</span>
-                    <button
-                      type="button"
-                      class="model-icon-button writing-ai-float-trigger"
-                      :aria-label="ui.marketplace.writing.isAiDrawerOpen ? '收起大师辅助' : '打开大师辅助'"
-                      :title="ui.marketplace.writing.isAiDrawerOpen ? '收起大师辅助' : '打开大师辅助'"
-                      @click="setWritingAiDrawerOpen(!ui.marketplace.writing.isAiDrawerOpen)"
-                    >
-                      <GIcon name="sparkles" />
-                    </button>
                   </div>
                 </div>
 
@@ -1152,7 +1151,6 @@ const {
   getComicProjectPaletteLabel,
   getWritingAiFeedbackClass,
   getWritingAiRunButtonLabel,
-  getWritingBookCompleteness,
   getWritingBookWordCount,
   getWritingBusyDescription,
   getWritingBusyTitle,

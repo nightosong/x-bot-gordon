@@ -3,7 +3,7 @@
     <div class="writing-ai-head">
       <div>
         <p class="feature-kicker">AI Copilot</p>
-        <p class="model-section-title">大师辅助</p>
+        <p class="model-section-title">添香小筑</p>
       </div>
     </div>
 
@@ -39,14 +39,26 @@
       </div>
     </div>
 
-    <label class="field">
-      <span class="field-label">额外要求</span>
+    <section class="writing-ai-instruction" :class="{ 'is-open': isAiInstructionOpen }">
+      <button
+        type="button"
+        class="writing-ai-instruction-toggle"
+        :aria-expanded="isAiInstructionOpen ? 'true' : 'false'"
+        aria-controls="writing-ai-instruction-input"
+        @click="toggleAiInstructionOpen"
+      >
+        <span>额外要求</span>
+        <small v-if="hasAiInstruction">已填写</small>
+        <GIcon name="chevronDown" />
+      </button>
       <textarea
+        v-if="isAiInstructionOpen"
+        id="writing-ai-instruction-input"
         v-model="state.aiInstruction"
         class="field-textarea writing-ai-input"
         placeholder="例如：更黑暗、更史诗；补一条反派线；第 3 章必须反转。"
       ></textarea>
-    </label>
+    </section>
 
     <section class="writing-prompt-preview" :class="{ 'is-open': state.isPromptPreviewOpen }">
       <button
@@ -107,7 +119,7 @@
     </section>
 
     <div class="writing-ai-run-row">
-      <button type="button" class="model-action writing-ai-run" :disabled="state.isAiRunning" @click="generateWritingAssistantOutput">
+      <button type="button" class="model-action-secondary writing-ai-run" :disabled="state.isAiRunning" @click="generateWritingAssistantOutput">
         {{ getWritingAiRunButtonLabel() }}
       </button>
     </div>
@@ -137,9 +149,10 @@
 </template>
 
 <script setup>
+import { computed, ref, watch } from "vue";
 import GIcon from "../../components/GIcon.vue";
 
-defineProps({
+const props = defineProps({
   state: { type: Object, required: true },
   activeWritingTask: { type: Object, default: null },
   activeWritingTaskOptions: { type: Array, default: () => [] },
@@ -163,4 +176,20 @@ defineProps({
   getWritingAiFeedbackClass: { type: Function, required: true },
   applyWritingAssistantOutput: { type: Function, required: true }
 });
+
+const isAiInstructionOpen = ref(Boolean(props.state.aiInstruction?.trim()));
+const hasAiInstruction = computed(() => Boolean(props.state.aiInstruction?.trim()));
+
+function toggleAiInstructionOpen() {
+  isAiInstructionOpen.value = !isAiInstructionOpen.value;
+}
+
+watch(
+  () => props.state.aiInstruction,
+  (value) => {
+    if (value?.trim()) {
+      isAiInstructionOpen.value = true;
+    }
+  }
+);
 </script>

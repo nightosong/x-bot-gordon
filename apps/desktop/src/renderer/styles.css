@@ -1320,12 +1320,31 @@ canvas {
   gap: 5px;
 }
 
+.writing-book-card-foot {
+  flex-wrap: nowrap;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+}
+
 .marketplace-app-meta .pill,
 .writing-book-card-foot .pill,
 .writing-stat-list .pill {
   min-height: 22px;
   padding: 4px 8px;
   font-size: 10.5px;
+}
+
+.writing-book-card-foot .pill {
+  flex: 0 1 auto;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  border-radius: 999px;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .marketplace-app-meta {
@@ -2511,6 +2530,70 @@ canvas {
   line-height: 1.45;
 }
 
+.writing-ai-instruction {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid rgba(247, 243, 235, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.writing-ai-instruction-toggle {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: rgba(247, 243, 235, 0.78);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-align: left;
+}
+
+.writing-ai-instruction-toggle span {
+  min-width: 0;
+}
+
+.writing-ai-instruction-toggle small {
+  padding: 2px 6px;
+  border: 1px solid rgba(92, 225, 194, 0.16);
+  border-radius: 999px;
+  color: rgba(188, 248, 234, 0.82);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.writing-ai-instruction-toggle .action-icon {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  color: rgba(92, 225, 194, 0.78);
+  transition: transform 160ms ease;
+}
+
+.writing-ai-instruction.is-open .writing-ai-instruction-toggle .action-icon {
+  transform: rotate(180deg);
+}
+
+.writing-ai-instruction-toggle:hover,
+.writing-ai-instruction-toggle:focus-visible {
+  color: var(--text);
+  background: rgba(92, 225, 194, 0.07);
+}
+
+.writing-ai-instruction .writing-ai-input {
+  border-width: 1px 0 0;
+  border-color: rgba(247, 243, 235, 0.07);
+  border-radius: 0;
+  background: rgba(8, 15, 24, 0.22);
+}
+
 .writing-prompt-preview {
   border: 1px solid rgba(247, 243, 235, 0.1);
   border-radius: 14px;
@@ -2661,7 +2744,7 @@ canvas {
   width: 100%;
 }
 
-.writing-ai-run {
+.writing-ai-run-row .writing-ai-run {
   display: inline-flex;
   align-items: center;
   justify-content: center;
