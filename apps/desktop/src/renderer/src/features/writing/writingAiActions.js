@@ -25,6 +25,7 @@ import {
 const WRITING_REVIEW_ONLY_TASK_IDS = new Set(["openingAudit", "outlineAudit", "openingReview", "review"]);
 const WRITING_INTRO_PLANNING_TASK_IDS = new Set(["storySetup", "world", "character", "storyBible"]);
 const WRITING_INTRO_SUMMARY_TASK_IDS = new Set(["premise"]);
+const WRITING_CHAPTER_SUMMARY_TASK_IDS = new Set(["chapterPlan"]);
 
 export function createWritingAiActions({
   activeWritingBook,
@@ -424,6 +425,10 @@ function getWritingAssistantMaxOutputTokens(tabId, taskId) {
 
   if (tabId === "outline" && taskId === "outlineAudit") {
     return 3200;
+  }
+
+  if (tabId === "chapter" && taskId === "chapterPlan") {
+    return 2200;
   }
 
   if (tabId === "chapter") {
@@ -921,6 +926,8 @@ function buildWritingStoryMemoryUpdatePrompt(book, chapter, appliedOutput) {
     "目标：从刚刚写入的章节正文中抽取后续必须遵守或可以回收的结构化故事资产。",
     "",
     "只记录稳定事实，不收录一次性辞藻、普通动作或不会影响后续的细节。",
+    "优先抽取会影响后续写作的工程化台账：人物状态变化、规则边界、资源消耗、伤痕/物件/账目等证据载体、信息差变化、对手反制、未兑现承诺、已埋伏笔与可回收位置。",
+    "如果本章只出现抽象情绪，没有形成可追踪事实，不要强行写入。",
     "连续性资料、设定账本、storyAssets 和 memoryNotes 是内部管理资料，不要把这些资料名扩写成作品主题、角色能力或世界观机制。",
     "如果没有新增内容，对应数组返回空数组。",
     "",
@@ -944,7 +951,7 @@ function buildWritingStoryMemoryUpdatePrompt(book, chapter, appliedOutput) {
     truncateText(String(appliedOutput ?? ""), 9000),
     "",
     "输出 JSON 代码块，且只允许包含 storyAssets 字段：",
-    `{"storyAssets":{"premise":"","worldview":[{"title":"","detail":"","tags":[],"chapterIndex":${chapter?.index ?? 1}}],"characters":[{"name":"","role":"","goal":"","fear":"","secret":"","growthArc":"","relationships":[],"tags":[],"status":"active"}],"relationships":[{"title":"","detail":"","tags":[]}],"timeline":[{"title":"","detail":"","tags":[],"chapterIndex":${chapter?.index ?? 1}}],"foreshadows":[{"title":"","setup":"","payoff":"","status":"open","chapterIndex":${chapter?.index ?? 1},"tags":[]}],"rules":[{"title":"","detail":"","tags":[]}],"styleProfile":{"voice":"","pacing":"","genreSignals":[],"taboos":[]},"memoryNotes":[{"title":"","detail":"","tags":[],"chapterIndex":${chapter?.index ?? 1}}]}}`
+    `{"storyAssets":{"premise":"","worldview":[{"title":"","detail":"","tags":[],"chapterIndex":${chapter?.index ?? 1}}],"characters":[{"name":"","role":"","goal":"","fear":"","secret":"","growthArc":"","relationships":[],"tags":[],"status":"active"}],"relationships":[{"title":"","detail":"","tags":[]}],"timeline":[{"title":"","detail":"","tags":[],"chapterIndex":${chapter?.index ?? 1}}],"foreshadows":[{"title":"","setup":"","payoff":"","status":"open","chapterIndex":${chapter?.index ?? 1},"tags":["证据载体","信息差","反制","待回收"]}],"rules":[{"title":"","detail":"","tags":[]}],"styleProfile":{"voice":"","pacing":"","genreSignals":[],"taboos":[]},"memoryNotes":[{"title":"","detail":"","tags":["证据载体","人物状态","资源消耗","信息差"],"chapterIndex":${chapter?.index ?? 1}}]}}`
   ].join("\n");
 }
 
@@ -1413,7 +1420,7 @@ async function generateWritingAssistantOutput() {
     }
 
     ui.marketplace.writing.aiOutput =
-      ui.marketplace.writing.activeTab === "chapter"
+      ui.marketplace.writing.activeTab === "chapter" && !WRITING_CHAPTER_SUMMARY_TASK_IDS.has(activeWritingTask.value?.id)
         ? normalizeWritingChapterDraftOutput(result?.text ?? "")
         : String(result?.text ?? "").trim();
     setWritingFeedback(result?.profileLabel ? `已由 ${result.profileLabel} 生成。` : "AI 已生成建议。", "success");
@@ -1813,7 +1820,7 @@ async function applyWritingChapterPlanOutput(book, output, mode = "append") {
 async function applyWritingAssistantOutput(mode = "append") {
   const book = activeWritingBook.value;
   const output =
-    ui.marketplace.writing.activeTab === "chapter"
+    ui.marketplace.writing.activeTab === "chapter" && !WRITING_CHAPTER_SUMMARY_TASK_IDS.has(activeWritingTask.value?.id)
       ? normalizeWritingChapterDraftOutput(ui.marketplace.writing.aiOutput ?? "")
       : String(ui.marketplace.writing.aiOutput ?? "").trim();
 
@@ -1832,9 +1839,15 @@ async function applyWritingAssistantOutput(mode = "append") {
 
   if (ui.marketplace.writing.activeTab === "chapter") {
     const chapter = activeWritingChapter.value ?? ensureWritingChapterSelection(book);
-    const current = String(chapter?.content ?? "").trim();
-    setWritingChapterContent(chapter, mode === "replace" ? output : [current, output].filter(Boolean).join("\n\n"));
-    memoryUpdateStatus = await updateWritingStoryMemoryFromChapter(book, chapter, output);
+    if (WRITING_CHAPTER_SUMMARY_TASK_IDS.has(activeWritingTask.value?.id)) {
+      const current = String(chapter?.summary ?? "").trim();
+      setWritingChapterSummary(chapter, mode === "replace" ? output : [current, output].filter(Boolean).join("\n\n"));
+      appliedTargetLabel = "当前章节简介";
+    } else {
+      const current = String(chapter?.content ?? "").trim();
+      setWritingChapterContent(chapter, mode === "replace" ? output : [current, output].filter(Boolean).join("\n\n"));
+      memoryUpdateStatus = await updateWritingStoryMemoryFromChapter(book, chapter, output);
+    }
   } else if (ui.marketplace.writing.activeTab === "outline") {
     if (await applyWritingChapterPlanOutput(book, output, mode)) {
       return;
