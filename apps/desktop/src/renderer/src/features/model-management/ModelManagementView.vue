@@ -5,6 +5,7 @@
     :class="{
       'models-shell-home':
         ui.modelManagement.view === 'list' ||
+        ui.modelManagement.view === 'picker' ||
         ui.modelManagement.view === 'editor' ||
         ui.modelManagement.view === 'usage'
     }"
@@ -23,7 +24,9 @@
       class="models-grid models-grid-single"
       :class="{
         'models-grid-subpage':
-          ui.modelManagement.view === 'editor' || ui.modelManagement.view === 'usage'
+          ui.modelManagement.view === 'picker' ||
+          ui.modelManagement.view === 'editor' ||
+          ui.modelManagement.view === 'usage'
       }"
     >
       <section v-if="ui.modelManagement.view === 'list'" class="model-section">
@@ -35,14 +38,22 @@
 
           <div class="model-section-actions">
             <span class="pill pill-neutral">{{ workbench.modelSettings.profiles.length }} 条配置</span>
-            <button type="button" class="model-action" @click="openModelCreatePicker">添加新配置</button>
+            <button
+              type="button"
+              class="model-icon-button model-add-config-button"
+              aria-label="添加新配置"
+              title="添加新配置"
+              @click="openModelCreatePicker"
+            >
+              <GIcon name="add" :size="15" />
+            </button>
           </div>
         </div>
 
         <div class="model-section-body model-configured-list">
           <div v-if="!workbench.modelSettings.profiles.length" class="model-empty">
             <p class="model-empty-copy">
-              当前还没有任何已配置模型。先在右侧选择供应商并保存一条配置，之后就能在这里启用或编辑。
+              当前还没有任何已配置模型。点击右上角加号选择供应商并保存一条配置，之后就能在这里启用或编辑。
             </p>
           </div>
 
@@ -70,7 +81,9 @@
 
                 <div>
                   <p class="model-card-title">{{ profile.displayName }}</p>
-                  <p class="model-card-meta">{{ getProviderMeta(profile.provider).label }} / {{ profile.model }}</p>
+                  <p class="model-card-meta">
+                    {{ getProviderMeta(profile.provider).label }} / {{ profile.model }}
+                  </p>
                 </div>
               </div>
 
@@ -251,10 +264,10 @@
         </div>
       </section>
 
-      <section v-else-if="ui.modelManagement.view === 'picker'" class="model-section">
-        <div class="model-editor model-editor-compact">
-          <div class="model-section-head model-section-head-leading model-section-head-picker">
-            <div class="model-section-head-start">
+      <section v-else-if="ui.modelManagement.view === 'picker'" class="model-section model-section-scroll model-subpage-section">
+        <div class="model-editor model-editor-unified model-provider-picker-panel">
+          <div class="workflow-library-detail-head model-subpage-head">
+            <div class="workflow-library-detail-head-side">
               <button
                 type="button"
                 class="model-icon-button weekly-back-button"
@@ -266,15 +279,14 @@
               </button>
             </div>
 
-            <div class="model-section-title-block model-section-title-block-centered">
-              <p class="feature-kicker">Provider</p>
-              <p class="model-section-title">选择供应商</p>
+            <div class="workflow-library-detail-head-center">
+              <p class="workflow-library-detail-title">选择供应商</p>
             </div>
 
-            <span class="model-section-head-spacer" aria-hidden="true"></span>
+            <div class="workflow-library-detail-head-side workflow-library-detail-head-side-end"></div>
           </div>
 
-          <div class="provider-picker-grid">
+          <div v-if="providerOptions.length" class="provider-picker-grid model-provider-picker-body">
             <button
               v-for="provider in providerOptions"
               :key="provider.kind"
@@ -301,8 +313,15 @@
                 <template v-else>{{ getProviderMeta(provider.kind).short }}</template>
               </div>
 
-              <span class="provider-picker-name">{{ provider.label }}</span>
+              <span class="provider-picker-content">
+                <span class="provider-picker-name">{{ provider.label }}</span>
+                <span class="provider-picker-copy">{{ provider.copy }}</span>
+              </span>
             </button>
+          </div>
+
+          <div v-else class="model-empty">
+            <p class="model-empty-copy">暂时没有可选供应商。</p>
           </div>
         </div>
       </section>

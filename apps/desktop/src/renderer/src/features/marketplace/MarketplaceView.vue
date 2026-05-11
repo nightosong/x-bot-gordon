@@ -1,13 +1,13 @@
 <template>
 <div
   class="workspace-stage workspace-stage-scroll"
-  :class="{ 'workspace-stage-flush': ui.marketplace.view === 'writingDetail' || ui.marketplace.view === 'comicDetail' }"
+  :class="{ 'workspace-stage-flush': ui.marketplace.view === 'writingDetail' || ui.marketplace.view === 'comicDetail' || ui.marketplace.view === 'videoDetail' }"
 >
   <div
     class="marketplace-shell"
     :class="{
-      'marketplace-shell-detail': ui.marketplace.view === 'writingDetail' || ui.marketplace.view === 'comicDetail',
-      'marketplace-shell-shelf': ui.marketplace.view === 'writingShelf' || ui.marketplace.view === 'comicShelf'
+      'marketplace-shell-detail': ui.marketplace.view === 'writingDetail' || ui.marketplace.view === 'comicDetail' || ui.marketplace.view === 'videoDetail',
+      'marketplace-shell-shelf': ui.marketplace.view === 'writingShelf' || ui.marketplace.view === 'comicShelf' || ui.marketplace.view === 'videoShelf'
     }"
   >
     <template v-if="ui.marketplace.view === 'apps'">
@@ -66,6 +66,93 @@
             <span class="pill">漫画创作</span>
             <span class="pill pill-neutral">单色 / 彩绘</span>
             <span class="pill pill-neutral">海报 / 连载</span>
+          </div>
+        </article>
+
+        <article
+          class="marketplace-app-card video-app-card"
+          role="button"
+          tabindex="0"
+          :aria-label="`${VIDEO_APP_NAME} 视频生成应用`"
+          @click="openVideoAppShelf"
+          @keydown.enter.prevent="openVideoAppShelf"
+          @keydown.space.prevent="openVideoAppShelf"
+        >
+          <div class="video-app-mark" aria-hidden="true">
+            <span>影</span>
+          </div>
+          <div class="marketplace-app-copy">
+            <p class="feature-kicker">Video Studio</p>
+            <p class="marketplace-app-title">{{ VIDEO_APP_NAME }}</p>
+            <p class="models-copy">视频生成工作台，沉淀概念、分镜、镜头提示词和生成结果。</p>
+          </div>
+          <div class="marketplace-app-meta">
+            <span class="pill">视频生成</span>
+            <span class="pill pill-neutral">文生 / 图生</span>
+            <span class="pill pill-neutral">镜头规划</span>
+          </div>
+        </article>
+      </section>
+    </template>
+
+    <template v-else-if="ui.marketplace.view === 'videoShelf'">
+      <section class="workflow-library-detail-head writing-shelf-head video-shelf-head">
+        <div class="workflow-library-detail-head-side">
+          <button type="button" class="model-icon-button weekly-back-button" aria-label="返回应用广场" title="返回应用广场" @click="backVideoMarketplace">
+            <GIcon name="return" />
+          </button>
+        </div>
+
+        <div class="workflow-library-detail-head-center">
+          <p class="workflow-library-detail-title">{{ VIDEO_APP_NAME }}</p>
+        </div>
+
+        <div class="workflow-library-detail-head-side workflow-library-detail-head-side-end">
+          <span class="status-pill">{{ videoProjects.length }} 个项目</span>
+          <button type="button" class="model-icon-button" aria-label="新建视频项目" title="新建视频项目" @click="createVideoProject">
+            <GIcon name="add" />
+          </button>
+        </div>
+      </section>
+
+      <section class="writing-shelf-grid video-project-grid" :class="{ 'is-empty': !videoProjects.length }">
+        <p v-if="!videoProjects.length" class="writing-shelf-empty" role="status">暂无视频项目</p>
+        <article
+          v-for="project in videoProjects"
+          :key="project.id"
+          class="writing-book-card video-project-card"
+          :class="`is-${project.coverTone}`"
+          role="button"
+          tabindex="0"
+          :aria-label="`打开${project.title}`"
+          @click="openVideoProject(project.id)"
+          @keydown.enter.prevent="openVideoProject(project.id)"
+          @keydown.space.prevent="openVideoProject(project.id)"
+        >
+          <button
+            type="button"
+            class="shelf-card-delete"
+            aria-label="删除视频项目"
+            @click.stop="deleteVideoProjectFromShelf(project.id)"
+            @keydown.enter.stop
+            @keydown.space.stop
+          >
+            <GIcon name="delete" :size="12" />
+          </button>
+          <div class="video-project-cover" aria-hidden="true">
+            <span>{{ project.title.slice(0, 1) || "影" }}</span>
+          </div>
+          <div class="writing-book-card-main">
+            <div>
+              <p class="writing-book-title">{{ project.title }}</p>
+              <p class="writing-book-meta">{{ getVideoProjectModeLabel(project.mode) }} / {{ project.genre }}</p>
+            </div>
+            <p class="models-copy">{{ truncateText(project.summary || project.visualStyle, 98) }}</p>
+            <div class="writing-book-card-foot">
+              <span class="pill">{{ project.status }}</span>
+              <span class="pill pill-neutral">{{ getVideoProjectAspectRatioLabel(project.aspectRatio) }}</span>
+              <span class="pill pill-neutral">{{ getVideoTotalDuration(project) }} 秒</span>
+            </div>
           </div>
         </article>
       </section>
@@ -197,6 +284,374 @@
             </div>
           </div>
         </article>
+      </section>
+    </template>
+
+    <template v-else-if="ui.marketplace.view === 'videoDetail' && activeVideoProject">
+      <section class="writing-detail-shell video-detail-shell">
+        <header class="writing-detail-head video-detail-head">
+          <button type="button" class="model-icon-button weekly-back-button" aria-label="返回项目架" title="返回项目架" @click="backVideoShelf">
+            <GIcon name="return" />
+          </button>
+
+          <div class="writing-detail-title">
+            <input
+              :value="activeVideoProject.title"
+              class="writing-title-input"
+              aria-label="视频项目名"
+              @input="setVideoProjectTitle($event.target.value)"
+            />
+          </div>
+
+          <div class="model-section-actions">
+            <span class="pill">{{ getVideoProjectModeLabel(activeVideoProject.mode) }}</span>
+            <span class="pill pill-neutral">{{ getVideoProjectAspectRatioLabel(activeVideoProject.aspectRatio) }}</span>
+          </div>
+        </header>
+
+        <section
+          class="writing-detail-layout video-detail-layout"
+          :class="{ 'is-profile-collapsed': ui.marketplace.video.isProfileCollapsed }"
+        >
+          <aside class="writing-detail-rail video-detail-rail" :aria-expanded="ui.marketplace.video.isProfileCollapsed ? 'false' : 'true'">
+            <button
+              type="button"
+              class="model-icon-button writing-profile-toggle"
+              :aria-label="ui.marketplace.video.isProfileCollapsed ? '展开项目信息' : '折叠项目信息'"
+              :title="ui.marketplace.video.isProfileCollapsed ? '展开项目信息' : '折叠项目信息'"
+              @click="toggleVideoProfileRail"
+            >
+              <GIcon :name="ui.marketplace.video.isProfileCollapsed ? 'chevronRight' : 'chevronLeft'" />
+            </button>
+
+            <div v-if="!ui.marketplace.video.isProfileCollapsed" class="writing-rail-content video-rail-content">
+              <div class="video-project-profile">
+                <div class="video-project-cover video-project-cover-large" :class="`is-${activeVideoProject.coverTone}`" aria-hidden="true">
+                  <span>{{ activeVideoProject.title.slice(0, 1) || "影" }}</span>
+                </div>
+
+                <label class="field">
+                  <span class="field-label">模式</span>
+                  <select
+                    :value="activeVideoProject.mode"
+                    class="field-input writing-mini-select"
+                    @change="setVideoProjectMode($event.target.value)"
+                  >
+                    <option value="textToVideo">文生视频</option>
+                    <option value="imageToVideo">图生视频</option>
+                  </select>
+                </label>
+
+                <label class="field">
+                  <span class="field-label">画幅</span>
+                  <select
+                    :value="activeVideoProject.aspectRatio"
+                    class="field-input writing-mini-select"
+                    @change="setVideoProjectAspectRatio($event.target.value)"
+                  >
+                    <option value="16:9">横屏 16:9</option>
+                    <option value="9:16">竖屏 9:16</option>
+                    <option value="1:1">方屏 1:1</option>
+                  </select>
+                </label>
+
+                <label class="field">
+                  <span class="field-label">类型</span>
+                  <input
+                    :value="activeVideoProject.genre"
+                    class="field-input writing-mini-input"
+                    @input="setVideoProjectGenre($event.target.value)"
+                  />
+                </label>
+
+                <label class="field">
+                  <span class="field-label">默认时长</span>
+                  <input
+                    :value="activeVideoProject.durationSeconds"
+                    class="field-input writing-mini-input"
+                    type="number"
+                    min="1"
+                    max="600"
+                    @input="setVideoProjectDurationSeconds($event.target.value)"
+                  />
+                </label>
+              </div>
+
+              <div class="comic-rail-footer">
+                <div class="writing-stat-list">
+                  <span class="pill pill-neutral">更新 {{ formatWritingBookUpdatedAt(activeVideoProject.updatedAt) }}</span>
+                  <span class="pill pill-neutral">{{ activeVideoShots.length }} 镜头</span>
+                  <span class="pill pill-neutral">{{ getVideoTotalDuration(activeVideoProject) }} 秒</span>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="!ui.marketplace.video.isProfileCollapsed" class="writing-profile-actions">
+              <button
+                type="button"
+                class="writing-mini-text-button"
+                :disabled="ui.marketplace.video.isExporting"
+                :title="`导出 ${activeVideoExportFileName}`"
+                @click="openVideoExportDialog"
+              >
+                项目导出
+              </button>
+            </div>
+          </aside>
+
+          <main class="writing-main-stage video-main-stage">
+            <div class="writing-tab-bar" role="tablist" aria-label="视频项目详情模块">
+              <button
+                v-for="tab in VIDEO_APP_TABS"
+                :key="tab.id"
+                type="button"
+                class="writing-tab"
+                :class="{ 'is-active': ui.marketplace.video.activeTab === tab.id }"
+                :aria-selected="ui.marketplace.video.activeTab === tab.id ? 'true' : 'false'"
+                @click="setVideoTab(tab.id)"
+              >
+                <span>{{ tab.kicker }}</span>
+                {{ tab.label }}
+              </button>
+            </div>
+
+            <section class="writing-editor-grid video-editor-grid">
+              <article class="writing-editor-card video-editor-card">
+                <div class="writing-editor-head">
+                  <div>
+                    <p class="feature-kicker">{{ activeVideoTabMeta.kicker }}</p>
+                    <p class="model-section-title">{{ activeVideoTabMeta.fieldLabel }}</p>
+                  </div>
+                  <span class="status-pill">{{ activeVideoProject.status }}</span>
+                </div>
+
+                <div v-if="ui.marketplace.video.activeTab === 'concept'" class="writing-intro-stack">
+                  <label class="field writing-intro-field">
+                    <span class="field-label">主题与用途</span>
+                    <textarea
+                      class="field-textarea writing-editor-textarea writing-intro-textarea"
+                      :value="activeVideoProject.summary"
+                      placeholder="视频主题、主体、受众、发布场景、情绪目标和核心画面。"
+                      @input="setVideoProjectSummary($event.target.value)"
+                    ></textarea>
+                  </label>
+
+                  <label class="field writing-intro-field">
+                    <span class="field-label">视觉与运动风格</span>
+                    <textarea
+                      class="field-textarea writing-editor-textarea writing-intro-textarea is-large"
+                      :value="activeVideoProject.visualStyle"
+                      placeholder="光线、色彩、材质、镜头运动、速度、稳定性、人物/主体约束。"
+                      @input="setVideoProjectVisualStyle($event.target.value)"
+                    ></textarea>
+                  </label>
+
+                  <label class="field writing-intro-field">
+                    <span class="field-label">分镜总规划</span>
+                    <textarea
+                      class="field-textarea writing-editor-textarea writing-intro-textarea is-large"
+                      :value="activeVideoProject.storyboardPlan"
+                      placeholder="按镜头写下开场、推进、高潮和收束，明确每个镜头的主体、运动、景别和转场。"
+                      @input="setVideoProjectStoryboardPlan($event.target.value)"
+                    ></textarea>
+                  </label>
+                </div>
+
+                <div v-else-if="ui.marketplace.video.activeTab === 'storyboard'" class="writing-outline-board">
+                  <div class="writing-chapter-list-panel">
+                    <div class="writing-chapter-panel-head">
+                      <div>
+                        <p class="feature-kicker">Shot List</p>
+                        <p class="writing-panel-title">{{ activeVideoShots.length }} 个镜头</p>
+                      </div>
+                      <button type="button" class="model-icon-button" aria-label="新增视频镜头" title="新增视频镜头" @click="createVideoShot">
+                        <GIcon name="add" />
+                      </button>
+                    </div>
+
+                    <div class="writing-chapter-list">
+                      <button
+                        v-for="(shot, index) in activeVideoShots"
+                        :key="shot.id"
+                        type="button"
+                        class="writing-chapter-list-item"
+                        :class="{
+                          'is-active': activeVideoShot?.id === shot.id,
+                          'is-done': shot.status === 'done',
+                          'is-progress': shot.status === 'inProgress'
+                        }"
+                        @click="selectVideoShot(shot.id)"
+                      >
+                        <span class="writing-chapter-list-title-row">
+                          <span class="writing-chapter-list-title">{{ getVideoShotDisplayTitle(shot, index) }}</span>
+                        </span>
+                        <span class="writing-chapter-list-meta">
+                          <span class="status-pill" :class="getVideoShotStatusClass(shot.status)">
+                            {{ getVideoShotStatusLabel(shot.status) }}
+                          </span>
+                          <span>{{ shot.durationSeconds }} 秒</span>
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div v-if="activeVideoShot" class="writing-chapter-summary-panel">
+                    <div class="writing-chapter-summary-head">
+                      <div>
+                        <p class="feature-kicker">Shot Brief</p>
+                        <p class="writing-panel-title">镜头说明</p>
+                      </div>
+                      <span class="status-pill" :class="getVideoShotStatusClass(activeVideoShot.status)">
+                        {{ getVideoShotStatusLabel(activeVideoShot.status) }}
+                      </span>
+                    </div>
+
+                    <label class="field">
+                      <span class="field-label">镜头标题</span>
+                      <input
+                        :value="activeVideoShot.title"
+                        class="field-input"
+                        @input="setVideoShotTitle(activeVideoShot, $event.target.value)"
+                      />
+                    </label>
+
+                    <label class="field">
+                      <span class="field-label">时长</span>
+                      <input
+                        :value="activeVideoShot.durationSeconds"
+                        class="field-input"
+                        type="number"
+                        min="1"
+                        max="600"
+                        @input="setVideoShotDurationSeconds(activeVideoShot, $event.target.value)"
+                      />
+                    </label>
+
+                    <textarea
+                      class="field-textarea writing-editor-textarea writing-chapter-summary-textarea"
+                      :value="activeVideoShot.summary"
+                      placeholder="主体、动作、镜头运动、景别、光线、情绪和转场。"
+                      @input="setVideoShotSummary(activeVideoShot, $event.target.value)"
+                    ></textarea>
+
+                    <div class="model-section-actions writing-chapter-summary-actions">
+                      <button type="button" class="model-action-secondary" @click="goVideoShot(activeVideoShot.id)">
+                        进入生成
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div v-else class="writing-chapter-workbench">
+                  <div v-if="activeVideoShot" class="writing-chapter-commandbar">
+                    <div class="writing-chapter-picker-row">
+                      <div class="writing-chapter-picker">
+                        <span class="field-label">当前镜头</span>
+                        <div class="writing-chapter-dropdown" :class="{ 'is-open': ui.marketplace.video.isShotPickerOpen }">
+                          <button
+                            type="button"
+                            class="writing-chapter-dropdown-trigger"
+                            :aria-expanded="ui.marketplace.video.isShotPickerOpen ? 'true' : 'false'"
+                            aria-haspopup="listbox"
+                            @click="toggleVideoShotPicker"
+                          >
+                            <span>{{ getVideoShotDisplayTitle(activeVideoShot, activeVideoShotIndex) }}</span>
+                            <GIcon name="chevronDown" />
+                          </button>
+
+                          <div
+                            v-if="ui.marketplace.video.isShotPickerOpen"
+                            ref="videoShotDropdownMenuRef"
+                            class="writing-chapter-dropdown-menu"
+                            role="listbox"
+                          >
+                            <button
+                              v-for="entry in filteredVideoShotEntries"
+                              :key="entry.shot.id"
+                              type="button"
+                              class="writing-chapter-dropdown-item"
+                              :class="{ 'is-active': activeVideoShot?.id === entry.shot.id }"
+                              role="option"
+                              :aria-selected="activeVideoShot?.id === entry.shot.id ? 'true' : 'false'"
+                              @click="selectVideoShotFromPicker(entry.shot.id)"
+                            >
+                              <span>{{ entry.title }}</span>
+                              <small>
+                                {{ getVideoShotStatusLabel(entry.shot.status) }} / {{ entry.shot.durationSeconds }} 秒
+                              </small>
+                            </button>
+                            <p v-if="!filteredVideoShotEntries.length" class="writing-chapter-dropdown-empty">没有匹配镜头</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <label class="field writing-chapter-search-field">
+                        <span class="field-label">搜索</span>
+                        <input
+                          v-model="ui.marketplace.video.shotSearchQuery"
+                          class="field-input writing-chapter-search-input"
+                          placeholder="镜头名"
+                          @focus="setVideoShotPickerOpen(true)"
+                        />
+                      </label>
+                    </div>
+
+                    <span class="status-pill writing-chapter-status-pill" :class="getVideoShotStatusClass(activeVideoShot.status)">
+                      {{ getVideoShotStatusLabel(activeVideoShot.status) }}
+                    </span>
+
+                    <button type="button" class="model-action writing-chapter-submit" @click="submitVideoShot">
+                      提交
+                    </button>
+                  </div>
+
+                  <div v-if="activeVideoShot" class="writing-chapter-brief-strip">
+                    <strong>{{ getVideoShotDisplayTitle(activeVideoShot, activeVideoShotIndex) }}</strong>
+                    <p>{{ activeVideoShot.summary || "这个镜头还没有说明。" }}</p>
+                  </div>
+
+                  <label v-if="activeVideoShot" class="field writing-intro-field">
+                    <span class="field-label">参考素材 / 首帧说明</span>
+                    <textarea
+                      class="field-textarea writing-editor-textarea video-reference-textarea"
+                      :value="activeVideoShot.reference"
+                      placeholder="可写素材路径、首帧图描述、参考图说明或连续性约束。"
+                      @input="setVideoShotReference(activeVideoShot, $event.target.value)"
+                    ></textarea>
+                  </label>
+
+                  <label v-if="activeVideoShot" class="field writing-intro-field">
+                    <span class="field-label">正向提示词</span>
+                    <textarea
+                      class="field-textarea writing-editor-textarea video-prompt-textarea"
+                      :value="activeVideoShot.prompt"
+                      placeholder="主体、动作、镜头运动、光线、风格、画幅、时长和稳定性要求。"
+                      @input="setVideoShotPrompt(activeVideoShot, $event.target.value)"
+                    ></textarea>
+                  </label>
+
+                  <label v-if="activeVideoShot" class="field writing-intro-field">
+                    <span class="field-label">反向提示词</span>
+                    <textarea
+                      class="field-textarea writing-editor-textarea video-negative-textarea"
+                      :value="activeVideoShot.negativePrompt"
+                      placeholder="低清晰度、畸形、闪烁、水印、字幕、画面断裂、镜头失控等。"
+                      @input="setVideoShotNegativePrompt(activeVideoShot, $event.target.value)"
+                    ></textarea>
+                  </label>
+
+                  <textarea
+                    v-if="activeVideoShot"
+                    class="field-textarea writing-editor-textarea writing-chapter-draft-textarea"
+                    :value="activeVideoShot.output"
+                    placeholder="这里沉淀生成结果、视频链接、参数记录或复跑笔记。"
+                    @input="setVideoShotOutput(activeVideoShot, $event.target.value)"
+                  ></textarea>
+                </div>
+              </article>
+            </section>
+          </main>
+        </section>
       </section>
     </template>
 
@@ -891,6 +1346,98 @@
 
 <Transition name="gordon-dialog-fade">
   <div
+    v-if="ui.marketplace.video.isExportDialogOpen"
+    class="gordon-dialog-backdrop writing-export-backdrop"
+    @click.self="closeVideoExportDialog"
+  >
+    <section class="gordon-dialog writing-export-dialog" role="dialog" aria-modal="true" aria-label="视频项目导出">
+      <div class="gordon-dialog-head">
+        <div class="gordon-dialog-mark writing-export-mark video-export-mark" aria-hidden="true">影</div>
+
+        <div>
+          <p class="gordon-dialog-kicker">Export</p>
+          <h2 class="gordon-dialog-title">项目导出</h2>
+        </div>
+      </div>
+
+      <p class="gordon-dialog-message">
+        导出当前视频项目的项目设定、分镜规划、镜头提示词和生成结果，文件名固定为 {{ activeVideoExportFileName }}。
+      </p>
+
+      <div class="writing-export-panel">
+        <div class="writing-export-field">
+          <span class="gordon-dialog-field-label">文件类型</span>
+          <div class="writing-export-format-row" role="radiogroup" aria-label="导出文件类型">
+            <button
+              type="button"
+              class="writing-export-format-button is-active"
+              aria-checked="true"
+              role="radio"
+              :disabled="ui.marketplace.video.isExporting"
+            >
+              Markdown
+            </button>
+          </div>
+        </div>
+
+        <div class="writing-export-field">
+          <span class="gordon-dialog-field-label">输出目录</span>
+          <div class="writing-export-directory-row">
+            <input
+              class="gordon-dialog-input writing-export-directory-input"
+              :value="ui.marketplace.video.exportDirectory || '尚未选择目录'"
+              readonly
+            />
+            <button
+              type="button"
+              class="gordon-dialog-button gordon-dialog-button-secondary"
+              :disabled="ui.marketplace.video.isExporting"
+              @click="selectVideoExportDirectory"
+            >
+              选择目录
+            </button>
+          </div>
+        </div>
+
+        <div class="writing-export-summary">
+          <span>镜头数量：{{ activeVideoShots.length }}</span>
+          <span>导出文件：{{ activeVideoExportFileName }}</span>
+        </div>
+      </div>
+
+      <p
+        v-if="ui.marketplace.video.exportFeedback"
+        class="writing-export-feedback"
+        :class="`is-${ui.marketplace.video.exportFeedbackTone}`"
+      >
+        {{ ui.marketplace.video.exportFeedback }}
+      </p>
+
+      <div class="gordon-dialog-actions">
+        <button
+          type="button"
+          class="gordon-dialog-button gordon-dialog-button-secondary"
+          :disabled="ui.marketplace.video.isExporting"
+          @click="closeVideoExportDialog"
+        >
+          取消
+        </button>
+
+        <button
+          type="button"
+          class="gordon-dialog-button gordon-dialog-button-primary"
+          :disabled="!canExportActiveVideoProject"
+          @click="exportActiveVideoProject"
+        >
+          {{ ui.marketplace.video.isExporting ? "保存中" : "确认" }}
+        </button>
+      </div>
+    </section>
+  </div>
+</Transition>
+
+<Transition name="gordon-dialog-fade">
+  <div
     v-if="ui.marketplace.comic.isExportDialogOpen"
     class="gordon-dialog-backdrop writing-export-backdrop"
     @click.self="closeComicExportDialog"
@@ -1084,7 +1631,9 @@ import WritingAiDrawer from "../writing/WritingAiDrawer.vue";
 import {
   COMIC_APP_NAME,
   COMIC_APP_TABS,
-  MARKETPLACE_APP_COUNT
+  MARKETPLACE_APP_COUNT,
+  VIDEO_APP_NAME,
+  VIDEO_APP_TABS
 } from "./marketplaceConfig.js";
 import {
   WRITING_APP_NAME,
@@ -1096,8 +1645,8 @@ const props = defineProps({
   context: { type: Object, required: true }
 });
 
-const { comicActions, refs, truncateText, ui, writingActions, writingAiActions } = props.context;
-const { comicChapterDropdownMenuRef, writingChapterDropdownMenuRef } = refs;
+const { comicActions, refs, truncateText, ui, videoActions, writingActions, writingAiActions } = props.context;
+const { comicChapterDropdownMenuRef, videoShotDropdownMenuRef, writingChapterDropdownMenuRef } = refs;
 
 const {
   activeComicChapter,
@@ -1146,6 +1695,58 @@ const {
   toggleComicChapterPicker,
   toggleComicProfileRail
 } = comicActions;
+
+const {
+  activeVideoExportFileName,
+  activeVideoProject,
+  activeVideoShot,
+  activeVideoShotIndex,
+  activeVideoShots,
+  activeVideoTabMeta,
+  backVideoMarketplace,
+  backVideoShelf,
+  canExportActiveVideoProject,
+  closeVideoExportDialog,
+  createVideoProject,
+  createVideoShot,
+  deleteVideoProjectFromShelf,
+  exportActiveVideoProject,
+  filteredVideoShotEntries,
+  getVideoProjectAspectRatioLabel,
+  getVideoProjectModeLabel,
+  getVideoShotDisplayTitle,
+  getVideoShotStatusClass,
+  getVideoShotStatusLabel,
+  getVideoTotalDuration,
+  goVideoShot,
+  openVideoAppShelf,
+  openVideoExportDialog,
+  openVideoProject,
+  selectVideoExportDirectory,
+  selectVideoShot,
+  selectVideoShotFromPicker,
+  setVideoProjectAspectRatio,
+  setVideoProjectDurationSeconds,
+  setVideoProjectGenre,
+  setVideoProjectMode,
+  setVideoProjectStoryboardPlan,
+  setVideoProjectSummary,
+  setVideoProjectTitle,
+  setVideoProjectVisualStyle,
+  setVideoShotDurationSeconds,
+  setVideoShotNegativePrompt,
+  setVideoShotOutput,
+  setVideoShotPickerOpen,
+  setVideoShotPrompt,
+  setVideoShotReference,
+  setVideoShotSummary,
+  setVideoShotTitle,
+  setVideoTab,
+  submitVideoShot,
+  toggleVideoProfileRail,
+  toggleVideoShotPicker,
+  videoProjects
+} = videoActions;
 
 const {
   activeWritingBook,

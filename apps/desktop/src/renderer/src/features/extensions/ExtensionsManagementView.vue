@@ -13,7 +13,7 @@
         <p class="models-title">能力拓展</p>
       </div>
 
-                        <div class="extensions-list-toolbar">
+      <div class="extensions-list-toolbar">
         <div class="weekly-editor-segmented extensions-list-tabs" role="tablist" aria-label="能力拓展配置分类">
           <button
             type="button"
@@ -42,6 +42,15 @@
           >
             MCP 配置
           </button>
+          <button
+            type="button"
+            class="weekly-editor-tab"
+            :class="{ 'is-active': ui.extensions.listTab === 'tool' }"
+            :aria-selected="ui.extensions.listTab === 'tool' ? 'true' : 'false'"
+            @click="ui.extensions.listTab = 'tool'"
+          >
+            TOOL 配置
+          </button>
         </div>
       </div>
 
@@ -49,6 +58,7 @@
         <span class="status-pill">{{ workbench.agentProfiles.filter((profile) => profile.enabled).length }} 个 Agent 已启用</span>
         <span class="pill pill-neutral">{{ workbench.skillDefinitions.filter((skill) => skill.enabled).length }} 个 Skill 已启用</span>
         <span class="pill pill-neutral">{{ workbench.mcpServers.filter((server) => server.enabled).length }} 个 MCP 已启用</span>
+        <span class="pill pill-neutral">{{ workbench.toolConfigs.filter((config) => config.enabled).length }} 个 TOOL 已启用</span>
       </div>
     </section>
 
@@ -229,6 +239,83 @@
           </div>
         </section>
 
+        <section v-else-if="ui.extensions.listTab === 'tool'" class="model-section extension-section">
+          <div class="model-section-head">
+            <div>
+              <p class="feature-kicker">Tool Configs</p>
+              <p class="model-section-title">TOOL 配置</p>
+            </div>
+
+            <div class="model-section-actions">
+              <span class="pill pill-neutral">{{ workbench.toolConfigs.length }} 个 TOOL</span>
+            </div>
+          </div>
+
+          <div class="model-section-body model-configured-list extension-configured-list">
+            <div v-if="!workbench.toolConfigs.length" class="model-empty">
+              <p class="model-empty-copy">当前还没有内置 TOOL 配置。</p>
+            </div>
+
+            <article v-for="config in workbench.toolConfigs" :key="config.id" class="model-config-card extension-config-card">
+              <div class="model-config-head">
+                <div class="model-config-main">
+                  <div class="provider-avatar extension-avatar extension-avatar-tool" aria-hidden="true">
+                    {{ getExtensionInitials(config.name) }}
+                  </div>
+
+                  <div>
+                    <p class="model-card-title"><code class="tool-code-name">{{ config.name }}</code></p>
+                    <p class="model-card-meta">
+                      {{ config.title }} / 默认
+                      {{
+                        config.providers.find((provider) => provider.provider === config.defaultProvider)?.label ??
+                        config.defaultProvider ??
+                        "未选择"
+                      }}
+                    </p>
+                  </div>
+                </div>
+
+                <div class="model-card-actions model-card-actions-inline">
+                  <button
+                    type="button"
+                    class="model-icon-button"
+                    :aria-label="`编辑 ${config.name}`"
+                    title="编辑"
+                    @click="openExtensionEditor('tool', config)"
+                  >
+                    <GIcon name="edit" />
+                  </button>
+
+                  <button
+                    type="button"
+                    class="model-status-toggle"
+                    :class="{ 'is-active': config.enabled }"
+                    :aria-pressed="config.enabled ? 'true' : 'false'"
+                    @click="handleToolConfigStatusToggle(config.id)"
+                  >
+                    {{ config.enabled ? "已启用" : "未启用" }}
+                  </button>
+                </div>
+              </div>
+
+              <p v-if="config.description" class="model-card-copy">{{ config.description }}</p>
+
+              <div class="extension-tag-row">
+                <span class="pill pill-neutral">{{ config.providers.filter((provider) => provider.enabled).length }} 个供应商已启用</span>
+                <span
+                  v-for="provider in config.providers"
+                  :key="provider.id"
+                  class="pill"
+                  :class="{ 'pill-neutral': !provider.enabled }"
+                >
+                  {{ provider.label || provider.provider }}
+                </span>
+              </div>
+            </article>
+          </div>
+        </section>
+
         <section v-else class="model-section extension-section">
           <div class="model-section-head">
             <div>
@@ -342,7 +429,9 @@
                         ? "Skill"
                         : ui.extensions.editor.kind === "skill-import"
                           ? "Skill 导入"
-                          : "MCP"
+                          : ui.extensions.editor.kind === "tool"
+                            ? "TOOL"
+                            : "MCP"
                   }}
                 </span>
               </div>
@@ -508,6 +597,115 @@
                 </label>
               </template>
 
+              <template v-else-if="ui.extensions.editor.kind === 'tool'">
+                <label class="field">
+                  <span class="field-label">工具名称</span>
+                  <input v-model="ui.extensions.editor.values.name" class="field-input tool-name-input" readonly required />
+                </label>
+
+                <label class="field">
+                  <span class="field-label">显示名称</span>
+                  <input v-model="ui.extensions.editor.values.title" class="field-input" placeholder="例如：图片生成" required />
+                </label>
+
+                <label class="extension-selection-item field-full tool-enable-toggle">
+                  <input v-model="ui.extensions.editor.values.enabled" type="checkbox" />
+                  <span>启用这个 TOOL</span>
+                </label>
+
+                <label class="field field-full">
+                  <span class="field-label">默认供应商</span>
+                  <div class="field-select-control">
+                    <select v-model="ui.extensions.editor.values.defaultProvider" class="field-input field-select">
+                      <option
+                        v-for="provider in ui.extensions.editor.values.providers"
+                        :key="provider.id"
+                        :value="provider.provider"
+                      >
+                        {{ provider.label || provider.provider }}{{ provider.enabled ? "" : " / 未启用" }}
+                      </option>
+                    </select>
+                    <GIcon name="chevronDown" />
+                  </div>
+                </label>
+
+                <label class="field field-full">
+                  <span class="field-label">说明</span>
+                  <textarea
+                    v-model="ui.extensions.editor.values.description"
+                    class="field-textarea"
+                    placeholder="描述这个 TOOL 的调用场景"
+                  ></textarea>
+                </label>
+
+                <div class="field field-full">
+                  <span class="field-label">供应商</span>
+                  <div class="tool-provider-panel">
+                    <div class="weekly-editor-segmented tool-provider-tabs" role="tablist" aria-label="TOOL 供应商">
+                      <button
+                        v-for="provider in ui.extensions.editor.values.providers"
+                        :key="provider.id"
+                        type="button"
+                        class="weekly-editor-tab tool-provider-tab"
+                        :class="{ 'is-active': ui.extensions.editor.values.activeProvider === provider.provider }"
+                        :aria-selected="ui.extensions.editor.values.activeProvider === provider.provider ? 'true' : 'false'"
+                        @click="ui.extensions.editor.values.activeProvider = provider.provider"
+                      >
+                        <span>{{ provider.label || provider.provider }}</span>
+                        <span class="tool-provider-tab-state">{{ provider.enabled ? "启用" : "未启用" }}</span>
+                      </button>
+                    </div>
+
+                    <article
+                      v-for="provider in ui.extensions.editor.values.providers"
+                      :key="provider.id"
+                      class="tool-provider-card"
+                      :class="{ 'is-active': provider.enabled }"
+                      v-show="ui.extensions.editor.values.activeProvider === provider.provider"
+                    >
+                      <div class="tool-provider-head">
+                        <label class="extension-selection-item tool-provider-toggle">
+                          <input v-model="provider.enabled" type="checkbox" />
+                          <span>{{ provider.label || provider.provider }}</span>
+                        </label>
+                        <span class="pill pill-neutral">{{ provider.provider }}</span>
+                      </div>
+
+                      <div class="tool-provider-grid">
+                        <label class="field">
+                          <span class="field-label">供应商名称</span>
+                          <input v-model="provider.label" class="field-input" placeholder="例如：OpenAI" />
+                        </label>
+
+                        <label class="field">
+                          <span class="field-label">模型 / 能力 ID</span>
+                          <input v-model="provider.model" class="field-input" placeholder="例如：gpt-image" />
+                        </label>
+
+                        <label class="field field-full">
+                          <span class="field-label">API Key</span>
+                          <input v-model="provider.apiKey" class="field-input" type="password" placeholder="sk-..." />
+                        </label>
+
+                        <label class="field field-full">
+                          <span class="field-label">Base URL</span>
+                          <input v-model="provider.baseUrl" class="field-input" placeholder="可选，自定义网关或供应商地址" />
+                        </label>
+
+                        <label class="field field-full">
+                          <span class="field-label">备注</span>
+                          <textarea
+                            v-model="provider.notes"
+                            class="field-textarea tool-provider-notes"
+                            placeholder="可选，记录额度、区域、账号或调用偏好"
+                          ></textarea>
+                        </label>
+                      </div>
+                    </article>
+                  </div>
+                </div>
+              </template>
+
               <template v-else>
                 <label class="field">
                   <span class="field-label">服务名称</span>
@@ -578,7 +776,9 @@
                         ? "保存 Skill"
                         : ui.extensions.editor.kind === "skill-import"
                           ? "加载 Skill"
-                          : "保存 MCP"
+                          : ui.extensions.editor.kind === "tool"
+                            ? "保存"
+                            : "保存 MCP"
                   }}
                 </button>
               </div>
@@ -831,6 +1031,7 @@ defineProps({
   handleRunnerSubmit: { type: Function, required: true },
   handleSkillDelete: { type: Function, required: true },
   handleSkillStatusToggle: { type: Function, required: true },
+  handleToolConfigStatusToggle: { type: Function, required: true },
   isBuiltinWorkbenchItem: { type: Function, required: true },
   openAgentRunner: { type: Function, required: true },
   openExtensionEditor: { type: Function, required: true },

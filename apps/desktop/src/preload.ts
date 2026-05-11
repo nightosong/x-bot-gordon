@@ -18,6 +18,10 @@ import type {
   McpToolDefinition,
   ModelProfile,
   ModelTextRequest,
+  VideoProject,
+  VideoProjectExportRequest,
+  VideoProjectExportResult,
+  ToolConfig,
   WritingBookExportRequest,
   WritingBookExportResult,
   WritingBookSaveOptions,
@@ -123,6 +127,11 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
   listMcpServerTools: (serverId: string): Promise<McpToolDefinition[]> =>
     ipcRenderer.invoke("gordon:mcp-servers:list-tools", serverId),
   callMcpServerTool: (request: McpToolCallRequest) => ipcRenderer.invoke("gordon:mcp-servers:call-tool", request),
+  listToolConfigs: (): Promise<ToolConfig[]> => ipcRenderer.invoke("gordon:tool-configs:list"),
+  upsertToolConfig: (config: ToolConfig): Promise<ToolConfig[]> =>
+    ipcRenderer.invoke("gordon:tool-configs:upsert", toPlainIpcData(config)),
+  toggleToolConfigStatus: (configId: string): Promise<ToolConfig[]> =>
+    ipcRenderer.invoke("gordon:tool-configs:toggle-status", configId),
   listAgentProfiles: () => ipcRenderer.invoke("gordon:agent-profiles:list"),
   upsertAgentProfile: (profile: AgentProfile) => ipcRenderer.invoke("gordon:agent-profiles:upsert", profile),
   toggleAgentProfileStatus: (profileId: string) => ipcRenderer.invoke("gordon:agent-profiles:toggle-status", profileId),
@@ -183,6 +192,15 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
     ipcRenderer.invoke("gordon:comic-projects:select-export-directory"),
   exportComicProject: (request: ComicProjectExportRequest): Promise<ComicProjectExportResult> =>
     ipcRenderer.invoke("gordon:comic-projects:export", toPlainIpcData(request)),
+  listVideoProjects: (): Promise<VideoProject[]> => ipcRenderer.invoke("gordon:video-projects:list"),
+  upsertVideoProject: (project: VideoProject): Promise<VideoProject[]> =>
+    ipcRenderer.invoke("gordon:video-projects:upsert", toPlainIpcData(project)),
+  deleteVideoProject: (projectId: string): Promise<VideoProject[]> =>
+    ipcRenderer.invoke("gordon:video-projects:delete", projectId),
+  selectVideoProjectExportDirectory: (): Promise<string | null> =>
+    ipcRenderer.invoke("gordon:video-projects:select-export-directory"),
+  exportVideoProject: (request: VideoProjectExportRequest): Promise<VideoProjectExportResult> =>
+    ipcRenderer.invoke("gordon:video-projects:export", toPlainIpcData(request)),
   listWritingBooks: (): Promise<WritingBook[]> => ipcRenderer.invoke("gordon:writing-books:list"),
   saveWritingBook: (book: WritingBook, options?: WritingBookSaveOptions): Promise<WritingBook[]> =>
     ipcRenderer.invoke("gordon:writing-books:save", toPlainIpcData(book), toPlainIpcData(options ?? {})),

@@ -13,6 +13,7 @@ import {
   deleteComicProject,
   deleteCommandWorkshopSession,
   deleteMcpServer,
+  deleteVideoProject,
   activateModelProfile,
   deleteModelProfile,
   deleteSkillDefinition,
@@ -25,7 +26,9 @@ import {
   listModelBalanceHistory,
   listMcpServers,
   listSkillDefinitions,
+  listToolConfigs,
   listWeeklyProgress,
+  listVideoProjects,
   listWritingBooks,
   listModelSettings,
   saveWritingBook,
@@ -34,18 +37,23 @@ import {
   toggleMcpServerStatus,
   toggleModelProfileStatus,
   toggleSkillDefinitionStatus,
+  toggleToolConfigStatus,
   upsertAgentProfile,
   upsertCommandWorkshopSession,
   upsertComicProject,
+  upsertVideoProject,
   upsertWorkflowLibraryItem,
   upsertMcpServer,
   upsertModelProfile,
-  upsertSkillDefinition
+  upsertSkillDefinition,
+  upsertToolConfig
 } from "../../../packages/workbench/src/index.js";
 import type {
   AgentRunProgressEvent,
   ComicProjectExportFormat,
   ComicProjectExportRequest,
+  VideoProjectExportFormat,
+  VideoProjectExportRequest,
   WritingBookExportFormat,
   WritingBookExportRequest
 } from "../../../packages/shared/src/index.js";
@@ -162,6 +170,7 @@ const WORKFLOW_RUN_CANCELLED_MESSAGE = "执行已中断";
 const activeWorkflowRuns = new Map<string, WorkflowActiveRunContext>();
 const WRITING_BOOK_EXPORT_EXTENSIONS = new Set<WritingBookExportFormat>(["txt", "md"]);
 const COMIC_PROJECT_EXPORT_EXTENSIONS = new Set<ComicProjectExportFormat>(["md"]);
+const VIDEO_PROJECT_EXPORT_EXTENSIONS = new Set<VideoProjectExportFormat>(["md"]);
 
 class WorkflowRunCancelledError extends Error {
   constructor() {
@@ -329,6 +338,58 @@ function resolveComicProjectExportPath(request: ComicProjectExportRequest): {
   const format = normalizeComicProjectExportFormat(request?.format);
   const resolvedDirectoryPath = path.resolve(directoryPath);
   const fileName = sanitizeComicProjectExportFileName(request?.fileName, format);
+  const filePath = path.join(resolvedDirectoryPath, fileName);
+  const relativePath = path.relative(resolvedDirectoryPath, filePath);
+
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    throw new Error("导出路径不合法");
+  }
+
+  return {
+    directoryPath: resolvedDirectoryPath,
+    fileName,
+    filePath,
+    format,
+    content: content.endsWith("\n") ? content : `${content}\n`
+  };
+}
+
+function normalizeVideoProjectExportFormat(value: unknown): VideoProjectExportFormat {
+  const format = String(value ?? "").trim().toLowerCase();
+  return VIDEO_PROJECT_EXPORT_EXTENSIONS.has(format as VideoProjectExportFormat) ? (format as VideoProjectExportFormat) : "md";
+}
+
+function sanitizeVideoProjectExportFileName(value: unknown, format: VideoProjectExportFormat): string {
+  const baseName = String(value ?? "")
+    .replace(/\.[^.]+$/, "")
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
+    .replace(/\s+/g, " ")
+    .replace(/[. ]+$/g, "")
+    .trim();
+  return `${baseName || "未命名视频项目"}.${format}`;
+}
+
+function resolveVideoProjectExportPath(request: VideoProjectExportRequest): {
+  directoryPath: string;
+  fileName: string;
+  filePath: string;
+  format: VideoProjectExportFormat;
+  content: string;
+} {
+  const directoryPath = String(request?.directoryPath ?? "").trim();
+  const content = String(request?.content ?? "");
+
+  if (!directoryPath) {
+    throw new Error("请选择输出目录");
+  }
+
+  if (!content.trim()) {
+    throw new Error("没有可导出的视频项目内容");
+  }
+
+  const format = normalizeVideoProjectExportFormat(request?.format);
+  const resolvedDirectoryPath = path.resolve(directoryPath);
+  const fileName = sanitizeVideoProjectExportFileName(request?.fileName, format);
   const filePath = path.join(resolvedDirectoryPath, fileName);
   const relativePath = path.relative(resolvedDirectoryPath, filePath);
 
@@ -1481,6 +1542,9 @@ app.whenReady().then(async () => {
   ipcMain.handle("gordon:mcp-servers:delete", async (_event, serverId: string) => deleteMcpServer(serverId));
   ipcMain.handle("gordon:mcp-servers:list-tools", async (_event, serverId: string) => listToolsFromMcpServer(serverId));
   ipcMain.handle("gordon:mcp-servers:call-tool", async (_event, request) => callToolOnMcpServer(request));
+  ipcMain.handle("gordon:tool-configs:list", async () => listToolConfigs());
+  ipcMain.handle("gordon:tool-configs:upsert", async (_event, config) => upsertToolConfig(config));
+  ipcMain.handle("gordon:tool-configs:toggle-status", async (_event, configId: string) => toggleToolConfigStatus(configId));
   ipcMain.handle("gordon:agent-profiles:list", async () => listAgentProfiles());
   ipcMain.handle("gordon:agent-profiles:upsert", async (_event, profile) => upsertAgentProfile(profile));
   ipcMain.handle("gordon:agent-profiles:toggle-status", async (_event, profileId: string) =>
@@ -1641,6 +1705,40 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("gordon:comic-projects:export", async (_event, request: ComicProjectExportRequest) => {
     const exportTarget = resolveComicProjectExportPath(request);
+
+    await mkdir(exportTarget.directoryPath, { recursive: true });
+    await writeFile(exportTarget.filePath, exportTarget.content, "utf8");
+
+    return {
+      filePath: exportTarget.filePath,
+      fileName: exportTarget.fileName,
+      format: exportTarget.format,
+      writtenBytes: Buffer.byteLength(exportTarget.content, "utf8")
+    };
+  });
+  ipcMain.handle("gordon:video-projects:list", async () => listVideoProjects());
+  ipcMain.handle("gordon:video-projects:upsert", async (_event, project) => upsertVideoProject(project));
+  ipcMain.handle("gordon:video-projects:delete", async (_event, projectId: string) =>
+    deleteVideoProject(projectId, (targetPath) => shell.trashItem(targetPath))
+  );
+  ipcMain.handle("gordon:video-projects:select-export-directory", async (event) => {
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+    const openDialogOptions = {
+      title: "选择流光绘影导出目录",
+      properties: ["openDirectory", "createDirectory"]
+    } satisfies Electron.OpenDialogOptions;
+    const result = ownerWindow
+      ? await dialog.showOpenDialog(ownerWindow, openDialogOptions)
+      : await dialog.showOpenDialog(openDialogOptions);
+
+    if (result.canceled || !result.filePaths.length) {
+      return null;
+    }
+
+    return result.filePaths[0];
+  });
+  ipcMain.handle("gordon:video-projects:export", async (_event, request: VideoProjectExportRequest) => {
+    const exportTarget = resolveVideoProjectExportPath(request);
 
     await mkdir(exportTarget.directoryPath, { recursive: true });
     await writeFile(exportTarget.filePath, exportTarget.content, "utf8");

@@ -12,6 +12,20 @@ function getErrorMessage(error) {
   return error instanceof Error ? error.message : "未知错误";
 }
 
+function cloneToolProviderEditorValues(providers = []) {
+  return providers.map((provider) => ({
+    id: provider?.id ?? `tool_provider_${Date.now()}_${provider?.provider ?? "provider"}`,
+    provider: provider?.provider ?? "",
+    label: provider?.label ?? provider?.provider ?? "",
+    model: provider?.model ?? "",
+    apiKey: provider?.apiKey ?? "",
+    baseUrl: provider?.baseUrl ?? "",
+    enabled: Boolean(provider?.enabled),
+    notes: provider?.notes ?? "",
+    updatedAt: provider?.updatedAt ?? new Date().toISOString()
+  }));
+}
+
 export function createExtensionEditorState(kind = "agent", entry = null) {
   if (kind === "skill") {
     return {
@@ -57,6 +71,23 @@ export function createExtensionEditorState(kind = "agent", entry = null) {
     };
   }
 
+  if (kind === "tool") {
+    return {
+      kind,
+      mode: entry ? "edit" : "create",
+      entryId: entry?.id ?? null,
+      values: {
+        name: entry?.name ?? "image_gen",
+        title: entry?.title ?? "",
+        description: entry?.description ?? "",
+        defaultProvider: entry?.defaultProvider ?? "",
+        activeProvider: entry?.defaultProvider ?? entry?.providers?.[0]?.provider ?? "",
+        enabled: Boolean(entry?.enabled),
+        providers: cloneToolProviderEditorValues(entry?.providers ?? [])
+      }
+    };
+  }
+
   return {
     kind: "agent",
     mode: entry ? "edit" : "create",
@@ -95,6 +126,10 @@ export function getExtensionListTab(kind = "agent") {
 
   if (kind === "mcp") {
     return "mcp";
+  }
+
+  if (kind === "tool") {
+    return "tool";
   }
 
   return "agent";
@@ -168,7 +203,9 @@ export function createExtensionsActions({
   function closeExtensionPanels() {
     const currentTab = ui.extensions.listTab;
     ui.extensions.view = "list";
-    ui.extensions.editor = createExtensionEditorState(currentTab === "skill" ? "skill" : currentTab === "mcp" ? "mcp" : "agent");
+    ui.extensions.editor = createExtensionEditorState(
+      currentTab === "skill" ? "skill" : currentTab === "mcp" ? "mcp" : currentTab === "tool" ? "tool" : "agent"
+    );
     ui.extensions.runner = createAgentRunnerState();
   }
 
@@ -187,6 +224,8 @@ export function createExtensionsActions({
         return "从 GitHub 加载 Skill";
       case "mcp":
         return ui.extensions.editor.mode === "edit" ? "编辑 MCP Server" : "新增 MCP Server";
+      case "tool":
+        return ui.extensions.editor.mode === "edit" ? "编辑 TOOL配置" : "新增 TOOL配置";
       default:
         return "能力编辑器";
     }
@@ -233,6 +272,42 @@ export function createExtensionsActions({
           repo: ui.extensions.editor.values.repo.trim(),
           ref: ui.extensions.editor.values.ref.trim() || "main",
           path: ui.extensions.editor.values.path.trim()
+        });
+      } else if (ui.extensions.editor.kind === "tool") {
+        const existing = workbench.toolConfigs.find((entry) => entry.id === ui.extensions.editor.entryId);
+        const providers = cloneToolProviderEditorValues(ui.extensions.editor.values.providers).map((provider) => ({
+          ...provider,
+          label: provider.label.trim() || provider.provider,
+          model: provider.model.trim(),
+          apiKey: provider.apiKey.trim(),
+          baseUrl: provider.baseUrl.trim(),
+          notes: provider.notes.trim(),
+          updatedAt: new Date().toISOString()
+        }));
+        const enabledProviders = providers.filter((provider) => provider.enabled);
+        const missingApiKeyProvider = enabledProviders.find((provider) => !provider.apiKey);
+
+        if (ui.extensions.editor.values.enabled && !enabledProviders.length) {
+          setStatus("启用 TOOL 前，请至少启用一个供应商。", "warning");
+          return;
+        }
+
+        if (ui.extensions.editor.values.enabled && missingApiKeyProvider) {
+          setStatus(`${missingApiKeyProvider.label || missingApiKeyProvider.provider} 已启用，但还没有填写 API Key。`, "warning");
+          return;
+        }
+
+        await desktopApi.upsertToolConfig({
+          id: ui.extensions.editor.entryId ?? existing?.id ?? `tool_${ui.extensions.editor.values.name}`,
+          name: ui.extensions.editor.values.name,
+          title: ui.extensions.editor.values.title.trim(),
+          description: ui.extensions.editor.values.description.trim(),
+          defaultProvider: enabledProviders.some((provider) => provider.provider === ui.extensions.editor.values.defaultProvider)
+            ? ui.extensions.editor.values.defaultProvider
+            : enabledProviders[0]?.provider ?? providers[0]?.provider ?? null,
+          providers,
+          enabled: Boolean(ui.extensions.editor.values.enabled),
+          updatedAt: new Date().toISOString()
         });
       } else {
         const existing = workbench.mcpServers.find((entry) => entry.id === ui.extensions.editor.entryId);
@@ -312,6 +387,35 @@ export function createExtensionsActions({
     } catch (error) {
       console.error("Failed to toggle mcp status", error);
       setStatus(`MCP 状态更新失败：${getErrorMessage(error)}`, "danger");
+    }
+  }
+
+  async function handleToolConfigStatusToggle(configId) {
+    if (!desktopApi) {
+      return;
+    }
+
+    const config = workbench.toolConfigs.find((entry) => entry.id === configId);
+    const enabledProviders = (config?.providers ?? []).filter((provider) => provider.enabled);
+    const missingApiKeyProvider = enabledProviders.find((provider) => !String(provider.apiKey ?? "").trim());
+
+    if (config && !config.enabled && !enabledProviders.length) {
+      setStatus("启用 TOOL 前，请先进入编辑页启用至少一个供应商。", "warning");
+      return;
+    }
+
+    if (config && !config.enabled && missingApiKeyProvider) {
+      setStatus(`${missingApiKeyProvider.label || missingApiKeyProvider.provider} 已启用，但还没有填写 API Key。`, "warning");
+      return;
+    }
+
+    try {
+      await desktopApi.toggleToolConfigStatus(configId);
+      await refreshWorkbenchSnapshot();
+      setStatus("TOOL 配置状态已更新。", "success");
+    } catch (error) {
+      console.error("Failed to toggle tool config status", error);
+      setStatus(`TOOL 配置状态更新失败：${getErrorMessage(error)}`, "danger");
     }
   }
 
@@ -534,6 +638,7 @@ export function createExtensionsActions({
     handleRunnerSubmit,
     handleSkillDelete,
     handleSkillStatusToggle,
+    handleToolConfigStatusToggle,
     openAgentRunner,
     openExtensionEditor,
     resetExtensionsManagement,

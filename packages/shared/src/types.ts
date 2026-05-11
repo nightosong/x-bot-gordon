@@ -37,6 +37,17 @@ export type SkillHandlerProtocolVersion = "gordon-skill/v1";
 export type SkillHandlerOutputMode = "context" | "final";
 export type AgentExecutionMode = "chat" | "task";
 export type McpTransport = "stdio" | "http";
+export type ToolConfigName = "image_gen" | "video_gen" | "music_gen";
+export type ToolConfigProvider =
+  | "openai"
+  | "gemini"
+  | "jimeng"
+  | "seedance"
+  | "pixverse"
+  | "veo"
+  | "sora"
+  | "mureka"
+  | "suno";
 export type CommandWorkshopMessageRole = "user" | "assistant";
 export type CommandWorkshopMessageState = "completed" | "error";
 export type CommandWorkshopAttachmentKind = "image" | "video" | "text" | "document" | "spreadsheet" | "data" | "other";
@@ -404,6 +415,39 @@ export interface McpServerConfig {
   updatedAt: string;
 }
 
+export interface ToolProviderConfig {
+  id: string;
+  provider: ToolConfigProvider;
+  label: string;
+  model: string;
+  apiKey: string;
+  baseUrl?: string;
+  enabled: boolean;
+  notes?: string;
+  runtime?: ToolProviderRuntimeConfig;
+  updatedAt: string;
+}
+
+export interface ToolProviderRuntimeOperation {
+  endpoint: string;
+  parameters: string[];
+}
+
+export interface ToolProviderRuntimeConfig {
+  operations: Record<string, ToolProviderRuntimeOperation>;
+}
+
+export interface ToolConfig {
+  id: string;
+  name: ToolConfigName;
+  title: string;
+  description: string;
+  defaultProvider: ToolConfigProvider | null;
+  providers: ToolProviderConfig[];
+  enabled: boolean;
+  updatedAt: string;
+}
+
 export interface AgentProfile {
   id: string;
   name: string;
@@ -744,6 +788,57 @@ export interface ComicProjectExportResult {
   writtenBytes: number;
 }
 
+export type VideoProjectMode = "textToVideo" | "imageToVideo";
+export type VideoProjectAspectRatio = "16:9" | "9:16" | "1:1";
+export type VideoShotStatus = "todo" | "inProgress" | "done";
+
+export interface VideoShot {
+  id: string;
+  index: number;
+  title: string;
+  summary: string;
+  prompt: string;
+  negativePrompt: string;
+  reference: string;
+  output: string;
+  status: VideoShotStatus;
+  durationSeconds: number;
+  updatedAt: string;
+}
+
+export interface VideoProject {
+  id: string;
+  title: string;
+  mode: VideoProjectMode;
+  aspectRatio: VideoProjectAspectRatio;
+  genre: string;
+  status: string;
+  summary: string;
+  visualStyle: string;
+  storyboardPlan: string;
+  durationSeconds: number;
+  coverTone: string;
+  shots: VideoShot[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type VideoProjectExportFormat = "md";
+
+export interface VideoProjectExportRequest {
+  directoryPath: string;
+  fileName: string;
+  format: VideoProjectExportFormat;
+  content: string;
+}
+
+export interface VideoProjectExportResult {
+  filePath: string;
+  fileName: string;
+  format: VideoProjectExportFormat;
+  writtenBytes: number;
+}
+
 export interface AgentMcpCallRecord {
   round: number;
   serverId: string;
@@ -751,6 +846,8 @@ export interface AgentMcpCallRecord {
   toolName: string;
   arguments?: Record<string, unknown>;
   resultText: string;
+  structuredContent?: Record<string, unknown>;
+  artifacts?: AgentGeneratedArtifact[];
   isError: boolean;
   autoSelected: boolean;
   attemptCount: number;
@@ -763,6 +860,19 @@ export interface AgentMcpCallRecord {
   fallbackFromToolName?: string;
   fallbackFromServerName?: string;
   createdAt: string;
+}
+
+export interface AgentGeneratedArtifact {
+  id: string;
+  kind: "image" | "video" | "audio" | "file" | "text";
+  title: string;
+  mimeType?: string;
+  url?: string;
+  dataUrl?: string;
+  provider?: string;
+  model?: string;
+  prompt?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface McpToolDefinition {
@@ -823,8 +933,10 @@ export interface WorkbenchSnapshot {
   workflowLibrary: WorkflowLibraryItem[];
   writingBooks: WritingBook[];
   comicProjects: ComicProject[];
+  videoProjects: VideoProject[];
   skillDefinitions: SkillDefinition[];
   mcpServers: McpServerConfig[];
+  toolConfigs: ToolConfig[];
   agentProfiles: AgentProfile[];
   agentRunLogs: AgentRunLog[];
   commandWorkshopSessions: CommandWorkshopSession[];

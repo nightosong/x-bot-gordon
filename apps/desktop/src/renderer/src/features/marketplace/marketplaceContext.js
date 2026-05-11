@@ -3,6 +3,8 @@ export function createMarketplaceViewContext({
   comicChapterDropdownMenuRef,
   truncateText,
   ui,
+  videoActions,
+  videoShotDropdownMenuRef,
   writingActions,
   writingAiActions,
   writingChapterDropdownMenuRef
@@ -11,10 +13,12 @@ export function createMarketplaceViewContext({
     comicActions,
     refs: {
       comicChapterDropdownMenuRef,
+      videoShotDropdownMenuRef,
       writingChapterDropdownMenuRef
     },
     truncateText,
     ui,
+    videoActions,
     writingActions,
     writingAiActions
   };

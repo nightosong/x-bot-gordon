@@ -22,6 +22,16 @@ import type {
   ModelSettings,
   SkillKind,
   SkillDefinition,
+  ToolConfig,
+  ToolConfigName,
+  ToolConfigProvider,
+  ToolProviderConfig,
+  ToolProviderRuntimeConfig,
+  VideoProject,
+  VideoProjectAspectRatio,
+  VideoProjectMode,
+  VideoShot,
+  VideoShotStatus,
   WorkflowLibraryItem,
   WorkflowProtocolDefinition,
   WorkflowRecord,
@@ -108,6 +118,10 @@ function getMcpServersFilePath(): string {
   return resolveFromRoot("data", "workbench", "mcp-servers.json");
 }
 
+function getToolConfigsFilePath(): string {
+  return resolveFromRoot("data", "workbench", "tool-configs.json");
+}
+
 function getAgentProfilesFilePath(): string {
   return resolveFromRoot("data", "workbench", "agent-profiles.json");
 }
@@ -130,6 +144,14 @@ function getComicProjectsFilePath(): string {
 
 function getComicProjectDeleteStagingDirectoryPath(): string {
   return resolveFromRoot("data", "workbench", ".delete-staging", "comic-projects");
+}
+
+function getVideoProjectsFilePath(): string {
+  return resolveFromRoot("data", "workbench", "video-projects.json");
+}
+
+function getVideoProjectDeleteStagingDirectoryPath(): string {
+  return resolveFromRoot("data", "workbench", ".delete-staging", "video-projects");
 }
 
 function getWritingBooksDirectoryPath(): string {
@@ -1649,6 +1671,222 @@ function sortByUpdatedAtDescending<T extends { updatedAt: string }>(items: T[]):
   return [...items].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }
 
+const DEFAULT_TOOL_CONFIG_UPDATED_AT = "2026-05-11T00:00:00.000Z";
+const TOOL_CONFIG_NAMES = new Set<ToolConfigName>(["image_gen", "video_gen", "music_gen"]);
+const TOOL_CONFIG_PROVIDERS = new Set<ToolConfigProvider>([
+  "openai",
+  "gemini",
+  "jimeng",
+  "seedance",
+  "pixverse",
+  "veo",
+  "sora",
+  "mureka",
+  "suno"
+]);
+
+const TOOL_CONFIG_CATALOG: Record<
+  ToolConfigName,
+  {
+    title: string;
+    description: string;
+    providers: Array<{ provider: ToolConfigProvider; label: string }>;
+  }
+> = {
+  image_gen: {
+    title: "图片生成",
+    description: "内置图片生成工具能力，供 Agent 或应用工作流按工具语义调用。",
+    providers: [
+      { provider: "openai", label: "OpenAI" },
+      { provider: "gemini", label: "Gemini" },
+      { provider: "jimeng", label: "即梦" }
+    ]
+  },
+  video_gen: {
+    title: "视频生成",
+    description: "内置视频生成工具能力，面向文生视频、图生视频和分镜生成台。",
+    providers: [
+      { provider: "seedance", label: "Seedance" },
+      { provider: "pixverse", label: "PixVerse" },
+      { provider: "veo", label: "Veo" },
+      { provider: "sora", label: "Sora" }
+    ]
+  },
+  music_gen: {
+    title: "音乐生成",
+    description: "内置音乐生成工具能力，面向配乐、歌曲草稿和声音资产生成。",
+    providers: [
+      { provider: "mureka", label: "Mureka" },
+      { provider: "suno", label: "Suno" }
+    ]
+  }
+};
+
+const TOOL_PROVIDER_RUNTIME_CONFIG: Partial<
+  Record<ToolConfigName, Partial<Record<ToolConfigProvider, ToolProviderRuntimeConfig>>>
+> = {
+  image_gen: {
+    openai: {
+      operations: {
+        text_to_image: {
+          endpoint: "imagen",
+          parameters: ["prompt", "model", "size", "n", "quality"]
+        },
+        image_to_image: {
+          endpoint: "imagen/edit",
+          parameters: ["prompt", "model", "size", "n", "quality", "image", "images"]
+        }
+      }
+    }
+  }
+};
+
+function cloneToolProviderRuntimeConfig(config: ToolProviderRuntimeConfig | undefined): ToolProviderRuntimeConfig | undefined {
+  if (!config) {
+    return undefined;
+  }
+
+  const operations: Record<string, { endpoint: string; parameters: string[] }> = {};
+
+  for (const [operationName, operation] of Object.entries(config.operations)) {
+    operations[operationName] = {
+      endpoint: operation.endpoint,
+      parameters: [...operation.parameters]
+    };
+  }
+
+  return { operations };
+}
+
+function getDefaultToolProviderRuntimeConfig(
+  toolName: ToolConfigName,
+  provider: ToolConfigProvider
+): ToolProviderRuntimeConfig | undefined {
+  return cloneToolProviderRuntimeConfig(TOOL_PROVIDER_RUNTIME_CONFIG[toolName]?.[provider]);
+}
+
+function normalizeToolProviderBaseUrl(toolName: ToolConfigName, provider: ToolConfigProvider, baseUrl: string): string {
+  const normalizedBaseUrl = baseUrl.trim();
+
+  if (toolName === "image_gen" && provider === "openai") {
+    return normalizedBaseUrl.replace(/\/imagen(?:\/edit(?:\/base64)?)?\/?$/u, "");
+  }
+
+  return normalizedBaseUrl;
+}
+
+function createDefaultToolProviderConfig(toolName: ToolConfigName, provider: ToolConfigProvider, label: string): ToolProviderConfig {
+  const runtime = getDefaultToolProviderRuntimeConfig(toolName, provider);
+
+  return {
+    id: `tool_provider_${toolName}_${provider}`,
+    provider,
+    label,
+    model: "",
+    apiKey: "",
+    baseUrl: "",
+    enabled: false,
+    notes: "",
+    ...(runtime ? { runtime } : {}),
+    updatedAt: DEFAULT_TOOL_CONFIG_UPDATED_AT
+  };
+}
+
+function createDefaultToolConfig(name: ToolConfigName): ToolConfig {
+  const catalog = TOOL_CONFIG_CATALOG[name];
+  const providers = catalog.providers.map((provider) =>
+    createDefaultToolProviderConfig(name, provider.provider, provider.label)
+  );
+
+  return {
+    id: `tool_${name}`,
+    name,
+    title: catalog.title,
+    description: catalog.description,
+    defaultProvider: providers[0]?.provider ?? null,
+    providers,
+    enabled: false,
+    updatedAt: DEFAULT_TOOL_CONFIG_UPDATED_AT
+  };
+}
+
+function getDefaultToolConfigs(): ToolConfig[] {
+  return ["image_gen", "video_gen", "music_gen"].map((name) => createDefaultToolConfig(name as ToolConfigName));
+}
+
+function normalizeToolConfigName(value: unknown): ToolConfigName | null {
+  const name = String(value ?? "").trim();
+  return TOOL_CONFIG_NAMES.has(name as ToolConfigName) ? (name as ToolConfigName) : null;
+}
+
+function normalizeToolConfigProvider(value: unknown): ToolConfigProvider | null {
+  const provider = String(value ?? "").trim();
+  return TOOL_CONFIG_PROVIDERS.has(provider as ToolConfigProvider) ? (provider as ToolConfigProvider) : null;
+}
+
+function normalizeToolProviderConfig(
+  toolName: ToolConfigName,
+  provider: Partial<ToolProviderConfig> | null | undefined,
+  defaultProvider: ToolProviderConfig
+): ToolProviderConfig {
+  const normalizedProvider = normalizeToolConfigProvider(provider?.provider) ?? defaultProvider.provider;
+  const updatedAt = String(provider?.updatedAt ?? "").trim() || defaultProvider.updatedAt;
+  const runtime = cloneToolProviderRuntimeConfig(defaultProvider.runtime);
+
+  return {
+    id: String(provider?.id ?? "").trim() || defaultProvider.id,
+    provider: normalizedProvider,
+    label: String(provider?.label ?? "").trim() || defaultProvider.label,
+    model: String(provider?.model ?? ""),
+    apiKey: String(provider?.apiKey ?? ""),
+    baseUrl: normalizeToolProviderBaseUrl(toolName, normalizedProvider, String(provider?.baseUrl ?? "")),
+    enabled: Boolean(provider?.enabled),
+    notes: String(provider?.notes ?? ""),
+    ...(runtime ? { runtime } : {}),
+    updatedAt
+  };
+}
+
+function normalizeToolConfig(config: Partial<ToolConfig> | null | undefined): ToolConfig | null {
+  const name = normalizeToolConfigName(config?.name);
+
+  if (!name) {
+    return null;
+  }
+
+  const defaultConfig = createDefaultToolConfig(name);
+  const inputProviders = Array.isArray(config?.providers) ? config.providers : [];
+  const inputProviderEntries: Array<readonly [ToolConfigProvider, Partial<ToolProviderConfig>]> = [];
+
+  for (const provider of inputProviders) {
+    const providerName = normalizeToolConfigProvider(provider?.provider);
+
+    if (providerName) {
+      inputProviderEntries.push([providerName, provider]);
+    }
+  }
+
+  const inputProviderByName = new Map<ToolConfigProvider, Partial<ToolProviderConfig>>(inputProviderEntries);
+  const providers = defaultConfig.providers.map((provider) =>
+    normalizeToolProviderConfig(name, inputProviderByName.get(provider.provider), provider)
+  );
+  const configuredDefaultProvider = normalizeToolConfigProvider(config?.defaultProvider);
+  const defaultProvider = providers.some((provider) => provider.provider === configuredDefaultProvider)
+    ? configuredDefaultProvider
+    : defaultConfig.defaultProvider;
+
+  return {
+    id: String(config?.id ?? "").trim() || defaultConfig.id,
+    name,
+    title: String(config?.title ?? "").trim() || defaultConfig.title,
+    description: String(config?.description ?? "").trim() || defaultConfig.description,
+    defaultProvider,
+    providers,
+    enabled: Boolean(config?.enabled),
+    updatedAt: String(config?.updatedAt ?? "").trim() || defaultConfig.updatedAt
+  };
+}
+
 const WRITING_BOOK_CONFIG_FILE_NAME = "book.json";
 const WRITING_BOOK_CHAPTERS_FILE_NAME = "chapters.json";
 const WRITING_BOOK_CHAPTERS_DIRECTORY_NAME = "chapters";
@@ -2505,6 +2743,147 @@ export async function deleteComicProject(projectId: string, moveToTrash: (target
   return listComicProjects();
 }
 
+const VIDEO_PROJECT_MODES = new Set<VideoProjectMode>(["textToVideo", "imageToVideo"]);
+const VIDEO_PROJECT_ASPECT_RATIOS = new Set<VideoProjectAspectRatio>(["16:9", "9:16", "1:1"]);
+const VIDEO_SHOT_STATUSES = new Set<VideoShotStatus>(["todo", "inProgress", "done"]);
+
+function normalizeVideoProjectMode(value: unknown): VideoProjectMode {
+  const mode = String(value ?? "").trim();
+  return VIDEO_PROJECT_MODES.has(mode as VideoProjectMode) ? (mode as VideoProjectMode) : "textToVideo";
+}
+
+function normalizeVideoProjectAspectRatio(value: unknown): VideoProjectAspectRatio {
+  const aspectRatio = String(value ?? "").trim();
+  return VIDEO_PROJECT_ASPECT_RATIOS.has(aspectRatio as VideoProjectAspectRatio)
+    ? (aspectRatio as VideoProjectAspectRatio)
+    : "16:9";
+}
+
+function normalizeVideoShotStatus(value: unknown): VideoShotStatus {
+  const status = String(value ?? "").trim();
+  return VIDEO_SHOT_STATUSES.has(status as VideoShotStatus) ? (status as VideoShotStatus) : "todo";
+}
+
+function normalizeVideoDurationSeconds(value: unknown, fallback = 5): number {
+  const numeric = Number(value);
+  return Math.min(600, Math.max(1, Math.round(Number.isFinite(numeric) ? numeric : fallback)));
+}
+
+function normalizeVideoShot(input: Partial<VideoShot> | null | undefined, index = 0): VideoShot {
+  const now = new Date().toISOString();
+
+  return {
+    id: String(input?.id ?? "").trim() || `video_shot_${randomUUID()}`,
+    index: Math.max(1, Math.round(Number(input?.index ?? index + 1) || index + 1)),
+    title: String(input?.title ?? "").trim() || `镜头 ${index + 1}`,
+    summary: String(input?.summary ?? ""),
+    prompt: String(input?.prompt ?? ""),
+    negativePrompt: String(input?.negativePrompt ?? ""),
+    reference: String(input?.reference ?? ""),
+    output: String(input?.output ?? ""),
+    status: normalizeVideoShotStatus(input?.status),
+    durationSeconds: normalizeVideoDurationSeconds(input?.durationSeconds, 5),
+    updatedAt: String(input?.updatedAt ?? "").trim() || now
+  };
+}
+
+function normalizeVideoShots(input: unknown): VideoShot[] {
+  const shots = (Array.isArray(input) ? input : [])
+    .map((shot, index) => normalizeVideoShot(shot as Partial<VideoShot>, index))
+    .sort((left, right) => left.index - right.index);
+
+  if (shots.length) {
+    return shots;
+  }
+
+  return [
+    normalizeVideoShot(
+      {
+        index: 1,
+        title: "开场镜头",
+        summary: "写下本镜头的主体、运动、景别、光线、情绪和转场。",
+        prompt: "生成一个 5 秒开场镜头，主体清晰，运动可控，光线和风格与项目设定一致。",
+        negativePrompt: "低清晰度、畸形肢体、字幕、水印、过度闪烁、镜头抖动、画面断裂",
+        reference: "",
+        output: "",
+        status: "inProgress",
+        durationSeconds: 5
+      },
+      0
+    )
+  ];
+}
+
+function normalizeVideoProject(input: Partial<VideoProject> | null | undefined, index = 0): VideoProject {
+  const now = new Date().toISOString();
+  const createdAt = String(input?.createdAt ?? "").trim() || now;
+  const updatedAt = String(input?.updatedAt ?? "").trim() || createdAt;
+  const id = String(input?.id ?? "").trim() || `video_project_${randomUUID()}`;
+
+  return {
+    id,
+    title: String(input?.title ?? "").trim() || `未命名视频 ${index + 1}`,
+    mode: normalizeVideoProjectMode(input?.mode),
+    aspectRatio: normalizeVideoProjectAspectRatio(input?.aspectRatio),
+    genre: String(input?.genre ?? "").trim() || "视频 / 待定类型",
+    status: String(input?.status ?? "").trim() || "新建",
+    summary: String(input?.summary ?? ""),
+    visualStyle: String(input?.visualStyle ?? ""),
+    storyboardPlan: String(input?.storyboardPlan ?? ""),
+    durationSeconds: normalizeVideoDurationSeconds(input?.durationSeconds, 5),
+    coverTone: String(input?.coverTone ?? "").trim() || (index % 2 === 0 ? "lumen" : "violet"),
+    shots: normalizeVideoShots(input?.shots),
+    createdAt,
+    updatedAt
+  };
+}
+
+export async function listVideoProjects(): Promise<VideoProject[]> {
+  const projects = await readWorkbenchCollection<Partial<VideoProject>>(getVideoProjectsFilePath());
+  return sortByUpdatedAtDescending(projects.map((project, index) => normalizeVideoProject(project, index)));
+}
+
+export async function upsertVideoProject(project: VideoProject): Promise<VideoProject[]> {
+  const current = await listVideoProjects();
+  const normalizedProject = normalizeVideoProject(project);
+  const nextProjects = current.some((entry) => entry.id === normalizedProject.id)
+    ? current.map((entry) => (entry.id === normalizedProject.id ? normalizedProject : entry))
+    : [normalizedProject, ...current];
+
+  await writeWorkbenchCollection(getVideoProjectsFilePath(), sortByUpdatedAtDescending(nextProjects));
+  return listVideoProjects();
+}
+
+export async function deleteVideoProject(projectId: string, moveToTrash: (targetPath: string) => Promise<void>): Promise<VideoProject[]> {
+  const normalizedProjectId = String(projectId ?? "").trim();
+
+  if (!normalizedProjectId) {
+    return listVideoProjects();
+  }
+
+  const current = await listVideoProjects();
+  const deletedProject = current.find((entry) => entry.id === normalizedProjectId);
+
+  if (!deletedProject) {
+    return current;
+  }
+
+  const stagingDirectory = getVideoProjectDeleteStagingDirectoryPath();
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const snapshotFileName = `${sanitizeWritingAssetName(deletedProject.title, "video-project")}-${timestamp}.json`;
+  const snapshotPath = path.join(stagingDirectory, snapshotFileName);
+
+  await mkdir(stagingDirectory, { recursive: true });
+  await writeFile(snapshotPath, `${JSON.stringify(deletedProject, null, 2)}\n`, "utf8");
+  await moveToTrash(snapshotPath);
+  await writeWorkbenchCollection(
+    getVideoProjectsFilePath(),
+    sortByUpdatedAtDescending(current.filter((entry) => entry.id !== normalizedProjectId))
+  );
+
+  return listVideoProjects();
+}
+
 function createWorkflowVariableBinding(
   overrides: Partial<WorkflowVariableBinding> & Pick<WorkflowVariableBinding, "name" | "source" | "placeholder" | "summary">
 ): WorkflowVariableBinding {
@@ -2823,6 +3202,49 @@ export async function deleteSkillDefinition(skillId: string): Promise<SkillDefin
 
   await writeWorkbenchCollection(getSkillDefinitionsFilePath(), nextSkills);
   return listSkillDefinitions();
+}
+
+export async function listToolConfigs(): Promise<ToolConfig[]> {
+  const storedConfigs = (await readWorkbenchCollection<Partial<ToolConfig>>(getToolConfigsFilePath()))
+    .map((config) => normalizeToolConfig(config))
+    .filter((config): config is ToolConfig => Boolean(config));
+  const storedConfigByName = new Map(storedConfigs.map((config) => [config.name, config] as const));
+
+  return getDefaultToolConfigs().map((config) => storedConfigByName.get(config.name) ?? config);
+}
+
+export async function upsertToolConfig(config: ToolConfig): Promise<ToolConfig[]> {
+  const normalizedConfig = normalizeToolConfig({
+    ...config,
+    updatedAt: config.updatedAt || new Date().toISOString()
+  });
+
+  if (!normalizedConfig) {
+    return listToolConfigs();
+  }
+
+  const current = await listToolConfigs();
+  const nextConfigs = current.map((entry) => (entry.name === normalizedConfig.name ? normalizedConfig : entry));
+
+  await writeWorkbenchCollection(getToolConfigsFilePath(), nextConfigs);
+  return listToolConfigs();
+}
+
+export async function toggleToolConfigStatus(configId: string): Promise<ToolConfig[]> {
+  const current = await listToolConfigs();
+  const timestamp = new Date().toISOString();
+  const nextConfigs = current.map((config) =>
+    config.id === configId
+      ? {
+          ...config,
+          enabled: !config.enabled,
+          updatedAt: timestamp
+        }
+      : config
+  );
+
+  await writeWorkbenchCollection(getToolConfigsFilePath(), nextConfigs);
+  return listToolConfigs();
 }
 
 export async function listMcpServers(): Promise<McpServerConfig[]> {

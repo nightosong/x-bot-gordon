@@ -44,6 +44,91 @@ function formatCommandFailureKind(failureKind) {
   return "未知失败";
 }
 
+const MAX_COMMAND_ARGUMENT_STRING_LENGTH = 320;
+const MAX_COMMAND_ARGUMENT_ARRAY_ITEMS = 12;
+const MAX_COMMAND_ARGUMENT_OBJECT_KEYS = 24;
+
+function isSensitiveCommandArgumentKey(key) {
+  return /api[_-]?key|authorization|bearer|token|secret|password|credential|cookie/u.test(String(key ?? "").toLowerCase());
+}
+
+function sanitizeCommandArgumentValue(value, key = "", depth = 0) {
+  if (key && isSensitiveCommandArgumentKey(key)) {
+    return "[已脱敏]";
+  }
+
+  if (value === null || value === undefined || typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const trimmedValue = value.trim();
+
+    if (trimmedValue.startsWith("data:image/") || trimmedValue.startsWith("data:video/") || trimmedValue.startsWith("data:audio/")) {
+      return `[媒体数据已省略，${value.length} 字符]`;
+    }
+
+    if (value.length > MAX_COMMAND_ARGUMENT_STRING_LENGTH) {
+      return `${value.slice(0, MAX_COMMAND_ARGUMENT_STRING_LENGTH)}...（已截断 ${value.length - MAX_COMMAND_ARGUMENT_STRING_LENGTH} 字符）`;
+    }
+
+    return value;
+  }
+
+  if (depth >= 4) {
+    return "[层级过深，已省略]";
+  }
+
+  if (Array.isArray(value)) {
+    const items = value
+      .slice(0, MAX_COMMAND_ARGUMENT_ARRAY_ITEMS)
+      .map((item) => sanitizeCommandArgumentValue(item, key, depth + 1));
+
+    if (value.length > MAX_COMMAND_ARGUMENT_ARRAY_ITEMS) {
+      items.push(`[已省略 ${value.length - MAX_COMMAND_ARGUMENT_ARRAY_ITEMS} 项]`);
+    }
+
+    return items;
+  }
+
+  if (typeof value === "object") {
+    const output = {};
+    const entries = Object.entries(value);
+
+    for (const [entryKey, entryValue] of entries.slice(0, MAX_COMMAND_ARGUMENT_OBJECT_KEYS)) {
+      output[entryKey] = sanitizeCommandArgumentValue(entryValue, entryKey, depth + 1);
+    }
+
+    if (entries.length > MAX_COMMAND_ARGUMENT_OBJECT_KEYS) {
+      output.__omitted = `[已省略 ${entries.length - MAX_COMMAND_ARGUMENT_OBJECT_KEYS} 个字段]`;
+    }
+
+    return output;
+  }
+
+  return String(value);
+}
+
+function stringifyCommandArtifactArguments(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return "";
+  }
+
+  return JSON.stringify(sanitizeCommandArgumentValue(value), null, 2);
+}
+
+function getCommandArtifactResolvedCallArguments(call) {
+  const structuredContent = call?.structuredContent && typeof call.structuredContent === "object" ? call.structuredContent : null;
+  const requestBody =
+    structuredContent?.requestBody && typeof structuredContent.requestBody === "object" && !Array.isArray(structuredContent.requestBody)
+      ? structuredContent.requestBody
+      : structuredContent?.call?.requestBody && typeof structuredContent.call.requestBody === "object" && !Array.isArray(structuredContent.call.requestBody)
+        ? structuredContent.call.requestBody
+        : null;
+
+  return requestBody ?? call?.arguments;
+}
+
 export function createCommandWorkshopActions({
   activeFeature,
   commandWorkshopViewRef,
@@ -604,6 +689,42 @@ export function createCommandWorkshopActions({
     return normalizeCommandArtifactInlineText(value);
   }
 
+  function normalizeCommandArtifactProduct(artifact, index = 0) {
+    if (!artifact || typeof artifact !== "object") {
+      return null;
+    }
+
+    const kind = String(artifact.kind ?? "").trim();
+    const src = String(artifact.dataUrl || artifact.url || "").trim();
+
+    if (kind !== "image" || !src) {
+      return null;
+    }
+
+    const provider = String(artifact.provider ?? "").trim();
+    const model = String(artifact.model ?? "").trim();
+    const prompt = normalizeCommandArtifactInlineText(artifact.prompt);
+    const meta = [provider, model, prompt].filter(Boolean).join(" / ");
+
+    return {
+      id: String(artifact.id ?? "").trim() || `generated_product_${index}`,
+      kind,
+      src,
+      title: String(artifact.title ?? "").trim() || `生成图片 ${index + 1}`,
+      url: String(artifact.url ?? "").trim(),
+      meta
+    };
+  }
+
+  function getCommandArtifactProducts(artifact) {
+    const calls = Array.isArray(artifact?.mcpCalls) ? artifact.mcpCalls : [];
+    const products = calls.flatMap((call) => (Array.isArray(call?.artifacts) ? call.artifacts : []));
+
+    return products
+      .map((product, index) => normalizeCommandArtifactProduct(product, index))
+      .filter(Boolean);
+  }
+
   function getCommandArtifactStepSecondary(step) {
     const detail = normalizeCommandArtifactInlineText(step?.detail);
 
@@ -616,6 +737,14 @@ export function createCommandWorkshopActions({
 
   function getCommandArtifactCallTitle(call) {
     return `第 ${call?.round ?? "-"} 轮 · ${call?.serverName ?? "工具服务"} / ${call?.toolName ?? "工具"}`;
+  }
+
+  function getCommandArtifactCallArgumentsText(call) {
+    return stringifyCommandArtifactArguments(getCommandArtifactResolvedCallArguments(call));
+  }
+
+  function getCommandArtifactCallRepairedArgumentsText(call) {
+    return stringifyCommandArtifactArguments(call?.repairedFromArguments);
   }
 
   function getCommandArtifactCallSecondary(call) {
@@ -674,8 +803,11 @@ export function createCommandWorkshopActions({
     commandToolOptions,
     focusCommandInput,
     getCommandArtifactCallSecondary,
+    getCommandArtifactCallArgumentsText,
+    getCommandArtifactCallRepairedArgumentsText,
     getCommandArtifactCallTitle,
     getCommandArtifactInlineText,
+    getCommandArtifactProducts,
     getCommandArtifactStepSecondary,
     getCommandArtifactSummary,
     getCommandWorkshopModeLabel,

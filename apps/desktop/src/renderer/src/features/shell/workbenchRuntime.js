@@ -1,6 +1,7 @@
 export function createWorkbenchRuntime({
   activeFeature,
   applyComicProjectsFromStorage,
+  applyVideoProjectsFromStorage,
   applyWritingBooksFromStorage,
   desktopApi,
   featureCommandWorkshopId,
@@ -23,8 +24,10 @@ export function createWorkbenchRuntime({
     workbench.workflowLibrary = [...(snapshot?.workflowLibrary ?? [])];
     applyWritingBooksFromStorage(snapshot?.writingBooks ?? []);
     applyComicProjectsFromStorage(snapshot?.comicProjects ?? []);
+    applyVideoProjectsFromStorage(snapshot?.videoProjects ?? []);
     workbench.skillDefinitions = [...(snapshot?.skillDefinitions ?? [])];
     workbench.mcpServers = [...(snapshot?.mcpServers ?? [])];
+    workbench.toolConfigs = [...(snapshot?.toolConfigs ?? [])];
     workbench.agentProfiles = [...(snapshot?.agentProfiles ?? [])];
     workbench.agentRunLogs = [...(snapshot?.agentRunLogs ?? [])];
     workbench.commandSessions = normalizeCommandWorkshopSessions(snapshot?.commandWorkshopSessions ?? []);

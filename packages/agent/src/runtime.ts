@@ -12,6 +12,7 @@ import {
   listSkillDefinitions
 } from "../../workbench/src/index.js";
 import type {
+  AgentGeneratedArtifact,
   AgentMcpCallRecord,
   AgentProfile,
   AgentRunLog,
@@ -33,11 +34,15 @@ const MAX_CONSECUTIVE_AUTO_MCP_FAILURES = 2;
 const MAX_MCP_TOOL_ATTEMPTS = 3;
 const MCP_RETRY_BASE_DELAY_MS = 400;
 const MAX_MCP_ARGUMENT_REPAIRS = 1;
+const MAX_MCP_DISPLAY_ARGUMENT_STRING_LENGTH = 320;
+const MAX_MCP_DISPLAY_ARGUMENT_ARRAY_ITEMS = 12;
+const MAX_MCP_DISPLAY_ARGUMENT_OBJECT_KEYS = 24;
 const MAX_SKILL_HANDLER_DURATION_MS = 20_000;
 const SKILL_HANDLER_PROTOCOL_VERSION = "gordon-skill/v1";
 const MAX_CONVERSATION_CONTEXT_MESSAGES = 8;
 const BUILTIN_WORKSPACE_MCP_ID = "builtin:mcp:workspace";
 const BUILTIN_COMPUTER_USE_MCP_ID = "builtin:mcp:computer-use";
+const BUILTIN_GORDON_TOOLS_MCP_ID = "builtin:mcp:gordon-tools";
 const WORKSPACE_PERMISSION_REQUIRED_PREFIX = "GORDON_PERMISSION_REQUIRED";
 const COMPUTER_USE_PERMISSION_REQUIRED_PREFIX = "GORDON_COMPUTER_USE_PERMISSION_REQUIRED";
 const BASE_URL_REQUIRED_PROVIDERS = new Set([
@@ -200,8 +205,12 @@ function isBuiltinComputerUseServer(server: McpServerConfig | null | undefined):
   return server?.id === BUILTIN_COMPUTER_USE_MCP_ID;
 }
 
+function isBuiltinGordonToolsServer(server: McpServerConfig | null | undefined): boolean {
+  return server?.id === BUILTIN_GORDON_TOOLS_MCP_ID;
+}
+
 function isBuiltinLocalToolsServer(server: McpServerConfig | null | undefined): boolean {
-  return isBuiltinWorkspaceToolsServer(server) || isBuiltinComputerUseServer(server);
+  return isBuiltinWorkspaceToolsServer(server) || isBuiltinComputerUseServer(server) || isBuiltinGordonToolsServer(server);
 }
 
 function describeToolServer(server: McpServerConfig): string {
@@ -211,6 +220,10 @@ function describeToolServer(server: McpServerConfig): string {
 
   if (isBuiltinComputerUseServer(server)) {
     return `${server.name}（本地桌面控制工具）`;
+  }
+
+  if (isBuiltinGordonToolsServer(server)) {
+    return `${server.name}（本地能力工具）`;
   }
 
   return `${server.name}（外部 MCP）`;
@@ -227,7 +240,7 @@ function buildToolScopeText(authorizedServers: McpServerConfig[]): string {
 
   if (localTools.length) {
     sections.push(
-      `本地工具：${localTools.map((server) => server.name).join("、")}。这是 Gordon 内置能力通道，不代表用户已连接外部 MCP。Computer Use 会在首次读取或控制桌面前申请本轮授权。`
+      `本地工具：${localTools.map((server) => server.name).join("、")}。这是 Gordon 内置能力通道，不代表用户已连接外部 MCP。Gordon Tools 会按能力拓展 TOOL 配置暴露 image_gen 等内置工具；Computer Use 会在首次读取或控制桌面前申请本轮授权。`
     );
   }
 
@@ -602,6 +615,71 @@ function stringifyArguments(value: Record<string, unknown> | undefined): string 
   return JSON.stringify(value ?? {}, null, 2);
 }
 
+function isSensitiveArgumentKey(key: string): boolean {
+  return /api[_-]?key|authorization|bearer|token|secret|password|credential|cookie/u.test(key.toLowerCase());
+}
+
+function sanitizeArgumentValueForDisplay(value: unknown, key = "", depth = 0): unknown {
+  if (key && isSensitiveArgumentKey(key)) {
+    return "[已脱敏]";
+  }
+
+  if (value === null || value === undefined || typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const trimmedValue = value.trim();
+
+    if (trimmedValue.startsWith("data:image/") || trimmedValue.startsWith("data:video/") || trimmedValue.startsWith("data:audio/")) {
+      return `[媒体数据已省略，${value.length} 字符]`;
+    }
+
+    if (value.length > MAX_MCP_DISPLAY_ARGUMENT_STRING_LENGTH) {
+      return `${value.slice(0, MAX_MCP_DISPLAY_ARGUMENT_STRING_LENGTH)}...（已截断 ${value.length - MAX_MCP_DISPLAY_ARGUMENT_STRING_LENGTH} 字符）`;
+    }
+
+    return value;
+  }
+
+  if (depth >= 4) {
+    return "[层级过深，已省略]";
+  }
+
+  if (Array.isArray(value)) {
+    const slicedItems = value
+      .slice(0, MAX_MCP_DISPLAY_ARGUMENT_ARRAY_ITEMS)
+      .map((item) => sanitizeArgumentValueForDisplay(item, key, depth + 1));
+
+    if (value.length > MAX_MCP_DISPLAY_ARGUMENT_ARRAY_ITEMS) {
+      slicedItems.push(`[已省略 ${value.length - MAX_MCP_DISPLAY_ARGUMENT_ARRAY_ITEMS} 项]`);
+    }
+
+    return slicedItems;
+  }
+
+  if (typeof value === "object") {
+    const output: Record<string, unknown> = {};
+    const entries = Object.entries(value as Record<string, unknown>);
+
+    for (const [entryKey, entryValue] of entries.slice(0, MAX_MCP_DISPLAY_ARGUMENT_OBJECT_KEYS)) {
+      output[entryKey] = sanitizeArgumentValueForDisplay(entryValue, entryKey, depth + 1);
+    }
+
+    if (entries.length > MAX_MCP_DISPLAY_ARGUMENT_OBJECT_KEYS) {
+      output.__omitted = `[已省略 ${entries.length - MAX_MCP_DISPLAY_ARGUMENT_OBJECT_KEYS} 个字段]`;
+    }
+
+    return output;
+  }
+
+  return String(value);
+}
+
+function stringifyDisplayArguments(value: Record<string, unknown> | undefined): string {
+  return JSON.stringify(sanitizeArgumentValueForDisplay(value ?? {}));
+}
+
 function isSameArguments(
   left: Record<string, unknown> | undefined,
   right: Record<string, unknown> | undefined
@@ -719,6 +797,10 @@ function classifyMcpMessage(message: string): McpErrorClassification {
     "etimedout",
     "epipe",
     "empty",
+    "engineoverloaded",
+    "overloaded",
+    "too many requests",
+    "rate limit",
     "无法解析"
   ];
 
@@ -1124,6 +1206,51 @@ function buildFallbackCandidateTools(
   return unusedOrHealthyTools.length ? unusedOrHealthyTools : withoutCurrentTool;
 }
 
+function normalizeGeneratedArtifact(value: unknown, index = 0): AgentGeneratedArtifact | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const artifact = value as Record<string, unknown>;
+  const kind = typeof artifact.kind === "string" && artifact.kind.trim() ? artifact.kind.trim() : "file";
+
+  if (!["image", "video", "audio", "file", "text"].includes(kind)) {
+    return null;
+  }
+
+  const url = typeof artifact.url === "string" && artifact.url.trim() ? artifact.url.trim() : "";
+  const dataUrl = typeof artifact.dataUrl === "string" && artifact.dataUrl.trim() ? artifact.dataUrl.trim() : "";
+
+  if (!url && !dataUrl && kind !== "text") {
+    return null;
+  }
+
+  return {
+    id: typeof artifact.id === "string" && artifact.id.trim() ? artifact.id.trim() : `artifact_${index + 1}`,
+    kind: kind as AgentGeneratedArtifact["kind"],
+    title:
+      typeof artifact.title === "string" && artifact.title.trim()
+        ? artifact.title.trim()
+        : `${kind} ${index + 1}`,
+    ...(typeof artifact.mimeType === "string" && artifact.mimeType.trim() ? { mimeType: artifact.mimeType.trim() } : {}),
+    ...(url ? { url } : {}),
+    ...(dataUrl ? { dataUrl } : {}),
+    ...(typeof artifact.provider === "string" && artifact.provider.trim() ? { provider: artifact.provider.trim() } : {}),
+    ...(typeof artifact.model === "string" && artifact.model.trim() ? { model: artifact.model.trim() } : {}),
+    ...(typeof artifact.prompt === "string" && artifact.prompt.trim() ? { prompt: artifact.prompt.trim() } : {}),
+    ...(artifact.metadata && typeof artifact.metadata === "object" && !Array.isArray(artifact.metadata)
+      ? { metadata: artifact.metadata as Record<string, unknown> }
+      : {})
+  };
+}
+
+function extractGeneratedArtifacts(structuredContent: Record<string, unknown> | undefined): AgentGeneratedArtifact[] {
+  const rawArtifacts = Array.isArray(structuredContent?.artifacts) ? structuredContent.artifacts : [];
+  return rawArtifacts
+    .map((artifact, index) => normalizeGeneratedArtifact(artifact, index))
+    .filter((artifact): artifact is AgentGeneratedArtifact => Boolean(artifact));
+}
+
 async function planFallbackMcpToolSelection(
   modelProfile: ModelProfile,
   agent: AgentProfile,
@@ -1308,13 +1435,18 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
     computerUsePermission
   } = options;
 
+  let currentArguments = toolArguments ?? {};
+
   steps.push(
     createRunStep("mcp_server_selected", `已选择工具服务（第 ${round} 轮）`, describeToolServer(server)),
-    createRunStep("mcp_tool_selected", `已选择工具（第 ${round} 轮）`, toolName)
+    createRunStep(
+      "mcp_tool_selected",
+      `已选择工具（第 ${round} 轮）`,
+      `${toolName} / 参数：${stringifyDisplayArguments(currentArguments)}`
+    )
   );
   reportProgress?.();
 
-  let currentArguments = toolArguments ?? {};
   let lastErrorMessage = "";
   let lastErrorCategory: AgentMcpCallRecord["errorCategory"] = "non_retryable";
   let lastFailureKind: AgentMcpCallRecord["failureKind"] = "unknown";
@@ -1518,7 +1650,7 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
         createRunStep(
           "mcp_args_repaired",
           `工具参数已修复（第 ${round} 轮）`,
-          `${toolName} / ${repaired.reason}`
+          `${toolName} / ${repaired.reason} / 新参数：${stringifyDisplayArguments(currentArguments)}`
         )
       );
       reportProgress?.();
@@ -1531,6 +1663,7 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
   for (let attempt = 1; attempt <= MAX_MCP_TOOL_ATTEMPTS; attempt += 1) {
     try {
       const toolResult = await callToolOnMcpServer(buildToolCallRequest());
+      const generatedArtifacts = extractGeneratedArtifacts(toolResult.structuredContent);
 
       if (toolResult.isError) {
         const classified = classifyMcpMessage(toolResult.contentText || "工具返回错误标记");
@@ -1567,6 +1700,8 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
           toolName,
           arguments: currentArguments,
           resultText: permissionDecision.matched ? `工具调用失败：${failureMessage}` : toolResult.contentText,
+          ...(toolResult.structuredContent ? { structuredContent: toolResult.structuredContent } : {}),
+          ...(generatedArtifacts.length ? { artifacts: generatedArtifacts } : {}),
           isError: true,
           autoSelected,
           attemptCount: attempt,
@@ -1602,6 +1737,8 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
         toolName,
         arguments: currentArguments,
         resultText: toolResult.contentText,
+        ...(toolResult.structuredContent ? { structuredContent: toolResult.structuredContent } : {}),
+        ...(generatedArtifacts.length ? { artifacts: generatedArtifacts } : {}),
         isError: false,
         autoSelected,
         attemptCount: attempt,

@@ -11,7 +11,9 @@ import {
   listWritingBooks,
   listMcpServers,
   listSkillDefinitions,
+  listToolConfigs,
   listTasks,
+  listVideoProjects,
   listWeeklyProgress
 } from "../../workbench/src/index.js";
 import type { WorkbenchSnapshot } from "../../shared/src/index.js";
@@ -28,8 +30,10 @@ export async function buildWorkbenchSnapshot(): Promise<WorkbenchSnapshot> {
     workflowLibrary,
     writingBooks,
     comicProjects,
+    videoProjects,
     skillDefinitions,
     mcpServers,
+    toolConfigs,
     agentProfiles,
     agentRunLogs,
     commandWorkshopSessions
@@ -43,8 +47,10 @@ export async function buildWorkbenchSnapshot(): Promise<WorkbenchSnapshot> {
       listWorkflowLibrary(),
       listWritingBooks(),
       listComicProjects(),
+      listVideoProjects(),
       listSkillDefinitions(),
       listMcpServers(),
+      listToolConfigs(),
       listAgentProfiles(),
       listAgentRunLogs(),
       listCommandWorkshopSessions()
@@ -64,8 +70,10 @@ export async function buildWorkbenchSnapshot(): Promise<WorkbenchSnapshot> {
     workflowLibrary,
     writingBooks,
     comicProjects,
+    videoProjects,
     skillDefinitions,
     mcpServers,
+    toolConfigs,
     agentProfiles,
     agentRunLogs,
     commandWorkshopSessions

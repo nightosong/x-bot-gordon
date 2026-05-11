@@ -158,9 +158,12 @@
               :command-tool-options="commandToolOptions"
               :back-to-command-list="backToCommandList"
               :begin-new-command-session="beginNewCommandSession"
+              :get-command-artifact-call-arguments-text="getCommandArtifactCallArgumentsText"
+              :get-command-artifact-call-repaired-arguments-text="getCommandArtifactCallRepairedArgumentsText"
               :get-command-artifact-call-secondary="getCommandArtifactCallSecondary"
               :get-command-artifact-call-title="getCommandArtifactCallTitle"
               :get-command-artifact-inline-text="getCommandArtifactInlineText"
+              :get-command-artifact-products="getCommandArtifactProducts"
               :get-command-artifact-step-secondary="getCommandArtifactStepSecondary"
               :get-command-artifact-summary="getCommandArtifactSummary"
               :get-skill-option-label="getSkillOptionLabel"
@@ -209,6 +212,7 @@
               :handle-runner-submit="handleRunnerSubmit"
               :handle-skill-delete="handleSkillDelete"
               :handle-skill-status-toggle="handleSkillStatusToggle"
+              :handle-tool-config-status-toggle="handleToolConfigStatusToggle"
               :is-builtin-workbench-item="isBuiltinWorkbenchItem"
               :open-agent-runner="openAgentRunner"
               :open-extension-editor="openExtensionEditor"
@@ -256,6 +260,7 @@ import { createComicActions } from "./features/marketplace/comicActions.js";
 import { createMarketplaceViewContext } from "./features/marketplace/marketplaceContext.js";
 import MarketplaceView from "./features/marketplace/MarketplaceView.vue";
 import { createMarketplaceState } from "./features/marketplace/marketplaceConfig.js";
+import { createVideoActions } from "./features/marketplace/videoActions.js";
 import ModelManagementView from "./features/model-management/ModelManagementView.vue";
 import {
   createEmptyModelSettings,
@@ -311,6 +316,7 @@ let workbenchRuntime = null;
 const activeFeature = ref(FEATURE_HOME);
 const commandWorkshopViewRef = ref(null);
 const comicChapterDropdownMenuRef = ref(null);
+const videoShotDropdownMenuRef = ref(null);
 const writingChapterDropdownMenuRef = ref(null);
 const weeklyTaskRewriteIds = ref([]);
 
@@ -326,8 +332,10 @@ const workbench = reactive({
   workflowLibrary: [],
   writingBooks: [],
   comicProjects: [],
+  videoProjects: [],
   skillDefinitions: [],
   mcpServers: [],
+  toolConfigs: [],
   agentProfiles: [],
   agentRunLogs: [],
   commandSessions: []
@@ -433,6 +441,24 @@ const {
   applyComicProjectsFromStorage,
   clearComicAutosaveTimer
 } = comicActions;
+
+const videoActions = createVideoActions({
+  activeFeature,
+  createLocalId,
+  desktopApi,
+  featureMarketplaceId: FEATURE_MARKETPLACE,
+  nextTick,
+  setStatus,
+  showConfirmDialog,
+  ui,
+  videoShotDropdownMenuRef,
+  workbench
+});
+
+const {
+  applyVideoProjectsFromStorage,
+  clearVideoAutosaveTimer
+} = videoActions;
 
 const writingActions = createWritingActions({
   activeFeature,
@@ -549,6 +575,8 @@ const marketplaceViewContext = createMarketplaceViewContext({
   comicChapterDropdownMenuRef,
   truncateText,
   ui,
+  videoActions,
+  videoShotDropdownMenuRef,
   writingActions,
   writingAiActions,
   writingChapterDropdownMenuRef
@@ -637,9 +665,12 @@ const {
   commandSettingsSummary,
   commandToolOptions,
   focusCommandInput,
+  getCommandArtifactCallArgumentsText,
+  getCommandArtifactCallRepairedArgumentsText,
   getCommandArtifactCallSecondary,
   getCommandArtifactCallTitle,
   getCommandArtifactInlineText,
+  getCommandArtifactProducts,
   getCommandArtifactStepSecondary,
   getCommandArtifactSummary,
   handleAgentRunProgress,
@@ -693,6 +724,7 @@ const {
   handleRunnerSubmit,
   handleSkillDelete,
   handleSkillStatusToggle,
+  handleToolConfigStatusToggle,
   openAgentRunner,
   openExtensionEditor,
   resetExtensionsManagement,
@@ -850,6 +882,7 @@ const {
 workbenchRuntime = createWorkbenchRuntime({
   activeFeature,
   applyComicProjectsFromStorage,
+  applyVideoProjectsFromStorage,
   applyWritingBooksFromStorage,
   desktopApi,
   featureCommandWorkshopId: FEATURE_COMMAND_WORKSHOP,
@@ -872,6 +905,7 @@ setupRootWatchers({
   activeFeature,
   bootstrapWorkbench,
   clearComicAutosaveTimer,
+  clearVideoAutosaveTimer,
   clearWritingAutosaveTimer,
   desktopApi,
   disposeWeeklyRuntime,

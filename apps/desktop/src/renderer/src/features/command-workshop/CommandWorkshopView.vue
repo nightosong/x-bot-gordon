@@ -80,6 +80,29 @@
                   </span>
                 </div>
 
+                <div v-if="getCommandArtifactProducts(message.artifact).length" class="command-generated-products">
+                  <article
+                    v-for="product in getCommandArtifactProducts(message.artifact)"
+                    :key="product.id"
+                    class="command-generated-product"
+                  >
+                    <img :src="product.src" :alt="product.title" class="command-generated-product-image" loading="lazy" />
+                    <div class="command-generated-product-meta">
+                      <p class="command-generated-product-title">{{ product.title }}</p>
+                      <p v-if="product.meta" class="command-generated-product-copy" :title="product.meta">{{ product.meta }}</p>
+                      <a
+                        v-if="product.url"
+                        class="command-generated-product-link"
+                        :href="product.url"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        打开原图
+                      </a>
+                    </div>
+                  </article>
+                </div>
+
                 <details v-if="message.role === 'assistant' && message.artifact" class="command-artifact-panel">
                   <summary>{{ getCommandArtifactSummary(message.artifact) }}</summary>
 
@@ -165,19 +188,31 @@
                           </span>
 
                           <div class="command-artifact-chain-main">
-                            <p
-                              class="command-artifact-chain-title"
-                              :title="getCommandArtifactCallTitle(call)"
-                            >
-                              {{ getCommandArtifactCallTitle(call) }}
-                            </p>
-                            <p
-                              v-if="getCommandArtifactCallSecondary(call)"
-                              class="command-artifact-chain-secondary"
-                              :title="getCommandArtifactCallSecondary(call)"
-                            >
-                              {{ getCommandArtifactCallSecondary(call) }}
-                            </p>
+                            <div class="command-artifact-chain-line">
+                              <p
+                                class="command-artifact-chain-title"
+                                :title="getCommandArtifactCallTitle(call)"
+                              >
+                                {{ getCommandArtifactCallTitle(call) }}
+                              </p>
+                              <p
+                                v-if="getCommandArtifactCallSecondary(call)"
+                                class="command-artifact-chain-secondary"
+                                :title="getCommandArtifactCallSecondary(call)"
+                              >
+                                {{ getCommandArtifactCallSecondary(call) }}
+                              </p>
+                            </div>
+
+                            <div v-if="getCommandArtifactCallArgumentsText(call)" class="command-artifact-call-params">
+                              <span class="command-artifact-call-params-label">调用参数</span>
+                              <pre class="command-artifact-call-params-code">{{ getCommandArtifactCallArgumentsText(call) }}</pre>
+                            </div>
+
+                            <div v-if="getCommandArtifactCallRepairedArgumentsText(call)" class="command-artifact-call-params is-muted">
+                              <span class="command-artifact-call-params-label">修复前参数</span>
+                              <pre class="command-artifact-call-params-code">{{ getCommandArtifactCallRepairedArgumentsText(call) }}</pre>
+                            </div>
                           </div>
 
                           <span class="command-artifact-chain-time">{{ formatLocalDateTime(call.createdAt) }}</span>
@@ -198,6 +233,29 @@
                   class="command-message-body command-rich-text"
                   v-html="renderRichText(ui.command.liveProgress?.statusText || '正在读取上下文并规划执行步骤，请稍等片刻。')"
                 ></div>
+
+                <div v-if="getCommandArtifactProducts(ui.command.liveProgress?.artifact).length" class="command-generated-products">
+                  <article
+                    v-for="product in getCommandArtifactProducts(ui.command.liveProgress?.artifact)"
+                    :key="product.id"
+                    class="command-generated-product"
+                  >
+                    <img :src="product.src" :alt="product.title" class="command-generated-product-image" loading="lazy" />
+                    <div class="command-generated-product-meta">
+                      <p class="command-generated-product-title">{{ product.title }}</p>
+                      <p v-if="product.meta" class="command-generated-product-copy" :title="product.meta">{{ product.meta }}</p>
+                      <a
+                        v-if="product.url"
+                        class="command-generated-product-link"
+                        :href="product.url"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        打开原图
+                      </a>
+                    </div>
+                  </article>
+                </div>
 
                 <details v-if="ui.command.liveProgress?.artifact" class="command-artifact-panel" open>
                   <summary>{{ getCommandArtifactSummary(ui.command.liveProgress.artifact) }}</summary>
@@ -284,16 +342,28 @@
                           </span>
 
                           <div class="command-artifact-chain-main">
-                            <p class="command-artifact-chain-title" :title="getCommandArtifactCallTitle(call)">
-                              {{ getCommandArtifactCallTitle(call) }}
-                            </p>
-                            <p
-                              v-if="getCommandArtifactCallSecondary(call)"
-                              class="command-artifact-chain-secondary"
-                              :title="getCommandArtifactCallSecondary(call)"
-                            >
-                              {{ getCommandArtifactCallSecondary(call) }}
-                            </p>
+                            <div class="command-artifact-chain-line">
+                              <p class="command-artifact-chain-title" :title="getCommandArtifactCallTitle(call)">
+                                {{ getCommandArtifactCallTitle(call) }}
+                              </p>
+                              <p
+                                v-if="getCommandArtifactCallSecondary(call)"
+                                class="command-artifact-chain-secondary"
+                                :title="getCommandArtifactCallSecondary(call)"
+                              >
+                                {{ getCommandArtifactCallSecondary(call) }}
+                              </p>
+                            </div>
+
+                            <div v-if="getCommandArtifactCallArgumentsText(call)" class="command-artifact-call-params">
+                              <span class="command-artifact-call-params-label">调用参数</span>
+                              <pre class="command-artifact-call-params-code">{{ getCommandArtifactCallArgumentsText(call) }}</pre>
+                            </div>
+
+                            <div v-if="getCommandArtifactCallRepairedArgumentsText(call)" class="command-artifact-call-params is-muted">
+                              <span class="command-artifact-call-params-label">修复前参数</span>
+                              <pre class="command-artifact-call-params-code">{{ getCommandArtifactCallRepairedArgumentsText(call) }}</pre>
+                            </div>
                           </div>
 
                           <span class="command-artifact-chain-time">{{ formatLocalDateTime(call.createdAt) }}</span>
@@ -446,11 +516,13 @@
                 <button
                   type="submit"
                   class="model-icon-button command-input-submit"
+                  :class="{ 'is-running': ui.command.isRunning }"
                   :disabled="!commandSelectedAgent || ui.command.isRunning"
                   :aria-label="ui.command.isRunning ? '处理中' : '发送消息'"
                   :title="ui.command.isRunning ? '处理中' : '发送消息'"
                 >
-                  <GIcon name="enter" />
+                  <GIcon v-if="ui.command.isRunning" name="loading" spin />
+                  <GIcon v-else name="enter" />
                 </button>
               </div>
             </div>
@@ -537,9 +609,12 @@ defineProps({
   commandToolOptions: { type: Array, default: () => [] },
   backToCommandList: { type: Function, required: true },
   beginNewCommandSession: { type: Function, required: true },
+  getCommandArtifactCallArgumentsText: { type: Function, required: true },
+  getCommandArtifactCallRepairedArgumentsText: { type: Function, required: true },
   getCommandArtifactCallSecondary: { type: Function, required: true },
   getCommandArtifactCallTitle: { type: Function, required: true },
   getCommandArtifactInlineText: { type: Function, required: true },
+  getCommandArtifactProducts: { type: Function, required: true },
   getCommandArtifactStepSecondary: { type: Function, required: true },
   getCommandArtifactSummary: { type: Function, required: true },
   getSkillOptionLabel: { type: Function, required: true },
