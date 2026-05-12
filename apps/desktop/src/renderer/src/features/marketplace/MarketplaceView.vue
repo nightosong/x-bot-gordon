@@ -1,12 +1,12 @@
 <template>
 <div
   class="workspace-stage workspace-stage-scroll"
-  :class="{ 'workspace-stage-flush': ui.marketplace.view === 'writingDetail' || ui.marketplace.view === 'comicDetail' || ui.marketplace.view === 'videoDetail' }"
+  :class="{ 'workspace-stage-flush': ui.marketplace.view === 'writingDetail' || ui.marketplace.view === 'comicDetail' || ui.marketplace.view === 'videoDetail' || ui.marketplace.view === 'fortune' || ui.marketplace.view === 'music' }"
 >
   <div
     class="marketplace-shell"
     :class="{
-      'marketplace-shell-detail': ui.marketplace.view === 'writingDetail' || ui.marketplace.view === 'comicDetail' || ui.marketplace.view === 'videoDetail',
+      'marketplace-shell-detail': ui.marketplace.view === 'writingDetail' || ui.marketplace.view === 'comicDetail' || ui.marketplace.view === 'videoDetail' || ui.marketplace.view === 'fortune' || ui.marketplace.view === 'music',
       'marketplace-shell-shelf': ui.marketplace.view === 'writingShelf' || ui.marketplace.view === 'comicShelf' || ui.marketplace.view === 'videoShelf'
     }"
   >
@@ -41,7 +41,7 @@
           </div>
           <div class="marketplace-app-meta">
             <span class="pill">写作助手</span>
-            <span class="pill pill-neutral">大师提示词</span>
+            <span class="pill pill-neutral">故事大纲</span>
           </div>
         </article>
 
@@ -65,7 +65,6 @@
           <div class="marketplace-app-meta">
             <span class="pill">漫画创作</span>
             <span class="pill pill-neutral">单色 / 彩绘</span>
-            <span class="pill pill-neutral">海报 / 连载</span>
           </div>
         </article>
 
@@ -88,10 +87,373 @@
           </div>
           <div class="marketplace-app-meta">
             <span class="pill">视频生成</span>
-            <span class="pill pill-neutral">文生 / 图生</span>
             <span class="pill pill-neutral">镜头规划</span>
           </div>
         </article>
+
+        <article
+          class="marketplace-app-card music-app-card"
+          role="button"
+          tabindex="0"
+          :aria-label="`${MUSIC_APP_NAME} 音乐创作应用`"
+          @click="openMusicApp"
+          @keydown.enter.prevent="openMusicApp"
+          @keydown.space.prevent="openMusicApp"
+        >
+          <div class="music-app-mark" aria-hidden="true">
+            <span>音</span>
+          </div>
+          <div class="marketplace-app-copy">
+            <p class="feature-kicker">Music Studio</p>
+            <p class="marketplace-app-title">{{ MUSIC_APP_NAME }}</p>
+            <p class="models-copy">音乐创作工作台，沉淀歌词、曲风、编曲方向和生成提示词。</p>
+          </div>
+          <div class="marketplace-app-meta">
+            <span class="pill">音乐创作</span>
+            <span class="pill pill-neutral">歌词 / 纯音</span>
+          </div>
+        </article>
+
+        <article
+          class="marketplace-app-card fortune-app-card"
+          role="button"
+          tabindex="0"
+          :aria-label="`${FORTUNE_APP_NAME} 占卜运势应用`"
+          @click="openFortuneApp"
+          @keydown.enter.prevent="openFortuneApp"
+          @keydown.space.prevent="openFortuneApp"
+        >
+          <div class="fortune-app-mark" aria-hidden="true">
+            <span>灵</span>
+          </div>
+          <div class="marketplace-app-copy">
+            <p class="feature-kicker">Fortune Studio</p>
+            <p class="marketplace-app-title">{{ FORTUNE_APP_NAME }}</p>
+            <p class="models-copy">占卜与运势工作台，围绕问题、时段和关注面生成可复盘的趋势解读。</p>
+          </div>
+          <div class="marketplace-app-meta">
+            <span class="pill">占卜运势</span>
+            <span class="pill pill-neutral">趋势参考</span>
+          </div>
+        </article>
+      </section>
+    </template>
+
+    <template v-else-if="ui.marketplace.view === 'music'">
+      <section class="writing-detail-shell fortune-detail-shell music-detail-shell">
+        <header class="writing-detail-head fortune-detail-head music-detail-head">
+          <button type="button" class="model-icon-button weekly-back-button" aria-label="返回应用广场" title="返回应用广场" @click="backMusicMarketplace">
+            <GIcon name="return" />
+          </button>
+
+          <div class="writing-detail-title">
+            <p class="fortune-title-text music-title-text">{{ MUSIC_APP_NAME }}</p>
+          </div>
+
+          <div class="model-section-actions">
+            <span class="pill">{{ activeMusicModeMeta.label }}</span>
+            <span class="pill pill-neutral">创作草案</span>
+          </div>
+        </header>
+
+        <section class="fortune-workbench music-workbench">
+          <aside class="fortune-rail music-rail">
+            <div class="music-mark-large" aria-hidden="true">
+              <span>音</span>
+            </div>
+
+            <div class="fortune-mode-list music-mode-list" role="tablist" aria-label="瑶琴映月创作类型">
+              <button
+                v-for="mode in MUSIC_CREATION_MODES"
+                :key="mode.id"
+                type="button"
+                class="fortune-mode-button music-mode-button"
+                :class="{ 'is-active': ui.marketplace.music.activeMode === mode.id }"
+                :aria-selected="ui.marketplace.music.activeMode === mode.id ? 'true' : 'false'"
+                @click="setMusicMode(mode.id)"
+              >
+                <span>{{ mode.kicker }}</span>
+                <strong>{{ mode.label }}</strong>
+              </button>
+            </div>
+          </aside>
+
+          <main class="fortune-main-stage music-main-stage">
+            <article class="writing-editor-card fortune-input-card music-input-card">
+              <div class="writing-editor-head">
+                <div>
+                  <p class="feature-kicker">{{ activeMusicModeMeta.kicker }}</p>
+                  <p class="model-section-title">{{ activeMusicModeMeta.label }}</p>
+                </div>
+                <button
+                  type="button"
+                  class="model-action fortune-run-button music-run-button"
+                  :disabled="ui.marketplace.music.isGenerating"
+                  @click="generateMusicDraft"
+                >
+                  <GIcon
+                    :name="ui.marketplace.music.isGenerating ? 'loading' : 'sparkles'"
+                    :spin="ui.marketplace.music.isGenerating"
+                    :size="15"
+                  />
+                  {{ ui.marketplace.music.isGenerating ? "谱写中" : "生成草案" }}
+                </button>
+              </div>
+
+              <div class="fortune-form-grid music-form-grid">
+                <div class="field field-full">
+                  <span class="field-label">主题 / 需求</span>
+                  <FieldAiOptimizer
+                    :actions="fieldAiActions"
+                    :state="ui.marketplace.fieldAi"
+                    :field-id="`music-theme-${ui.marketplace.music.activeMode}`"
+                    :app-name="MUSIC_APP_NAME"
+                    label="主题 / 需求"
+                    :value="ui.marketplace.music.theme"
+                    :context="buildMusicFieldAiContext('主题 / 需求')"
+                    :disabled="ui.marketplace.music.isGenerating"
+                    :set-value="setMusicTheme"
+                  >
+                    <textarea
+                      :value="ui.marketplace.music.theme"
+                      class="field-textarea fortune-question-textarea music-theme-textarea"
+                      :placeholder="activeMusicModeMeta.placeholder"
+                      :disabled="ui.marketplace.music.isGenerating"
+                      @input="setMusicTheme($event.target.value)"
+                    ></textarea>
+                  </FieldAiOptimizer>
+                </div>
+
+                <label class="field">
+                  <span class="field-label">曲风 / 情绪 / 场景</span>
+                  <input
+                    :value="ui.marketplace.music.style"
+                    class="field-input"
+                    placeholder="例如 City Pop、国风电子、民谣、Lo-fi、温柔、热烈"
+                    :disabled="ui.marketplace.music.isGenerating"
+                    @input="setMusicStyle($event.target.value)"
+                  />
+                </label>
+
+                <div class="field">
+                  <span class="field-label">参考歌词 / 素材</span>
+                  <FieldAiOptimizer
+                    :actions="fieldAiActions"
+                    :state="ui.marketplace.fieldAi"
+                    :field-id="`music-reference-${ui.marketplace.music.activeMode}`"
+                    :app-name="MUSIC_APP_NAME"
+                    label="参考歌词 / 素材"
+                    :value="ui.marketplace.music.reference"
+                    :context="buildMusicFieldAiContext('参考歌词 / 素材')"
+                    :disabled="ui.marketplace.music.isGenerating"
+                    :set-value="setMusicReference"
+                  >
+                    <textarea
+                      :value="ui.marketplace.music.reference"
+                      class="field-textarea fortune-context-textarea music-reference-textarea"
+                      placeholder="可选，贴已有歌词、旋律描述、参考歌气质或使用场景。"
+                      :disabled="ui.marketplace.music.isGenerating"
+                      @input="setMusicReference($event.target.value)"
+                    ></textarea>
+                  </FieldAiOptimizer>
+                </div>
+              </div>
+            </article>
+
+            <article class="writing-editor-card fortune-output-card music-output-card">
+              <div class="writing-editor-head">
+                <div>
+                  <p class="feature-kicker">Draft</p>
+                  <p class="model-section-title">音乐草案</p>
+                </div>
+                <button
+                  type="button"
+                  class="model-action-secondary fortune-clear-button music-clear-button"
+                  :disabled="ui.marketplace.music.isGenerating || !ui.marketplace.music.output"
+                  @click="clearMusicOutput"
+                >
+                  清空
+                </button>
+              </div>
+
+              <div class="fortune-output-body music-output-body">
+                <pre v-if="ui.marketplace.music.output">{{ ui.marketplace.music.output }}</pre>
+                <div v-else class="fortune-output-empty music-output-empty">
+                  <strong>{{ activeMusicModeMeta.focus }}</strong>
+                  <span>填写主题后生成草案，结果会落在这里。</span>
+                </div>
+              </div>
+
+              <p
+                v-if="ui.marketplace.music.feedback"
+                class="writing-export-feedback fortune-feedback music-feedback"
+                :class="getMusicFeedbackClass()"
+                role="status"
+              >
+                {{ ui.marketplace.music.feedback }}
+              </p>
+            </article>
+          </main>
+        </section>
+      </section>
+    </template>
+
+    <template v-else-if="ui.marketplace.view === 'fortune'">
+      <section class="writing-detail-shell fortune-detail-shell">
+        <header class="writing-detail-head fortune-detail-head">
+          <button type="button" class="model-icon-button weekly-back-button" aria-label="返回应用广场" title="返回应用广场" @click="backFortuneMarketplace">
+            <GIcon name="return" />
+          </button>
+
+          <div class="writing-detail-title">
+            <p class="fortune-title-text">{{ FORTUNE_APP_NAME }}</p>
+          </div>
+
+          <div class="model-section-actions">
+            <span class="pill">{{ activeFortuneModeMeta.label }}</span>
+            <span class="pill pill-neutral">灵感参考</span>
+          </div>
+        </header>
+
+        <section class="fortune-workbench">
+          <aside class="fortune-rail">
+            <div class="fortune-mark-large" aria-hidden="true">
+              <span>灵</span>
+            </div>
+
+            <div class="fortune-mode-list" role="tablist" aria-label="灵犀照命解读类型">
+              <button
+                v-for="mode in FORTUNE_READING_MODES"
+                :key="mode.id"
+                type="button"
+                class="fortune-mode-button"
+                :class="{ 'is-active': ui.marketplace.fortune.activeMode === mode.id }"
+                :aria-selected="ui.marketplace.fortune.activeMode === mode.id ? 'true' : 'false'"
+                @click="setFortuneMode(mode.id)"
+              >
+                <span>{{ mode.kicker }}</span>
+                <strong>{{ mode.label }}</strong>
+              </button>
+            </div>
+          </aside>
+
+          <main class="fortune-main-stage">
+            <article class="writing-editor-card fortune-input-card">
+              <div class="writing-editor-head">
+                <div>
+                  <p class="feature-kicker">{{ activeFortuneModeMeta.kicker }}</p>
+                  <p class="model-section-title">{{ activeFortuneModeMeta.label }}</p>
+                </div>
+                <button
+                  type="button"
+                  class="model-action fortune-run-button"
+                  :disabled="ui.marketplace.fortune.isGenerating"
+                  @click="generateFortuneReading"
+                >
+                  <GIcon
+                    :name="ui.marketplace.fortune.isGenerating ? 'loading' : 'sparkles'"
+                    :spin="ui.marketplace.fortune.isGenerating"
+                    :size="15"
+                  />
+                  {{ ui.marketplace.fortune.isGenerating ? "解读中" : "生成解读" }}
+                </button>
+              </div>
+
+              <div class="fortune-form-grid">
+                <div class="field field-full">
+                  <span class="field-label">关注问题</span>
+                  <FieldAiOptimizer
+                    :actions="fieldAiActions"
+                    :state="ui.marketplace.fieldAi"
+                    :field-id="`fortune-question-${ui.marketplace.fortune.activeMode}`"
+                    :app-name="FORTUNE_APP_NAME"
+                    label="关注问题"
+                    :value="ui.marketplace.fortune.question"
+                    :context="buildFortuneFieldAiContext('关注问题')"
+                    :disabled="ui.marketplace.fortune.isGenerating"
+                    :set-value="setFortuneQuestion"
+                  >
+                    <textarea
+                      :value="ui.marketplace.fortune.question"
+                      class="field-textarea fortune-question-textarea"
+                      :placeholder="activeFortuneModeMeta.placeholder"
+                      :disabled="ui.marketplace.fortune.isGenerating"
+                      @input="setFortuneQuestion($event.target.value)"
+                    ></textarea>
+                  </FieldAiOptimizer>
+                </div>
+
+                <label class="field">
+                  <span class="field-label">出生 / 时间信息</span>
+                  <input
+                    :value="ui.marketplace.fortune.birthInfo"
+                    class="field-input"
+                    placeholder="可选，例如生日、时辰、当前时间或抽牌时间"
+                    :disabled="ui.marketplace.fortune.isGenerating"
+                    @input="setFortuneBirthInfo($event.target.value)"
+                  />
+                </label>
+
+                <div class="field">
+                  <span class="field-label">补充背景</span>
+                  <FieldAiOptimizer
+                    :actions="fieldAiActions"
+                    :state="ui.marketplace.fieldAi"
+                    :field-id="`fortune-context-${ui.marketplace.fortune.activeMode}`"
+                    :app-name="FORTUNE_APP_NAME"
+                    label="补充背景"
+                    :value="ui.marketplace.fortune.context"
+                    :context="buildFortuneFieldAiContext('补充背景')"
+                    :disabled="ui.marketplace.fortune.isGenerating"
+                    :set-value="setFortuneContext"
+                  >
+                    <textarea
+                      :value="ui.marketplace.fortune.context"
+                      class="field-textarea fortune-context-textarea"
+                      placeholder="可选，写下当前处境、选项、对象关系或近期事件。"
+                      :disabled="ui.marketplace.fortune.isGenerating"
+                      @input="setFortuneContext($event.target.value)"
+                    ></textarea>
+                  </FieldAiOptimizer>
+                </div>
+              </div>
+            </article>
+
+            <article class="writing-editor-card fortune-output-card">
+              <div class="writing-editor-head">
+                <div>
+                  <p class="feature-kicker">Reading</p>
+                  <p class="model-section-title">解读结果</p>
+                </div>
+                <button
+                  type="button"
+                  class="model-action-secondary fortune-clear-button"
+                  :disabled="ui.marketplace.fortune.isGenerating || !ui.marketplace.fortune.output"
+                  @click="clearFortuneReading"
+                >
+                  清空
+                </button>
+              </div>
+
+              <div class="fortune-output-body">
+                <pre v-if="ui.marketplace.fortune.output">{{ ui.marketplace.fortune.output }}</pre>
+                <div v-else class="fortune-output-empty">
+                  <strong>{{ activeFortuneModeMeta.focus }}</strong>
+                  <span>填写问题后生成解读，结果会落在这里。</span>
+                </div>
+              </div>
+
+              <p
+                v-if="ui.marketplace.fortune.feedback"
+                class="writing-export-feedback fortune-feedback"
+                :class="getFortuneFeedbackClass()"
+                role="status"
+              >
+                {{ ui.marketplace.fortune.feedback }}
+              </p>
+            </article>
+          </main>
+        </section>
       </section>
     </template>
 
@@ -426,35 +788,68 @@
                 </div>
 
                 <div v-if="ui.marketplace.video.activeTab === 'concept'" class="writing-intro-stack">
-                  <label class="field writing-intro-field">
+                  <div class="field writing-intro-field">
                     <span class="field-label">主题与用途</span>
-                    <textarea
-                      class="field-textarea writing-editor-textarea writing-intro-textarea"
+                    <FieldAiOptimizer
+                      :actions="fieldAiActions"
+                      :state="ui.marketplace.fieldAi"
+                      :field-id="`video-project-summary-${activeVideoProject.id}`"
+                      :app-name="VIDEO_APP_NAME"
+                      label="主题与用途"
                       :value="activeVideoProject.summary"
-                      placeholder="视频主题、主体、受众、发布场景、情绪目标和核心画面。"
-                      @input="setVideoProjectSummary($event.target.value)"
-                    ></textarea>
-                  </label>
+                      :context="buildVideoProjectFieldAiContext('主题与用途')"
+                      :set-value="setVideoProjectSummary"
+                    >
+                      <textarea
+                        class="field-textarea writing-editor-textarea writing-intro-textarea"
+                        :value="activeVideoProject.summary"
+                        placeholder="视频主题、主体、受众、发布场景、情绪目标和核心画面。"
+                        @input="setVideoProjectSummary($event.target.value)"
+                      ></textarea>
+                    </FieldAiOptimizer>
+                  </div>
 
-                  <label class="field writing-intro-field">
+                  <div class="field writing-intro-field">
                     <span class="field-label">视觉与运动风格</span>
-                    <textarea
-                      class="field-textarea writing-editor-textarea writing-intro-textarea is-large"
+                    <FieldAiOptimizer
+                      :actions="fieldAiActions"
+                      :state="ui.marketplace.fieldAi"
+                      :field-id="`video-project-visual-${activeVideoProject.id}`"
+                      :app-name="VIDEO_APP_NAME"
+                      label="视觉与运动风格"
                       :value="activeVideoProject.visualStyle"
-                      placeholder="光线、色彩、材质、镜头运动、速度、稳定性、人物/主体约束。"
-                      @input="setVideoProjectVisualStyle($event.target.value)"
-                    ></textarea>
-                  </label>
+                      :context="buildVideoProjectFieldAiContext('视觉与运动风格')"
+                      :set-value="setVideoProjectVisualStyle"
+                    >
+                      <textarea
+                        class="field-textarea writing-editor-textarea writing-intro-textarea is-large"
+                        :value="activeVideoProject.visualStyle"
+                        placeholder="光线、色彩、材质、镜头运动、速度、稳定性、人物/主体约束。"
+                        @input="setVideoProjectVisualStyle($event.target.value)"
+                      ></textarea>
+                    </FieldAiOptimizer>
+                  </div>
 
-                  <label class="field writing-intro-field">
+                  <div class="field writing-intro-field">
                     <span class="field-label">分镜总规划</span>
-                    <textarea
-                      class="field-textarea writing-editor-textarea writing-intro-textarea is-large"
+                    <FieldAiOptimizer
+                      :actions="fieldAiActions"
+                      :state="ui.marketplace.fieldAi"
+                      :field-id="`video-project-storyboard-${activeVideoProject.id}`"
+                      :app-name="VIDEO_APP_NAME"
+                      label="分镜总规划"
                       :value="activeVideoProject.storyboardPlan"
-                      placeholder="按镜头写下开场、推进、高潮和收束，明确每个镜头的主体、运动、景别和转场。"
-                      @input="setVideoProjectStoryboardPlan($event.target.value)"
-                    ></textarea>
-                  </label>
+                      :context="buildVideoProjectFieldAiContext('分镜总规划')"
+                      :set-value="setVideoProjectStoryboardPlan"
+                    >
+                      <textarea
+                        class="field-textarea writing-editor-textarea writing-intro-textarea is-large"
+                        :value="activeVideoProject.storyboardPlan"
+                        placeholder="按镜头写下开场、推进、高潮和收束，明确每个镜头的主体、运动、景别和转场。"
+                        @input="setVideoProjectStoryboardPlan($event.target.value)"
+                      ></textarea>
+                    </FieldAiOptimizer>
+                  </div>
                 </div>
 
                 <div v-else-if="ui.marketplace.video.activeTab === 'storyboard'" class="writing-outline-board">
@@ -527,12 +922,23 @@
                       />
                     </label>
 
-                    <textarea
-                      class="field-textarea writing-editor-textarea writing-chapter-summary-textarea"
+                    <FieldAiOptimizer
+                      :actions="fieldAiActions"
+                      :state="ui.marketplace.fieldAi"
+                      :field-id="`video-shot-summary-${activeVideoShot.id}`"
+                      :app-name="VIDEO_APP_NAME"
+                      label="镜头说明"
                       :value="activeVideoShot.summary"
-                      placeholder="主体、动作、镜头运动、景别、光线、情绪和转场。"
-                      @input="setVideoShotSummary(activeVideoShot, $event.target.value)"
-                    ></textarea>
+                      :context="buildVideoShotFieldAiContext(activeVideoShot, '镜头说明')"
+                      :set-value="(value) => setVideoShotSummary(activeVideoShot, value)"
+                    >
+                      <textarea
+                        class="field-textarea writing-editor-textarea writing-chapter-summary-textarea"
+                        :value="activeVideoShot.summary"
+                        placeholder="主体、动作、镜头运动、景别、光线、情绪和转场。"
+                        @input="setVideoShotSummary(activeVideoShot, $event.target.value)"
+                      ></textarea>
+                    </FieldAiOptimizer>
 
                     <div class="model-section-actions writing-chapter-summary-actions">
                       <button type="button" class="model-action-secondary" @click="goVideoShot(activeVideoShot.id)">
@@ -610,43 +1016,87 @@
                     <p>{{ activeVideoShot.summary || "这个镜头还没有说明。" }}</p>
                   </div>
 
-                  <label v-if="activeVideoShot" class="field writing-intro-field">
+                  <div v-if="activeVideoShot" class="field writing-intro-field">
                     <span class="field-label">参考素材 / 首帧说明</span>
-                    <textarea
-                      class="field-textarea writing-editor-textarea video-reference-textarea"
+                    <FieldAiOptimizer
+                      :actions="fieldAiActions"
+                      :state="ui.marketplace.fieldAi"
+                      :field-id="`video-shot-reference-${activeVideoShot.id}`"
+                      :app-name="VIDEO_APP_NAME"
+                      label="参考素材 / 首帧说明"
                       :value="activeVideoShot.reference"
-                      placeholder="可写素材路径、首帧图描述、参考图说明或连续性约束。"
-                      @input="setVideoShotReference(activeVideoShot, $event.target.value)"
-                    ></textarea>
-                  </label>
+                      :context="buildVideoShotFieldAiContext(activeVideoShot, '参考素材 / 首帧说明')"
+                      :set-value="(value) => setVideoShotReference(activeVideoShot, value)"
+                    >
+                      <textarea
+                        class="field-textarea writing-editor-textarea video-reference-textarea"
+                        :value="activeVideoShot.reference"
+                        placeholder="可写素材路径、首帧图描述、参考图说明或连续性约束。"
+                        @input="setVideoShotReference(activeVideoShot, $event.target.value)"
+                      ></textarea>
+                    </FieldAiOptimizer>
+                  </div>
 
-                  <label v-if="activeVideoShot" class="field writing-intro-field">
+                  <div v-if="activeVideoShot" class="field writing-intro-field">
                     <span class="field-label">正向提示词</span>
-                    <textarea
-                      class="field-textarea writing-editor-textarea video-prompt-textarea"
+                    <FieldAiOptimizer
+                      :actions="fieldAiActions"
+                      :state="ui.marketplace.fieldAi"
+                      :field-id="`video-shot-prompt-${activeVideoShot.id}`"
+                      :app-name="VIDEO_APP_NAME"
+                      label="正向提示词"
                       :value="activeVideoShot.prompt"
-                      placeholder="主体、动作、镜头运动、光线、风格、画幅、时长和稳定性要求。"
-                      @input="setVideoShotPrompt(activeVideoShot, $event.target.value)"
-                    ></textarea>
-                  </label>
+                      :context="buildVideoShotFieldAiContext(activeVideoShot, '正向提示词')"
+                      :set-value="(value) => setVideoShotPrompt(activeVideoShot, value)"
+                    >
+                      <textarea
+                        class="field-textarea writing-editor-textarea video-prompt-textarea"
+                        :value="activeVideoShot.prompt"
+                        placeholder="主体、动作、镜头运动、光线、风格、画幅、时长和稳定性要求。"
+                        @input="setVideoShotPrompt(activeVideoShot, $event.target.value)"
+                      ></textarea>
+                    </FieldAiOptimizer>
+                  </div>
 
-                  <label v-if="activeVideoShot" class="field writing-intro-field">
+                  <div v-if="activeVideoShot" class="field writing-intro-field">
                     <span class="field-label">反向提示词</span>
-                    <textarea
-                      class="field-textarea writing-editor-textarea video-negative-textarea"
+                    <FieldAiOptimizer
+                      :actions="fieldAiActions"
+                      :state="ui.marketplace.fieldAi"
+                      :field-id="`video-shot-negative-${activeVideoShot.id}`"
+                      :app-name="VIDEO_APP_NAME"
+                      label="反向提示词"
                       :value="activeVideoShot.negativePrompt"
-                      placeholder="低清晰度、畸形、闪烁、水印、字幕、画面断裂、镜头失控等。"
-                      @input="setVideoShotNegativePrompt(activeVideoShot, $event.target.value)"
-                    ></textarea>
-                  </label>
+                      :context="buildVideoShotFieldAiContext(activeVideoShot, '反向提示词')"
+                      :set-value="(value) => setVideoShotNegativePrompt(activeVideoShot, value)"
+                    >
+                      <textarea
+                        class="field-textarea writing-editor-textarea video-negative-textarea"
+                        :value="activeVideoShot.negativePrompt"
+                        placeholder="低清晰度、畸形、闪烁、水印、字幕、画面断裂、镜头失控等。"
+                        @input="setVideoShotNegativePrompt(activeVideoShot, $event.target.value)"
+                      ></textarea>
+                    </FieldAiOptimizer>
+                  </div>
 
-                  <textarea
+                  <FieldAiOptimizer
                     v-if="activeVideoShot"
-                    class="field-textarea writing-editor-textarea writing-chapter-draft-textarea"
+                    :actions="fieldAiActions"
+                    :state="ui.marketplace.fieldAi"
+                    :field-id="`video-shot-output-${activeVideoShot.id}`"
+                    :app-name="VIDEO_APP_NAME"
+                    label="生成结果"
                     :value="activeVideoShot.output"
-                    placeholder="这里沉淀生成结果、视频链接、参数记录或复跑笔记。"
-                    @input="setVideoShotOutput(activeVideoShot, $event.target.value)"
-                  ></textarea>
+                    :context="buildVideoShotFieldAiContext(activeVideoShot, '生成结果')"
+                    :set-value="(value) => setVideoShotOutput(activeVideoShot, value)"
+                  >
+                    <textarea
+                      class="field-textarea writing-editor-textarea writing-chapter-draft-textarea"
+                      :value="activeVideoShot.output"
+                      placeholder="这里沉淀生成结果、视频链接、参数记录或复跑笔记。"
+                      @input="setVideoShotOutput(activeVideoShot, $event.target.value)"
+                    ></textarea>
+                  </FieldAiOptimizer>
                 </div>
               </article>
             </section>
@@ -793,35 +1243,68 @@
                 </div>
 
                 <div v-if="ui.marketplace.comic.activeTab === 'intro'" class="writing-intro-stack">
-                  <label class="field writing-intro-field">
+                  <div class="field writing-intro-field">
                     <span class="field-label">故事与画面目标</span>
-                    <textarea
-                      class="field-textarea writing-editor-textarea writing-intro-textarea"
+                    <FieldAiOptimizer
+                      :actions="fieldAiActions"
+                      :state="ui.marketplace.fieldAi"
+                      :field-id="`comic-project-summary-${activeComicProject.id}`"
+                      :app-name="COMIC_APP_NAME"
+                      label="故事与画面目标"
                       :value="activeComicProject.summary"
-                      placeholder="主角、世界观、冲突、核心画面和这组漫画要留下的情绪。"
-                      @input="setComicProjectSummary($event.target.value)"
-                    ></textarea>
-                  </label>
+                      :context="buildComicProjectFieldAiContext('故事与画面目标')"
+                      :set-value="setComicProjectSummary"
+                    >
+                      <textarea
+                        class="field-textarea writing-editor-textarea writing-intro-textarea"
+                        :value="activeComicProject.summary"
+                        placeholder="主角、世界观、冲突、核心画面和这组漫画要留下的情绪。"
+                        @input="setComicProjectSummary($event.target.value)"
+                      ></textarea>
+                    </FieldAiOptimizer>
+                  </div>
 
-                  <label class="field writing-intro-field">
+                  <div class="field writing-intro-field">
                     <span class="field-label">画风与镜头</span>
-                    <textarea
-                      class="field-textarea writing-editor-textarea writing-intro-textarea is-large"
+                    <FieldAiOptimizer
+                      :actions="fieldAiActions"
+                      :state="ui.marketplace.fieldAi"
+                      :field-id="`comic-project-visual-${activeComicProject.id}`"
+                      :app-name="COMIC_APP_NAME"
+                      label="画风与镜头"
                       :value="activeComicProject.visualStyle"
-                      placeholder="线条、色彩、构图、角色造型、分镜节奏和参考风格。"
-                      @input="setComicProjectVisualStyle($event.target.value)"
-                    ></textarea>
-                  </label>
+                      :context="buildComicProjectFieldAiContext('画风与镜头')"
+                      :set-value="setComicProjectVisualStyle"
+                    >
+                      <textarea
+                        class="field-textarea writing-editor-textarea writing-intro-textarea is-large"
+                        :value="activeComicProject.visualStyle"
+                        placeholder="线条、色彩、构图、角色造型、分镜节奏和参考风格。"
+                        @input="setComicProjectVisualStyle($event.target.value)"
+                      ></textarea>
+                    </FieldAiOptimizer>
+                  </div>
 
-                  <label class="field writing-intro-field">
+                  <div class="field writing-intro-field">
                     <span class="field-label">{{ activeComicProject.format === 'serial' ? '连载总规划' : '海报构图规划' }}</span>
-                    <textarea
-                      class="field-textarea writing-editor-textarea writing-intro-textarea is-large"
+                    <FieldAiOptimizer
+                      :actions="fieldAiActions"
+                      :state="ui.marketplace.fieldAi"
+                      :field-id="`comic-project-plan-${activeComicProject.id}`"
+                      :app-name="COMIC_APP_NAME"
+                      :label="activeComicProject.format === 'serial' ? '连载总规划' : '海报构图规划'"
                       :value="activeComicProject.episodePlan"
-                      :placeholder="activeComicProject.format === 'serial' ? '按篇章写下主要剧情、角色成长、每话节奏和结尾钩子。' : '写下主体、背景、人物站位、文字区域和最终出图比例。'"
-                      @input="setComicProjectEpisodePlan($event.target.value)"
-                    ></textarea>
-                  </label>
+                      :context="buildComicProjectFieldAiContext(activeComicProject.format === 'serial' ? '连载总规划' : '海报构图规划')"
+                      :set-value="setComicProjectEpisodePlan"
+                    >
+                      <textarea
+                        class="field-textarea writing-editor-textarea writing-intro-textarea is-large"
+                        :value="activeComicProject.episodePlan"
+                        :placeholder="activeComicProject.format === 'serial' ? '按篇章写下主要剧情、角色成长、每话节奏和结尾钩子。' : '写下主体、背景、人物站位、文字区域和最终出图比例。'"
+                        @input="setComicProjectEpisodePlan($event.target.value)"
+                      ></textarea>
+                    </FieldAiOptimizer>
+                  </div>
                 </div>
 
                 <div v-else-if="ui.marketplace.comic.activeTab === 'outline'" class="writing-outline-board">
@@ -882,12 +1365,23 @@
                       />
                     </label>
 
-                    <textarea
-                      class="field-textarea writing-editor-textarea writing-chapter-summary-textarea"
+                    <FieldAiOptimizer
+                      :actions="fieldAiActions"
+                      :state="ui.marketplace.fieldAi"
+                      :field-id="`comic-chapter-summary-${activeComicChapter.id}`"
+                      :app-name="COMIC_APP_NAME"
+                      label="分镜简介"
                       :value="activeComicChapter.summary"
-                      placeholder="写下本章画面目标、分镜顺序、角色动作、对白密度和结尾画面。"
-                      @input="setComicChapterSummary(activeComicChapter, $event.target.value)"
-                    ></textarea>
+                      :context="buildComicChapterFieldAiContext(activeComicChapter, '分镜简介')"
+                      :set-value="(value) => setComicChapterSummary(activeComicChapter, value)"
+                    >
+                      <textarea
+                        class="field-textarea writing-editor-textarea writing-chapter-summary-textarea"
+                        :value="activeComicChapter.summary"
+                        placeholder="写下本章画面目标、分镜顺序、角色动作、对白密度和结尾画面。"
+                        @input="setComicChapterSummary(activeComicChapter, $event.target.value)"
+                      ></textarea>
+                    </FieldAiOptimizer>
 
                     <div class="model-section-actions writing-chapter-summary-actions">
                       <button type="button" class="model-action-secondary" @click="goComicChapter(activeComicChapter.id)">
@@ -965,23 +1459,45 @@
                     <p>{{ activeComicChapter.summary || "这个漫画章节还没有分镜简介。" }}</p>
                   </div>
 
-                  <label v-if="activeComicChapter" class="field writing-intro-field">
+                  <div v-if="activeComicChapter" class="field writing-intro-field">
                     <span class="field-label">生成提示词</span>
-                    <textarea
-                      class="field-textarea writing-editor-textarea comic-prompt-textarea"
+                    <FieldAiOptimizer
+                      :actions="fieldAiActions"
+                      :state="ui.marketplace.fieldAi"
+                      :field-id="`comic-chapter-prompt-${activeComicChapter.id}`"
+                      :app-name="COMIC_APP_NAME"
+                      label="生成提示词"
                       :value="activeComicChapter.prompt"
-                      placeholder="写下模型生成这一章漫画所需的画面、角色、镜头、对白和风格约束。"
-                      @input="setComicChapterPrompt(activeComicChapter, $event.target.value)"
-                    ></textarea>
-                  </label>
+                      :context="buildComicChapterFieldAiContext(activeComicChapter, '生成提示词')"
+                      :set-value="(value) => setComicChapterPrompt(activeComicChapter, value)"
+                    >
+                      <textarea
+                        class="field-textarea writing-editor-textarea comic-prompt-textarea"
+                        :value="activeComicChapter.prompt"
+                        placeholder="写下模型生成这一章漫画所需的画面、角色、镜头、对白和风格约束。"
+                        @input="setComicChapterPrompt(activeComicChapter, $event.target.value)"
+                      ></textarea>
+                    </FieldAiOptimizer>
+                  </div>
 
-                  <textarea
+                  <FieldAiOptimizer
                     v-if="activeComicChapter"
-                    class="field-textarea writing-editor-textarea writing-chapter-draft-textarea"
+                    :actions="fieldAiActions"
+                    :state="ui.marketplace.fieldAi"
+                    :field-id="`comic-chapter-content-${activeComicChapter.id}`"
+                    :app-name="COMIC_APP_NAME"
+                    label="单章生成稿"
                     :value="activeComicChapter.content"
-                    placeholder="这里沉淀单章生成结果、分镜脚本或出图提示词。"
-                    @input="setComicChapterContent(activeComicChapter, $event.target.value)"
-                  ></textarea>
+                    :context="buildComicChapterFieldAiContext(activeComicChapter, '单章生成稿')"
+                    :set-value="(value) => setComicChapterContent(activeComicChapter, value)"
+                  >
+                    <textarea
+                      class="field-textarea writing-editor-textarea writing-chapter-draft-textarea"
+                      :value="activeComicChapter.content"
+                      placeholder="这里沉淀单章生成结果、分镜脚本或出图提示词。"
+                      @input="setComicChapterContent(activeComicChapter, $event.target.value)"
+                    ></textarea>
+                  </FieldAiOptimizer>
                 </div>
               </article>
             </section>
@@ -1124,16 +1640,113 @@
                 </div>
 
                 <div v-if="ui.marketplace.writing.activeTab === 'intro'" class="writing-intro-stack">
-                  <label v-for="section in activeWritingIntroSections" :key="section.key" class="field writing-intro-field">
-                    <span class="field-label">{{ section.label }}</span>
-                    <textarea
-                      class="field-textarea writing-editor-textarea writing-intro-textarea"
-                      :class="{ 'is-large': section.key !== 'intro' }"
-                      :value="getWritingIntroFieldValue(activeWritingBook, section.key)"
-                      :placeholder="section.placeholder"
-                      @input="setWritingIntroField(activeWritingBook, section.key, $event.target.value)"
-                    ></textarea>
-                  </label>
+                  <section
+                    v-for="section in activeWritingIntroSections"
+                    :key="section.key"
+                    class="writing-intro-card"
+                    :class="{ 'is-collapsed': isWritingIntroSectionCollapsed(section.key) }"
+                  >
+                    <div class="writing-intro-card-head">
+                      <button
+                        type="button"
+                        class="writing-intro-toggle"
+                        :aria-expanded="String(!isWritingIntroSectionCollapsed(section.key))"
+                        :aria-label="isWritingIntroSectionCollapsed(section.key) ? `展开${section.label}` : `折叠${section.label}`"
+                        :title="isWritingIntroSectionCollapsed(section.key) ? '展开' : '折叠'"
+                        @click="toggleWritingIntroSectionCollapsed(section.key)"
+                      >
+                        <GIcon :name="isWritingIntroSectionCollapsed(section.key) ? 'chevronRight' : 'chevronDown'" />
+                      </button>
+                      <div class="writing-intro-card-title">
+                        <span class="field-label">{{ section.label }}</span>
+                      </div>
+                      <span class="status-pill">{{ getWritingIntroFieldWordCount(activeWritingBook, section.key) }} 字</span>
+                    </div>
+
+                    <div v-if="!isWritingIntroSectionCollapsed(section.key)" class="writing-intro-card-body">
+                      <FieldAiOptimizer
+                        :actions="fieldAiActions"
+                        :state="ui.marketplace.fieldAi"
+                        :field-id="`writing-intro-${activeWritingBook.id}-${section.key}`"
+                        :app-name="WRITING_APP_NAME"
+                        :label="section.label"
+                        :value="getWritingIntroFieldValue(activeWritingBook, section.key)"
+                        :context="buildWritingBookFieldAiContext(section.label)"
+                        :disabled="isActiveWritingBookAiRunning"
+                        :set-value="(value) => setWritingIntroField(activeWritingBook, section.key, value)"
+                      >
+                        <textarea
+                          class="field-textarea writing-editor-textarea writing-intro-textarea"
+                          :class="{ 'is-large': section.key !== 'intro' }"
+                          :value="getWritingIntroFieldValue(activeWritingBook, section.key)"
+                          :placeholder="section.placeholder"
+                          @input="setWritingIntroField(activeWritingBook, section.key, $event.target.value)"
+                        ></textarea>
+                      </FieldAiOptimizer>
+                    </div>
+                  </section>
+
+                  <section
+                    v-for="section in activeWritingExtraIntroSections"
+                    :key="section.id"
+                    class="writing-intro-card writing-intro-card-extra"
+                    :class="{ 'is-collapsed': isWritingIntroSectionCollapsed(section.id, 'extra') }"
+                  >
+                    <div class="writing-intro-card-head writing-intro-extra-head">
+                      <button
+                        type="button"
+                        class="writing-intro-toggle"
+                        :aria-expanded="String(!isWritingIntroSectionCollapsed(section.id, 'extra'))"
+                        :aria-label="isWritingIntroSectionCollapsed(section.id, 'extra') ? `展开${section.title || '补充设定'}` : `折叠${section.title || '补充设定'}`"
+                        :title="isWritingIntroSectionCollapsed(section.id, 'extra') ? '展开' : '折叠'"
+                        @click="toggleWritingIntroSectionCollapsed(section.id, 'extra')"
+                      >
+                        <GIcon :name="isWritingIntroSectionCollapsed(section.id, 'extra') ? 'chevronRight' : 'chevronDown'" />
+                      </button>
+                      <input
+                        class="field-input writing-intro-title-input"
+                        :value="section.title"
+                        placeholder="设定条目标题"
+                        @input="setWritingExtraIntroSectionTitle(section.id, $event.target.value)"
+                      />
+                      <span class="status-pill">{{ getWritingExtraIntroSectionWordCount(section) }} 字</span>
+                      <button
+                        type="button"
+                        class="model-icon-button model-icon-button-danger writing-intro-delete"
+                        aria-label="删除设定条目"
+                        title="删除设定条目"
+                        @click="removeWritingExtraIntroSection(section.id)"
+                      >
+                        <GIcon name="delete" />
+                      </button>
+                    </div>
+
+                    <div v-if="!isWritingIntroSectionCollapsed(section.id, 'extra')" class="writing-intro-card-body">
+                      <FieldAiOptimizer
+                        :actions="fieldAiActions"
+                        :state="ui.marketplace.fieldAi"
+                        :field-id="`writing-extra-intro-${activeWritingBook.id}-${section.id}`"
+                        :app-name="WRITING_APP_NAME"
+                        :label="section.title || '补充设定'"
+                        :value="section.content"
+                        :context="buildWritingExtraFieldAiContext(section)"
+                        :disabled="isActiveWritingBookAiRunning"
+                        :set-value="(value) => setWritingExtraIntroSectionContent(section.id, value)"
+                      >
+                        <textarea
+                          class="field-textarea writing-editor-textarea writing-intro-textarea is-large"
+                          :value="section.content"
+                          placeholder="写下人物关系、怪物体系、战斗体系、修炼规则、组织结构或题材专属设定。"
+                          @input="setWritingExtraIntroSectionContent(section.id, $event.target.value)"
+                        ></textarea>
+                      </FieldAiOptimizer>
+                    </div>
+                  </section>
+
+                  <button type="button" class="writing-intro-add-button" @click="addWritingExtraIntroSection">
+                    <GIcon name="add" />
+                    新增设定
+                  </button>
                 </div>
 
                 <div v-else-if="ui.marketplace.writing.activeTab === 'outline'" class="writing-outline-board">
@@ -1188,12 +1801,24 @@
                       </span>
                     </div>
 
-                    <textarea
-                      class="field-textarea writing-editor-textarea writing-chapter-summary-textarea"
+                    <FieldAiOptimizer
+                      :actions="fieldAiActions"
+                      :state="ui.marketplace.fieldAi"
+                      :field-id="`writing-chapter-summary-${activeWritingChapter.id}`"
+                      :app-name="WRITING_APP_NAME"
+                      label="章节简介"
                       :value="activeWritingChapter.summary"
-                      placeholder="写下本章目标、主要冲突、信息增量、人物变化和结尾钩子。"
-                      @input="setWritingChapterSummary(activeWritingChapter, $event.target.value)"
-                    ></textarea>
+                      :context="buildWritingChapterFieldAiContext(activeWritingChapter, '章节简介')"
+                      :disabled="isActiveWritingBookAiRunning"
+                      :set-value="(value) => setWritingChapterSummary(activeWritingChapter, value)"
+                    >
+                      <textarea
+                        class="field-textarea writing-editor-textarea writing-chapter-summary-textarea"
+                        :value="activeWritingChapter.summary"
+                        placeholder="写下本章目标、主要冲突、信息增量、人物变化和结尾钩子。"
+                        @input="setWritingChapterSummary(activeWritingChapter, $event.target.value)"
+                      ></textarea>
+                    </FieldAiOptimizer>
 
                     <div class="model-section-actions writing-chapter-summary-actions">
                       <button type="button" class="model-action-secondary" @click="goWritingChapter(activeWritingChapter.id)">
@@ -1278,13 +1903,25 @@
                     <p>{{ activeWritingChapter.summary || "这个章节还没有简介。" }}</p>
                   </div>
 
-                  <textarea
+                  <FieldAiOptimizer
                     v-if="activeWritingChapter"
-                    class="field-textarea writing-editor-textarea writing-chapter-draft-textarea"
+                    :actions="fieldAiActions"
+                    :state="ui.marketplace.fieldAi"
+                    :field-id="`writing-chapter-content-${activeWritingChapter.id}`"
+                    :app-name="WRITING_APP_NAME"
+                    label="章节正文"
                     :value="activeWritingChapter.content"
-                    placeholder="从这一章的第一个场景开始写。"
-                    @input="setWritingChapterContent(activeWritingChapter, $event.target.value)"
-                  ></textarea>
+                    :context="buildWritingChapterFieldAiContext(activeWritingChapter, '章节正文')"
+                    :disabled="isActiveWritingBookAiRunning"
+                    :set-value="(value) => setWritingChapterContent(activeWritingChapter, value)"
+                  >
+                    <textarea
+                      class="field-textarea writing-editor-textarea writing-chapter-draft-textarea"
+                      :value="activeWritingChapter.content"
+                      placeholder="从这一章的第一个场景开始写。"
+                      @input="setWritingChapterContent(activeWritingChapter, $event.target.value)"
+                    ></textarea>
+                  </FieldAiOptimizer>
                 </div>
               </article>
 
@@ -1626,12 +2263,17 @@
 </template>
 
 <script setup>
+import FieldAiOptimizer from "./FieldAiOptimizer.vue";
 import GIcon from "../../components/GIcon.vue";
 import WritingAiDrawer from "../writing/WritingAiDrawer.vue";
 import {
   COMIC_APP_NAME,
   COMIC_APP_TABS,
+  FORTUNE_APP_NAME,
+  FORTUNE_READING_MODES,
   MARKETPLACE_APP_COUNT,
+  MUSIC_APP_NAME,
+  MUSIC_CREATION_MODES,
   VIDEO_APP_NAME,
   VIDEO_APP_TABS
 } from "./marketplaceConfig.js";
@@ -1645,7 +2287,8 @@ const props = defineProps({
   context: { type: Object, required: true }
 });
 
-const { comicActions, refs, truncateText, ui, videoActions, writingActions, writingAiActions } = props.context;
+const { comicActions, fieldAiActions, fortuneActions, musicActions, refs, truncateText, ui, videoActions, writingActions, writingAiActions } =
+  props.context;
 const { comicChapterDropdownMenuRef, videoShotDropdownMenuRef, writingChapterDropdownMenuRef } = refs;
 
 const {
@@ -1749,12 +2392,39 @@ const {
 } = videoActions;
 
 const {
+  activeFortuneModeMeta,
+  backFortuneMarketplace,
+  clearFortuneReading,
+  generateFortuneReading,
+  getFortuneFeedbackClass,
+  openFortuneApp,
+  setFortuneBirthInfo,
+  setFortuneContext,
+  setFortuneMode,
+  setFortuneQuestion
+} = fortuneActions;
+
+const {
+  activeMusicModeMeta,
+  backMusicMarketplace,
+  clearMusicOutput,
+  generateMusicDraft,
+  getMusicFeedbackClass,
+  openMusicApp,
+  setMusicMode,
+  setMusicReference,
+  setMusicStyle,
+  setMusicTheme
+} = musicActions;
+
+const {
   activeWritingBook,
   activeWritingChapter,
   activeWritingChapterIndex,
   activeWritingChapters,
   activeWritingDoneChapterCount,
   activeWritingExportFileName,
+  activeWritingExtraIntroSections,
   activeWritingIntroSections,
   activeWritingLengthProfile,
   activeWritingOutlinePlannerJob,
@@ -1765,6 +2435,7 @@ const {
   backWritingShelf,
   canExportActiveWritingBook,
   closeWritingExportDialog,
+  addWritingExtraIntroSection,
   createWritingBook,
   createWritingChapter,
   deleteWritingBookFromShelf,
@@ -1778,12 +2449,15 @@ const {
   getWritingChapterStatusClass,
   getWritingChapterStatusLabel,
   getWritingChapterWordCount,
+  getWritingExtraIntroSectionWordCount,
+  getWritingIntroFieldWordCount,
   getWritingIntroFieldValue,
   getWritingLengthLabel,
   getWritingTabWordCount,
   goWritingChapter,
   handleWritingBookUpload,
   isActiveWritingBookAiRunning,
+  isWritingIntroSectionCollapsed,
   isWritingChapterSubmitConfirmed,
   openWritingAppShelf,
   openWritingBook,
@@ -1800,12 +2474,16 @@ const {
   setWritingChapterPickerOpen,
   setWritingChapterSummary,
   setWritingChapterTitle,
+  setWritingExtraIntroSectionContent,
+  setWritingExtraIntroSectionTitle,
   setWritingExportFormat,
   setWritingIntroField,
   setWritingTab,
   submitWritingChapter,
+  removeWritingExtraIntroSection,
   toggleWritingAiTaskPicker,
   toggleWritingChapterPicker,
+  toggleWritingIntroSectionCollapsed,
   toggleWritingProfileRail,
   toggleWritingPromptPreview,
   writingBooks
@@ -1830,4 +2508,106 @@ const {
   isWritingOutlinePlannerRunning,
   resumeWritingOutlinePlanningJob
 } = writingAiActions;
+
+function compactFieldAiContext(lines) {
+  return (Array.isArray(lines) ? lines : [])
+    .map((line) => String(line ?? "").trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+function buildMusicFieldAiContext(fieldLabel) {
+  return compactFieldAiContext([
+    `创作类型：${activeMusicModeMeta.value?.label ?? ""}`,
+    `创作重点：${activeMusicModeMeta.value?.focus ?? ""}`,
+    fieldLabel === "主题 / 需求" ? `曲风 / 情绪 / 场景：${ui.marketplace.music.style}` : `主题 / 需求：${ui.marketplace.music.theme}`,
+    `参考歌词 / 素材：${ui.marketplace.music.reference}`
+  ]);
+}
+
+function buildFortuneFieldAiContext(fieldLabel) {
+  return compactFieldAiContext([
+    `解读类型：${activeFortuneModeMeta.value?.label ?? ""}`,
+    `解读重点：${activeFortuneModeMeta.value?.focus ?? ""}`,
+    fieldLabel === "关注问题" ? `出生 / 时间信息：${ui.marketplace.fortune.birthInfo}` : `关注问题：${ui.marketplace.fortune.question}`,
+    `补充背景：${ui.marketplace.fortune.context}`
+  ]);
+}
+
+function buildVideoProjectFieldAiContext(fieldLabel) {
+  return compactFieldAiContext([
+    `项目：${activeVideoProject.value?.title ?? ""}`,
+    `类型：${activeVideoProject.value?.genre ?? ""}`,
+    `模式：${getVideoProjectModeLabel(activeVideoProject.value?.mode)}`,
+    `画幅：${getVideoProjectAspectRatioLabel(activeVideoProject.value?.aspectRatio)}`,
+    fieldLabel === "主题与用途" ? "" : `主题与用途：${activeVideoProject.value?.summary ?? ""}`,
+    fieldLabel === "视觉与运动风格" ? "" : `视觉与运动风格：${activeVideoProject.value?.visualStyle ?? ""}`,
+    fieldLabel === "分镜总规划" ? "" : `分镜总规划：${activeVideoProject.value?.storyboardPlan ?? ""}`
+  ]);
+}
+
+function buildVideoShotFieldAiContext(shot, fieldLabel) {
+  return compactFieldAiContext([
+    `项目：${activeVideoProject.value?.title ?? ""}`,
+    `项目设定：${activeVideoProject.value?.summary ?? ""}`,
+    `视觉风格：${activeVideoProject.value?.visualStyle ?? ""}`,
+    `镜头：${shot ? getVideoShotDisplayTitle(shot, activeVideoShotIndex.value) : ""}`,
+    fieldLabel === "镜头说明" ? "" : `镜头说明：${shot?.summary ?? ""}`,
+    fieldLabel === "参考素材 / 首帧说明" ? "" : `参考素材：${shot?.reference ?? ""}`,
+    fieldLabel === "正向提示词" ? "" : `正向提示词：${shot?.prompt ?? ""}`,
+    fieldLabel === "反向提示词" ? "" : `反向提示词：${shot?.negativePrompt ?? ""}`
+  ]);
+}
+
+function buildComicProjectFieldAiContext(fieldLabel) {
+  return compactFieldAiContext([
+    `项目：${activeComicProject.value?.title ?? ""}`,
+    `类型：${activeComicProject.value?.genre ?? ""}`,
+    `形态：${getComicProjectFormatLabel(activeComicProject.value?.format)}`,
+    `画面：${getComicProjectPaletteLabel(activeComicProject.value?.palette)}`,
+    fieldLabel === "故事与画面目标" ? "" : `故事与画面目标：${activeComicProject.value?.summary ?? ""}`,
+    fieldLabel === "画风与镜头" ? "" : `画风与镜头：${activeComicProject.value?.visualStyle ?? ""}`,
+    fieldLabel.includes("规划") ? "" : `规划：${activeComicProject.value?.episodePlan ?? ""}`
+  ]);
+}
+
+function buildComicChapterFieldAiContext(chapter, fieldLabel) {
+  return compactFieldAiContext([
+    `项目：${activeComicProject.value?.title ?? ""}`,
+    `总介绍：${activeComicProject.value?.summary ?? ""}`,
+    `画风与镜头：${activeComicProject.value?.visualStyle ?? ""}`,
+    `章节：${chapter ? getComicChapterDisplayTitle(chapter, activeComicChapterIndex.value) : ""}`,
+    fieldLabel === "分镜简介" ? "" : `分镜简介：${chapter?.summary ?? ""}`,
+    fieldLabel === "生成提示词" ? "" : `生成提示词：${chapter?.prompt ?? ""}`
+  ]);
+}
+
+function buildWritingBookFieldAiContext(fieldLabel) {
+  return compactFieldAiContext([
+    `书名：${activeWritingBook.value?.title ?? ""}`,
+    `类型：${activeWritingBook.value?.genre ?? ""}`,
+    `篇幅：${getWritingLengthLabel(activeWritingBook.value?.length)}`,
+    fieldLabel === "简短介绍" ? "" : `简短介绍：${getWritingIntroFieldValue(activeWritingBook.value, "intro")}`,
+    fieldLabel === "大纲指导" ? "" : `大纲指导：${getWritingIntroFieldValue(activeWritingBook.value, "outlineGuide")}`,
+    fieldLabel === "详细大纲指导" ? "" : `详细大纲指导：${getWritingIntroFieldValue(activeWritingBook.value, "seriesPlan")}`
+  ]);
+}
+
+function buildWritingExtraFieldAiContext(section) {
+  return compactFieldAiContext([
+    buildWritingBookFieldAiContext(section?.title || "补充设定"),
+    `当前设定条目：${section?.title || "补充设定"}`
+  ]);
+}
+
+function buildWritingChapterFieldAiContext(chapter, fieldLabel) {
+  return compactFieldAiContext([
+    `书名：${activeWritingBook.value?.title ?? ""}`,
+    `类型：${activeWritingBook.value?.genre ?? ""}`,
+    `故事介绍：${getWritingIntroFieldValue(activeWritingBook.value, "intro")}`,
+    `大纲指导：${getWritingIntroFieldValue(activeWritingBook.value, "outlineGuide")}`,
+    `章节：${chapter ? getWritingChapterDisplayTitle(chapter, activeWritingChapterIndex.value) : ""}`,
+    fieldLabel === "章节简介" ? "" : `章节简介：${chapter?.summary ?? ""}`
+  ]);
+}
 </script>

@@ -57,6 +57,7 @@ const activeWritingLengthProfile = computed(
   () => WRITING_LENGTH_PROFILES[activeWritingBook.value?.length ?? "long"] ?? WRITING_LENGTH_PROFILES.long
 );
 const activeWritingIntroSections = computed(() => getWritingIntroSections(activeWritingBook.value));
+const activeWritingExtraIntroSections = computed(() => activeWritingBook.value?.extraIntroSections ?? []);
 const activeWritingChapters = computed(() => getWritingChapters(activeWritingBook.value));
 const activeWritingDoneChapters = computed(() => getDoneWritingChapters(activeWritingBook.value));
 const activeWritingDoneChapterCount = computed(() => activeWritingDoneChapters.value.length);
@@ -445,6 +446,29 @@ function normalizeWritingOutlinePlannerJobForUi(job) {
   };
 }
 
+function normalizeWritingBookExtraIntroSectionForUi(section, index = 0, bookId = "writing_book") {
+  const source = section && typeof section === "object" ? section : {};
+  const title = String(source.title ?? source.label ?? "").trim();
+  const content = String(source.content ?? source.value ?? "");
+
+  if (!title && !content.trim()) {
+    return null;
+  }
+
+  return {
+    id: String(source.id ?? "").trim() || `${bookId}_intro_section_${index + 1}`,
+    title: title || `补充设定 ${index + 1}`,
+    content,
+    updatedAt: String(source.updatedAt ?? new Date().toISOString())
+  };
+}
+
+function normalizeWritingBookExtraIntroSectionsForUi(sections = [], bookId = "writing_book") {
+  return (Array.isArray(sections) ? sections : [])
+    .map((section, index) => normalizeWritingBookExtraIntroSectionForUi(section, index, bookId))
+    .filter(Boolean);
+}
+
 function normalizeWritingBookForUi(book, index = 0) {
   const now = new Date().toISOString();
   const bookId = String(book?.id ?? "").trim() || createLocalId("writing_book");
@@ -460,6 +484,7 @@ function normalizeWritingBookForUi(book, index = 0) {
     intro: String(book?.intro ?? ""),
     outlineGuide: String(book?.outlineGuide ?? ""),
     seriesPlan: String(book?.seriesPlan ?? ""),
+    extraIntroSections: normalizeWritingBookExtraIntroSectionsForUi(book?.extraIntroSections, bookId),
     directoryName: typeof book?.directoryName === "string" ? book.directoryName : undefined,
     parts: normalizeWritingBookPartsForUi(book?.parts, bookId),
     storyAssets: normalizeWritingStoryAssetsForUi(book?.storyAssets, bookId),
@@ -704,6 +729,10 @@ function getWritingIntroFieldValue(book, key) {
   return String(book?.[key] ?? "");
 }
 
+function getWritingIntroFieldWordCount(book, key) {
+  return getWritingIntroFieldValue(book, key).replace(/\s+/g, "").length;
+}
+
 function setWritingIntroField(book, key, value) {
   if (!book || !WRITING_INTRO_SECTION_DEFINITIONS[key]) {
     return;
@@ -713,18 +742,135 @@ function setWritingIntroField(book, key, value) {
   touchWritingBook(book);
 }
 
+function getWritingExtraIntroSectionWordCount(section) {
+  return String(section?.content ?? "").replace(/\s+/g, "").length;
+}
+
+function getWritingIntroCollapseIds() {
+  if (!Array.isArray(ui.marketplace.writing.collapsedIntroSectionIds)) {
+    ui.marketplace.writing.collapsedIntroSectionIds = [];
+  }
+
+  return ui.marketplace.writing.collapsedIntroSectionIds;
+}
+
+function getWritingIntroSectionCollapseId(sectionKey, type = "base") {
+  return `${type}:${String(sectionKey ?? "").trim()}`;
+}
+
+function isWritingIntroSectionCollapsed(sectionKey, type = "base") {
+  const collapseId = getWritingIntroSectionCollapseId(sectionKey, type);
+  return getWritingIntroCollapseIds().includes(collapseId);
+}
+
+function toggleWritingIntroSectionCollapsed(sectionKey, type = "base") {
+  const collapseId = getWritingIntroSectionCollapseId(sectionKey, type);
+  const collapsedIds = getWritingIntroCollapseIds();
+
+  if (collapsedIds.includes(collapseId)) {
+    ui.marketplace.writing.collapsedIntroSectionIds = collapsedIds.filter((id) => id !== collapseId);
+    return;
+  }
+
+  ui.marketplace.writing.collapsedIntroSectionIds = [...collapsedIds, collapseId];
+}
+
+function addWritingExtraIntroSection() {
+  const book = activeWritingBook.value;
+
+  if (!book) {
+    return;
+  }
+
+  const extraSections = Array.isArray(book.extraIntroSections) ? book.extraIntroSections : [];
+  const section = {
+    id: createLocalId("writing_intro_section"),
+    title: `补充设定 ${extraSections.length + 1}`,
+    content: "",
+    updatedAt: new Date().toISOString()
+  };
+
+  book.extraIntroSections = [...extraSections, section];
+  ui.marketplace.writing.collapsedIntroSectionIds = getWritingIntroCollapseIds().filter(
+    (id) => id !== getWritingIntroSectionCollapseId(section.id, "extra")
+  );
+  touchWritingBook(book);
+}
+
+function setWritingExtraIntroSectionTitle(sectionId, value) {
+  const book = activeWritingBook.value;
+  const section = (book?.extraIntroSections ?? []).find((entry) => entry.id === sectionId);
+
+  if (!book || !section) {
+    return;
+  }
+
+  section.title = String(value ?? "");
+  section.updatedAt = new Date().toISOString();
+  touchWritingBook(book);
+}
+
+function setWritingExtraIntroSectionContent(sectionId, value) {
+  const book = activeWritingBook.value;
+  const section = (book?.extraIntroSections ?? []).find((entry) => entry.id === sectionId);
+
+  if (!book || !section) {
+    return;
+  }
+
+  section.content = String(value ?? "");
+  section.updatedAt = new Date().toISOString();
+  touchWritingBook(book);
+}
+
+async function removeWritingExtraIntroSection(sectionId) {
+  const book = activeWritingBook.value;
+  const section = (book?.extraIntroSections ?? []).find((entry) => entry.id === sectionId);
+
+  if (!book || !section) {
+    return;
+  }
+
+  const confirmed = await showConfirmDialog({
+    tone: "danger",
+    title: "删除设定条目",
+    message: `确认删除「${section.title || "补充设定"}」吗？`,
+    detail: "删除后会从当前书籍的故事介绍中移除。",
+    confirmText: "删除",
+    cancelText: "取消"
+  });
+
+  if (!confirmed) {
+    return;
+  }
+
+  book.extraIntroSections = (book.extraIntroSections ?? []).filter((entry) => entry.id !== sectionId);
+  ui.marketplace.writing.collapsedIntroSectionIds = getWritingIntroCollapseIds().filter(
+    (id) => id !== getWritingIntroSectionCollapseId(sectionId, "extra")
+  );
+  touchWritingBook(book);
+}
+
 function buildWritingIntroContent(book) {
   if (!book) {
     return "";
   }
 
-  return getWritingIntroSections(book)
+  const baseSections = getWritingIntroSections(book)
     .map((section) => {
       const value = getWritingIntroFieldValue(book, section.key).trim();
       return value ? `【${section.label}】\n${value}` : "";
     })
-    .filter(Boolean)
-    .join("\n\n");
+    .filter(Boolean);
+  const extraSections = (book.extraIntroSections ?? [])
+    .map((section) => {
+      const title = String(section?.title ?? "").trim() || "补充设定";
+      const content = String(section?.content ?? "").trim();
+      return content ? `【${title}】\n${content}` : "";
+    })
+    .filter(Boolean);
+
+  return [...baseSections, ...extraSections].join("\n\n");
 }
 
 function truncateWritingStoryAssetText(value, maxLength = 240) {
@@ -1510,8 +1656,11 @@ function getWritingBookWordCount(book) {
   const chapterText = getWritingChapters(book)
     .map((chapter) => `${chapter.summary ?? ""}\n${chapter.content ?? ""}`)
     .join("\n");
+  const extraIntroText = (Array.isArray(book?.extraIntroSections) ? book.extraIntroSections : [])
+    .map((section) => `${section.title ?? ""}\n${section.content ?? ""}`)
+    .join("\n");
 
-  return [book?.intro, book?.outlineGuide, book?.seriesPlan, chapterText]
+  return [book?.intro, book?.outlineGuide, book?.seriesPlan, extraIntroText, chapterText]
     .map((value) => String(value ?? "").replace(/\s+/g, ""))
     .join("").length;
 }
@@ -1697,6 +1846,7 @@ async function createWritingBook() {
     intro: "在这里写下故事的核心命题、世界观、人物关系和主要矛盾。",
     outlineGuide: "把故事拆成开始、失控、反转和收束四个阶段，每个阶段都要写清冲突升级和人物变化。",
     seriesPlan: "",
+    extraIntroSections: [],
     parts: [],
     storyAssets: normalizeWritingStoryAssetsForUi({}, createLocalId("writing_story_assets")),
     chapters: [
@@ -1742,6 +1892,7 @@ async function handleWritingBookUpload(event) {
       intro: `从「${file.name}」导入。建议先让 AI 帮你整理故事简介、人物关系和世界观。`,
       outlineGuide: "待整理目录。可以在目录 Tab 里使用「章节规划」生成结构。",
       seriesPlan: "",
+      extraIntroSections: [],
       parts: [],
       storyAssets: normalizeWritingStoryAssetsForUi({}, createLocalId("writing_story_assets")),
       chapters: [
@@ -1800,6 +1951,7 @@ function setWritingTab(tabId) {
     activeWritingDoneChapterCount,
     activeWritingDoneChapters,
     activeWritingExportFileName,
+    activeWritingExtraIntroSections,
     activeWritingIntroSections,
     activeWritingLengthProfile,
     activeWritingOutlinePlannerJob,
@@ -1817,6 +1969,7 @@ function setWritingTab(tabId) {
     clearWritingAutosaveTimer,
     clearWritingChapterSubmitConfirmation,
     closeWritingExportDialog,
+    addWritingExtraIntroSection,
     createWritingBook,
     createWritingChapter,
     deleteWritingBookFromShelf,
@@ -1839,6 +1992,8 @@ function setWritingTab(tabId) {
     getWritingChapterWordCount,
     getWritingChapters,
     getWritingExportFileName,
+    getWritingExtraIntroSectionWordCount,
+    getWritingIntroFieldWordCount,
     getWritingIntroFieldValue,
     getWritingIntroSections,
     getWritingLengthLabel,
@@ -1847,6 +2002,7 @@ function setWritingTab(tabId) {
     getWritingTabWordCount,
     goWritingChapter,
     handleWritingBookUpload,
+    isWritingIntroSectionCollapsed,
     isActiveWritingBookAiRunning,
     isWritingChapterSubmitConfirmed,
     mergeWritingStoryAssets,
@@ -1882,6 +2038,8 @@ function setWritingTab(tabId) {
     setWritingChapterPickerOpen,
     setWritingChapterSummary,
     setWritingChapterTitle,
+    setWritingExtraIntroSectionContent,
+    setWritingExtraIntroSectionTitle,
     setWritingExportFormat,
     setWritingFeedback,
     setWritingIntroField,
@@ -1890,8 +2048,10 @@ function setWritingTab(tabId) {
     splitWritingChapterTitlePrefix,
     submitWritingChapter,
     syncWritingBookSaveVersions,
+    removeWritingExtraIntroSection,
     toggleWritingAiTaskPicker,
     toggleWritingChapterPicker,
+    toggleWritingIntroSectionCollapsed,
     toggleWritingProfileRail,
     toggleWritingPromptPreview,
     touchWritingBook,

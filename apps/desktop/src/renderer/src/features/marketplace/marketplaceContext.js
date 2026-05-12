@@ -1,6 +1,9 @@
 export function createMarketplaceViewContext({
   comicActions,
   comicChapterDropdownMenuRef,
+  fieldAiActions,
+  fortuneActions,
+  musicActions,
   truncateText,
   ui,
   videoActions,
@@ -11,6 +14,9 @@ export function createMarketplaceViewContext({
 }) {
   return {
     comicActions,
+    fieldAiActions,
+    fortuneActions,
+    musicActions,
     refs: {
       comicChapterDropdownMenuRef,
       videoShotDropdownMenuRef,

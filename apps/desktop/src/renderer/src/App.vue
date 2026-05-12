@@ -257,9 +257,12 @@ import CommandWorkshopView from "./features/command-workshop/CommandWorkshopView
 import { createExtensionsActions, createExtensionsState } from "./features/extensions/extensionsActions.js";
 import ExtensionsManagementView from "./features/extensions/ExtensionsManagementView.vue";
 import { createComicActions } from "./features/marketplace/comicActions.js";
+import { createMarketplaceFieldAiActions } from "./features/marketplace/fieldAiActions.js";
+import { createFortuneActions } from "./features/marketplace/fortuneActions.js";
 import { createMarketplaceViewContext } from "./features/marketplace/marketplaceContext.js";
 import MarketplaceView from "./features/marketplace/MarketplaceView.vue";
 import { createMarketplaceState } from "./features/marketplace/marketplaceConfig.js";
+import { createMusicActions } from "./features/marketplace/musicActions.js";
 import { createVideoActions } from "./features/marketplace/videoActions.js";
 import ModelManagementView from "./features/model-management/ModelManagementView.vue";
 import {
@@ -460,6 +463,24 @@ const {
   clearVideoAutosaveTimer
 } = videoActions;
 
+const fortuneActions = createFortuneActions({
+  activeFeature,
+  createLocalId,
+  desktopApi,
+  featureMarketplaceId: FEATURE_MARKETPLACE,
+  setStatus,
+  ui
+});
+
+const musicActions = createMusicActions({
+  activeFeature,
+  createLocalId,
+  desktopApi,
+  featureMarketplaceId: FEATURE_MARKETPLACE,
+  setStatus,
+  ui
+});
+
 const writingActions = createWritingActions({
   activeFeature,
   createLocalId,
@@ -570,9 +591,19 @@ const writingAiActions = createWritingAiActions({
   writingPromptAssets
 });
 
+const fieldAiActions = createMarketplaceFieldAiActions({
+  createLocalId,
+  desktopApi,
+  setStatus,
+  ui
+});
+
 const marketplaceViewContext = createMarketplaceViewContext({
   comicActions,
   comicChapterDropdownMenuRef,
+  fieldAiActions,
+  fortuneActions,
+  musicActions,
   truncateText,
   ui,
   videoActions,

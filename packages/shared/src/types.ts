@@ -608,6 +608,13 @@ export interface WritingBookPart {
   description: string;
 }
 
+export interface WritingBookIntroSection {
+  id: string;
+  title: string;
+  content: string;
+  updatedAt: string;
+}
+
 export interface WritingStoryAssetEntry {
   id: string;
   title: string;
@@ -713,6 +720,7 @@ export interface WritingBook {
   intro: string;
   outlineGuide: string;
   seriesPlan: string;
+  extraIntroSections: WritingBookIntroSection[];
   parts: WritingBookPart[];
   storyAssets: WritingStoryAssets;
   outlinePlannerJob?: WritingOutlinePlannerJob;

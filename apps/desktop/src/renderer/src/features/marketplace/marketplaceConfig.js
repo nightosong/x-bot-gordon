@@ -1,6 +1,84 @@
 export const COMIC_APP_NAME = "丹青溢彩";
+export const FORTUNE_APP_NAME = "灵犀照命";
+export const MUSIC_APP_NAME = "瑶琴映月";
 export const VIDEO_APP_NAME = "流光绘影";
-export const MARKETPLACE_APP_COUNT = 3;
+export const MARKETPLACE_APP_COUNT = 5;
+
+export const FORTUNE_READING_MODES = [
+  {
+    id: "daily",
+    label: "今日运势",
+    kicker: "Daily",
+    focus: "当天状态、机会窗口、提醒和可执行的小动作。",
+    placeholder: "今天需要重点留意什么？"
+  },
+  {
+    id: "career",
+    label: "事业财运",
+    kicker: "Career",
+    focus: "工作推进、合作节奏、资源流动和财务倾向。",
+    placeholder: "最近事业或财务上怎么取舍更稳？"
+  },
+  {
+    id: "relationship",
+    label: "感情关系",
+    kicker: "Relation",
+    focus: "关系温度、沟通阻力、互动机会和边界感。",
+    placeholder: "这段关系接下来该主动还是观察？"
+  },
+  {
+    id: "choice",
+    label: "抉择占卜",
+    kicker: "Choice",
+    focus: "多个选项的得失、隐性风险和下一步试探。",
+    placeholder: "我应该选择 A 方案还是 B 方案？"
+  },
+  {
+    id: "cycle",
+    label: "年月趋势",
+    kicker: "Cycle",
+    focus: "一段周期内的主题、节奏变化、关键节点和复盘指标。",
+    placeholder: "接下来一段时间的整体趋势如何？"
+  }
+];
+
+export const MUSIC_CREATION_MODES = [
+  {
+    id: "song",
+    label: "完整歌曲",
+    kicker: "Song",
+    focus: "歌名、歌词、段落结构、曲风标签、编曲方向和生成提示词。",
+    placeholder: "写一首关于夜雨、旧城和重逢的中文歌。"
+  },
+  {
+    id: "lyrics",
+    label: "歌词打磨",
+    kicker: "Lyrics",
+    focus: "主题表达、押韵、段落推进、副歌记忆点和可唱性。",
+    placeholder: "把已有歌词改得更有画面感和副歌记忆点。"
+  },
+  {
+    id: "instrumental",
+    label: "纯音乐",
+    kicker: "Instrumental",
+    focus: "情绪曲线、乐器层次、速度、段落起伏和无歌词生成提示词。",
+    placeholder: "做一段适合清晨专注工作的纯音乐。"
+  },
+  {
+    id: "jingle",
+    label: "短曲动机",
+    kicker: "Jingle",
+    focus: "短旋律定位、节奏钩子、品牌/场景记忆点和循环方式。",
+    placeholder: "做一个 15 秒开场音乐，轻快、干净、容易记住。"
+  },
+  {
+    id: "prompt",
+    label: "生成提示词",
+    kicker: "Prompt",
+    focus: "面向音乐生成工具的风格、结构、乐器、速度、情绪和限制词。",
+    placeholder: "帮我整理成可以给 music_gen 使用的音乐生成提示词。"
+  }
+];
 
 export const COMIC_PROJECT_FORMAT_META = {
   poster: { label: "单图海报", defaultPages: 1 },
@@ -54,6 +132,20 @@ export const VIDEO_SHOT_STATUS_META = {
 export function createMarketplaceState() {
   return {
     view: "apps",
+    fieldAi: {
+      isOpen: false,
+      targetId: "",
+      appName: "",
+      fieldLabel: "",
+      context: "",
+      sourceText: "",
+      instruction: "",
+      output: "",
+      feedback: "",
+      feedbackTone: "neutral",
+      isGenerating: false,
+      requestId: ""
+    },
     comic: {
       projects: [],
       activeProjectId: null,
@@ -82,6 +174,26 @@ export function createMarketplaceState() {
       exportFeedbackTone: "neutral",
       isExporting: false
     },
+    fortune: {
+      activeMode: "daily",
+      question: "",
+      birthInfo: "",
+      context: "",
+      output: "",
+      feedback: "",
+      feedbackTone: "neutral",
+      isGenerating: false
+    },
+    music: {
+      activeMode: "song",
+      theme: "",
+      style: "",
+      reference: "",
+      output: "",
+      feedback: "",
+      feedbackTone: "neutral",
+      isGenerating: false
+    },
     writing: {
       books: [],
       activeBookId: null,
@@ -100,6 +212,7 @@ export function createMarketplaceState() {
       isAiDrawerOpen: false,
       isAiTaskPickerOpen: false,
       isPromptPreviewOpen: false,
+      collapsedIntroSectionIds: [],
       isChapterPickerOpen: false,
       chapterSearchQuery: "",
       isExportDialogOpen: false,

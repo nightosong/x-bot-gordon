@@ -43,6 +43,7 @@ import type {
   WeeklyReportTemplateItem,
   WeeklyProgressTaskItem,
   WritingBook,
+  WritingBookIntroSection,
   WritingBookLength,
   WritingBookPart,
   WritingBookPartType,
@@ -2056,6 +2057,32 @@ function normalizeWritingBookParts(input: unknown, bookId: string): WritingBookP
     .sort((left, right) => left.index - right.index);
 }
 
+function normalizeWritingBookIntroSection(
+  input: Partial<WritingBookIntroSection> | Record<string, unknown> | null | undefined,
+  index: number,
+  bookId: string
+): WritingBookIntroSection | null {
+  const title = String(input?.title ?? (input as Record<string, unknown> | undefined)?.label ?? "").trim();
+  const content = String(input?.content ?? (input as Record<string, unknown> | undefined)?.value ?? "");
+
+  if (!title && !content.trim()) {
+    return null;
+  }
+
+  return {
+    id: String(input?.id ?? `${bookId}_intro_section_${index + 1}`),
+    title: title || `补充设定 ${index + 1}`,
+    content,
+    updatedAt: String(input?.updatedAt ?? new Date().toISOString())
+  };
+}
+
+function normalizeWritingBookIntroSections(input: unknown, bookId: string): WritingBookIntroSection[] {
+  return (Array.isArray(input) ? input : [])
+    .map((section, index) => normalizeWritingBookIntroSection(section as Partial<WritingBookIntroSection>, index, bookId))
+    .filter((section): section is WritingBookIntroSection => Boolean(section));
+}
+
 function normalizeStringList(input: unknown): string[] {
   if (Array.isArray(input)) {
     return input.map((item) => String(item ?? "").trim()).filter(Boolean);
@@ -2273,6 +2300,7 @@ function normalizeWritingBookConfig(input: Partial<WritingBook> | null | undefin
     intro: String(input?.intro ?? ""),
     outlineGuide: String(input?.outlineGuide ?? ""),
     seriesPlan: String(input?.seriesPlan ?? ""),
+    extraIntroSections: normalizeWritingBookIntroSections(input?.extraIntroSections, id),
     parts: normalizeWritingBookParts(input?.parts, id),
     storyAssets: normalizeWritingStoryAssets(input?.storyAssets, id),
     ...(outlinePlannerJob ? { outlinePlannerJob } : {})
