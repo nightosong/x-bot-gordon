@@ -2735,11 +2735,27 @@ canvas {
 }
 
 .field-ai-head,
-.field-ai-run-row,
-.field-ai-apply-row {
+.field-ai-action-row,
+.field-ai-action-left,
+.field-ai-action-right {
   display: flex;
   align-items: center;
+  gap: 7px;
+}
+
+.field-ai-head,
+.field-ai-action-row {
   justify-content: space-between;
+}
+
+.field-ai-action-left,
+.field-ai-action-right {
+  min-width: 0;
+}
+
+.field-ai-action-right {
+  justify-content: flex-end;
+  margin-left: auto;
   gap: 7px;
 }
 
@@ -2795,7 +2811,7 @@ canvas {
 }
 
 .field-ai-input {
-  min-height: 54px;
+  min-height: 82px;
   padding: 7px 8px;
   font-size: 12px;
   line-height: 1.5;
@@ -2851,6 +2867,15 @@ canvas {
 .field-textarea::-webkit-scrollbar-corner,
 .field-ai-input::-webkit-scrollbar-corner,
 .field-ai-output::-webkit-scrollbar-corner {
+  width: 0;
+  height: 0;
+  background: transparent;
+}
+
+.field-textarea::-webkit-resizer,
+.field-ai-input::-webkit-resizer,
+.field-ai-output::-webkit-resizer {
+  border: 0;
   background: transparent;
 }
 

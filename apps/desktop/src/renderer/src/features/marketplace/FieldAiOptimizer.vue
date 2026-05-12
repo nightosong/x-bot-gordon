@@ -38,26 +38,6 @@
           @input="actions.setMarketplaceFieldAiInstruction($event.target.value)"
         ></textarea>
 
-        <div class="field-ai-run-row">
-          <button
-            type="button"
-            class="field-ai-run"
-            :disabled="state.isGenerating"
-            @click="actions.generateMarketplaceFieldAiOutput"
-          >
-            <GIcon :name="state.isGenerating ? 'loading' : 'sparkles'" :spin="state.isGenerating" :size="13" />
-            {{ state.isGenerating ? "生成中" : "生成" }}
-          </button>
-          <button
-            v-if="state.isGenerating"
-            type="button"
-            class="field-ai-ghost"
-            @click="actions.cancelMarketplaceFieldAiRun"
-          >
-            停止
-          </button>
-        </div>
-
         <textarea
           v-if="state.output || state.isGenerating"
           class="field-ai-output"
@@ -71,23 +51,45 @@
           {{ state.feedback }}
         </p>
 
-        <div class="field-ai-apply-row">
-          <button
-            type="button"
-            class="field-ai-ghost"
-            :disabled="state.isGenerating || !state.output"
-            @click="actions.applyMarketplaceFieldAiOutput('append')"
-          >
-            追加
-          </button>
-          <button
-            type="button"
-            class="field-ai-primary"
-            :disabled="state.isGenerating || !state.output"
-            @click="actions.applyMarketplaceFieldAiOutput('replace')"
-          >
-            替换
-          </button>
+        <div class="field-ai-action-row">
+          <div class="field-ai-action-left">
+            <button
+              type="button"
+              class="field-ai-run"
+              :disabled="state.isGenerating"
+              @click="actions.generateMarketplaceFieldAiOutput"
+            >
+              <GIcon :name="state.isGenerating ? 'loading' : 'sparkles'" :spin="state.isGenerating" :size="13" />
+              {{ state.isGenerating ? "生成中" : "生成" }}
+            </button>
+            <button
+              v-if="state.isGenerating"
+              type="button"
+              class="field-ai-ghost"
+              @click="actions.cancelMarketplaceFieldAiRun"
+            >
+              停止
+            </button>
+          </div>
+
+          <div class="field-ai-action-right">
+            <button
+              type="button"
+              class="field-ai-ghost"
+              :disabled="state.isGenerating || !state.output"
+              @click="actions.applyMarketplaceFieldAiOutput('append')"
+            >
+              追加
+            </button>
+            <button
+              type="button"
+              class="field-ai-primary"
+              :disabled="state.isGenerating || !state.output"
+              @click="actions.applyMarketplaceFieldAiOutput('replace')"
+            >
+              替换
+            </button>
+          </div>
         </div>
       </section>
     </Transition>
