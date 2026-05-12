@@ -650,6 +650,46 @@ export function createComicActions({
     touchComicProject(project);
   }
 
+  function normalizeComicAiChapterDraft(chapter, index = 0, baseIndex = 0) {
+    const safeIndex = normalizeComicProjectPageCount(chapter?.index, baseIndex + index + 1);
+
+    return normalizeComicChapterForUi(
+      {
+        id: createLocalId("comic_chapter"),
+        index: safeIndex,
+        title: String(chapter?.title ?? "").trim() || `分镜章节 ${safeIndex}`,
+        summary: String(chapter?.summary ?? chapter?.brief ?? chapter?.description ?? ""),
+        prompt: String(chapter?.prompt ?? chapter?.imagePrompt ?? ""),
+        content: String(chapter?.content ?? ""),
+        status: normalizeComicChapterStatusForUi(chapter?.status || "todo")
+      },
+      baseIndex + index
+    );
+  }
+
+  function applyComicChaptersFromAi(chapterDrafts, mode = "replace") {
+    const project = activeComicProject.value;
+    const drafts = Array.isArray(chapterDrafts) ? chapterDrafts : [];
+
+    if (!project || !drafts.length) {
+      return false;
+    }
+
+    const currentChapters = getComicChapters(project);
+    const isAppend = mode === "append";
+    const baseIndex = isAppend
+      ? currentChapters.reduce((maxIndex, chapter) => Math.max(maxIndex, Number(chapter.index ?? 0) || 0), 0)
+      : 0;
+    const nextChapters = drafts.map((chapter, index) => normalizeComicAiChapterDraft(chapter, index, baseIndex));
+
+    project.chapters = isAppend ? [...currentChapters, ...nextChapters] : nextChapters;
+    ui.marketplace.comic.activeChapterId = nextChapters[0]?.id ?? project.chapters[0]?.id ?? "";
+    ui.marketplace.comic.activeTab = "outline";
+    touchComicProject(project);
+
+    return true;
+  }
+
   function setComicChapterTitle(chapter, value) {
     if (!chapter) {
       return;
@@ -817,6 +857,7 @@ export function createComicActions({
     selectComicChapter,
     selectComicChapterFromPicker,
     selectComicExportDirectory,
+    applyComicChaptersFromAi,
     setComicChapterContent,
     setComicChapterPickerOpen,
     setComicChapterPrompt,

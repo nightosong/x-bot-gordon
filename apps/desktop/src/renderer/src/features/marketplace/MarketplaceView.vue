@@ -1124,12 +1124,24 @@
           <div class="model-section-actions">
             <span class="pill">{{ getComicProjectFormatLabel(activeComicProject.format) }}</span>
             <span class="pill pill-neutral">{{ getComicProjectPaletteLabel(activeComicProject.palette) }}</span>
+            <button
+              type="button"
+              class="model-icon-button writing-ai-float-trigger"
+              :aria-label="ui.marketplace.comic.isAiDrawerOpen ? '收起丹青画室' : '打开丹青画室'"
+              :title="ui.marketplace.comic.isAiDrawerOpen ? '收起丹青画室' : '打开丹青画室'"
+              @click="setComicAiDrawerOpen(!ui.marketplace.comic.isAiDrawerOpen)"
+            >
+              <GIcon name="sparkles" />
+            </button>
           </div>
         </header>
 
         <section
           class="writing-detail-layout comic-detail-layout"
-          :class="{ 'is-profile-collapsed': ui.marketplace.comic.isProfileCollapsed }"
+          :class="{
+            'is-profile-collapsed': ui.marketplace.comic.isProfileCollapsed,
+            'is-ai-open': ui.marketplace.comic.isAiDrawerOpen
+          }"
         >
           <aside class="writing-detail-rail comic-detail-rail" :aria-expanded="ui.marketplace.comic.isProfileCollapsed ? 'false' : 'true'">
             <button
@@ -1239,7 +1251,6 @@
                     <p class="feature-kicker">{{ activeComicTabMeta.kicker }}</p>
                     <p class="model-section-title">{{ activeComicTabMeta.fieldLabel }}</p>
                   </div>
-                  <span class="status-pill">{{ activeComicProject.status }}</span>
                 </div>
 
                 <div v-if="ui.marketplace.comic.activeTab === 'intro'" class="writing-intro-stack">
@@ -1314,9 +1325,6 @@
                         <p class="feature-kicker">Chapter List</p>
                         <p class="writing-panel-title">{{ activeComicChapters.length }} 个章节</p>
                       </div>
-                      <button type="button" class="model-icon-button" aria-label="新增漫画章节" title="新增漫画章节" @click="createComicChapter">
-                        <GIcon name="add" />
-                      </button>
                     </div>
 
                     <div class="writing-chapter-list">
@@ -1500,6 +1508,28 @@
                   </FieldAiOptimizer>
                 </div>
               </article>
+
+              <ComicAiDrawer
+                v-if="ui.marketplace.comic.isAiDrawerOpen"
+                :state="ui.marketplace.comic"
+                :active-comic-ai-task="activeComicAiTask"
+                :active-comic-ai-task-options="activeComicAiTaskOptions"
+                :active-comic-ai-prompt-preview="activeComicAiPromptPreview"
+                :comic-ai-image-size-options="comicAiImageSizeOptions"
+                :comic-ai-quality-options="comicAiQualityOptions"
+                :toggle-comic-ai-task-picker="toggleComicAiTaskPicker"
+                :select-comic-ai-task="selectComicAiTask"
+                :toggle-comic-ai-prompt-preview="toggleComicAiPromptPreview"
+                :set-comic-ai-instruction="setComicAiInstruction"
+                :set-comic-ai-output="setComicAiOutput"
+                :set-comic-ai-image-count="setComicAiImageCount"
+                :set-comic-ai-image-size="setComicAiImageSize"
+                :set-comic-ai-image-quality="setComicAiImageQuality"
+                :generate-comic-ai-output="generateComicAiOutput"
+                :get-comic-ai-run-button-label="getComicAiRunButtonLabel"
+                :get-comic-ai-feedback-class="getComicAiFeedbackClass"
+                :apply-comic-ai-output="applyComicAiOutput"
+              />
             </section>
           </main>
         </section>
@@ -2263,6 +2293,7 @@
 </template>
 
 <script setup>
+import ComicAiDrawer from "./ComicAiDrawer.vue";
 import FieldAiOptimizer from "./FieldAiOptimizer.vue";
 import GIcon from "../../components/GIcon.vue";
 import WritingAiDrawer from "../writing/WritingAiDrawer.vue";
@@ -2287,7 +2318,7 @@ const props = defineProps({
   context: { type: Object, required: true }
 });
 
-const { comicActions, fieldAiActions, fortuneActions, musicActions, refs, truncateText, ui, videoActions, writingActions, writingAiActions } =
+const { comicActions, comicAiActions, fieldAiActions, fortuneActions, musicActions, refs, truncateText, ui, videoActions, writingActions, writingAiActions } =
   props.context;
 const { comicChapterDropdownMenuRef, videoShotDropdownMenuRef, writingChapterDropdownMenuRef } = refs;
 
@@ -2303,7 +2334,6 @@ const {
   canExportActiveComicProject,
   closeComicExportDialog,
   comicProjects,
-  createComicChapter,
   createComicProject,
   deleteComicProjectFromShelf,
   exportActiveComicProject,
@@ -2338,6 +2368,27 @@ const {
   toggleComicChapterPicker,
   toggleComicProfileRail
 } = comicActions;
+
+const {
+  activeComicAiPromptPreview,
+  activeComicAiTask,
+  activeComicAiTaskOptions,
+  applyComicAiOutput,
+  comicAiImageSizeOptions,
+  comicAiQualityOptions,
+  generateComicAiOutput,
+  getComicAiFeedbackClass,
+  getComicAiRunButtonLabel,
+  selectComicAiTask,
+  setComicAiDrawerOpen,
+  setComicAiImageCount,
+  setComicAiImageQuality,
+  setComicAiImageSize,
+  setComicAiInstruction,
+  setComicAiOutput,
+  toggleComicAiPromptPreview,
+  toggleComicAiTaskPicker
+} = comicAiActions;
 
 const {
   activeVideoExportFileName,

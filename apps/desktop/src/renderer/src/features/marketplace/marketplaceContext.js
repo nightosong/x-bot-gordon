@@ -1,5 +1,6 @@
 export function createMarketplaceViewContext({
   comicActions,
+  comicAiActions,
   comicChapterDropdownMenuRef,
   fieldAiActions,
   fortuneActions,
@@ -14,6 +15,7 @@ export function createMarketplaceViewContext({
 }) {
   return {
     comicActions,
+    comicAiActions,
     fieldAiActions,
     fortuneActions,
     musicActions,

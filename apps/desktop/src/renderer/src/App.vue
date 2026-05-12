@@ -256,6 +256,7 @@ import { createCommandWorkshopState } from "./features/command-workshop/commandW
 import CommandWorkshopView from "./features/command-workshop/CommandWorkshopView.vue";
 import { createExtensionsActions, createExtensionsState } from "./features/extensions/extensionsActions.js";
 import ExtensionsManagementView from "./features/extensions/ExtensionsManagementView.vue";
+import { createComicAiActions } from "./features/marketplace/comicAiActions.js";
 import { createComicActions } from "./features/marketplace/comicActions.js";
 import { createMarketplaceFieldAiActions } from "./features/marketplace/fieldAiActions.js";
 import { createFortuneActions } from "./features/marketplace/fortuneActions.js";
@@ -440,6 +441,26 @@ const comicActions = createComicActions({
   workbench
 });
 
+const comicAiActions = createComicAiActions({
+  activeComicChapter: comicActions.activeComicChapter,
+  activeComicChapterIndex: comicActions.activeComicChapterIndex,
+  activeComicProject: comicActions.activeComicProject,
+  activeComicTabMeta: comicActions.activeComicTabMeta,
+  applyComicChaptersFromAi: comicActions.applyComicChaptersFromAi,
+  createLocalId,
+  desktopApi,
+  getComicChapterDisplayTitle: comicActions.getComicChapterDisplayTitle,
+  getComicProjectFormatLabel: comicActions.getComicProjectFormatLabel,
+  getComicProjectPaletteLabel: comicActions.getComicProjectPaletteLabel,
+  setComicChapterContent: comicActions.setComicChapterContent,
+  setComicChapterPrompt: comicActions.setComicChapterPrompt,
+  setComicProjectEpisodePlan: comicActions.setComicProjectEpisodePlan,
+  setComicProjectSummary: comicActions.setComicProjectSummary,
+  setComicProjectVisualStyle: comicActions.setComicProjectVisualStyle,
+  setStatus,
+  ui
+});
+
 const {
   applyComicProjectsFromStorage,
   clearComicAutosaveTimer
@@ -600,6 +621,7 @@ const fieldAiActions = createMarketplaceFieldAiActions({
 
 const marketplaceViewContext = createMarketplaceViewContext({
   comicActions,
+  comicAiActions,
   comicChapterDropdownMenuRef,
   fieldAiActions,
   fortuneActions,

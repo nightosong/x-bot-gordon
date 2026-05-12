@@ -3881,6 +3881,251 @@ canvas {
   line-height: 1.6;
 }
 
+.comic-ai-drawer {
+  gap: 8px;
+}
+
+.comic-ai-control-grid {
+  display: grid;
+  grid-template-columns: 0.72fr 1fr 1fr;
+  gap: 7px;
+}
+
+.comic-ai-control-field {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.comic-ai-control-field > .field-label {
+  margin: 0;
+  color: rgba(247, 243, 235, 0.46);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.comic-ai-control-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.comic-ai-control-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  width: 100%;
+  min-height: 27px;
+  padding: 0 7px 0 8px;
+  border: 1px solid rgba(247, 243, 235, 0.1);
+  border-radius: 9px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.052), rgba(255, 255, 255, 0.018)),
+    rgba(8, 15, 24, 0.54);
+  color: rgba(247, 243, 235, 0.82);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.comic-ai-control-trigger span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.comic-ai-control-trigger .action-icon {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  color: rgba(92, 225, 194, 0.74);
+  transition: transform 160ms ease;
+}
+
+.comic-ai-control-picker.is-open .comic-ai-control-trigger .action-icon {
+  transform: rotate(180deg);
+}
+
+.comic-ai-control-picker.is-open .comic-ai-control-trigger,
+.comic-ai-control-trigger:hover,
+.comic-ai-control-trigger:focus-visible {
+  border-color: rgba(92, 225, 194, 0.25);
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.095), rgba(245, 200, 107, 0.035)),
+    rgba(8, 15, 24, 0.7);
+  color: var(--text);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+}
+
+.comic-ai-control-menu {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  right: 0;
+  z-index: 26;
+  display: grid;
+  gap: 4px;
+  max-height: 172px;
+  padding: 5px;
+  overflow: auto;
+  border: 1px solid rgba(247, 243, 235, 0.12);
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.07), rgba(245, 200, 107, 0.04)),
+    #08101a;
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.32);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(247, 243, 235, 0.18) transparent;
+}
+
+.comic-ai-control-menu::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.comic-ai-control-menu::-webkit-scrollbar-track,
+.comic-ai-control-menu::-webkit-scrollbar-corner {
+  border: 0;
+  background: transparent;
+}
+
+.comic-ai-control-menu::-webkit-scrollbar-thumb {
+  min-height: 24px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(247, 243, 235, 0.2);
+}
+
+.comic-ai-control-item {
+  display: grid;
+  gap: 1px;
+  min-height: 25px;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.028);
+  color: rgba(247, 243, 235, 0.74);
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: left;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.comic-ai-control-item small {
+  overflow: hidden;
+  color: rgba(247, 243, 235, 0.42);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.comic-ai-control-item:hover,
+.comic-ai-control-item.is-active {
+  border-color: rgba(92, 225, 194, 0.2);
+  background: rgba(92, 225, 194, 0.09);
+  color: var(--text);
+}
+
+.comic-ai-prompt-preview-body {
+  height: 178px;
+  min-height: 178px;
+}
+
+.comic-ai-output {
+  gap: 7px;
+}
+
+.comic-ai-image-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  max-height: 254px;
+  padding-right: 2px;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(247, 243, 235, 0.18) transparent;
+}
+
+.comic-ai-image-grid::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.comic-ai-image-grid::-webkit-scrollbar-track,
+.comic-ai-image-grid::-webkit-scrollbar-corner {
+  border: 0;
+  background: transparent;
+}
+
+.comic-ai-image-grid::-webkit-scrollbar-thumb {
+  min-height: 28px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(247, 243, 235, 0.2);
+}
+
+.comic-ai-image-card {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  margin: 0;
+  padding: 6px;
+  border: 1px solid rgba(247, 243, 235, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.comic-ai-image-card img {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  border-radius: 9px;
+  object-fit: contain;
+  background: rgba(8, 15, 24, 0.48);
+}
+
+.comic-ai-image-card figcaption {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.comic-ai-image-card figcaption span,
+.comic-ai-image-card figcaption small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.comic-ai-image-card figcaption span {
+  color: rgba(247, 243, 235, 0.78);
+  font-size: 10.5px;
+  font-weight: 800;
+}
+
+.comic-ai-image-card figcaption small {
+  color: rgba(247, 243, 235, 0.48);
+  font-size: 9.5px;
+}
+
+.comic-ai-output-textarea {
+  min-height: 116px;
+}
+
+.comic-ai-output-actions {
+  justify-content: flex-end;
+  gap: 7px;
+}
+
 .model-config-head {
   display: flex;
   align-items: center;
@@ -9864,6 +10109,7 @@ canvas {
   .marketplace-hero,
   .writing-editor-head,
   .writing-ai-head,
+  .comic-ai-control-grid,
   .writing-chapter-commandbar {
     align-items: stretch;
     grid-template-columns: 1fr;
