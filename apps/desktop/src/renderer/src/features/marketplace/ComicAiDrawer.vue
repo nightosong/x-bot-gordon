@@ -3,7 +3,7 @@
     <div class="writing-ai-head">
       <div>
         <p class="feature-kicker">AI Copilot</p>
-        <p class="model-section-title">丹青画室</p>
+        <p class="model-section-title">灵绘小筑</p>
       </div>
     </div>
 
@@ -205,13 +205,13 @@
 
       <div v-if="!isReviewTask" class="model-section-actions comic-ai-output-actions">
         <button v-if="isImageTask" type="button" class="model-action-secondary" :disabled="state.isAiRunning" @click="applyComicAiOutput('prompt')">
-          写入提示词
+          写入生图提示词
         </button>
         <button type="button" class="model-action-secondary" :disabled="state.isAiRunning || !canWriteContent" @click="applyComicAiOutput('append')">
-          追加
+          {{ isImageTask ? "追加图片" : "追加" }}
         </button>
         <button type="button" class="model-action-secondary" :disabled="state.isAiRunning || !canWriteContent" @click="applyComicAiOutput('replace')">
-          替换
+          {{ isImageTask ? "替换图片" : "替换" }}
         </button>
       </div>
     </div>
@@ -251,7 +251,7 @@ const isImageTask = computed(() => props.activeComicAiTask?.type === "image");
 const isReviewTask = computed(() => props.activeComicAiTask?.writeMode === "review");
 const activeComicTaskTarget = computed(() => String(props.activeComicAiTask?.target ?? ""));
 const hasGeneratedImages = computed(() => Array.isArray(props.state.aiGeneratedImages) && props.state.aiGeneratedImages.length > 0);
-const canWriteContent = computed(() => hasGeneratedImages.value || Boolean(props.state.aiOutput?.trim()));
+const canWriteContent = computed(() => (isImageTask.value ? hasGeneratedImages.value : Boolean(props.state.aiOutput?.trim())));
 const activeImageSizeLabel = computed(
   () => props.comicAiImageSizeOptions.find((option) => option.value === props.state.aiImageSize)?.label ?? props.state.aiImageSize
 );

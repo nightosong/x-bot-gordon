@@ -1,5 +1,5 @@
 <template>
-  <aside v-if="state.isAiDrawerOpen" class="writing-ai-card writing-ai-drawer">
+  <aside v-if="state.isAiDrawerOpen" class="writing-ai-card writing-ai-drawer writing-assistant-drawer">
     <div class="writing-ai-head">
       <div>
         <p class="feature-kicker">AI Copilot</p>

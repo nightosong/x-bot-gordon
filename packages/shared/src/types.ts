@@ -761,6 +761,9 @@ export interface ComicChapterImage {
   id: string;
   alt: string;
   src: string;
+  prompt: string;
+  size: string;
+  quality: string;
   createdAt: string;
 }
 

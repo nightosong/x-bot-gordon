@@ -150,7 +150,7 @@ export const VIDEO_PROJECT_COVER_TONES = ["lumen", "violet", "teal", "coral"];
 export const COMIC_APP_TABS = [
   { id: "intro", label: "总介绍", kicker: "Overview", fieldLabel: "漫画总介绍" },
   { id: "outline", label: "目录", kicker: "Outline", fieldLabel: "章节与分镜目录" },
-  { id: "chapter", label: "单章生成", kicker: "Chapter", fieldLabel: "单章生成稿" }
+  { id: "chapter", label: "单章生成", kicker: "Chapter", fieldLabel: "章节图片生成" }
 ];
 
 export const COMIC_CHAPTER_STATUS_META = {
@@ -193,6 +193,7 @@ export function createMarketplaceState() {
       activeProjectId: null,
       activeTab: "intro",
       activeChapterId: "",
+      activeChapterImageId: "",
       introMode: "settings",
       activeAssetId: "",
       isAssetRailCollapsed: false,

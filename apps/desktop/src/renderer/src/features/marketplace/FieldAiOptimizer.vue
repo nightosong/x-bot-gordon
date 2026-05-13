@@ -21,8 +21,8 @@
     <Transition name="field-ai-popover">
       <section v-if="isActive" class="field-ai-popover" role="dialog" :aria-label="`${label} AI 优化`" @click.stop>
         <div class="field-ai-head">
-          <div>
-            <p>AI Optimize</p>
+          <div class="field-ai-title">
+            <p>AI Copilot</p>
             <strong>{{ label }}</strong>
           </div>
           <button type="button" class="field-ai-close" aria-label="关闭优化" title="关闭" @click="actions.closeMarketplaceFieldAi">

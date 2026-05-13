@@ -62,7 +62,7 @@ const COMIC_AI_TASKS_BY_TAB = {
       id: "chapterImage",
       label: "单张漫画图",
       goal: "把当前章节提炼为一张关键成图。",
-      target: "写入：当前章节生成稿",
+      target: "写入：当前章节图片区",
       runLabel: "生成漫画图",
       type: "image",
       defaultImageCount: 1,
@@ -72,7 +72,7 @@ const COMIC_AI_TASKS_BY_TAB = {
       id: "comicPage",
       label: "漫画页分镜",
       goal: "生成一页多格漫画画面。",
-      target: "写入：当前章节生成稿",
+      target: "写入：当前章节图片区",
       runLabel: "生成漫画页",
       type: "image",
       defaultImageCount: 1,
@@ -82,7 +82,7 @@ const COMIC_AI_TASKS_BY_TAB = {
       id: "continuousImages",
       label: "连续图组",
       goal: "多张连续画面保持角色与场景一致。",
-      target: "写入：当前章节生成稿",
+      target: "写入：当前章节图片区",
       runLabel: "生成连续图",
       type: "image",
       defaultImageCount: 4,
@@ -92,7 +92,7 @@ const COMIC_AI_TASKS_BY_TAB = {
       id: "coverPoster",
       label: "封面海报",
       goal: "为项目生成封面或宣传图。",
-      target: "写入：当前章节生成稿",
+      target: "写入：当前章节图片区",
       runLabel: "生成封面图",
       type: "image",
       defaultImageCount: 1,
@@ -336,6 +336,7 @@ function parseComicOutlineChapters(output) {
 export function createComicAiActions({
   activeComicChapter,
   activeComicChapterAssets,
+  activeComicChapterImage,
   activeComicChapterIndex,
   activeComicProject,
   activeComicTabMeta,
@@ -346,7 +347,7 @@ export function createComicAiActions({
   getComicChapterDisplayTitle,
   getComicProjectFormatLabel,
   getComicProjectPaletteLabel,
-  setComicChapterContent,
+  setComicChapterImagePrompt,
   setComicChapterImages,
   setComicChapterPrompt,
   setComicProjectEpisodePlan,
@@ -361,6 +362,7 @@ export function createComicAiActions({
     buildComicAiPrompt({
       project: activeComicProject.value,
       chapter: activeComicChapter.value,
+      chapterImage: activeComicChapterImage?.value ?? null,
       chapterIndex: activeComicChapterIndex.value,
       tabId: ui.marketplace.comic.activeTab,
       tabLabel: activeComicTabMeta.value?.fieldLabel,
@@ -450,8 +452,14 @@ export function createComicAiActions({
     getState().aiImageCount = clampInteger(value, 1, 10, 1);
   }
 
-  function buildComicContextLines(project, chapter, chapterIndex, tabLabel, referencedAssets = []) {
+  function buildComicContextLines(project, chapter, chapterIndex, tabLabel, referencedAssets = [], chapterImage = null) {
     const chapterTitle = chapter ? getComicChapterDisplayTitle(chapter, chapterIndex) : "暂无当前章节";
+    const imageParams = [
+      normalizeText(chapterImage?.size) ? `尺寸 ${normalizeText(chapterImage.size)}` : "",
+      normalizeText(chapterImage?.quality) ? `质量 ${normalizeText(chapterImage.quality)}` : ""
+    ]
+      .filter(Boolean)
+      .join("，");
 
     return [
       `当前模块：${tabLabel || "漫画项目"}`,
@@ -466,12 +474,14 @@ export function createComicAiActions({
       `当前章节：${chapterTitle}`,
       `分镜简介：${clipText(chapter?.summary || "暂无")}`,
       `已有生成提示词：${clipText(chapter?.prompt || "暂无")}`,
-      `已有生成稿：${clipText(chapter?.content || "暂无", 900)}`,
+      chapterImage ? `当前选中图片：${normalizeText(chapterImage.alt) || "未命名画面"}${imageParams ? `（${imageParams}）` : ""}` : "",
+      chapterImage ? `当前图片生图提示词：${clipText(chapterImage.prompt || "暂无")}` : "",
+      `历史生成备注：${clipText(chapter?.content || "暂无", 900)}`,
       ...buildComicAssetContextLines(referencedAssets)
-    ];
+    ].filter(Boolean);
   }
 
-  function buildComicAiPrompt({ project, chapter, chapterIndex, tabId, tabLabel, task, instruction, imageCount, referencedAssets }) {
+  function buildComicAiPrompt({ project, chapter, chapterImage, chapterIndex, tabId, tabLabel, task, instruction, imageCount, referencedAssets }) {
     const safeTask = task ?? getTasksByTab(tabId)[0];
     const userInstruction = normalizeText(instruction) || "按当前项目设定生成，保持漫画感、画面连续性和可执行性。";
 
@@ -492,7 +502,7 @@ export function createComicAiActions({
         sequenceLine,
         "",
         "【项目上下文】",
-        buildComicContextLines(project, chapter, chapterIndex, tabLabel, referencedAssets).join("\n"),
+        buildComicContextLines(project, chapter, chapterIndex, tabLabel, referencedAssets, chapterImage).join("\n"),
         "",
         "【用户额外要求】",
         userInstruction,
@@ -523,7 +533,7 @@ export function createComicAiActions({
       `${safeTask.label}：${safeTask.promptIntent}`,
       "",
       "【项目上下文】",
-      buildComicContextLines(project, chapter, chapterIndex, tabLabel, referencedAssets).join("\n"),
+      buildComicContextLines(project, chapter, chapterIndex, tabLabel, referencedAssets, chapterImage).join("\n"),
       "",
       "【用户额外要求】",
       userInstruction,
@@ -585,7 +595,7 @@ export function createComicAiActions({
 
     state.aiOutput = output;
     setComicAiFeedback(result?.profileLabel ? `已由 ${result.profileLabel} 生成。` : "文本已生成。", "success");
-    setStatus("丹青画室已生成文本内容。", "success");
+    setStatus("灵绘小筑已生成文本内容。", "success");
   }
 
   async function generateComicImageOutput(task, prompt, requestId, referencedAssets = []) {
@@ -633,7 +643,7 @@ export function createComicAiActions({
     state.aiGeneratedImages = images;
     state.aiOutput = buildComicAiOutputText({ task, prompt, toolResult, images });
     setComicAiFeedback(`已生成 ${images.length} 张图片。`, "success");
-    setStatus(`丹青画室已生成 ${images.length} 张漫画图。`, "success");
+    setStatus(`灵绘小筑已生成 ${images.length} 张漫画图。`, "success");
   }
 
   async function generateComicAiOutput() {
@@ -660,7 +670,7 @@ export function createComicAiActions({
     state.aiPromptPreview = prompt;
     state.aiGeneratedImages = [];
     setComicAiFeedback(task.type === "image" ? "正在生成图片..." : "正在生成文本...", "neutral");
-    setStatus(task.type === "image" ? "丹青画室正在生成漫画图。" : "丹青画室正在调用大模型生成内容。", "neutral");
+    setStatus(task.type === "image" ? "灵绘小筑正在生成漫画图。" : "灵绘小筑正在调用大模型生成内容。", "neutral");
 
     try {
       if (task.type === "image") {
@@ -676,30 +686,13 @@ export function createComicAiActions({
       console.error("Failed to generate comic AI output", error);
       const message = getErrorMessage(error);
       setComicAiFeedback(`生成失败：${message}`, "danger");
-      setStatus(`丹青画室生成失败：${message}`, "danger");
+      setStatus(`灵绘小筑生成失败：${message}`, "danger");
     } finally {
       if (state.aiRequestId === requestId) {
         state.isAiRunning = false;
         state.aiRequestId = "";
       }
     }
-  }
-
-  function buildComicAiWritebackContent() {
-    const state = getState();
-    const task = activeComicAiTask.value;
-    const prompt = normalizeText(state.aiPromptPreview || activeComicAiPromptPreview.value);
-    const images = Array.isArray(state.aiGeneratedImages) ? state.aiGeneratedImages : [];
-    const resultText = normalizeText(state.aiOutput);
-
-    return [
-      `### 丹青画室 · ${task.label}`,
-      prompt ? `#### 出图提示词\n${prompt}` : "",
-      images.length ? `#### 生成图片\n已生成 ${images.length} 张图片，已加入本章图片区。` : "",
-      !images.length && resultText ? `#### 生成结果\n${resultText}` : ""
-    ]
-      .filter(Boolean)
-      .join("\n\n");
   }
 
   function getComicTextFieldValue(task) {
@@ -767,7 +760,7 @@ export function createComicAiActions({
       }
 
       setComicAiFeedback(mode === "replace" ? "已替换章节目录。" : "已追加章节目录。", "success");
-      setStatus(mode === "replace" ? "丹青画室已替换章节目录。" : "丹青画室已追加章节目录。", "success");
+      setStatus(mode === "replace" ? "灵绘小筑已替换章节目录。" : "灵绘小筑已追加章节目录。", "success");
       return;
     }
 
@@ -780,7 +773,7 @@ export function createComicAiActions({
     }
 
     setComicAiFeedback(mode === "replace" ? "已替换目标字段。" : "已追加到目标字段。", "success");
-    setStatus(mode === "replace" ? "丹青画室已替换目标字段。" : "丹青画室已追加到目标字段。", "success");
+    setStatus(mode === "replace" ? "灵绘小筑已替换目标字段。" : "灵绘小筑已追加到目标字段。", "success");
   }
 
   function applyComicImageOutput(mode) {
@@ -800,38 +793,42 @@ export function createComicAiActions({
         return;
       }
 
-      setComicChapterPrompt(chapter, prompt);
-      setComicAiFeedback("已写入当前章节提示词。", "success");
-      setStatus("丹青画室已写入当前章节提示词。", "success");
+      if (activeComicChapterImage?.value && typeof setComicChapterImagePrompt === "function") {
+        setComicChapterImagePrompt(chapter, activeComicChapterImage.value.id, prompt);
+        setComicAiFeedback("已写入当前图片生图提示词。", "success");
+        setStatus("灵绘小筑已写入当前图片生图提示词。", "success");
+      } else {
+        setComicChapterPrompt(chapter, prompt);
+        setComicAiFeedback("当前章节暂无图片，已写入章节提示词。", "success");
+        setStatus("灵绘小筑已写入当前章节提示词。", "success");
+      }
       return;
     }
 
-    const output = buildComicAiWritebackContent();
+    const prompt = normalizeText(state.aiPromptPreview || activeComicAiPromptPreview.value);
     const images = (Array.isArray(state.aiGeneratedImages) ? state.aiGeneratedImages : [])
       .map((image, index) => ({
-        alt: normalizeText(image.alt) || `丹青画室生成图 ${index + 1}`,
-        src: normalizeText(image.src)
+        alt: normalizeText(image.alt || image.title) || `灵绘小筑生成图 ${index + 1}`,
+        src: normalizeText(image.src),
+        prompt: normalizeText(image.prompt) || prompt,
+        size: normalizeText(state.aiImageSize),
+        quality: normalizeText(state.aiQuality)
       }))
       .filter((image) => image.src);
 
-    if (!normalizeText(output)) {
-      setComicAiFeedback("还没有可写入的生成结果。", "warning");
+    if (!images.length) {
+      setComicAiFeedback("还没有可写入的图片。", "warning");
       return;
     }
 
-    const nextContent = mode === "replace" ? output : buildAppendText(chapter.content, output);
-    setComicChapterContent(chapter, nextContent);
-
-    if (images.length) {
-      if (mode === "replace" && typeof setComicChapterImages === "function") {
-        setComicChapterImages(chapter, images);
-      } else if (typeof appendComicChapterImages === "function") {
-        appendComicChapterImages(chapter, images);
-      }
+    if (mode === "replace" && typeof setComicChapterImages === "function") {
+      setComicChapterImages(chapter, images);
+    } else if (typeof appendComicChapterImages === "function") {
+      appendComicChapterImages(chapter, images);
     }
 
-    setComicAiFeedback(mode === "replace" ? "已替换当前章节生成稿。" : "已追加到当前章节生成稿。", "success");
-    setStatus(mode === "replace" ? "丹青画室已替换当前章节生成稿。" : "丹青画室已追加到当前章节生成稿。", "success");
+    setComicAiFeedback(mode === "replace" ? "已替换当前章节图片。" : "已追加到当前章节图片。", "success");
+    setStatus(mode === "replace" ? "灵绘小筑已替换当前章节图片。" : "灵绘小筑已追加到当前章节图片。", "success");
   }
 
   function applyComicAiOutput(mode = "append") {

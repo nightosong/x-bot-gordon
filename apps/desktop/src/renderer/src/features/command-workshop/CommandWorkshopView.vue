@@ -23,7 +23,7 @@
               <button
                 v-if="workbench.commandSessions.length"
                 type="button"
-                class="model-icon-button command-chat-nav-button"
+                class="model-icon-button weekly-back-button command-chat-nav-button"
                 aria-label="返回列表"
                 title="返回列表"
                 @click="backToCommandList"

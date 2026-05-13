@@ -2739,6 +2739,9 @@ function normalizeComicChapterImage(input: Partial<ComicChapterImage> | null | u
     id: String(input?.id ?? "").trim() || `comic_chapter_image_${randomUUID()}`,
     alt: String(input?.alt ?? "").trim() || `画面 ${index + 1}`,
     src: cleanComicImageSource(input?.src),
+    prompt: String(input?.prompt ?? ""),
+    size: String(input?.size ?? ""),
+    quality: String(input?.quality ?? ""),
     createdAt: String(input?.createdAt ?? "").trim() || now
   };
 }
@@ -2882,15 +2885,20 @@ async function externalizeComicProjectsImages(projects: ComicProject[]): Promise
 function normalizeComicChapter(input: Partial<ComicChapter> | null | undefined, index = 0): ComicChapter {
   const now = new Date().toISOString();
   const content = String(input?.content ?? "");
+  const chapterPrompt = String(input?.prompt ?? "");
+  const images = normalizeComicChapterImages(input?.images, content).map((image) => ({
+    ...image,
+    prompt: image.prompt || chapterPrompt
+  }));
 
   return {
     id: String(input?.id ?? "").trim() || `comic_chapter_${randomUUID()}`,
     index: Math.max(1, Math.round(Number(input?.index ?? index + 1) || index + 1)),
     title: String(input?.title ?? "").trim() || `第 ${index + 1} 章`,
     summary: String(input?.summary ?? ""),
-    prompt: String(input?.prompt ?? ""),
+    prompt: chapterPrompt,
     content: stripComicChapterImageMarkdown(content),
-    images: normalizeComicChapterImages(input?.images, content),
+    images,
     status: normalizeComicChapterStatus(input?.status),
     assetRefs: normalizeComicAssetRefs(input?.assetRefs),
     updatedAt: String(input?.updatedAt ?? "").trim() || now

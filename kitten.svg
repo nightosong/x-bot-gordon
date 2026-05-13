@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="35%" r="70%">
+      <stop offset="0%" stop-color="#fff6d9"/>
+      <stop offset="55%" stop-color="#ffe7c2"/>
+      <stop offset="100%" stop-color="#f8cfc8"/>
+    </radialGradient>
+    <linearGradient id="fur" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f6c38f"/>
+      <stop offset="100%" stop-color="#de8f5f"/>
+    </linearGradient>
+    <filter id="softShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="20" stdDeviation="22" flood-color="#9b5b48" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <circle cx="790" cy="165" r="86" fill="#fff2a8" opacity="0.75"/>
+  <circle cx="790" cy="165" r="132" fill="#fff2a8" opacity="0.18"/>
+
+  <ellipse cx="512" cy="838" rx="300" ry="58" fill="#b66d5c" opacity="0.18"/>
+
+  <g filter="url(#softShadow)">
+    <!-- tail -->
+    <path d="M705 708 C850 668 875 520 790 468 C727 430 660 474 687 535 C706 579 769 558 760 518" fill="none" stroke="#d58458" stroke-width="62" stroke-linecap="round"/>
+    <path d="M705 708 C850 668 875 520 790 468 C727 430 660 474 687 535 C706 579 769 558 760 518" fill="none" stroke="#f0b17a" stroke-width="34" stroke-linecap="round" opacity="0.75"/>
+
+    <!-- body -->
+    <ellipse cx="512" cy="635" rx="245" ry="260" fill="url(#fur)"/>
+    <ellipse cx="512" cy="690" rx="145" ry="170" fill="#ffd8b2" opacity="0.72"/>
+
+    <!-- head -->
+    <circle cx="512" cy="382" r="215" fill="url(#fur)"/>
+
+    <!-- ears -->
+    <path d="M344 236 L279 76 L462 168 Z" fill="#dd8c5d"/>
+    <path d="M680 236 L745 76 L562 168 Z" fill="#dd8c5d"/>
+    <path d="M348 198 L313 111 L420 166 Z" fill="#ffc6bb" opacity="0.86"/>
+    <path d="M676 198 L711 111 L604 166 Z" fill="#ffc6bb" opacity="0.86"/>
+
+    <!-- face cheeks -->
+    <circle cx="420" cy="435" r="48" fill="#ffb4a8" opacity="0.45"/>
+    <circle cx="604" cy="435" r="48" fill="#ffb4a8" opacity="0.45"/>
+
+    <!-- eyes -->
+    <ellipse cx="430" cy="355" rx="54" ry="64" fill="#3b2b2f"/>
+    <ellipse cx="594" cy="355" rx="54" ry="64" fill="#3b2b2f"/>
+    <circle cx="410" cy="331" r="17" fill="#fff" opacity="0.95"/>
+    <circle cx="574" cy="331" r="17" fill="#fff" opacity="0.95"/>
+    <circle cx="445" cy="380" r="9" fill="#fff" opacity="0.55"/>
+    <circle cx="609" cy="380" r="9" fill="#fff" opacity="0.55"/>
+
+    <!-- nose and mouth -->
+    <path d="M512 421 C494 421 484 433 492 446 C499 459 525 459 532 446 C540 433 530 421 512 421 Z" fill="#8d4d4f"/>
+    <path d="M512 449 C510 473 486 484 466 474" fill="none" stroke="#7b4548" stroke-width="8" stroke-linecap="round"/>
+    <path d="M512 449 C514 473 538 484 558 474" fill="none" stroke="#7b4548" stroke-width="8" stroke-linecap="round"/>
+
+    <!-- whiskers -->
+    <path d="M455 430 C386 410 325 411 266 429" fill="none" stroke="#7b4548" stroke-width="7" stroke-linecap="round" opacity="0.75"/>
+    <path d="M456 461 C383 466 327 486 279 520" fill="none" stroke="#7b4548" stroke-width="7" stroke-linecap="round" opacity="0.75"/>
+    <path d="M569 430 C638 410 699 411 758 429" fill="none" stroke="#7b4548" stroke-width="7" stroke-linecap="round" opacity="0.75"/>
+    <path d="M568 461 C641 466 697 486 745 520" fill="none" stroke="#7b4548" stroke-width="7" stroke-linecap="round" opacity="0.75"/>
+
+    <!-- paws -->
+    <ellipse cx="405" cy="805" rx="68" ry="48" fill="#f7b77f"/>
+    <ellipse cx="619" cy="805" rx="68" ry="48" fill="#f7b77f"/>
+    <path d="M382 802 C386 824 405 829 416 809" fill="none" stroke="#c97655" stroke-width="5" stroke-linecap="round" opacity="0.7"/>
+    <path d="M596 802 C600 824 619 829 630 809" fill="none" stroke="#c97655" stroke-width="5" stroke-linecap="round" opacity="0.7"/>
+
+    <!-- forehead stripes -->
+    <path d="M460 203 C472 255 486 286 512 307" fill="none" stroke="#c87350" stroke-width="18" stroke-linecap="round" opacity="0.58"/>
+    <path d="M564 203 C552 255 538 286 512 307" fill="none" stroke="#c87350" stroke-width="18" stroke-linecap="round" opacity="0.58"/>
+    <path d="M512 187 C512 239 512 270 512 303" fill="none" stroke="#c87350" stroke-width="15" stroke-linecap="round" opacity="0.5"/>
+  </g>
+
+  <text x="512" y="955" text-anchor="middle" font-family="Arial, sans-serif" font-size="42" fill="#8b5b52" opacity="0.65">可爱小猫</text>
+</svg>

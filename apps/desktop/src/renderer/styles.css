@@ -1869,15 +1869,16 @@ canvas {
 
 .comic-main-stage,
 .video-main-stage {
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .comic-editor-surface,
-.video-editor-card {
+.video-editor-surface {
   min-height: 0;
 }
 
-.comic-editor-surface {
+.comic-editor-surface,
+.video-editor-surface {
   display: grid;
   grid-template-rows: minmax(0, 1fr);
   align-self: stretch;
@@ -2308,7 +2309,7 @@ canvas {
 
 .comic-chapter-image-stage {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
 }
 
@@ -2358,6 +2359,9 @@ canvas {
   display: grid;
   gap: 9px;
   margin: 0;
+  border-radius: 16px;
+  cursor: pointer;
+  outline: none;
 }
 
 .comic-chapter-image-item + .comic-chapter-image-item {
@@ -2376,6 +2380,21 @@ canvas {
   background:
     linear-gradient(135deg, rgba(7, 13, 22, 0.72), rgba(18, 34, 47, 0.5)),
     rgba(7, 13, 22, 0.64);
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.comic-chapter-image-item:hover .comic-chapter-image-frame,
+.comic-chapter-image-item:focus-visible .comic-chapter-image-frame {
+  border-color: rgba(92, 225, 194, 0.32);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.18);
+}
+
+.comic-chapter-image-item.is-active .comic-chapter-image-frame {
+  transform: translateY(-1px);
+  border-color: rgba(92, 225, 194, 0.58);
+  box-shadow:
+    0 0 0 1px rgba(92, 225, 194, 0.18),
+    0 18px 38px rgba(0, 0, 0, 0.22);
 }
 
 .comic-chapter-image-frame img {
@@ -2412,6 +2431,10 @@ canvas {
 .comic-chapter-image-item figcaption small {
   color: rgba(247, 243, 235, 0.48);
   font-weight: 700;
+}
+
+.comic-chapter-image-item.is-active figcaption span {
+  color: #bcf8ea;
 }
 
 .comic-chapter-image-empty {
@@ -2465,10 +2488,44 @@ canvas {
 }
 
 .comic-chapter-story-panel,
+.comic-selected-image-panel,
 .comic-inspector-fold {
   border: 1px solid rgba(247, 243, 235, 0.095);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.032);
+}
+
+.comic-selected-image-panel {
+  display: grid;
+  gap: 8px;
+  padding: 11px;
+}
+
+.comic-selected-image-panel:not(.is-empty) {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.comic-selected-image-panel h3 {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.comic-selected-image-panel p {
+  margin: 0;
+}
+
+.comic-selected-image-panel.is-empty p:last-child {
+  color: rgba(247, 243, 235, 0.62);
+  font-size: 12px;
+  line-height: 1.58;
 }
 
 .comic-chapter-story-panel {
@@ -2633,7 +2690,7 @@ canvas {
 }
 
 .comic-inspector-field .comic-prompt-textarea {
-  min-height: 132px;
+  min-height: 188px;
 }
 
 .comic-chapter-inspector > .comic-raw-output-direct {
@@ -3184,6 +3241,17 @@ canvas {
   overflow: auto;
 }
 
+.writing-detail-rail .field {
+  gap: 4px;
+}
+
+.writing-detail-rail .field-label {
+  color: rgba(245, 200, 107, 0.78);
+  font-size: 10.5px;
+  font-weight: 850;
+  line-height: 1.15;
+}
+
 .writing-detail-layout.is-profile-collapsed .writing-detail-rail {
   justify-items: center;
   padding: 8px 6px;
@@ -3225,13 +3293,14 @@ canvas {
 }
 
 .writing-rail-title-input {
-  min-height: 30px;
-  padding: 5px 8px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0 8px;
   border-radius: 10px;
   color: #f8f2e7;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 850;
-  line-height: 1.2;
+  line-height: 24px;
 }
 
 .writing-profile-actions {
@@ -3253,11 +3322,19 @@ canvas {
 
 .writing-mini-select,
 .writing-mini-input {
-  min-height: 28px;
-  padding: 5px 8px;
-  border-radius: 9px;
-  font-size: 12px;
-  line-height: 1.2;
+  height: 25px;
+  min-height: 25px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 23px;
+}
+
+.writing-detail-rail .field-input,
+.writing-detail-rail .writing-mini-select,
+.writing-detail-rail .writing-mini-input,
+.writing-detail-rail .writing-rail-title-input {
+  box-sizing: border-box;
 }
 
 .writing-method-card {
@@ -3370,8 +3447,17 @@ canvas {
 .writing-editor-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: minmax(0, 1fr);
   gap: 9px;
   min-height: 0;
+}
+
+.writing-editor-surface {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  align-self: stretch;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .writing-editor-card,
@@ -3555,6 +3641,18 @@ canvas {
   justify-content: space-between;
 }
 
+.field-ai-head {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 24px;
+  justify-content: stretch;
+}
+
+.field-ai-title {
+  grid-column: 2;
+  min-width: 0;
+  text-align: center;
+}
+
 .field-ai-action-left,
 .field-ai-action-right {
   min-width: 0;
@@ -3578,7 +3676,7 @@ canvas {
 
 .field-ai-head strong {
   display: block;
-  max-width: 240px;
+  max-width: none;
   overflow: hidden;
   color: var(--text);
   font-size: 12px;
@@ -3588,6 +3686,7 @@ canvas {
 }
 
 .field-ai-close {
+  grid-column: 3;
   display: grid;
   place-items: center;
   flex: 0 0 auto;
@@ -4722,8 +4821,57 @@ canvas {
   line-height: 1.6;
 }
 
-.comic-ai-drawer {
-  gap: 8px;
+.comic-ai-drawer,
+.writing-assistant-drawer {
+  gap: 7px;
+  padding: 9px;
+}
+
+.comic-ai-drawer .writing-ai-head,
+.writing-assistant-drawer .writing-ai-head {
+  align-items: center;
+  flex-direction: row;
+  min-height: 16px;
+  margin: -1px 0 1px;
+  padding: 0 1px 5px;
+  border-bottom: 1px solid rgba(92, 225, 194, 0.12);
+}
+
+.comic-ai-drawer .writing-ai-head > div,
+.writing-assistant-drawer .writing-ai-head > div {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+
+.comic-ai-drawer .writing-ai-head .feature-kicker,
+.writing-assistant-drawer .writing-ai-head .feature-kicker {
+  margin: 0;
+  color: rgba(245, 200, 107, 0.66);
+  font-size: 8.5px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.12em;
+}
+
+.comic-ai-drawer .writing-ai-head .model-section-title,
+.writing-assistant-drawer .writing-ai-head .model-section-title {
+  margin: 0;
+  color: #bcf8ea;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.08;
+  letter-spacing: 0.04em;
+}
+
+.comic-ai-drawer .writing-ai-task-field > .field-label,
+.comic-ai-drawer .writing-ai-output-head > .field-label,
+.writing-assistant-drawer .writing-ai-task-field > .field-label,
+.writing-assistant-drawer .writing-ai-output-head > .field-label {
+  color: rgba(245, 200, 107, 0.58);
+  font-size: 10px;
+  font-weight: 800;
 }
 
 .comic-ai-control-grid {
@@ -7008,9 +7156,17 @@ canvas {
   cursor: progress;
 }
 
-.weekly-back-button {
-  width: 36px;
-  height: 36px;
+.model-icon-button.weekly-back-button {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
+  border-radius: 999px;
+}
+
+.model-icon-button.weekly-back-button .action-icon {
+  width: 14px;
+  height: 14px;
 }
 
 .weekly-editor-segmented {
