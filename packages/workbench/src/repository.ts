@@ -1,12 +1,18 @@
 import path from "node:path";
 import { access, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
+import { pathToFileURL } from "node:url";
 
 import { resolveFromRoot } from "../../shared/src/index.js";
 import type {
   AgentRunLog,
   AgentProfile,
+  ComicAsset,
+  ComicAssetType,
+  ComicAssetView,
+  ComicAssetViewKind,
   ComicChapter,
+  ComicChapterImage,
   ComicChapterStatus,
   ComicProject,
   ComicProjectFormat,
@@ -145,6 +151,10 @@ function getComicProjectsFilePath(): string {
 
 function getComicProjectDeleteStagingDirectoryPath(): string {
   return resolveFromRoot("data", "workbench", ".delete-staging", "comic-projects");
+}
+
+function getComicProjectImagesDirectoryPath(projectId: string): string {
+  return resolveFromRoot("data", "workbench", "comic-images", sanitizeWritingAssetName(projectId, "comic-project"));
 }
 
 function getVideoProjectsFilePath(): string {
@@ -2646,6 +2656,8 @@ export async function deleteWritingBook(bookId: string, moveToTrash: (targetPath
 const COMIC_PROJECT_FORMATS = new Set<ComicProjectFormat>(["poster", "serial"]);
 const COMIC_PROJECT_PALETTES = new Set<ComicProjectPalette>(["monochrome", "color"]);
 const COMIC_CHAPTER_STATUSES = new Set<ComicChapterStatus>(["todo", "inProgress", "done"]);
+const COMIC_ASSET_TYPES = new Set<ComicAssetType>(["character", "prop", "scene"]);
+const COMIC_ASSET_VIEW_KINDS = new Set<ComicAssetViewKind>(["turnaround", "front", "side", "back", "angle", "wide", "detail"]);
 
 function normalizeComicProjectFormat(value: unknown): ComicProjectFormat {
   const format = String(value ?? "").trim();
@@ -2662,8 +2674,214 @@ function normalizeComicChapterStatus(value: unknown): ComicChapterStatus {
   return COMIC_CHAPTER_STATUSES.has(status as ComicChapterStatus) ? (status as ComicChapterStatus) : "todo";
 }
 
+function normalizeComicAssetType(value: unknown): ComicAssetType {
+  const type = String(value ?? "").trim();
+  return COMIC_ASSET_TYPES.has(type as ComicAssetType) ? (type as ComicAssetType) : "character";
+}
+
+function normalizeComicAssetViewKind(value: unknown): ComicAssetViewKind {
+  const kind = String(value ?? "").trim();
+  return COMIC_ASSET_VIEW_KINDS.has(kind as ComicAssetViewKind) ? (kind as ComicAssetViewKind) : "angle";
+}
+
+function normalizeComicAssetRefs(input: unknown): string[] {
+  return Array.from(
+    new Set(
+      (Array.isArray(input) ? input : [])
+        .map((entry) => String(entry ?? "").trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function cleanComicImageSource(value: unknown): string {
+  const raw = String(value ?? "").trim().replace(/^<|>$/g, "");
+  const titleStart = raw.search(/\s+["']/);
+  return (titleStart > 0 ? raw.slice(0, titleStart) : raw).trim();
+}
+
+function extractComicChapterImagesFromMarkdown(content: string): Array<Pick<ComicChapterImage, "alt" | "src">> {
+  const imagePattern = /!\[([^\]]*)\]\(([^)\n]+)\)/gu;
+  const images: Array<Pick<ComicChapterImage, "alt" | "src">> = [];
+  let match = imagePattern.exec(content);
+
+  while (match) {
+    const src = cleanComicImageSource(match[2]);
+
+    if (src) {
+      images.push({
+        alt: String(match[1] ?? "").trim(),
+        src
+      });
+    }
+
+    match = imagePattern.exec(content);
+  }
+
+  return images;
+}
+
+function stripComicChapterImageMarkdown(content: string): string {
+  if (!content.includes("![") || !content.includes("](")) {
+    return content;
+  }
+
+  return content
+    .replace(/!\[[^\]]*\]\([^) \n]+(?:\s+["'][^"'\n]*["'])?\)/gu, "")
+    .replace(/\n{3,}/gu, "\n\n")
+    .trim();
+}
+
+function normalizeComicChapterImage(input: Partial<ComicChapterImage> | null | undefined, index = 0): ComicChapterImage {
+  const now = new Date().toISOString();
+
+  return {
+    id: String(input?.id ?? "").trim() || `comic_chapter_image_${randomUUID()}`,
+    alt: String(input?.alt ?? "").trim() || `画面 ${index + 1}`,
+    src: cleanComicImageSource(input?.src),
+    createdAt: String(input?.createdAt ?? "").trim() || now
+  };
+}
+
+function normalizeComicChapterImages(input: unknown, legacyContent = ""): ComicChapterImage[] {
+  const usedSources = new Set<string>();
+  const images: ComicChapterImage[] = [];
+  const candidates: Array<Partial<ComicChapterImage>> = [
+    ...(Array.isArray(input) ? (input as Array<Partial<ComicChapterImage>>) : []),
+    ...extractComicChapterImagesFromMarkdown(legacyContent)
+  ];
+
+  candidates.forEach((candidate, index) => {
+    const image = normalizeComicChapterImage(candidate, index);
+
+    if (!image.src || usedSources.has(image.src)) {
+      return;
+    }
+
+    usedSources.add(image.src);
+    images.push(image);
+  });
+
+  return images;
+}
+
+function parseComicImageDataUrl(value: string): { buffer: Buffer; extension: string } | null {
+  const match = /^data:image\/([a-zA-Z0-9.+-]+);base64,([\s\S]+)$/u.exec(value.trim());
+
+  if (!match) {
+    return null;
+  }
+
+  const imageType = match[1].toLowerCase();
+  const extension =
+    imageType === "jpeg" || imageType === "jpg"
+      ? "jpg"
+      : imageType === "png" || imageType === "webp" || imageType === "gif" || imageType === "avif"
+        ? imageType
+        : "png";
+
+  return {
+    buffer: Buffer.from(match[2].replace(/\s/g, ""), "base64"),
+    extension
+  };
+}
+
+async function externalizeComicImageSource(
+  projectId: string,
+  segments: string[],
+  imageId: string,
+  source: string
+): Promise<{ source: string; changed: boolean }> {
+  const parsed = parseComicImageDataUrl(source);
+
+  if (!parsed) {
+    return { source, changed: false };
+  }
+
+  const safeSegments = segments.map((segment) => sanitizeWritingAssetName(segment, "group"));
+  const directoryPath = path.join(getComicProjectImagesDirectoryPath(projectId), ...safeSegments);
+  const fileName = `${sanitizeWritingAssetName(imageId, "image")}.${parsed.extension}`;
+  const filePath = path.join(directoryPath, fileName);
+
+  await mkdir(directoryPath, { recursive: true });
+  await writeFile(filePath, parsed.buffer);
+
+  return {
+    source: pathToFileURL(filePath).href,
+    changed: true
+  };
+}
+
+async function externalizeComicProjectImages(project: ComicProject): Promise<{ project: ComicProject; changed: boolean }> {
+  let changed = false;
+
+  const assets = await Promise.all(
+    project.assets.map(async (asset) => {
+      const views = await Promise.all(
+        asset.views.map(async (view) => {
+          const result = await externalizeComicImageSource(project.id, ["assets", asset.id], view.id, view.src);
+
+          if (result.changed) {
+            changed = true;
+            return { ...view, src: result.source };
+          }
+
+          return view;
+        })
+      );
+
+      return views.some((view, index) => view !== asset.views[index]) ? { ...asset, views } : asset;
+    })
+  );
+
+  const chapters = await Promise.all(
+    project.chapters.map(async (chapter) => {
+      const images = await Promise.all(
+        chapter.images.map(async (image) => {
+          const result = await externalizeComicImageSource(project.id, ["chapters", chapter.id], image.id, image.src);
+
+          if (result.changed) {
+            changed = true;
+            return { ...image, src: result.source };
+          }
+
+          return image;
+        })
+      );
+
+      return images.some((image, index) => image !== chapter.images[index]) ? { ...chapter, images } : chapter;
+    })
+  );
+
+  return {
+    project: changed ? { ...project, assets, chapters } : project,
+    changed
+  };
+}
+
+async function externalizeComicProjectsImages(projects: ComicProject[]): Promise<{ projects: ComicProject[]; changed: boolean }> {
+  let changed = false;
+  const externalizedProjects = await Promise.all(
+    projects.map(async (project) => {
+      const result = await externalizeComicProjectImages(project);
+
+      if (result.changed) {
+        changed = true;
+      }
+
+      return result.project;
+    })
+  );
+
+  return {
+    projects: externalizedProjects,
+    changed
+  };
+}
+
 function normalizeComicChapter(input: Partial<ComicChapter> | null | undefined, index = 0): ComicChapter {
   const now = new Date().toISOString();
+  const content = String(input?.content ?? "");
 
   return {
     id: String(input?.id ?? "").trim() || `comic_chapter_${randomUUID()}`,
@@ -2671,8 +2889,10 @@ function normalizeComicChapter(input: Partial<ComicChapter> | null | undefined, 
     title: String(input?.title ?? "").trim() || `第 ${index + 1} 章`,
     summary: String(input?.summary ?? ""),
     prompt: String(input?.prompt ?? ""),
-    content: String(input?.content ?? ""),
+    content: stripComicChapterImageMarkdown(content),
+    images: normalizeComicChapterImages(input?.images, content),
     status: normalizeComicChapterStatus(input?.status),
+    assetRefs: normalizeComicAssetRefs(input?.assetRefs),
     updatedAt: String(input?.updatedAt ?? "").trim() || now
   };
 }
@@ -2701,11 +2921,114 @@ function normalizeComicChapters(input: unknown): ComicChapter[] {
   ];
 }
 
+function normalizeComicAssetView(input: Partial<ComicAssetView> | null | undefined, index = 0): ComicAssetView {
+  const kind = normalizeComicAssetViewKind(input?.kind);
+
+  return {
+    id: String(input?.id ?? "").trim() || `comic_asset_view_${randomUUID()}`,
+    kind,
+    label: String(input?.label ?? "").trim() || `视角 ${index + 1}`,
+    src: String(input?.src ?? "").trim(),
+    prompt: String(input?.prompt ?? "")
+  };
+}
+
+function normalizeComicAssetViews(input: unknown): ComicAssetView[] {
+  return (Array.isArray(input) ? input : []).map((view, index) => normalizeComicAssetView(view as Partial<ComicAssetView>, index));
+}
+
+function isLegacyEmptyComicTurnaroundViewSet(type: ComicAssetType, views: ComicAssetView[]): boolean {
+  if (type !== "character" && type !== "prop") {
+    return false;
+  }
+
+  if (views.length !== 3) {
+    return false;
+  }
+
+  const kinds = views.map((view) => view.kind).sort().join(",");
+  const isEmpty = views.every((view) => !view.src.trim() && !String(view.prompt ?? "").trim());
+  return isEmpty && kinds === "back,front,side";
+}
+
+function getDefaultComicAssetViews(type: ComicAssetType): ComicAssetView[] {
+  if (type === "scene") {
+    return [
+      { id: `comic_asset_view_${randomUUID()}`, kind: "wide", label: "全景", src: "", prompt: "" },
+      { id: `comic_asset_view_${randomUUID()}`, kind: "angle", label: "视角 A", src: "", prompt: "" },
+      { id: `comic_asset_view_${randomUUID()}`, kind: "detail", label: "细节", src: "", prompt: "" }
+    ];
+  }
+
+  return [
+    { id: `comic_asset_view_${randomUUID()}`, kind: "turnaround", label: "三视图", src: "", prompt: "" }
+  ];
+}
+
+function normalizeComicAssetName(value: unknown, usedNames: Set<string>, fallback: string): string {
+  const baseName = String(value ?? "").trim() || fallback;
+  let candidate = baseName;
+  let suffix = 2;
+
+  while (usedNames.has(candidate.toLowerCase())) {
+    candidate = `${baseName} ${suffix}`;
+    suffix += 1;
+  }
+
+  usedNames.add(candidate.toLowerCase());
+  return candidate;
+}
+
+function normalizeComicAsset(
+  input: Partial<ComicAsset> | null | undefined,
+  index = 0,
+  usedNames: Set<string> = new Set()
+): ComicAsset {
+  const now = new Date().toISOString();
+  const createdAt = String(input?.createdAt ?? "").trim() || now;
+  const type = normalizeComicAssetType(input?.type);
+  const defaultName = type === "character" ? "人物素材" : type === "prop" ? "物品素材" : "场景素材";
+  const views = normalizeComicAssetViews(input?.views);
+
+  return {
+    id: String(input?.id ?? "").trim() || `comic_asset_${randomUUID()}`,
+    name: normalizeComicAssetName(input?.name, usedNames, `${defaultName} ${index + 1}`),
+    type,
+    description: String(input?.description ?? ""),
+    prompt: String(input?.prompt ?? ""),
+    views: views.length && !isLegacyEmptyComicTurnaroundViewSet(type, views) ? views : getDefaultComicAssetViews(type),
+    createdAt,
+    updatedAt: String(input?.updatedAt ?? "").trim() || createdAt
+  };
+}
+
+function normalizeComicAssets(input: unknown): ComicAsset[] {
+  const usedNames = new Set<string>();
+  const usedIds = new Set<string>();
+
+  return (Array.isArray(input) ? input : []).map((asset, index) => {
+    const normalizedAsset = normalizeComicAsset(asset as Partial<ComicAsset>, index, usedNames);
+
+    if (usedIds.has(normalizedAsset.id)) {
+      normalizedAsset.id = `comic_asset_${randomUUID()}`;
+    }
+
+    usedIds.add(normalizedAsset.id);
+    return normalizedAsset;
+  });
+}
+
 function normalizeComicProject(input: Partial<ComicProject> | null | undefined, index = 0): ComicProject {
   const now = new Date().toISOString();
   const createdAt = String(input?.createdAt ?? "").trim() || now;
   const updatedAt = String(input?.updatedAt ?? "").trim() || createdAt;
   const id = String(input?.id ?? "").trim() || `comic_project_${randomUUID()}`;
+  const assets = normalizeComicAssets(input?.assets);
+  const assetIds = new Set(assets.map((asset) => asset.id));
+  const chapters = normalizeComicChapters(input?.chapters).map((chapter) => ({
+    ...chapter,
+    assetRefs: chapter.assetRefs.filter((assetId) => assetIds.has(assetId))
+  }));
 
   return {
     id,
@@ -2719,7 +3042,8 @@ function normalizeComicProject(input: Partial<ComicProject> | null | undefined, 
     episodePlan: String(input?.episodePlan ?? ""),
     pageCount: Math.max(1, Math.round(Number(input?.pageCount ?? 1) || 1)),
     coverTone: String(input?.coverTone ?? "").trim() || (index % 2 === 0 ? "ink" : "coral"),
-    chapters: normalizeComicChapters(input?.chapters),
+    assets,
+    chapters,
     createdAt,
     updatedAt
   };
@@ -2727,12 +3051,19 @@ function normalizeComicProject(input: Partial<ComicProject> | null | undefined, 
 
 export async function listComicProjects(): Promise<ComicProject[]> {
   const projects = await readWorkbenchCollection<Partial<ComicProject>>(getComicProjectsFilePath());
-  return sortByUpdatedAtDescending(projects.map((project, index) => normalizeComicProject(project, index)));
+  const normalizedProjects = sortByUpdatedAtDescending(projects.map((project, index) => normalizeComicProject(project, index)));
+  const externalized = await externalizeComicProjectsImages(normalizedProjects);
+
+  if (externalized.changed) {
+    await writeWorkbenchCollection(getComicProjectsFilePath(), sortByUpdatedAtDescending(externalized.projects));
+  }
+
+  return sortByUpdatedAtDescending(externalized.projects);
 }
 
 export async function upsertComicProject(project: ComicProject): Promise<ComicProject[]> {
   const current = await listComicProjects();
-  const normalizedProject = normalizeComicProject(project);
+  const normalizedProject = (await externalizeComicProjectImages(normalizeComicProject(project))).project;
   const nextProjects = current.some((entry) => entry.id === normalizedProject.id)
     ? current.map((entry) => (entry.id === normalizedProject.id ? normalizedProject : entry))
     : [normalizedProject, ...current];
@@ -2763,6 +3094,16 @@ export async function deleteComicProject(projectId: string, moveToTrash: (target
   await mkdir(stagingDirectory, { recursive: true });
   await writeFile(snapshotPath, `${JSON.stringify(deletedProject, null, 2)}\n`, "utf8");
   await moveToTrash(snapshotPath);
+
+  try {
+    await access(getComicProjectImagesDirectoryPath(normalizedProjectId));
+    await moveToTrash(getComicProjectImagesDirectoryPath(normalizedProjectId));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw error;
+    }
+  }
+
   await writeWorkbenchCollection(
     getComicProjectsFilePath(),
     sortByUpdatedAtDescending(current.filter((entry) => entry.id !== normalizedProjectId))

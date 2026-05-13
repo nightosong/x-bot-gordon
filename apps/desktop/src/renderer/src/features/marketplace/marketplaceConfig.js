@@ -92,6 +92,48 @@ export const COMIC_PROJECT_PALETTE_META = {
 
 export const COMIC_PROJECT_COVER_TONES = ["ink", "coral", "teal", "gold"];
 
+export const COMIC_ASSET_TYPE_META = {
+  character: {
+    label: "人物",
+    defaultName: "人物素材",
+    defaultDescription: "固定角色的外貌、服饰、体态、表情气质和关键识别点。",
+    defaultPrompt: "保持人物五官、发型、服饰、年龄感、体态比例和标志性细节一致；三视图使用 16:9 横图，把正面、侧面、背面放在同一张图里。",
+    defaultViews: [
+      { kind: "turnaround", label: "三视图" }
+    ]
+  },
+  prop: {
+    label: "物品",
+    defaultName: "物品素材",
+    defaultDescription: "固定物品的造型、材质、尺寸感、纹样和使用方式。",
+    defaultPrompt: "保持物品轮廓、材质、颜色、比例、纹样和磨损细节一致；三视图使用 16:9 横图，把正面、侧面、背面放在同一张图里。",
+    defaultViews: [
+      { kind: "turnaround", label: "三视图" }
+    ]
+  },
+  scene: {
+    label: "场景",
+    defaultName: "场景素材",
+    defaultDescription: "固定场景的空间关系、光线、氛围、建筑结构和关键道具。",
+    defaultPrompt: "保持场景空间结构、光线方向、色彩氛围、时代感和关键布景一致。",
+    defaultViews: [
+      { kind: "wide", label: "全景" },
+      { kind: "angle", label: "视角 A" },
+      { kind: "detail", label: "细节" }
+    ]
+  }
+};
+
+export const COMIC_ASSET_VIEW_KIND_META = {
+  turnaround: { label: "三视图" },
+  front: { label: "正面" },
+  side: { label: "侧面" },
+  back: { label: "背面" },
+  angle: { label: "视角" },
+  wide: { label: "全景" },
+  detail: { label: "细节" }
+};
+
 export const VIDEO_PROJECT_MODE_META = {
   textToVideo: { label: "文生视频", defaultDuration: 5 },
   imageToVideo: { label: "图生视频", defaultDuration: 6 }
@@ -151,6 +193,9 @@ export function createMarketplaceState() {
       activeProjectId: null,
       activeTab: "intro",
       activeChapterId: "",
+      introMode: "settings",
+      activeAssetId: "",
+      isAssetRailCollapsed: false,
       aiTaskId: "chapterImage",
       aiInstruction: "",
       aiOutput: "",

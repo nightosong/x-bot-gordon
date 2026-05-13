@@ -735,6 +735,34 @@ export interface WritingBookSaveOptions {
 export type ComicProjectFormat = "poster" | "serial";
 export type ComicProjectPalette = "monochrome" | "color";
 export type ComicChapterStatus = "todo" | "inProgress" | "done";
+export type ComicAssetType = "character" | "prop" | "scene";
+export type ComicAssetViewKind = "turnaround" | "front" | "side" | "back" | "angle" | "wide" | "detail";
+
+export interface ComicAssetView {
+  id: string;
+  kind: ComicAssetViewKind;
+  label: string;
+  src: string;
+  prompt?: string;
+}
+
+export interface ComicAsset {
+  id: string;
+  name: string;
+  type: ComicAssetType;
+  description: string;
+  prompt: string;
+  views: ComicAssetView[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ComicChapterImage {
+  id: string;
+  alt: string;
+  src: string;
+  createdAt: string;
+}
 
 export interface ComicChapter {
   id: string;
@@ -743,7 +771,9 @@ export interface ComicChapter {
   summary: string;
   prompt: string;
   content: string;
+  images: ComicChapterImage[];
   status: ComicChapterStatus;
+  assetRefs: string[];
   updatedAt: string;
 }
 
@@ -759,6 +789,7 @@ export interface ComicProject {
   episodePlan: string;
   pageCount: number;
   coverTone: string;
+  assets: ComicAsset[];
   chapters: ComicChapter[];
   createdAt: string;
   updatedAt: string;

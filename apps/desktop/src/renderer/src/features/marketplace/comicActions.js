@@ -3,6 +3,8 @@ import { computed } from "vue";
 import { WRITING_AUTOSAVE_DELAY } from "../writing/writingConfig.js";
 import {
   COMIC_APP_TABS,
+  COMIC_ASSET_TYPE_META,
+  COMIC_ASSET_VIEW_KIND_META,
   COMIC_CHAPTER_STATUS_META,
   COMIC_PROJECT_COVER_TONES,
   COMIC_PROJECT_FORMAT_META,
@@ -39,6 +41,13 @@ export function createComicActions({
   const activeComicProject = computed(
     () => comicProjects.value.find((project) => project.id === ui.marketplace.comic.activeProjectId) ?? comicProjects.value[0] ?? null
   );
+  const activeComicAssets = computed(() => getComicAssets(activeComicProject.value));
+  const activeComicAsset = computed(
+    () =>
+      activeComicAssets.value.find((asset) => asset.id === ui.marketplace.comic.activeAssetId) ??
+      activeComicAssets.value[0] ??
+      null
+  );
   const activeComicTabMeta = computed(
     () => COMIC_APP_TABS.find((tab) => tab.id === ui.marketplace.comic.activeTab) ?? COMIC_APP_TABS[0]
   );
@@ -55,6 +64,9 @@ export function createComicActions({
       activeComicChapters.value.findIndex((chapter) => chapter.id === activeComicChapter.value?.id)
     )
   );
+  const activeComicChapterAssets = computed(() => getComicChapterReferencedAssets(activeComicChapter.value));
+  const activeComicChapterImages = computed(() => getComicChapterImages(activeComicChapter.value));
+  const activeComicChapterImageCountLabel = computed(() => getComicChapterImageCountLabel(activeComicChapterImages.value));
   const activeComicExportFileName = computed(() => getComicExportFileName(activeComicProject.value));
   const filteredComicChapterEntries = computed(() =>
     getFilteredComicChapterEntries(activeComicChapters.value, ui.marketplace.comic.chapterSearchQuery)
@@ -87,8 +99,213 @@ export function createComicActions({
     return COMIC_CHAPTER_STATUS_META[value] ? value : "todo";
   }
 
+  function normalizeComicAssetTypeForUi(value) {
+    const type = String(value ?? "").trim();
+    return COMIC_ASSET_TYPE_META[type] ? type : "character";
+  }
+
+  function normalizeComicAssetViewKindForUi(value) {
+    const kind = String(value ?? "").trim();
+    return COMIC_ASSET_VIEW_KIND_META[kind] ? kind : "angle";
+  }
+
+  function getComicAssetTypeLabel(type) {
+    return COMIC_ASSET_TYPE_META[normalizeComicAssetTypeForUi(type)]?.label ?? "人物";
+  }
+
+  function getComicAssetViewKindLabel(kind) {
+    return COMIC_ASSET_VIEW_KIND_META[normalizeComicAssetViewKindForUi(kind)]?.label ?? "视角";
+  }
+
+  function normalizeComicAssetRefsForUi(refs = []) {
+    return Array.from(
+      new Set(
+        (Array.isArray(refs) ? refs : [])
+          .map((ref) => String(ref ?? "").trim())
+          .filter(Boolean)
+      )
+    );
+  }
+
+  function cleanComicImageSource(value) {
+    const raw = String(value ?? "").trim().replace(/^<|>$/g, "");
+    const titleStart = raw.search(/\s+["']/);
+    return (titleStart > 0 ? raw.slice(0, titleStart) : raw).trim();
+  }
+
+  function extractComicChapterImagesFromMarkdown(content) {
+    const text = String(content ?? "");
+    const imagePattern = /!\[([^\]]*)\]\(([^)\n]+)\)/g;
+    const images = [];
+    let match = imagePattern.exec(text);
+
+    while (match) {
+      const src = cleanComicImageSource(match[2]);
+
+      if (src) {
+        images.push({
+          alt: String(match[1] ?? "").trim(),
+          src
+        });
+      }
+
+      match = imagePattern.exec(text);
+    }
+
+    return images;
+  }
+
+  function stripComicChapterImageMarkdown(content) {
+    const text = String(content ?? "");
+
+    if (!text.includes("![") || !text.includes("](")) {
+      return text;
+    }
+
+    return text
+      .replace(/!\[[^\]]*\]\([^) \n]+(?:\s+["'][^"'\n]*["'])?\)/g, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  function normalizeComicChapterImageForUi(image, index = 0) {
+    const now = new Date().toISOString();
+
+    return {
+      id: String(image?.id ?? "").trim() || createLocalId("comic_chapter_image"),
+      alt: String(image?.alt ?? "").trim() || `画面 ${index + 1}`,
+      src: cleanComicImageSource(image?.src),
+      createdAt: String(image?.createdAt ?? "").trim() || now
+    };
+  }
+
+  function normalizeComicChapterImagesForUi(images = [], legacyContent = "") {
+    const usedSources = new Set();
+    const candidates = [
+      ...(Array.isArray(images) ? images : []),
+      ...extractComicChapterImagesFromMarkdown(legacyContent)
+    ];
+
+    return candidates
+      .map((image, index) => normalizeComicChapterImageForUi(image, index))
+      .filter((image) => {
+        if (!image.src || usedSources.has(image.src)) {
+          return false;
+        }
+
+        usedSources.add(image.src);
+        return true;
+      });
+  }
+
+  function getComicChapterImages(chapter) {
+    return Array.isArray(chapter?.images) ? chapter.images.filter((image) => String(image?.src ?? "").trim()) : [];
+  }
+
+  function getComicChapterImageCountLabel(imagesOrChapter) {
+    const count = Array.isArray(imagesOrChapter) ? imagesOrChapter.length : getComicChapterImages(imagesOrChapter).length;
+    return count ? `${count} 张图片` : "暂无图片";
+  }
+
+  function getComicAssetNameKey(value) {
+    return String(value ?? "").trim().toLowerCase();
+  }
+
+  function ensureUniqueComicAssetName(name, usedNames, fallback) {
+    const baseName = String(name ?? "").trim() || fallback;
+    let candidate = baseName;
+    let suffix = 2;
+
+    while (usedNames.has(getComicAssetNameKey(candidate))) {
+      candidate = `${baseName} ${suffix}`;
+      suffix += 1;
+    }
+
+    usedNames.add(getComicAssetNameKey(candidate));
+    return candidate;
+  }
+
+  function getDefaultComicAssetViews(type) {
+    const normalizedType = normalizeComicAssetTypeForUi(type);
+    const defaultViews = COMIC_ASSET_TYPE_META[normalizedType]?.defaultViews ?? COMIC_ASSET_TYPE_META.character.defaultViews;
+
+    return defaultViews.map((view, index) =>
+      normalizeComicAssetViewForUi(
+        {
+          kind: view.kind,
+          label: view.label
+        },
+        index
+      )
+    );
+  }
+
+  function normalizeComicAssetViewForUi(view, index = 0) {
+    const kind = normalizeComicAssetViewKindForUi(view?.kind);
+
+    return {
+      id: String(view?.id ?? "").trim() || createLocalId("comic_asset_view"),
+      kind,
+      label: String(view?.label ?? "").trim() || getComicAssetViewKindLabel(kind),
+      src: String(view?.src ?? "").trim(),
+      prompt: String(view?.prompt ?? "")
+    };
+  }
+
+  function isLegacyEmptyComicTurnaroundViewSet(type, views) {
+    if (type !== "character" && type !== "prop") {
+      return false;
+    }
+
+    if (!Array.isArray(views) || views.length !== 3) {
+      return false;
+    }
+
+    const kinds = views.map((view) => view.kind).sort().join(",");
+    const isEmpty = views.every((view) => !String(view?.src ?? "").trim() && !String(view?.prompt ?? "").trim());
+    return isEmpty && kinds === "back,front,side";
+  }
+
+  function normalizeComicAssetForUi(asset, index = 0, usedNames = new Set()) {
+    const now = new Date().toISOString();
+    const type = normalizeComicAssetTypeForUi(asset?.type);
+    const typeMeta = COMIC_ASSET_TYPE_META[type] ?? COMIC_ASSET_TYPE_META.character;
+    const createdAt = String(asset?.createdAt ?? "").trim() || now;
+    const views = Array.isArray(asset?.views)
+      ? asset.views.map((view, viewIndex) => normalizeComicAssetViewForUi(view, viewIndex))
+      : [];
+
+    return {
+      id: String(asset?.id ?? "").trim() || createLocalId("comic_asset"),
+      name: ensureUniqueComicAssetName(asset?.name, usedNames, `${typeMeta.defaultName} ${index + 1}`),
+      type,
+      description: String(asset?.description ?? ""),
+      prompt: String(asset?.prompt ?? ""),
+      views: views.length && !isLegacyEmptyComicTurnaroundViewSet(type, views) ? views : getDefaultComicAssetViews(type),
+      createdAt,
+      updatedAt: String(asset?.updatedAt ?? "").trim() || createdAt
+    };
+  }
+
+  function normalizeComicAssetsForUi(assets = []) {
+    const usedNames = new Set();
+    const usedIds = new Set();
+
+    return (Array.isArray(assets) ? assets : []).map((asset, index) => {
+      const normalizedAsset = normalizeComicAssetForUi(asset, index, usedNames);
+
+      if (usedIds.has(normalizedAsset.id)) {
+        normalizedAsset.id = createLocalId("comic_asset");
+      }
+
+      usedIds.add(normalizedAsset.id);
+      return normalizedAsset;
+    });
+  }
+
   function normalizeComicChapterForUi(chapter, index = 0) {
     const now = new Date().toISOString();
+    const content = String(chapter?.content ?? "");
 
     return {
       id: String(chapter?.id ?? "").trim() || createLocalId("comic_chapter"),
@@ -96,8 +313,10 @@ export function createComicActions({
       title: String(chapter?.title ?? "").trim() || `第 ${index + 1} 章`,
       summary: String(chapter?.summary ?? ""),
       prompt: String(chapter?.prompt ?? ""),
-      content: String(chapter?.content ?? ""),
+      content: stripComicChapterImageMarkdown(content),
+      images: normalizeComicChapterImagesForUi(chapter?.images, content),
       status: normalizeComicChapterStatusForUi(chapter?.status),
+      assetRefs: normalizeComicAssetRefsForUi(chapter?.assetRefs),
       updatedAt: String(chapter?.updatedAt ?? "").trim() || now
     };
   }
@@ -132,6 +351,12 @@ export function createComicActions({
     const palette = normalizeComicProjectPaletteForUi(project?.palette);
     const createdAt = String(project?.createdAt ?? "").trim() || now;
     const updatedAt = String(project?.updatedAt ?? "").trim() || createdAt;
+    const assets = normalizeComicAssetsForUi(project?.assets);
+    const assetIds = new Set(assets.map((asset) => asset.id));
+    const chapters = normalizeComicChaptersForUi(project?.chapters).map((chapter) => ({
+      ...chapter,
+      assetRefs: chapter.assetRefs.filter((assetId) => assetIds.has(assetId))
+    }));
 
     return {
       id: String(project?.id ?? "").trim() || createLocalId("comic_project"),
@@ -144,7 +369,8 @@ export function createComicActions({
       visualStyle: String(project?.visualStyle ?? ""),
       episodePlan: String(project?.episodePlan ?? ""),
       pageCount: normalizeComicProjectPageCount(project?.pageCount, COMIC_PROJECT_FORMAT_META[format]?.defaultPages ?? 1),
-      chapters: normalizeComicChaptersForUi(project?.chapters),
+      assets,
+      chapters,
       coverTone:
         String(project?.coverTone ?? "").trim() ||
         COMIC_PROJECT_COVER_TONES[index % COMIC_PROJECT_COVER_TONES.length] ||
@@ -175,9 +401,16 @@ export function createComicActions({
     if (nextProject && !nextProject.chapters.some((chapter) => chapter.id === ui.marketplace.comic.activeChapterId)) {
       ui.marketplace.comic.activeChapterId = nextProject.chapters[0]?.id ?? "";
     }
+
+    if (nextProject && !getComicAssets(nextProject).some((asset) => asset.id === ui.marketplace.comic.activeAssetId)) {
+      ui.marketplace.comic.activeAssetId = getComicAssets(nextProject)[0]?.id ?? "";
+    }
   }
 
   function buildComicProjectSavePayload(project) {
+    const assets = normalizeComicAssetsForUi(project.assets);
+    const assetIds = new Set(assets.map((asset) => asset.id));
+
     return {
       id: project.id,
       title: project.title,
@@ -189,8 +422,10 @@ export function createComicActions({
       visualStyle: project.visualStyle,
       episodePlan: project.episodePlan,
       pageCount: normalizeComicProjectPageCount(project.pageCount),
+      assets,
       chapters: getComicChapters(project).map((chapter, index) => ({
         ...normalizeComicChapterForUi(chapter, index),
+        assetRefs: normalizeComicAssetRefsForUi(chapter.assetRefs).filter((assetId) => assetIds.has(assetId)),
         updatedAt: chapter.updatedAt
       })),
       coverTone: project.coverTone,
@@ -286,6 +521,25 @@ export function createComicActions({
     return Array.isArray(project?.chapters) ? project.chapters : [];
   }
 
+  function getComicAssets(project) {
+    return Array.isArray(project?.assets) ? project.assets : [];
+  }
+
+  function getComicAssetFilledViewCount(asset) {
+    return (Array.isArray(asset?.views) ? asset.views : []).filter((view) => String(view?.src ?? "").trim()).length;
+  }
+
+  function getComicChapterReferencedAssets(chapter) {
+    const refs = normalizeComicAssetRefsForUi(chapter?.assetRefs);
+    const refSet = new Set(refs);
+
+    return activeComicAssets.value.filter((asset) => refSet.has(asset.id));
+  }
+
+  function isComicChapterAssetReferenced(chapter, assetId) {
+    return normalizeComicAssetRefsForUi(chapter?.assetRefs).includes(String(assetId ?? "").trim());
+  }
+
   function getComicChapterDisplayTitle(chapter, index = 0) {
     const order = Number(chapter?.index ?? index + 1);
     const title = String(chapter?.title ?? "").trim();
@@ -341,6 +595,8 @@ export function createComicActions({
 
   function buildComicProjectExportContent(project) {
     const chapters = getComicChapters(project).slice().sort((left, right) => Number(left.index ?? 0) - Number(right.index ?? 0));
+    const assets = getComicAssets(project);
+    const assetMap = new Map(assets.map((asset) => [asset.id, asset]));
     const lines = [`# ${sanitizeComicExportTitle(project?.title)}`, ""];
     const summary = trimComicExportTextBlock(project?.summary ?? "");
     const visualStyle = trimComicExportTextBlock(project?.visualStyle ?? "");
@@ -365,6 +621,36 @@ export function createComicActions({
       lines.push(project?.format === "serial" ? "## 连载总规划" : "## 海报构图规划", "", episodePlan, "");
     }
 
+    if (assets.length) {
+      lines.push("## 素材库", "");
+
+      assets.forEach((asset) => {
+        const description = trimComicExportTextBlock(asset.description ?? "");
+        const prompt = trimComicExportTextBlock(asset.prompt ?? "");
+        const filledViews = (Array.isArray(asset.views) ? asset.views : []).filter((view) => String(view?.src ?? "").trim());
+
+        lines.push(`### ${asset.name}`, "");
+        lines.push(`- 类型：${getComicAssetTypeLabel(asset.type)}`);
+        lines.push(`- ID：${asset.id}`);
+
+        if (description) {
+          lines.push(`- 描述：${description}`);
+        }
+
+        if (prompt) {
+          lines.push(`- 提示词：${prompt}`);
+        }
+
+        if (filledViews.length) {
+          filledViews.forEach((view) => {
+            lines.push(`- ${view.label || getComicAssetViewKindLabel(view.kind)}：${view.src}`);
+          });
+        }
+
+        lines.push("");
+      });
+    }
+
     lines.push("## 目录", "");
 
     if (chapters.length) {
@@ -384,6 +670,10 @@ export function createComicActions({
       const chapterSummary = trimComicExportTextBlock(chapter.summary ?? "");
       const prompt = trimComicExportTextBlock(chapter.prompt ?? "");
       const content = trimComicExportTextBlock(chapter.content ?? "");
+      const images = getComicChapterImages(chapter);
+      const referencedAssets = normalizeComicAssetRefsForUi(chapter.assetRefs)
+        .map((assetId) => assetMap.get(assetId))
+        .filter(Boolean);
 
       lines.push(`### ${title}`, "");
 
@@ -391,8 +681,26 @@ export function createComicActions({
         lines.push("#### 分镜简介", "", chapterSummary, "");
       }
 
+      if (referencedAssets.length) {
+        lines.push(
+          "#### 引用素材",
+          "",
+          referencedAssets.map((asset) => `- ${getComicAssetTypeLabel(asset.type)}：${asset.name}（${asset.id}）`).join("\n"),
+          ""
+        );
+      }
+
       if (prompt) {
         lines.push("#### 生成提示词", "", prompt, "");
+      }
+
+      if (images.length) {
+        lines.push(
+          "#### 生成图片",
+          "",
+          images.map((image, imageIndex) => `![${image.alt || `画面 ${imageIndex + 1}`}](${image.src})`).join("\n\n"),
+          ""
+        );
       }
 
       lines.push("#### 生成稿", "", content || "暂无生成稿", "");
@@ -417,8 +725,10 @@ export function createComicActions({
   function openComicProject(projectId) {
     ui.marketplace.comic.activeProjectId = projectId;
     ui.marketplace.comic.activeTab = "intro";
+    ui.marketplace.comic.introMode = "settings";
     const project = comicProjects.value.find((entry) => entry.id === projectId) ?? null;
     ui.marketplace.comic.activeChapterId = getComicChapters(project)[0]?.id ?? "";
+    ui.marketplace.comic.activeAssetId = getComicAssets(project)[0]?.id ?? "";
     ui.marketplace.view = "comicDetail";
   }
 
@@ -478,6 +788,7 @@ export function createComicActions({
       episodePlan: "单图海报：主体、背景、人物站位、标题区域和最终比例。",
       pageCount: 1,
       coverTone: COMIC_PROJECT_COVER_TONES[comicProjects.value.length % COMIC_PROJECT_COVER_TONES.length],
+      assets: [],
       chapters: [
         {
           id: createLocalId("comic_chapter"),
@@ -487,6 +798,7 @@ export function createComicActions({
           prompt: "基于总介绍生成开场分镜，明确画面、动作、对白和页数。",
           content: "",
           status: "inProgress",
+          assetRefs: [],
           updatedAt: now
         }
       ],
@@ -497,7 +809,9 @@ export function createComicActions({
     ui.marketplace.comic.projects = [project, ...comicProjects.value];
     workbench.comicProjects = ui.marketplace.comic.projects;
     ui.marketplace.comic.activeTab = "intro";
+    ui.marketplace.comic.introMode = "settings";
     ui.marketplace.comic.activeChapterId = project.chapters[0]?.id ?? "";
+    ui.marketplace.comic.activeAssetId = "";
     openComicProject(project.id);
     setStatus("已创建一个漫画项目，正在写入本地项目库。", "success");
     await persistComicProjectById(project.id, { silent: false });
@@ -562,6 +876,224 @@ export function createComicActions({
 
   function setComicProjectPageCount(value) {
     setComicProjectField("pageCount", value);
+  }
+
+  function setComicIntroMode(mode) {
+    ui.marketplace.comic.introMode = mode === "assets" ? "assets" : "settings";
+  }
+
+  function toggleComicAssetRail() {
+    ui.marketplace.comic.isAssetRailCollapsed = !ui.marketplace.comic.isAssetRailCollapsed;
+  }
+
+  function selectComicAsset(assetId) {
+    ui.marketplace.comic.activeAssetId = String(assetId ?? "").trim();
+    setComicIntroMode("assets");
+  }
+
+  function getUniqueComicAssetName(project, name, assetId = "") {
+    const usedNames = new Set(
+      getComicAssets(project)
+        .filter((asset) => asset.id !== assetId)
+        .map((asset) => getComicAssetNameKey(asset.name))
+        .filter(Boolean)
+    );
+    const fallback = `${COMIC_ASSET_TYPE_META.character.defaultName} ${getComicAssets(project).length + 1}`;
+    return ensureUniqueComicAssetName(name, usedNames, fallback);
+  }
+
+  function createComicAsset(type = "character") {
+    const project = activeComicProject.value;
+
+    if (!project) {
+      return;
+    }
+
+    const normalizedType = normalizeComicAssetTypeForUi(type);
+    const typeMeta = COMIC_ASSET_TYPE_META[normalizedType] ?? COMIC_ASSET_TYPE_META.character;
+    const now = new Date().toISOString();
+    const asset = {
+      id: createLocalId("comic_asset"),
+      name: getUniqueComicAssetName(project, `${typeMeta.defaultName} ${getComicAssets(project).length + 1}`),
+      type: normalizedType,
+      description: typeMeta.defaultDescription,
+      prompt: typeMeta.defaultPrompt,
+      views: getDefaultComicAssetViews(normalizedType),
+      createdAt: now,
+      updatedAt: now
+    };
+
+    project.assets = [...getComicAssets(project), asset];
+    ui.marketplace.comic.activeAssetId = asset.id;
+    ui.marketplace.comic.isAssetRailCollapsed = false;
+    setComicIntroMode("assets");
+    touchComicProject(project);
+  }
+
+  async function deleteComicAsset(assetId) {
+    const project = activeComicProject.value;
+    const normalizedAssetId = String(assetId ?? "").trim();
+    const asset = getComicAssets(project).find((entry) => entry.id === normalizedAssetId);
+
+    if (!project || !asset) {
+      return;
+    }
+
+    const confirmed = await showConfirmDialog({
+      tone: "danger",
+      title: "删除素材",
+      message: `确认删除素材「${asset.name}」吗？`,
+      detail: "删除后会从所有章节的引用里移除，但不会删除你粘贴过的外部图片源。",
+      confirmText: "删除",
+      cancelText: "取消"
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
+    project.assets = getComicAssets(project).filter((entry) => entry.id !== normalizedAssetId);
+    project.chapters = getComicChapters(project).map((chapter) => ({
+      ...chapter,
+      assetRefs: normalizeComicAssetRefsForUi(chapter.assetRefs).filter((ref) => ref !== normalizedAssetId)
+    }));
+    ui.marketplace.comic.activeAssetId = project.assets[0]?.id ?? "";
+    touchComicProject(project);
+    setStatus("素材已删除，并已清理章节引用。", "success");
+  }
+
+  function touchComicAsset(asset) {
+    const project = activeComicProject.value;
+
+    if (!project || !asset) {
+      return;
+    }
+
+    asset.updatedAt = new Date().toISOString();
+    touchComicProject(project);
+  }
+
+  function setComicAssetName(assetId, value) {
+    const project = activeComicProject.value;
+    const asset = getComicAssets(project).find((entry) => entry.id === assetId);
+
+    if (!project || !asset) {
+      return;
+    }
+
+    asset.name = getUniqueComicAssetName(project, value, asset.id);
+    touchComicAsset(asset);
+  }
+
+  function setComicAssetType(assetId, value) {
+    const asset = getComicAssets(activeComicProject.value).find((entry) => entry.id === assetId);
+
+    if (!asset) {
+      return;
+    }
+
+    asset.type = normalizeComicAssetTypeForUi(value);
+
+    if (!Array.isArray(asset.views) || !asset.views.length) {
+      asset.views = getDefaultComicAssetViews(asset.type);
+    }
+
+    touchComicAsset(asset);
+  }
+
+  function setComicAssetDescription(assetId, value) {
+    const asset = getComicAssets(activeComicProject.value).find((entry) => entry.id === assetId);
+
+    if (!asset) {
+      return;
+    }
+
+    asset.description = String(value ?? "");
+    touchComicAsset(asset);
+  }
+
+  function setComicAssetPrompt(assetId, value) {
+    const asset = getComicAssets(activeComicProject.value).find((entry) => entry.id === assetId);
+
+    if (!asset) {
+      return;
+    }
+
+    asset.prompt = String(value ?? "");
+    touchComicAsset(asset);
+  }
+
+  function addComicAssetView(assetId) {
+    const asset = getComicAssets(activeComicProject.value).find((entry) => entry.id === assetId);
+
+    if (!asset) {
+      return;
+    }
+
+    const views = Array.isArray(asset.views) ? asset.views : [];
+    const kind = asset.type === "scene" ? "angle" : "detail";
+    const view = normalizeComicAssetViewForUi(
+      {
+        kind,
+        label: `${getComicAssetViewKindLabel(kind)} ${views.length + 1}`
+      },
+      views.length
+    );
+
+    asset.views = [...views, view];
+    touchComicAsset(asset);
+  }
+
+  function removeComicAssetView(assetId, viewId) {
+    const asset = getComicAssets(activeComicProject.value).find((entry) => entry.id === assetId);
+
+    if (!asset) {
+      return;
+    }
+
+    asset.views = (Array.isArray(asset.views) ? asset.views : []).filter((view) => view.id !== viewId);
+    touchComicAsset(asset);
+  }
+
+  function setComicAssetViewField(assetId, viewId, field, value) {
+    const asset = getComicAssets(activeComicProject.value).find((entry) => entry.id === assetId);
+    const view = (Array.isArray(asset?.views) ? asset.views : []).find((entry) => entry.id === viewId);
+
+    if (!asset || !view) {
+      return;
+    }
+
+    if (field === "kind") {
+      view.kind = normalizeComicAssetViewKindForUi(value);
+      if (!String(view.label ?? "").trim()) {
+        view.label = getComicAssetViewKindLabel(view.kind);
+      }
+    } else if (field === "label") {
+      view.label = String(value ?? "");
+    } else if (field === "src") {
+      view.src = String(value ?? "").trim();
+    } else if (field === "prompt") {
+      view.prompt = String(value ?? "");
+    }
+
+    touchComicAsset(asset);
+  }
+
+  function toggleComicChapterAssetRef(chapter, assetId) {
+    const project = activeComicProject.value;
+    const normalizedAssetId = String(assetId ?? "").trim();
+
+    if (!project || !chapter || !getComicAssets(project).some((asset) => asset.id === normalizedAssetId)) {
+      return;
+    }
+
+    const refs = normalizeComicAssetRefsForUi(chapter.assetRefs);
+    const nextRefs = refs.includes(normalizedAssetId)
+      ? refs.filter((ref) => ref !== normalizedAssetId)
+      : [...refs, normalizedAssetId];
+
+    chapter.assetRefs = nextRefs;
+    touchComicChapter(chapter);
   }
 
   function toggleComicProfileRail() {
@@ -641,6 +1173,7 @@ export function createComicActions({
       prompt: "基于总介绍和目录生成本章漫画分镜。",
       content: "",
       status: "todo",
+      assetRefs: [],
       updatedAt: now
     };
 
@@ -661,7 +1194,8 @@ export function createComicActions({
         summary: String(chapter?.summary ?? chapter?.brief ?? chapter?.description ?? ""),
         prompt: String(chapter?.prompt ?? chapter?.imagePrompt ?? ""),
         content: String(chapter?.content ?? ""),
-        status: normalizeComicChapterStatusForUi(chapter?.status || "todo")
+        status: normalizeComicChapterStatusForUi(chapter?.status || "todo"),
+        assetRefs: []
       },
       baseIndex + index
     );
@@ -722,8 +1256,36 @@ export function createComicActions({
       return;
     }
 
-    chapter.content = String(value ?? "");
+    const content = String(value ?? "");
+
+    if (content.includes("![") && content.includes("](")) {
+      chapter.images = normalizeComicChapterImagesForUi(chapter.images, content);
+      chapter.content = stripComicChapterImageMarkdown(content);
+    } else {
+      chapter.content = content;
+    }
+
     touchComicChapter(chapter);
+  }
+
+  function setComicChapterImages(chapter, images) {
+    if (!chapter) {
+      return;
+    }
+
+    chapter.images = normalizeComicChapterImagesForUi(images);
+    touchComicChapter(chapter);
+  }
+
+  function appendComicChapterImages(chapter, images) {
+    if (!chapter) {
+      return false;
+    }
+
+    const nextImages = normalizeComicChapterImagesForUi([...(Array.isArray(chapter.images) ? chapter.images : []), ...(Array.isArray(images) ? images : [])]);
+    chapter.images = nextImages;
+    touchComicChapter(chapter);
+    return true;
   }
 
   function goComicChapter(chapterId) {
@@ -827,7 +1389,12 @@ export function createComicActions({
   }
 
   return {
+    activeComicAsset,
+    activeComicAssets,
     activeComicChapter,
+    activeComicChapterAssets,
+    activeComicChapterImageCountLabel,
+    activeComicChapterImages,
     activeComicChapterIndex,
     activeComicChapters,
     activeComicExportFileName,
@@ -840,25 +1407,44 @@ export function createComicActions({
     clearComicAutosaveTimer,
     closeComicExportDialog,
     comicProjects,
+    addComicAssetView,
+    createComicAsset,
     createComicChapter,
     createComicProject,
+    deleteComicAsset,
     deleteComicProjectFromShelf,
     exportActiveComicProject,
     filteredComicChapterEntries,
+    appendComicChapterImages,
+    getComicAssetFilledViewCount,
+    getComicAssetTypeLabel,
+    getComicAssetViewKindLabel,
     getComicChapterDisplayTitle,
+    getComicChapterReferencedAssets,
     getComicChapterStatusClass,
     getComicChapterStatusLabel,
+    getComicChapterImageCountLabel,
+    getComicChapterImages,
     getComicProjectFormatLabel,
     getComicProjectPaletteLabel,
     goComicChapter,
+    isComicChapterAssetReferenced,
     openComicAppShelf,
     openComicExportDialog,
     openComicProject,
+    removeComicAssetView,
+    selectComicAsset,
     selectComicChapter,
     selectComicChapterFromPicker,
     selectComicExportDirectory,
+    setComicAssetDescription,
+    setComicAssetName,
+    setComicAssetPrompt,
+    setComicAssetType,
+    setComicAssetViewField,
     applyComicChaptersFromAi,
     setComicChapterContent,
+    setComicChapterImages,
     setComicChapterPickerOpen,
     setComicChapterPrompt,
     setComicChapterSummary,
@@ -871,8 +1457,11 @@ export function createComicActions({
     setComicProjectSummary,
     setComicProjectTitle,
     setComicProjectVisualStyle,
+    setComicIntroMode,
     setComicTab,
     submitComicChapter,
+    toggleComicAssetRail,
+    toggleComicChapterAssetRef,
     toggleComicChapterPicker,
     toggleComicProfileRail
   };

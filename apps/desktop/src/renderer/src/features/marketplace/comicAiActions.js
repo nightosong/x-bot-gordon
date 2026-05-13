@@ -207,6 +207,70 @@ function getPalettePromptLabel(project, getComicProjectPaletteLabel) {
   return `${paletteLabel}，色彩统一，主色和辅助色有明确关系`;
 }
 
+function getComicAssetTypeText(type) {
+  if (type === "prop") {
+    return "物品";
+  }
+
+  if (type === "scene") {
+    return "场景";
+  }
+
+  return "人物";
+}
+
+function getComicAssetReferenceImages(assets = []) {
+  const imageSources = [];
+  const seen = new Set();
+
+  (Array.isArray(assets) ? assets : []).forEach((asset) => {
+    (Array.isArray(asset?.views) ? asset.views : []).forEach((view) => {
+      const src = normalizeText(view?.src);
+
+      if (!src || seen.has(src)) {
+        return;
+      }
+
+      seen.add(src);
+      imageSources.push(src);
+    });
+  });
+
+  return imageSources;
+}
+
+function buildComicAssetContextLines(assets = []) {
+  const normalizedAssets = Array.isArray(assets) ? assets : [];
+
+  if (!normalizedAssets.length) {
+    return ["引用素材：暂无"];
+  }
+
+  const referenceImageCount = getComicAssetReferenceImages(normalizedAssets).length;
+  const referenceImageLine = referenceImageCount
+    ? `其中 ${referenceImageCount} 张素材视图图会作为图生图参考图随工具调用提供`
+    : "暂无可用素材视图图，请优先按文字约束保持一致性";
+
+  return [
+    `引用素材：${normalizedAssets.length} 个，${referenceImageLine}；生成时必须保持这些素材的身份、结构和视觉一致性。`,
+    ...normalizedAssets.map((asset, index) => {
+      const viewLabels = (Array.isArray(asset?.views) ? asset.views : [])
+        .filter((view) => normalizeText(view?.src) || normalizeText(view?.prompt))
+        .map((view, viewIndex) => `${normalizeText(view.label) || `视角 ${viewIndex + 1}`}：${clipText(view.prompt || view.src, 220)}`)
+        .join("；");
+
+      return [
+        `${index + 1}. ${getComicAssetTypeText(asset?.type)}「${normalizeText(asset?.name) || "未命名素材"}」`,
+        normalizeText(asset?.description) ? `描述：${clipText(asset.description, 360)}` : "",
+        normalizeText(asset?.prompt) ? `约束：${clipText(asset.prompt, 360)}` : "",
+        viewLabels ? `视图：${viewLabels}` : ""
+      ]
+        .filter(Boolean)
+        .join("；");
+    })
+  ];
+}
+
 function extractJsonText(value) {
   const text = normalizeText(value).replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
   const firstObject = text.indexOf("{");
@@ -271,9 +335,11 @@ function parseComicOutlineChapters(output) {
 
 export function createComicAiActions({
   activeComicChapter,
+  activeComicChapterAssets,
   activeComicChapterIndex,
   activeComicProject,
   activeComicTabMeta,
+  appendComicChapterImages,
   applyComicChaptersFromAi,
   createLocalId,
   desktopApi,
@@ -281,6 +347,7 @@ export function createComicAiActions({
   getComicProjectFormatLabel,
   getComicProjectPaletteLabel,
   setComicChapterContent,
+  setComicChapterImages,
   setComicChapterPrompt,
   setComicProjectEpisodePlan,
   setComicProjectSummary,
@@ -299,7 +366,8 @@ export function createComicAiActions({
       tabLabel: activeComicTabMeta.value?.fieldLabel,
       task: activeComicAiTask.value,
       instruction: ui.marketplace.comic.aiInstruction,
-      imageCount: ui.marketplace.comic.aiImageCount
+      imageCount: ui.marketplace.comic.aiImageCount,
+      referencedAssets: activeComicChapterAssets?.value ?? []
     })
   );
 
@@ -382,7 +450,7 @@ export function createComicAiActions({
     getState().aiImageCount = clampInteger(value, 1, 10, 1);
   }
 
-  function buildComicContextLines(project, chapter, chapterIndex, tabLabel) {
+  function buildComicContextLines(project, chapter, chapterIndex, tabLabel, referencedAssets = []) {
     const chapterTitle = chapter ? getComicChapterDisplayTitle(chapter, chapterIndex) : "暂无当前章节";
 
     return [
@@ -398,11 +466,12 @@ export function createComicAiActions({
       `当前章节：${chapterTitle}`,
       `分镜简介：${clipText(chapter?.summary || "暂无")}`,
       `已有生成提示词：${clipText(chapter?.prompt || "暂无")}`,
-      `已有生成稿：${clipText(chapter?.content || "暂无", 900)}`
+      `已有生成稿：${clipText(chapter?.content || "暂无", 900)}`,
+      ...buildComicAssetContextLines(referencedAssets)
     ];
   }
 
-  function buildComicAiPrompt({ project, chapter, chapterIndex, tabId, tabLabel, task, instruction, imageCount }) {
+  function buildComicAiPrompt({ project, chapter, chapterIndex, tabId, tabLabel, task, instruction, imageCount, referencedAssets }) {
     const safeTask = task ?? getTasksByTab(tabId)[0];
     const userInstruction = normalizeText(instruction) || "按当前项目设定生成，保持漫画感、画面连续性和可执行性。";
 
@@ -423,7 +492,7 @@ export function createComicAiActions({
         sequenceLine,
         "",
         "【项目上下文】",
-        buildComicContextLines(project, chapter, chapterIndex, tabLabel).join("\n"),
+        buildComicContextLines(project, chapter, chapterIndex, tabLabel, referencedAssets).join("\n"),
         "",
         "【用户额外要求】",
         userInstruction,
@@ -454,7 +523,7 @@ export function createComicAiActions({
       `${safeTask.label}：${safeTask.promptIntent}`,
       "",
       "【项目上下文】",
-      buildComicContextLines(project, chapter, chapterIndex, tabLabel).join("\n"),
+      buildComicContextLines(project, chapter, chapterIndex, tabLabel, referencedAssets).join("\n"),
       "",
       "【用户额外要求】",
       userInstruction,
@@ -519,7 +588,7 @@ export function createComicAiActions({
     setStatus("丹青画室已生成文本内容。", "success");
   }
 
-  async function generateComicImageOutput(task, prompt, requestId) {
+  async function generateComicImageOutput(task, prompt, requestId, referencedAssets = []) {
     const state = getState();
 
     if (!desktopApi?.callMcpServerTool) {
@@ -527,15 +596,22 @@ export function createComicAiActions({
       return;
     }
 
+    const referenceImages = getComicAssetReferenceImages(referencedAssets);
+    const toolArguments = {
+      prompt,
+      size: state.aiImageSize,
+      n: clampInteger(state.aiImageCount, 1, 10, task.defaultImageCount || 1),
+      quality: state.aiQuality
+    };
+
+    if (referenceImages.length) {
+      toolArguments.images = referenceImages;
+    }
+
     const toolResult = await desktopApi.callMcpServerTool({
       serverId: BUILTIN_GORDON_TOOLS_MCP_ID,
       toolName: "image_gen",
-      arguments: {
-        prompt,
-        size: state.aiImageSize,
-        n: clampInteger(state.aiImageCount, 1, 10, task.defaultImageCount || 1),
-        quality: state.aiQuality
-      }
+      arguments: toolArguments
     });
 
     if (state.aiRequestId !== requestId) {
@@ -573,6 +649,7 @@ export function createComicAiActions({
     }
 
     const task = syncComicAiTaskToActiveTab();
+    const referencedAssets = task.type === "image" ? activeComicChapterAssets?.value ?? [] : [];
     const prompt = activeComicAiPromptPreview.value;
     const requestId =
       typeof createLocalId === "function" ? createLocalId("comic_ai_request") : `comic_ai_request_${Date.now()}`;
@@ -587,7 +664,7 @@ export function createComicAiActions({
 
     try {
       if (task.type === "image") {
-        await generateComicImageOutput(task, prompt, requestId);
+        await generateComicImageOutput(task, prompt, requestId, referencedAssets);
       } else {
         await generateComicTextOutput(task, prompt, requestId);
       }
@@ -613,19 +690,13 @@ export function createComicAiActions({
     const task = activeComicAiTask.value;
     const prompt = normalizeText(state.aiPromptPreview || activeComicAiPromptPreview.value);
     const images = Array.isArray(state.aiGeneratedImages) ? state.aiGeneratedImages : [];
-    const imageMarkdown = images
-      .map((image, index) => {
-        const src = normalizeText(image.src);
-        return src ? `![丹青画室生成图 ${index + 1}](${src})` : "";
-      })
-      .filter(Boolean)
-      .join("\n\n");
+    const resultText = normalizeText(state.aiOutput);
 
     return [
       `### 丹青画室 · ${task.label}`,
       prompt ? `#### 出图提示词\n${prompt}` : "",
-      imageMarkdown ? `#### 生成图片\n${imageMarkdown}` : "",
-      !imageMarkdown && normalizeText(state.aiOutput) ? `#### 生成结果\n${normalizeText(state.aiOutput)}` : ""
+      images.length ? `#### 生成图片\n已生成 ${images.length} 张图片，已加入本章图片区。` : "",
+      !images.length && resultText ? `#### 生成结果\n${resultText}` : ""
     ]
       .filter(Boolean)
       .join("\n\n");
@@ -736,6 +807,12 @@ export function createComicAiActions({
     }
 
     const output = buildComicAiWritebackContent();
+    const images = (Array.isArray(state.aiGeneratedImages) ? state.aiGeneratedImages : [])
+      .map((image, index) => ({
+        alt: normalizeText(image.alt) || `丹青画室生成图 ${index + 1}`,
+        src: normalizeText(image.src)
+      }))
+      .filter((image) => image.src);
 
     if (!normalizeText(output)) {
       setComicAiFeedback("还没有可写入的生成结果。", "warning");
@@ -744,6 +821,15 @@ export function createComicAiActions({
 
     const nextContent = mode === "replace" ? output : buildAppendText(chapter.content, output);
     setComicChapterContent(chapter, nextContent);
+
+    if (images.length) {
+      if (mode === "replace" && typeof setComicChapterImages === "function") {
+        setComicChapterImages(chapter, images);
+      } else if (typeof appendComicChapterImages === "function") {
+        appendComicChapterImages(chapter, images);
+      }
+    }
+
     setComicAiFeedback(mode === "replace" ? "已替换当前章节生成稿。" : "已追加到当前章节生成稿。", "success");
     setStatus(mode === "replace" ? "丹青画室已替换当前章节生成稿。" : "丹青画室已追加到当前章节生成稿。", "success");
   }

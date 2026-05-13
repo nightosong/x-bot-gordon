@@ -3,5 +3,6 @@ dist
 .DS_Store
 .pnpm-store
 data/*/*.json
+data/workbench/comic-images/
 docs/*.md
 writing-books

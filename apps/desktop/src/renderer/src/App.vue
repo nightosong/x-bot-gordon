@@ -443,9 +443,11 @@ const comicActions = createComicActions({
 
 const comicAiActions = createComicAiActions({
   activeComicChapter: comicActions.activeComicChapter,
+  activeComicChapterAssets: comicActions.activeComicChapterAssets,
   activeComicChapterIndex: comicActions.activeComicChapterIndex,
   activeComicProject: comicActions.activeComicProject,
   activeComicTabMeta: comicActions.activeComicTabMeta,
+  appendComicChapterImages: comicActions.appendComicChapterImages,
   applyComicChaptersFromAi: comicActions.applyComicChaptersFromAi,
   createLocalId,
   desktopApi,
@@ -453,6 +455,7 @@ const comicAiActions = createComicAiActions({
   getComicProjectFormatLabel: comicActions.getComicProjectFormatLabel,
   getComicProjectPaletteLabel: comicActions.getComicProjectPaletteLabel,
   setComicChapterContent: comicActions.setComicChapterContent,
+  setComicChapterImages: comicActions.setComicChapterImages,
   setComicChapterPrompt: comicActions.setComicChapterPrompt,
   setComicProjectEpisodePlan: comicActions.setComicProjectEpisodePlan,
   setComicProjectSummary: comicActions.setComicProjectSummary,
