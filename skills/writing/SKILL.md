@@ -1,6 +1,6 @@
 ---
 name: writing
-description: "长文本小说创作工作流 Skill，适用于小说规划、世界观、人物、剧情推进、章节生成、风格控制、连续性资料更新与一致性审核。"
+description: "长文本小说创作工作流 Skill，适用于小说规划、世界观、世界组织、怪物体系、战斗体系、人物、剧情推进、章节生成、风格控制、连续性资料更新与一致性审核。"
 ---
 
 # Writing
@@ -12,7 +12,7 @@ description: "长文本小说创作工作流 Skill，适用于小说规划、世
 | 场景 | 节点 |
 |---|---|
 | 从题材、主题、风格生成整本书方向 | `story_planner` |
-| 需要补强时代、地图、制度、规则、势力 | `world_builder` |
+| 需要补强时代、地图、制度、组织、规则、势力、怪物或战斗体系 | `world_builder` |
 | 需要设计主角、配角、对手、关系与成长线 | `character_designer` |
 | 需要判断下一章或下一阶段发生什么 | `plot_engine` |
 | 需要先拆本章问题、限制、信息差和代价 | `chapter_planner` |
@@ -138,6 +138,11 @@ story_planner
 
 | 任务 | 参考 |
 |---|---|
+| 故事地图、世界地图、地域层级、地点关系、路线台账、地缘冲突 | `references/story-map-design.md` |
+| 世界组织、国家、城邦、宗门、教会、公司、军队、学院、秘密组织、制度权力结构 | `references/world-organization.md` |
+| 怪物体系、怪物生态、类人怪物社会、怪物能力与怪物命名 | `references/monster-system.md` |
+| 战斗体系、能力来源、职业职能、战力成长、人怪 / 人人冲突规则 | `references/combat-system.md` |
+| 人物谱系、角色档案、人物关系、出场功能、角色经历与结局 | `references/character-lineage.md` |
 | 风格匹配、文风诊断、类型读感统一 | `references/style-controller.md` |
 | 设定、人名、战力、时间线、伏笔一致性检查 | `references/continuity-auditor.md` |
 | 对白、战斗、高潮、反转、打脸等高张力场景设计 | `references/scene-specialist.md` |
@@ -178,9 +183,10 @@ story_planner
   "worldview": [],
   "rules": [],
   "factions": [],
+  "worldOrganizations": [],
   "mapAtlas": {},
-  "ecology": [],
-  "power_system": [],
+  "monsterSystem": {},
+  "combatSystem": {},
   "taboos": [],
   "conflict_sources": []
 }
@@ -189,6 +195,10 @@ story_planner
 额外要求：
 
 - 大地图项目必须优先确认地理方位、覆盖范围、相邻区域、路程成本和地缘关系。
+- 涉及星球、洲洋、国家、城市、村镇、家宅、建筑或路线设计时，先读 `references/story-map-design.md`。
+- 涉及国家、政权、宗门、公司、教会、军队、学院、行会、秘密组织或大型社会制度时，必须先读 `references/world-organization.md`。
+- 涉及怪物、异兽、异族、类人怪物、怪物材料或怪物命名时，必须先读 `references/monster-system.md`。
+- 涉及战斗体系、能力体系、职业职能、战力成长或人怪 / 人人冲突规则时，必须先读 `references/combat-system.md`。
 - 怪物、能力、资源和势力必须绑定具体地貌或社会结构，不要孤立造词。
 - 世界冲突应能落到章节任务，例如取水、过桥、进城、守路、交易、撤离、狩猎、证明身份。
 
@@ -232,8 +242,10 @@ story_planner
 
 额外要求：
 
+- 涉及人物谱系、角色档案、角色关系或长篇多人物规划时，先读 `references/character-lineage.md`。
 - 先按谱系组织人物，再扩展单个角色；不要让角色以散点名单方式堆在设定里。
 - 每个角色档案必须区分“公开身份、隐秘信息、叙事功能、对主角施加的压力、可回收证据”。
+- 角色命名必须有地域、阶层、家族、职业、时代或族群来源，并区分本名、外号、官称、代号、禁忌名和关系称呼。
 - 每条谱系至少有一条关系推进规则，例如“有限同行不能突然变成无条件同伴”“制度人物不靠暴躁作恶，而靠平静称量人”。
 - 重要角色第一次出场必须带动作任务、资源或冲突，不要用履历介绍开场。
 - 如果当前存储结构没有独立 `characterLineage` 字段，可把谱系写入 `storyAssets.relationships / worldview / memoryNotes`，把单人档案写入 `storyAssets.characters`。
@@ -331,7 +343,7 @@ story_planner
 
 ### scene_specialist
 
-用于对白、战斗、高潮、打脸、反转、追逃、告白、审判等高张力场景。场面必须有空间调度、信息差、代价和余波；复杂场面先读 `references/scene-specialist.md`。
+用于对白、战斗、高潮、打脸、反转、追逃、告白、审判等高张力场景。场面必须有空间调度、信息差、代价和余波；复杂场面先读 `references/scene-specialist.md`。若任务不是单场打斗润色，而是要设计战斗体系、职业能力、战力成长或反制规则，同时读取 `references/combat-system.md`。
 
 ### opening_auditor
 
@@ -355,3 +367,4 @@ story_planner
 - 专业写作助手应描述精准简练，少用“精彩、丰富、宏大、逐渐、命运、真正、某种意义上”等空泛词，除非它们被具体场景、行动或后果支撑。
 - 遇到用户批评“无聊、口水化、AI 味、没有吸引力”时，优先回到目标、地图、资源、怪物生态、战斗体系、成长阶梯和章节钩子重构，不只做文风润色。
 - 遇到角色单薄、人物散乱或长篇后续难接时，优先建立人物谱系和角色档案：先判断角色属于哪条线、给主角什么压力、改变什么状态，再决定是否需要出场。
+- 遇到宏大世界观时，优先把地图、组织、怪物、战斗和人物谱系拆成可互相引用的台账；不要只堆设定名词。

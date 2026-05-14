@@ -2160,7 +2160,6 @@
                   <div v-if="activeWritingChapter" class="writing-chapter-commandbar">
                     <div class="writing-chapter-picker-row">
                       <div class="writing-chapter-picker">
-                        <span class="field-label">当前章节</span>
                         <div class="writing-chapter-dropdown" :class="{ 'is-open': ui.marketplace.writing.isChapterPickerOpen }">
                           <button
                             type="button"
@@ -2200,7 +2199,6 @@
                       </div>
 
                       <label class="field writing-chapter-search-field">
-                        <span class="field-label">搜索</span>
                         <input
                           v-model="ui.marketplace.writing.chapterSearchQuery"
                           class="field-input writing-chapter-search-input"
@@ -2208,6 +2206,22 @@
                           @focus="setWritingChapterPickerOpen(true)"
                         />
                       </label>
+
+                      <div class="writing-chapter-info-wrap">
+                        <button
+                          type="button"
+                          class="writing-chapter-info-button"
+                          aria-label="当前章节介绍"
+                          aria-describedby="writing-chapter-summary-popover"
+                        >
+                          <GIcon name="circleAlert" :size="16" />
+                        </button>
+
+                        <div id="writing-chapter-summary-popover" class="writing-chapter-summary-popover" role="tooltip">
+                          <strong>{{ getWritingChapterDisplayTitle(activeWritingChapter, activeWritingChapterIndex) }}</strong>
+                          <p>{{ activeWritingChapter.summary || "这个章节还没有简介。" }}</p>
+                        </div>
+                      </div>
                     </div>
 
                     <span class="status-pill writing-chapter-status-pill" :class="getWritingChapterStatusClass(activeWritingChapter.status)">
@@ -2224,11 +2238,6 @@
                       <GIcon v-if="isWritingChapterSubmitConfirmed(activeWritingChapter)" name="check" :size="13" />
                       {{ isWritingChapterSubmitConfirmed(activeWritingChapter) ? "已提交" : "提交" }}
                     </button>
-                  </div>
-
-                  <div v-if="activeWritingChapter" class="writing-chapter-brief-strip">
-                    <strong>{{ getWritingChapterDisplayTitle(activeWritingChapter, activeWritingChapterIndex) }}</strong>
-                    <p>{{ activeWritingChapter.summary || "这个章节还没有简介。" }}</p>
                   </div>
 
                   <FieldAiOptimizer
