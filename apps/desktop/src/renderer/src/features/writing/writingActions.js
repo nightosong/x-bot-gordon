@@ -22,6 +22,7 @@ const BEIJING_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
   minute: "2-digit",
   hourCycle: "h23"
 });
+const EMPTY_TITLE_RESTORE_DELAY = 10000;
 
 function writeRef(target, value) {
   if (target && typeof target === "object" && "value" in target) {
@@ -46,6 +47,8 @@ export function createWritingActions({
   let writingSaveInFlight = false;
   let writingQueuedSave = null;
   const writingBookSaveVersions = new Map();
+  const writingTitleBaselines = new Map();
+  const writingTitleRestoreTimers = new Map();
 const writingBooks = computed(() => ui.marketplace.writing.books ?? []);
 const activeWritingBook = computed(
   () => writingBooks.value.find((book) => book.id === ui.marketplace.writing.activeBookId) ?? writingBooks.value[0] ?? null
@@ -586,6 +589,55 @@ function touchWritingBook(book, options = {}) {
   }
 }
 
+function markWritingBookDraftChange(book) {
+  if (book?.id) {
+    writingBookSaveVersions.set(book.id, (writingBookSaveVersions.get(book.id) ?? 0) + 1);
+  }
+}
+
+function getWritingBookTitleKey(bookId) {
+  return `book-title:${String(bookId ?? "").trim()}`;
+}
+
+function getWritingExtraIntroSectionTitleKey(bookId, sectionId) {
+  return `extra-title:${String(bookId ?? "").trim()}:${String(sectionId ?? "").trim()}`;
+}
+
+function rememberWritingTitleBaseline(key, value) {
+  const baseline = String(value ?? "").trim();
+
+  if (key && baseline) {
+    writingTitleBaselines.set(key, baseline);
+  }
+}
+
+function clearWritingTitleRestoreTimer(key) {
+  const timer = writingTitleRestoreTimers.get(key);
+
+  if (timer) {
+    clearTimeout(timer);
+    writingTitleRestoreTimers.delete(key);
+  }
+}
+
+function scheduleWritingEmptyTitleRestore(key, fallbackValue, restore) {
+  const fallback = writingTitleBaselines.get(key) ?? String(fallbackValue ?? "").trim();
+
+  clearWritingTitleRestoreTimer(key);
+
+  if (!key || !fallback) {
+    return;
+  }
+
+  const timer = setTimeout(() => {
+    writingTitleRestoreTimers.delete(key);
+    writingTitleBaselines.delete(key);
+    restore(fallback);
+  }, EMPTY_TITLE_RESTORE_DELAY);
+
+  writingTitleRestoreTimers.set(key, timer);
+}
+
 function buildWritingBookSavePayload(book) {
   if (!book) {
     return null;
@@ -683,8 +735,40 @@ function setWritingBookTitle(value) {
     return;
   }
 
-  book.title = String(value ?? "");
+  const nextTitle = String(value ?? "");
+  const previousTitle = String(book.title ?? "");
+  const titleKey = getWritingBookTitleKey(book.id);
+
+  if (!nextTitle.trim()) {
+    book.title = nextTitle;
+    clearWritingAutosaveTimer();
+    markWritingBookDraftChange(book);
+    scheduleWritingEmptyTitleRestore(titleKey, previousTitle, (fallback) => {
+      const targetBook = writingBooks.value.find((entry) => entry.id === book.id);
+
+      if (!targetBook || String(targetBook.title ?? "").trim()) {
+        return;
+      }
+
+      targetBook.title = fallback;
+      touchWritingBook(targetBook);
+    });
+    return;
+  }
+
+  clearWritingTitleRestoreTimer(titleKey);
+  book.title = nextTitle;
   touchWritingBook(book);
+}
+
+function rememberWritingBookTitleBaseline() {
+  const book = activeWritingBook.value;
+
+  if (!book) {
+    return;
+  }
+
+  rememberWritingTitleBaseline(getWritingBookTitleKey(book.id), book.title);
 }
 
 function setWritingBookLength(value) {
@@ -805,9 +889,44 @@ function setWritingExtraIntroSectionTitle(sectionId, value) {
     return;
   }
 
-  section.title = String(value ?? "");
+  const nextTitle = String(value ?? "");
+  const previousTitle = String(section.title ?? "");
+  const titleKey = getWritingExtraIntroSectionTitleKey(book.id, section.id);
+
+  if (!nextTitle.trim()) {
+    section.title = nextTitle;
+    clearWritingAutosaveTimer();
+    markWritingBookDraftChange(book);
+    scheduleWritingEmptyTitleRestore(titleKey, previousTitle, (fallback) => {
+      const targetBook = writingBooks.value.find((entry) => entry.id === book.id);
+      const targetSection = (targetBook?.extraIntroSections ?? []).find((entry) => entry.id === section.id);
+
+      if (!targetBook || !targetSection || String(targetSection.title ?? "").trim()) {
+        return;
+      }
+
+      targetSection.title = fallback;
+      targetSection.updatedAt = new Date().toISOString();
+      touchWritingBook(targetBook);
+    });
+    return;
+  }
+
+  clearWritingTitleRestoreTimer(titleKey);
+  section.title = nextTitle;
   section.updatedAt = new Date().toISOString();
   touchWritingBook(book);
+}
+
+function rememberWritingExtraIntroSectionTitleBaseline(sectionId) {
+  const book = activeWritingBook.value;
+  const section = (book?.extraIntroSections ?? []).find((entry) => entry.id === sectionId);
+
+  if (!book || !section) {
+    return;
+  }
+
+  rememberWritingTitleBaseline(getWritingExtraIntroSectionTitleKey(book.id, section.id), section.title);
 }
 
 function setWritingExtraIntroSectionContent(sectionId, value) {
@@ -848,6 +967,9 @@ async function removeWritingExtraIntroSection(sectionId) {
   ui.marketplace.writing.collapsedIntroSectionIds = getWritingIntroCollapseIds().filter(
     (id) => id !== getWritingIntroSectionCollapseId(sectionId, "extra")
   );
+  const titleKey = getWritingExtraIntroSectionTitleKey(book.id, sectionId);
+  clearWritingTitleRestoreTimer(titleKey);
+  writingTitleBaselines.delete(titleKey);
   touchWritingBook(book);
 }
 
@@ -2023,6 +2145,8 @@ function setWritingTab(tabId) {
     openWritingExportDialog,
     parseWritingChapterIndex,
     persistWritingBookById,
+    rememberWritingBookTitleBaseline,
+    rememberWritingExtraIntroSectionTitleBaseline,
     selectPreferredWritingChapter,
     selectWritingChapter,
     selectWritingChapterFromPicker,

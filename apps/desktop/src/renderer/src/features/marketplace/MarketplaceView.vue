@@ -711,27 +711,24 @@
 
                 <label class="field">
                   <span class="field-label">模式</span>
-                  <select
-                    :value="activeVideoProject.mode"
-                    class="field-input writing-mini-select"
-                    @change="setVideoProjectMode($event.target.value)"
-                  >
-                    <option value="textToVideo">文生视频</option>
-                    <option value="imageToVideo">图生视频</option>
-                  </select>
+                  <GCompactSelect
+                    :model-value="activeVideoProject.mode"
+                    class="writing-mini-select"
+                    aria-label="视频生成模式"
+                    :options="videoProjectModeOptions"
+                    @update:model-value="setVideoProjectMode"
+                  />
                 </label>
 
                 <label class="field">
                   <span class="field-label">画幅</span>
-                  <select
-                    :value="activeVideoProject.aspectRatio"
-                    class="field-input writing-mini-select"
-                    @change="setVideoProjectAspectRatio($event.target.value)"
-                  >
-                    <option value="16:9">横屏 16:9</option>
-                    <option value="9:16">竖屏 9:16</option>
-                    <option value="1:1">方屏 1:1</option>
-                  </select>
+                  <GCompactSelect
+                    :model-value="activeVideoProject.aspectRatio"
+                    class="writing-mini-select"
+                    aria-label="视频画幅"
+                    :options="videoProjectAspectRatioOptions"
+                    @update:model-value="setVideoProjectAspectRatio"
+                  />
                 </label>
 
                 <label class="field">
@@ -1162,37 +1159,36 @@
                 </div>
 
                 <label class="field writing-rail-title-field">
-                  <span class="field-label">项目名称</span>
+                  <span class="field-label">作品名称</span>
                   <input
                     :value="activeComicProject.title"
                     class="field-input writing-rail-title-input"
                     aria-label="漫画项目名"
+                    @focus="rememberComicProjectTitleBaseline"
                     @input="setComicProjectTitle($event.target.value)"
                   />
                 </label>
 
                 <label class="field">
                   <span class="field-label">形态</span>
-                  <select
-                    :value="activeComicProject.format"
-                    class="field-input writing-mini-select"
-                    @change="setComicProjectFormat($event.target.value)"
-                  >
-                    <option value="poster">单图海报</option>
-                    <option value="serial">连载漫画</option>
-                  </select>
+                  <GCompactSelect
+                    :model-value="activeComicProject.format"
+                    class="writing-mini-select"
+                    aria-label="漫画项目形态"
+                    :options="comicProjectFormatOptions"
+                    @update:model-value="setComicProjectFormat"
+                  />
                 </label>
 
                 <label class="field">
                   <span class="field-label">画面</span>
-                  <select
-                    :value="activeComicProject.palette"
-                    class="field-input writing-mini-select"
-                    @change="setComicProjectPalette($event.target.value)"
-                  >
-                    <option value="monochrome">单色</option>
-                    <option value="color">彩绘</option>
-                  </select>
+                  <GCompactSelect
+                    :model-value="activeComicProject.palette"
+                    class="writing-mini-select"
+                    aria-label="漫画画面类型"
+                    :options="comicProjectPaletteOptions"
+                    @update:model-value="setComicProjectPalette"
+                  />
                 </label>
 
                 <label class="field">
@@ -1219,7 +1215,6 @@
 
               <div class="comic-rail-footer">
                 <div class="writing-stat-list">
-                  <span class="pill pill-neutral">更新 {{ formatWritingBookUpdatedAt(activeComicProject.updatedAt) }}</span>
                   <span class="pill pill-neutral">{{ activeComicProject.pageCount }} 页</span>
                   <span class="pill pill-neutral">{{ activeComicChapters.length }} 章</span>
                 </div>
@@ -1227,6 +1222,7 @@
             </div>
 
             <div v-if="!ui.marketplace.comic.isProfileCollapsed" class="writing-profile-actions">
+              <span class="pill pill-neutral writing-profile-update-pill">更新 {{ formatWritingBookUpdatedAt(activeComicProject.updatedAt) }}</span>
               <button
                 type="button"
                 class="writing-mini-text-button"
@@ -1234,7 +1230,7 @@
                 :title="`导出 ${activeComicExportFileName}`"
                 @click="openComicExportDialog"
               >
-                作品导出
+                导出
               </button>
             </div>
           </aside>
@@ -1414,21 +1410,20 @@
                           <input
                             :value="activeComicAsset.name"
                             class="field-input"
+                            @focus="rememberComicAssetNameBaseline(activeComicAsset.id)"
                             @input="setComicAssetName(activeComicAsset.id, $event.target.value)"
                           />
                         </label>
 
                         <label class="field">
                           <span class="field-label">类型</span>
-                          <select
-                            :value="activeComicAsset.type"
-                            class="field-input writing-mini-select"
-                            @change="setComicAssetType(activeComicAsset.id, $event.target.value)"
-                          >
-                            <option v-for="option in comicAssetTypeOptions" :key="option.value" :value="option.value">
-                              {{ option.label }}
-                            </option>
-                          </select>
+                          <GCompactSelect
+                            :model-value="activeComicAsset.type"
+                            class="writing-mini-select"
+                            aria-label="素材类型"
+                            :options="comicAssetTypeOptions"
+                            @update:model-value="(value) => setComicAssetType(activeComicAsset.id, value)"
+                          />
                         </label>
 
                         <label class="field field-full">
@@ -1465,15 +1460,13 @@
                           class="comic-asset-view-card"
                         >
                           <div class="comic-asset-view-head">
-                            <select
-                              :value="view.kind"
-                              class="field-input writing-mini-select"
-                              @change="setComicAssetViewField(activeComicAsset.id, view.id, 'kind', $event.target.value)"
-                            >
-                              <option v-for="option in comicAssetViewKindOptions" :key="option.value" :value="option.value">
-                                {{ option.label }}
-                              </option>
-                            </select>
+                            <GCompactSelect
+                              :model-value="view.kind"
+                              class="writing-mini-select"
+                              aria-label="素材视图类型"
+                              :options="comicAssetViewKindOptions"
+                              @update:model-value="(value) => setComicAssetViewField(activeComicAsset.id, view.id, 'kind', value)"
+                            />
                             <input
                               :value="view.label"
                               class="field-input"
@@ -1919,20 +1912,19 @@
                     class="field-input writing-rail-title-input"
                     aria-label="书名"
                     :disabled="isActiveWritingBookAiRunning"
+                    @focus="rememberWritingBookTitleBaseline"
                     @input="setWritingBookTitle($event.target.value)"
                   />
                 </label>
                 <label class="field">
                   <span class="field-label">篇幅</span>
-                  <select
-                    :value="activeWritingBook.length"
-                    class="field-input writing-mini-select"
-                    @change="setWritingBookLength($event.target.value)"
-                  >
-                    <option value="short">短篇</option>
-                    <option value="medium">中篇</option>
-                    <option value="long">长篇</option>
-                  </select>
+                  <GCompactSelect
+                    :model-value="activeWritingBook.length"
+                    class="writing-mini-select"
+                    aria-label="书籍篇幅"
+                    :options="writingLengthOptions"
+                    @update:model-value="setWritingBookLength"
+                  />
                 </label>
                 <label class="field">
                   <span class="field-label">类型</span>
@@ -1954,19 +1946,19 @@
               </div>
 
               <div class="writing-stat-list">
-                <span class="pill pill-neutral">更新 {{ formatWritingBookUpdatedAt(activeWritingBook.updatedAt) }}</span>
                 <span class="pill pill-neutral">总字数 {{ getWritingBookWordCount(activeWritingBook) }}</span>
               </div>
             </div>
 
             <div v-if="!ui.marketplace.writing.isProfileCollapsed" class="writing-profile-actions">
+              <span class="pill pill-neutral writing-profile-update-pill">更新 {{ formatWritingBookUpdatedAt(activeWritingBook.updatedAt) }}</span>
               <button
                 type="button"
                 class="writing-mini-text-button"
                 :disabled="isActiveWritingBookAiRunning"
                 @click="openWritingExportDialog"
               >
-                书籍导出
+                导出
               </button>
             </div>
           </aside>
@@ -2042,6 +2034,7 @@
                         class="field-input writing-intro-title-input"
                         :value="section.title"
                         placeholder="设定条目标题"
+                        @focus="rememberWritingExtraIntroSectionTitleBaseline(section.id)"
                         @input="setWritingExtraIntroSectionTitle(section.id, $event.target.value)"
                       />
                       <span class="status-pill">{{ getWritingExtraIntroSectionWordCount(section) }} 字</span>
@@ -2600,11 +2593,14 @@
 <script setup>
 import ComicAiDrawer from "./ComicAiDrawer.vue";
 import FieldAiOptimizer from "./FieldAiOptimizer.vue";
+import GCompactSelect from "../../components/GCompactSelect.vue";
 import GIcon from "../../components/GIcon.vue";
 import WritingAiDrawer from "../writing/WritingAiDrawer.vue";
 import {
   COMIC_APP_NAME,
   COMIC_APP_TABS,
+  COMIC_PROJECT_FORMAT_META,
+  COMIC_PROJECT_PALETTE_META,
   COMIC_ASSET_TYPE_META,
   COMIC_ASSET_VIEW_KIND_META,
   FORTUNE_APP_NAME,
@@ -2613,12 +2609,15 @@ import {
   MUSIC_APP_NAME,
   MUSIC_CREATION_MODES,
   VIDEO_APP_NAME,
-  VIDEO_APP_TABS
+  VIDEO_APP_TABS,
+  VIDEO_PROJECT_ASPECT_RATIO_META,
+  VIDEO_PROJECT_MODE_META
 } from "./marketplaceConfig.js";
 import {
   WRITING_APP_NAME,
   WRITING_APP_TABS,
-  WRITING_BOOK_EXPORT_FORMATS
+  WRITING_BOOK_EXPORT_FORMATS,
+  WRITING_LENGTH_PROFILES
 } from "../writing/writingConfig.js";
 
 const props = defineProps({
@@ -2668,6 +2667,8 @@ const {
   openComicAppShelf,
   openComicExportDialog,
   openComicProject,
+  rememberComicAssetNameBaseline,
+  rememberComicProjectTitleBaseline,
   removeComicAssetView,
   selectComicAsset,
   selectComicChapter,
@@ -2726,6 +2727,26 @@ const comicAssetTypeOptions = Object.entries(COMIC_ASSET_TYPE_META).map(([value,
   label: meta.label
 }));
 const comicAssetViewKindOptions = Object.entries(COMIC_ASSET_VIEW_KIND_META).map(([value, meta]) => ({
+  value,
+  label: meta.label
+}));
+const comicProjectFormatOptions = Object.entries(COMIC_PROJECT_FORMAT_META).map(([value, meta]) => ({
+  value,
+  label: meta.label
+}));
+const comicProjectPaletteOptions = Object.entries(COMIC_PROJECT_PALETTE_META).map(([value, meta]) => ({
+  value,
+  label: meta.label
+}));
+const videoProjectModeOptions = Object.entries(VIDEO_PROJECT_MODE_META).map(([value, meta]) => ({
+  value,
+  label: meta.label
+}));
+const videoProjectAspectRatioOptions = Object.entries(VIDEO_PROJECT_ASPECT_RATIO_META).map(([value, meta]) => ({
+  value,
+  label: meta.label
+}));
+const writingLengthOptions = Object.entries(WRITING_LENGTH_PROFILES).map(([value, meta]) => ({
   value,
   label: meta.label
 }));
@@ -2851,6 +2872,8 @@ const {
   openWritingAppShelf,
   openWritingBook,
   openWritingExportDialog,
+  rememberWritingBookTitleBaseline,
+  rememberWritingExtraIntroSectionTitleBaseline,
   selectWritingAiTask,
   selectWritingChapter,
   selectWritingChapterFromPicker,
