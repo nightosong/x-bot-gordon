@@ -2156,7 +2156,7 @@
                   </div>
                 </div>
 
-                <div v-else class="writing-chapter-workbench">
+                <div v-else class="writing-chapter-workbench writing-chapter-draft-workbench">
                   <div v-if="activeWritingChapter" class="writing-chapter-commandbar">
                     <div class="writing-chapter-picker-row">
                       <div class="writing-chapter-picker">

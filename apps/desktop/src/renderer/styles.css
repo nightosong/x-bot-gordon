@@ -3638,6 +3638,7 @@ canvas {
   grid-template-columns: minmax(0, 1fr);
   grid-auto-rows: minmax(0, 1fr);
   gap: 9px;
+  height: 100%;
   min-height: 0;
 }
 
@@ -3645,6 +3646,7 @@ canvas {
   display: grid;
   grid-template-rows: minmax(0, 1fr);
   align-self: stretch;
+  height: 100%;
   min-height: 0;
   overflow: hidden;
 }
@@ -3756,6 +3758,12 @@ canvas {
 
 .writing-chapter-workbench > .field-ai-target {
   min-height: 0;
+}
+
+.writing-chapter-draft-workbench > .field-ai-target {
+  grid-template-rows: minmax(0, 1fr);
+  height: 100%;
+  overflow: visible;
 }
 
 .writing-chapter-workbench > .field-ai-target > .writing-chapter-draft-textarea {
@@ -4062,6 +4070,12 @@ canvas {
   overflow: auto;
 }
 
+.writing-chapter-draft-workbench {
+  height: 100%;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
 .writing-intro-stack {
   align-content: start;
   grid-auto-rows: max-content;
@@ -4205,6 +4219,10 @@ canvas {
 .writing-chapter-workbench {
   grid-template-rows: auto auto minmax(0, 1fr);
   overflow: hidden;
+}
+
+.writing-chapter-workbench.writing-chapter-draft-workbench {
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .writing-intro-field {
