@@ -61,7 +61,12 @@
               :add-weekly-project="addWeeklyProject"
               :add-weekly-report-template="addWeeklyReportTemplate"
               :add-weekly-task="addWeeklyTask"
+              :apply-weekly-report-template-ai-output="applyWeeklyReportTemplateAiOutput"
+              :cancel-weekly-report-template-ai-run="cancelWeeklyReportTemplateAiRun"
               :close-weekly-editor="closeWeeklyEditor"
+              :close-weekly-report-template-ai="closeWeeklyReportTemplateAi"
+              :generate-weekly-report-template-ai-output="generateWeeklyReportTemplateAiOutput"
+              :get-weekly-report-template-ai-feedback-class="getWeeklyReportTemplateAiFeedbackClass"
               :handle-rich-text-click="handleRichTextClick"
               :handle-weekly-active-report-generation="handleWeeklyActiveReportGeneration"
               :handle-weekly-delete="handleWeeklyDelete"
@@ -75,9 +80,12 @@
               :remove-weekly-selected-report-template="removeWeeklySelectedReportTemplate"
               :remove-weekly-task="removeWeeklyTask"
               :reset-weekly-report-copy-state="resetWeeklyReportCopyState"
+              :set-weekly-report-template-ai-instruction="setWeeklyReportTemplateAiInstruction"
+              :set-weekly-report-template-ai-output="setWeeklyReportTemplateAiOutput"
               :set-weekly-reporting-mode="setWeeklyReportingMode"
               :set-weekly-report-output-mode="setWeeklyReportOutputMode"
               :set-weekly-task-status="setWeeklyTaskStatus"
+              :toggle-weekly-report-template-collapsed="toggleWeeklyReportTemplateCollapsed"
               :toggle-weekly-project-collapsed="toggleWeeklyProjectCollapsed"
               :touch-weekly-task-by-id="touchWeeklyTaskById"
             />
@@ -901,8 +909,13 @@ const {
   addWeeklyProject,
   addWeeklyReportTemplate,
   addWeeklyTask,
+  applyWeeklyReportTemplateAiOutput,
+  cancelWeeklyReportTemplateAiRun,
   closeWeeklyEditor,
+  closeWeeklyReportTemplateAi,
   disposeWeeklyRuntime,
+  generateWeeklyReportTemplateAiOutput,
+  getWeeklyReportTemplateAiFeedbackClass,
   handleWeeklyActiveReportGeneration,
   handleWeeklyDelete,
   handleWeeklyDraftSnapshotChange,
@@ -919,10 +932,13 @@ const {
   removeWeeklySelectedReportTemplate,
   removeWeeklyTask,
   resetWeeklyReportCopyState,
+  setWeeklyReportTemplateAiInstruction,
+  setWeeklyReportTemplateAiOutput,
   setWeeklyReportingMode,
   setWeeklyReportOutputMode,
   setWeeklyTaskStatus,
   syncWeeklyEditorState,
+  toggleWeeklyReportTemplateCollapsed,
   toggleWeeklyProjectCollapsed,
   touchWeeklyTaskById
 } = createWeeklyActions({

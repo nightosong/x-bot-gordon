@@ -7719,31 +7719,139 @@ canvas {
   white-space: nowrap;
 }
 
-.weekly-template-toolbar {
+.compact-select.weekly-template-select {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  align-items: end;
-  gap: 12px;
+  width: clamp(220px, 24vw, 300px);
+  min-height: 32px;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  font-size: 12px;
 }
 
-.weekly-template-select-field {
-  gap: 6px;
+.compact-select.weekly-template-select .compact-select-trigger {
+  min-height: 32px;
+  padding: 0 8px 0 11px;
+  font-weight: 700;
 }
 
-.weekly-template-select {
-  width: clamp(200px, 24vw, 260px);
-  min-height: 38px;
-  padding: 9px 12px;
-  border-radius: 12px;
+.compact-select.weekly-template-select .compact-select-menu {
+  right: auto;
+  width: max(100%, 260px);
+  max-height: 220px;
+}
+
+.compact-select.weekly-template-select .compact-select-option {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+  line-height: 28px;
+}
+
+.weekly-template-editor-card {
+  display: grid;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid rgba(247, 243, 235, 0.1);
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.05), rgba(245, 200, 107, 0.03)),
+    rgba(255, 255, 255, 0.025);
+}
+
+.weekly-template-editor-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.weekly-template-collapse-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.weekly-template-collapse-button .action-icon {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  color: rgba(92, 225, 194, 0.86);
+}
+
+.weekly-template-collapse-button span,
+.weekly-template-collapse-button small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.weekly-template-collapse-button span {
+  color: rgba(247, 243, 235, 0.92);
   font-size: 13px;
+  font-weight: 800;
 }
 
-.weekly-template-toolbar-actions {
-  display: flex;
+.weekly-template-collapse-button small {
+  color: rgba(247, 243, 235, 0.48);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.weekly-template-editor-actions {
+  display: inline-flex;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  flex-wrap: wrap;
+}
+
+.weekly-template-ai-control {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.weekly-template-ai-control .field-ai-trigger {
+  position: static;
+  top: auto;
+  right: auto;
+}
+
+.weekly-template-ai-popover {
+  top: calc(100% + 8px);
+  right: 0;
+}
+
+.weekly-template-editor-body {
+  display: grid;
+  min-width: 0;
+}
+
+.weekly-template-editor-textarea {
+  min-height: 130px;
+}
+
+.weekly-template-editor-body-enter-active,
+.weekly-template-editor-body-leave-active {
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.weekly-template-editor-body-enter-from,
+.weekly-template-editor-body-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 
 .weekly-report-output-head {
@@ -10666,11 +10774,15 @@ canvas {
 }
 
 .command-artifact-chain-rail {
+  --command-chain-bead-offset: 7px;
+  --command-chain-bead-center: calc(var(--command-chain-bead-offset) + 3px);
   position: relative;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   align-self: stretch;
+  box-sizing: border-box;
+  padding-top: var(--command-chain-bead-offset);
 }
 
 .command-artifact-chain-rail::before {
@@ -10685,11 +10797,11 @@ canvas {
 }
 
 .command-artifact-chain-item:first-child .command-artifact-chain-rail::before {
-  top: 50%;
+  top: var(--command-chain-bead-center);
 }
 
 .command-artifact-chain-item:last-child .command-artifact-chain-rail::before {
-  bottom: 50%;
+  bottom: calc(100% - var(--command-chain-bead-center));
 }
 
 .command-artifact-chain-bead {
@@ -11356,7 +11468,6 @@ canvas {
 
   .weekly-overview-grid,
   .weekly-editor-toolbar,
-  .weekly-template-toolbar,
   .weekly-report-toolbar {
     grid-template-columns: 1fr;
   }
@@ -11401,6 +11512,24 @@ canvas {
   .weekly-report-toolbar-side {
     justify-content: flex-start;
     flex-wrap: wrap;
+  }
+
+  .compact-select.weekly-template-select {
+    width: 100%;
+  }
+
+  .weekly-template-editor-head {
+    grid-template-columns: 1fr;
+  }
+
+  .weekly-template-editor-actions {
+    justify-content: flex-start;
+  }
+
+  .weekly-template-ai-popover {
+    right: auto;
+    left: 0;
+    width: min(342px, calc(100vw - 40px));
   }
 
   .weekly-report-summary-head {

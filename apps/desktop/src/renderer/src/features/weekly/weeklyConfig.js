@@ -20,6 +20,16 @@ export function createWeeklyState() {
     reportFeedbackTone: "neutral",
     reportCopyState: "idle",
     dailyReportUseModelOptimization: false,
+    isReportTemplateCollapsed: true,
+    reportTemplateAi: {
+      isOpen: false,
+      isGenerating: false,
+      requestId: "",
+      instruction: "",
+      output: "",
+      feedback: "",
+      feedbackTone: "neutral"
+    },
     isGeneratingReport: false,
     generatingReportKind: null
   };
