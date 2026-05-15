@@ -567,7 +567,7 @@ export function buildWeeklyDraftInsights(record) {
       },
       {
         id: "report",
-        label: "领导周报已准备",
+        label: "周报结果已准备",
         done: false,
         hint: "右侧生成后再人工确认一次，会更稳。"
       }
@@ -653,9 +653,9 @@ export function buildWeeklyDraftInsights(record) {
       },
       {
         id: "report",
-        label: "领导周报已准备",
+        label: "周报结果已准备",
         done: Boolean(String(record.generatedReport ?? "").trim()),
-        hint: String(record.generatedReport ?? "").trim() ? "领导稿已经生成，建议再人工改一轮。" : "右侧生成后再人工确认一次，会更稳。"
+        hint: String(record.generatedReport ?? "").trim() ? "周报稿已经生成，建议再人工改一轮。" : "右侧生成后再人工确认一次，会更稳。"
       }
     ],
     achievements: uniqueAchievements,

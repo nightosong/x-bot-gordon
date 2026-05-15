@@ -37,7 +37,7 @@ export const WRITING_AI_TASKS = {
       id: "storySetup",
       label: "完善故事设定",
       goal: "把世界规则、人物关系、主线阶段、伏笔和风格边界整理成目录可用的创作规划。",
-      target: "写入：大纲指导 / 详细大纲指导"
+      target: "写入：大纲指导"
     },
     {
       id: "openingAudit",
@@ -103,12 +103,7 @@ export const WRITING_INTRO_SECTION_DEFINITIONS = {
   outlineGuide: {
     key: "outlineGuide",
     label: "大纲指导",
-    placeholder: "写下中篇结构的阶段、转折、人物变化和主要伏笔，帮助后续目录不散。"
-  },
-  seriesPlan: {
-    key: "seriesPlan",
-    label: "详细大纲指导",
-    placeholder: "写下长篇整体规划：分部、分卷、每一部的完整故事目标、核心阵营变化和最终回收。"
+    placeholder: "写下整体规划：故事发动机、阶段主线、人物变化、世界规则、关键伏笔、风格边界和后续目录策略。"
   }
 };
 

@@ -7,6 +7,7 @@ export const BUILTIN_GORDON_AGENT_ID = "builtin:agent:gordon";
 export const BUILTIN_WORKSPACE_MCP_ID = "builtin:mcp:workspace";
 export const BUILTIN_COMPUTER_USE_MCP_ID = "builtin:mcp:computer-use";
 export const BUILTIN_GORDON_TOOLS_MCP_ID = "builtin:mcp:gordon-tools";
+export const BUILTIN_APPLICATION_TOOLS_MCP_ID = "builtin:mcp:application-tools";
 export const BUILTIN_PLAN_SKILL_ID = "builtin:skill:plan";
 export const BUILTIN_CODE_SKILL_ID = "builtin:skill:code";
 export const BUILTIN_REVIEW_SKILL_ID = "builtin:skill:review";
@@ -203,6 +204,17 @@ export function getBuiltinMcpServers(): McpServerConfig[] {
       env: {
         GORDON_WORKSPACE_ROOT: resolveFromRoot(".")
       },
+      toolAllowlist: [],
+      enabled: true,
+      updatedAt: BUILTIN_UPDATED_AT
+    },
+    {
+      id: BUILTIN_APPLICATION_TOOLS_MCP_ID,
+      name: "Application Tools",
+      description: "内置应用广场工具服务，把命令工坊 Agent 连接到墨笔生花等本地应用资产，支持按应用语义读取、检索、预览和写回。",
+      transport: "stdio",
+      command: "builtin:application-tools",
+      env: {},
       toolAllowlist: [],
       enabled: true,
       updatedAt: BUILTIN_UPDATED_AT

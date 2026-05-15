@@ -43,6 +43,7 @@ const MAX_CONVERSATION_CONTEXT_MESSAGES = 8;
 const BUILTIN_WORKSPACE_MCP_ID = "builtin:mcp:workspace";
 const BUILTIN_COMPUTER_USE_MCP_ID = "builtin:mcp:computer-use";
 const BUILTIN_GORDON_TOOLS_MCP_ID = "builtin:mcp:gordon-tools";
+const BUILTIN_APPLICATION_TOOLS_MCP_ID = "builtin:mcp:application-tools";
 const WORKSPACE_PERMISSION_REQUIRED_PREFIX = "GORDON_PERMISSION_REQUIRED";
 const COMPUTER_USE_PERMISSION_REQUIRED_PREFIX = "GORDON_COMPUTER_USE_PERMISSION_REQUIRED";
 const BASE_URL_REQUIRED_PROVIDERS = new Set([
@@ -209,8 +210,17 @@ function isBuiltinGordonToolsServer(server: McpServerConfig | null | undefined):
   return server?.id === BUILTIN_GORDON_TOOLS_MCP_ID;
 }
 
+function isBuiltinApplicationToolsServer(server: McpServerConfig | null | undefined): boolean {
+  return server?.id === BUILTIN_APPLICATION_TOOLS_MCP_ID;
+}
+
 function isBuiltinLocalToolsServer(server: McpServerConfig | null | undefined): boolean {
-  return isBuiltinWorkspaceToolsServer(server) || isBuiltinComputerUseServer(server) || isBuiltinGordonToolsServer(server);
+  return (
+    isBuiltinWorkspaceToolsServer(server) ||
+    isBuiltinComputerUseServer(server) ||
+    isBuiltinGordonToolsServer(server) ||
+    isBuiltinApplicationToolsServer(server)
+  );
 }
 
 function describeToolServer(server: McpServerConfig): string {
@@ -224,6 +234,10 @@ function describeToolServer(server: McpServerConfig): string {
 
   if (isBuiltinGordonToolsServer(server)) {
     return `${server.name}（本地能力工具）`;
+  }
+
+  if (isBuiltinApplicationToolsServer(server)) {
+    return `${server.name}（本地应用资产工具）`;
   }
 
   return `${server.name}（外部 MCP）`;
@@ -240,7 +254,7 @@ function buildToolScopeText(authorizedServers: McpServerConfig[]): string {
 
   if (localTools.length) {
     sections.push(
-      `本地工具：${localTools.map((server) => server.name).join("、")}。这是 Gordon 内置能力通道，不代表用户已连接外部 MCP。Gordon Tools 会按能力拓展 TOOL 配置暴露 image_gen 等内置工具；Computer Use 会在首次读取或控制桌面前申请本轮授权。`
+      `本地工具：${localTools.map((server) => server.name).join("、")}。这是 Gordon 内置能力通道，不代表用户已连接外部 MCP。Application Tools 用于按应用语义读取、检索、预览和写回应用广场资产；Gordon Tools 会按能力拓展 TOOL 配置暴露 image_gen 等内置工具；Computer Use 会在首次读取或控制桌面前申请本轮授权。`
     );
   }
 

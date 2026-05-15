@@ -162,10 +162,12 @@
               :get-command-artifact-call-repaired-arguments-text="getCommandArtifactCallRepairedArgumentsText"
               :get-command-artifact-call-secondary="getCommandArtifactCallSecondary"
               :get-command-artifact-call-title="getCommandArtifactCallTitle"
+              :get-command-artifact-execution-items="getCommandArtifactExecutionItems"
               :get-command-artifact-inline-text="getCommandArtifactInlineText"
               :get-command-artifact-products="getCommandArtifactProducts"
               :get-command-artifact-step-secondary="getCommandArtifactStepSecondary"
               :get-command-artifact-summary="getCommandArtifactSummary"
+              :get-command-live-status-text="getCommandLiveStatusText"
               :get-skill-option-label="getSkillOptionLabel"
               :handle-command-agent-change="handleCommandAgentChange"
               :handle-command-attachment-select="handleCommandAttachmentSelect"
@@ -726,10 +728,12 @@ const {
   getCommandArtifactCallRepairedArgumentsText,
   getCommandArtifactCallSecondary,
   getCommandArtifactCallTitle,
+  getCommandArtifactExecutionItems,
   getCommandArtifactInlineText,
   getCommandArtifactProducts,
   getCommandArtifactStepSecondary,
   getCommandArtifactSummary,
+  getCommandLiveStatusText,
   handleAgentRunProgress,
   handleCommandAgentChange,
   handleCommandAttachmentSelect,
@@ -758,6 +762,7 @@ const {
   getMcpServerById,
   getSkillById,
   nextTick,
+  refreshWorkbenchSnapshot,
   resolveBoundModelName,
   setStatus,
   showAlertDialog,

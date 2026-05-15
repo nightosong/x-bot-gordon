@@ -171,6 +171,7 @@ export const EXTENSION_TABS = [
 
 export const BUILTIN_GORDON_AGENT_ID = "builtin:agent:gordon";
 export const BUILTIN_GORDON_TOOLS_MCP_ID = "builtin:mcp:gordon-tools";
+export const BUILTIN_APPLICATION_TOOLS_MCP_ID = "builtin:mcp:application-tools";
 export const BUILTIN_WORKBENCH_ID_PREFIX = "builtin:";
 export const SKILL_DISPLAY_NAME_MAP = {
   plan: "任务拆解",

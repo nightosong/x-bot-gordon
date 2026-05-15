@@ -444,10 +444,10 @@ function getWritingIntroOutputTargetKey(book, taskId) {
   }
 
   if (WRITING_INTRO_PLANNING_TASK_IDS.has(taskId)) {
-    return book?.length === "long" ? "seriesPlan" : "outlineGuide";
+    return "outlineGuide";
   }
 
-  return book?.length === "short" ? "intro" : book?.length === "long" ? "seriesPlan" : "outlineGuide";
+  return book?.length === "short" ? "intro" : "outlineGuide";
 }
 
 function getWritingIntroOutputTargetLabel(book, taskId) {

@@ -475,6 +475,7 @@ function normalizeWritingBookExtraIntroSectionsForUi(sections = [], bookId = "wr
 function normalizeWritingBookForUi(book, index = 0) {
   const now = new Date().toISOString();
   const bookId = String(book?.id ?? "").trim() || createLocalId("writing_book");
+  const legacyDetailedOutline = String(book?.seriesPlan ?? "").trim();
   const normalized = {
     id: bookId,
     title: String(book?.title ?? "").trim() || "未命名故事",
@@ -485,8 +486,8 @@ function normalizeWritingBookForUi(book, index = 0) {
     updatedAt: String(book?.updatedAt ?? now),
     coverTone: String(book?.coverTone ?? (index % 3 === 0 ? "teal" : index % 3 === 1 ? "coral" : "gold")),
     intro: String(book?.intro ?? ""),
-    outlineGuide: String(book?.outlineGuide ?? ""),
-    seriesPlan: String(book?.seriesPlan ?? ""),
+    outlineGuide: legacyDetailedOutline || String(book?.outlineGuide ?? ""),
+    seriesPlan: "",
     extraIntroSections: normalizeWritingBookExtraIntroSectionsForUi(book?.extraIntroSections, bookId),
     directoryName: typeof book?.directoryName === "string" ? book.directoryName : undefined,
     parts: normalizeWritingBookPartsForUi(book?.parts, bookId),
@@ -795,11 +796,7 @@ function setWritingBookGenre(value) {
 
 function getWritingIntroSections(book) {
   if (book?.length === "long") {
-    return [
-      WRITING_INTRO_SECTION_DEFINITIONS.intro,
-      WRITING_INTRO_SECTION_DEFINITIONS.outlineGuide,
-      WRITING_INTRO_SECTION_DEFINITIONS.seriesPlan
-    ];
+    return [WRITING_INTRO_SECTION_DEFINITIONS.intro, WRITING_INTRO_SECTION_DEFINITIONS.outlineGuide];
   }
 
   if (book?.length === "medium") {
@@ -1782,7 +1779,7 @@ function getWritingBookWordCount(book) {
     .map((section) => `${section.title ?? ""}\n${section.content ?? ""}`)
     .join("\n");
 
-  return [book?.intro, book?.outlineGuide, book?.seriesPlan, extraIntroText, chapterText]
+  return [book?.intro, book?.outlineGuide, extraIntroText, chapterText]
     .map((value) => String(value ?? "").replace(/\s+/g, ""))
     .join("").length;
 }

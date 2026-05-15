@@ -394,94 +394,76 @@
                     </label>
                   </section>
 
-                  <div class="weekly-report-support-grid">
-                    <section class="weekly-rail-card">
-                      <div class="weekly-rail-head">
-                        <div>
-                          <p class="feature-kicker">Quality Gate</p>
-                          <p class="model-section-title">汇报质量</p>
-                        </div>
+                  <section class="weekly-rail-card weekly-report-summary-card">
+                    <div class="weekly-report-summary-head">
+                      <div>
+                        <p class="feature-kicker">Report Digest</p>
+                        <p class="model-section-title">汇报摘要</p>
                       </div>
+                      <span class="weekly-report-summary-score">
+                        {{ weeklyInsightDoneCount }}/{{ weeklyDraftInsights.qualityChecks.length }} 项已就绪
+                      </span>
+                    </div>
 
-                      <div class="weekly-quality-list">
+                    <div class="weekly-report-summary-tabs" role="tablist" aria-label="汇报摘要分类">
+                      <button
+                        v-for="tab in weeklyInsightTabs"
+                        :id="`weekly-report-summary-tab-${tab.id}`"
+                        :key="tab.id"
+                        type="button"
+                        class="weekly-report-summary-tab"
+                        :class="{ 'is-active': weeklyInsightActiveTab === tab.id }"
+                        role="tab"
+                        :aria-selected="weeklyInsightActiveTab === tab.id ? 'true' : 'false'"
+                        :aria-controls="`weekly-report-summary-panel-${tab.id}`"
+                        @click="weeklyInsightActiveTab = tab.id"
+                      >
+                        <span class="weekly-report-summary-tab-label">{{ tab.label }}</span>
+                        <span class="weekly-report-summary-tab-meta">{{ tab.meta }}</span>
+                      </button>
+                    </div>
+
+                    <div
+                      :id="`weekly-report-summary-panel-${weeklyInsightActiveTab}`"
+                      class="weekly-report-summary-body"
+                      role="tabpanel"
+                      :aria-labelledby="`weekly-report-summary-tab-${weeklyInsightActiveTab}`"
+                    >
+                      <div v-if="weeklyInsightActiveTab === 'quality'" class="weekly-quality-compact-list">
                         <article
                           v-for="check in weeklyDraftInsights.qualityChecks"
                           :key="check.id"
-                          class="weekly-quality-item"
+                          class="weekly-quality-compact-item"
                           :class="{ 'is-done': check.done }"
                         >
-                          <span class="weekly-quality-mark">{{ check.done ? "OK" : "待补" }}</span>
+                          <span class="weekly-quality-compact-mark">
+                            <GIcon :name="check.done ? 'check' : 'circleAlert'" />
+                          </span>
                           <div class="weekly-quality-copy">
                             <p class="weekly-quality-title">{{ check.label }}</p>
                             <p class="weekly-quality-hint">{{ check.hint }}</p>
                           </div>
                         </article>
                       </div>
-                    </section>
 
-                    <section class="weekly-rail-card">
-                      <div class="weekly-rail-head">
-                        <div>
-                          <p class="feature-kicker">Highlights</p>
-                          <p class="model-section-title">本周可直接汇报</p>
-                        </div>
-                      </div>
-
-                      <div v-if="weeklyDraftInsights.achievements.length" class="weekly-insight-list">
-                        <article v-for="item in weeklyDraftInsights.achievements" :key="item.id" class="weekly-insight-item">
-                          <p class="weekly-insight-title">{{ item.title }}</p>
-                          <p class="weekly-insight-meta">{{ item.meta }}</p>
-                          <p v-if="item.detail" class="weekly-insight-detail">{{ item.detail }}</p>
+                      <div v-else-if="weeklyActiveInsightItems.length" class="weekly-insight-compact-list">
+                        <article v-for="(item, index) in weeklyActiveInsightItems" :key="item.id" class="weekly-insight-compact-item">
+                          <span class="weekly-insight-compact-index">{{ index + 1 }}</span>
+                          <div class="weekly-insight-compact-copy">
+                            <p class="weekly-insight-title weekly-insight-compact-title">{{ item.title }}</p>
+                            <div class="weekly-insight-compact-meta-row">
+                              <span class="weekly-insight-meta">{{ item.meta }}</span>
+                            </div>
+                            <p v-if="item.detail" class="weekly-insight-detail weekly-insight-compact-detail">{{ item.detail }}</p>
+                          </div>
                         </article>
                       </div>
 
-                      <div v-else class="weekly-rail-empty">
-                        <p class="weekly-rail-empty-copy">还没识别到明确结果，建议先补“完成了什么 / 影响了什么”。</p>
+                      <div v-else class="weekly-rail-empty weekly-report-summary-empty">
+                        <p class="weekly-rail-empty-copy">{{ weeklyActiveInsightEmptyCopy }}</p>
                       </div>
-                    </section>
-
-                    <section class="weekly-rail-card">
-                      <div class="weekly-rail-head">
-                        <div>
-                          <p class="feature-kicker">Risks</p>
-                          <p class="model-section-title">风险与待协调</p>
-                        </div>
-                      </div>
-
-                      <div v-if="weeklyDraftInsights.risks.length" class="weekly-insight-list">
-                        <article v-for="item in weeklyDraftInsights.risks" :key="item.id" class="weekly-insight-item">
-                          <p class="weekly-insight-title">{{ item.title }}</p>
-                          <p class="weekly-insight-meta">{{ item.meta }}</p>
-                          <p v-if="item.detail" class="weekly-insight-detail">{{ item.detail }}</p>
-                        </article>
-                      </div>
-
-                      <div v-else class="weekly-rail-empty">
-                        <p class="weekly-rail-empty-copy">还没有识别到风险项。如果当前无阻塞，建议明确写一句“当前暂无阻塞”。</p>
-                      </div>
-                    </section>
-
-                    <section class="weekly-rail-card">
-                      <div class="weekly-rail-head">
-                        <div>
-                          <p class="feature-kicker">Next Steps</p>
-                          <p class="model-section-title">下周继续推进</p>
-                        </div>
-                      </div>
-
-                      <div v-if="weeklyDraftInsights.nextSteps.length" class="weekly-insight-list">
-                        <article v-for="item in weeklyDraftInsights.nextSteps" :key="item.id" class="weekly-insight-item">
-                          <p class="weekly-insight-title">{{ item.title }}</p>
-                          <p class="weekly-insight-meta">{{ item.meta }}</p>
-                          <p v-if="item.detail" class="weekly-insight-detail">{{ item.detail }}</p>
-                        </article>
-                      </div>
-
-                      <div v-else class="weekly-rail-empty">
-                        <p class="weekly-rail-empty-copy">还没有识别到下周动作，建议给进行中的项目补 1 条下一步计划。</p>
-                      </div>
-                    </section>
-                  </div>
+                    </div>
+                  </section>
 
                   <div v-if="state.isGeneratingReport" class="weekly-report-lock-layer" aria-hidden="true"></div>
                 </div>
@@ -495,7 +477,7 @@
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { computed, ref } from "vue";
 
 import WeeklyTaskTree from "../../components/WeeklyTaskTree.vue";
 import GIcon from "../../components/GIcon.vue";
@@ -576,7 +558,7 @@ const weeklyListOverviewCards = computed(() => {
     },
     {
       id: "report-status",
-      label: "领导周报",
+      label: "周报结果",
       value: hasGeneratedReport ? "已生成" : "待生成",
       meta: reportMeta,
       metaTone: reportMeta ? "success" : "neutral"
@@ -625,7 +607,7 @@ const weeklyReportGuideContent = computed({
     weeklySelectedReportTemplateContent.value = value;
   }
 });
-const weeklyReportOutputLabel = computed(() => (weeklyIsWeeklyReportMode.value ? "发送给领导的周报" : getDailyReportHeadingTitle()));
+const weeklyReportOutputLabel = computed(() => (weeklyIsWeeklyReportMode.value ? "周报结果" : getDailyReportHeadingTitle()));
 const weeklyReportOutputMode = computed(() => props.state.reportOutputMode === "edit" ? "edit" : "preview");
 const weeklyReportOutputPlaceholder = computed(() =>
   weeklyIsWeeklyReportMode.value
@@ -684,6 +666,67 @@ const weeklyReportCopyButtonLabel = computed(() =>
       : `当前没有可复制的${weeklyReportModeLabel.value}内容`
 );
 const weeklyDraftInsights = computed(() => buildWeeklyDraftInsights(props.state.draft));
+const weeklyInsightActiveTab = ref("quality");
+const weeklyInsightDoneCount = computed(() => weeklyDraftInsights.value.qualityChecks.filter((check) => check.done).length);
+const weeklyInsightTabs = computed(() => {
+  const insights = weeklyDraftInsights.value;
+  const qualityTotal = insights.qualityChecks.length;
+
+  return [
+    {
+      id: "quality",
+      label: "质量",
+      meta: `${weeklyInsightDoneCount.value}/${qualityTotal}`
+    },
+    {
+      id: "achievements",
+      label: "结果",
+      meta: `${insights.achievements.length} 条`
+    },
+    {
+      id: "risks",
+      label: "风险",
+      meta: `${insights.risks.length} 条`
+    },
+    {
+      id: "nextSteps",
+      label: "下周",
+      meta: `${insights.nextSteps.length} 条`
+    }
+  ];
+});
+const weeklyActiveInsightItems = computed(() => {
+  const insights = weeklyDraftInsights.value;
+
+  if (weeklyInsightActiveTab.value === "achievements") {
+    return insights.achievements;
+  }
+
+  if (weeklyInsightActiveTab.value === "risks") {
+    return insights.risks;
+  }
+
+  if (weeklyInsightActiveTab.value === "nextSteps") {
+    return insights.nextSteps;
+  }
+
+  return [];
+});
+const weeklyActiveInsightEmptyCopy = computed(() => {
+  if (weeklyInsightActiveTab.value === "achievements") {
+    return "还没识别到明确结果，建议先补“完成了什么 / 影响了什么”。";
+  }
+
+  if (weeklyInsightActiveTab.value === "risks") {
+    return "还没有识别到风险项。如果当前无阻塞，建议明确写一句“当前暂无阻塞”。";
+  }
+
+  if (weeklyInsightActiveTab.value === "nextSteps") {
+    return "还没有识别到下周动作，建议给进行中的项目补 1 条下一步计划。";
+  }
+
+  return "";
+});
 
 function getWeeklyRecordHasContent(record) {
   const metrics = getWeeklyProgressMetrics(record);

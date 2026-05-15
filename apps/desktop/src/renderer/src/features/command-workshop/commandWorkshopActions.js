@@ -1,6 +1,7 @@
 import { computed } from "vue";
 
 import {
+  BUILTIN_APPLICATION_TOOLS_MCP_ID,
   BUILTIN_GORDON_AGENT_ID,
   buildCommandWorkshopArtifact,
   buildCommandWorkshopTitle,
@@ -9,6 +10,7 @@ import {
   truncateText
 } from "../../lib/presenter.js";
 import {
+  buildCommandApplicationContext,
   buildCommandUserInputForAgent,
   buildCommandWorkshopLiveArtifact,
   buildConversationMessagesForAgentRun
@@ -47,6 +49,14 @@ function formatCommandFailureKind(failureKind) {
 const MAX_COMMAND_ARGUMENT_STRING_LENGTH = 320;
 const MAX_COMMAND_ARGUMENT_ARRAY_ITEMS = 12;
 const MAX_COMMAND_ARGUMENT_OBJECT_KEYS = 24;
+const COMMAND_VISIBLE_AUXILIARY_STEP_TYPES = new Set([
+  "skill_handler_completed",
+  "skill_handler_failed",
+  "workspace_permission_granted",
+  "workspace_permission_denied",
+  "computer_use_permission_granted",
+  "computer_use_permission_denied"
+]);
 
 function isSensitiveCommandArgumentKey(key) {
   return /api[_-]?key|authorization|bearer|token|secret|password|credential|cookie/u.test(String(key ?? "").toLowerCase());
@@ -143,6 +153,7 @@ export function createCommandWorkshopActions({
   getSkillById,
   nextTick,
   resolveBoundModelName,
+  refreshWorkbenchSnapshot,
   setStatus,
   showAlertDialog,
   showConfirmDialog,
@@ -474,7 +485,8 @@ export function createCommandWorkshopActions({
     const agent = getAgentById(ui.command.form.agentProfileId);
     const userInput = ui.command.draftInput.trim();
     const attachments = toPlainIpcData(ui.command.attachments ?? [], []);
-    const agentUserInput = buildCommandUserInputForAgent(userInput, attachments);
+    const applicationContext = buildCommandApplicationContext(ui, workbench);
+    const agentUserInput = buildCommandUserInputForAgent(userInput, attachments, applicationContext);
     let mcpArguments = undefined;
 
     if (!agent) {
@@ -605,6 +617,17 @@ export function createCommandWorkshopActions({
       workbench.commandSessions = sortCommandWorkshopSessions(sessions.map((entry) => normalizeCommandWorkshopSession(entry)));
       ui.command.activeSessionId = completedSession.id;
       workbench.agentRunLogs = [result, ...workbench.agentRunLogs.filter((log) => log.id !== result.id)];
+      if (
+        typeof refreshWorkbenchSnapshot === "function" &&
+        result.mcpCalls?.some(
+          (call) =>
+            call?.serverId === BUILTIN_APPLICATION_TOOLS_MCP_ID &&
+            call?.structuredContent?.applied === true &&
+            call?.isError !== true
+        )
+      ) {
+        await refreshWorkbenchSnapshot();
+      }
       ui.command.isRunning = false;
       ui.command.activeProgressEventId = null;
       ui.command.liveProgress = null;
@@ -669,13 +692,27 @@ export function createCommandWorkshopActions({
   }
 
   function getCommandArtifactSummary(artifact) {
-    const summaryParts = [
-      artifact?.steps?.length ? `${artifact.steps.length} 个步骤` : "",
-      artifact?.mcpCalls?.length ? `${artifact.mcpCalls.length} 次工具` : "",
-      artifact?.profileLabel || ""
-    ].filter(Boolean);
+    const toolCount = Array.isArray(artifact?.mcpCalls) ? artifact.mcpCalls.length : 0;
+    const executionItems = getCommandArtifactExecutionItems(artifact);
+    const actionCount = executionItems.length;
+    const hasToolAction = executionItems.some((item) => item?.kind === "tool");
+    const summaryParts = [];
 
-    return summaryParts.length ? `执行链路 · ${summaryParts.join(" / ")}` : "查看执行链路";
+    if (toolCount) {
+      summaryParts.push(`${toolCount} 次工具`);
+    } else if (hasToolAction) {
+      summaryParts.push("工具执行中");
+    } else if (actionCount) {
+      summaryParts.push("直接回复");
+    } else {
+      summaryParts.push("准备中");
+    }
+
+    if (actionCount && (toolCount || hasToolAction)) {
+      summaryParts.push(`${actionCount} 个关键动作`);
+    }
+
+    return `执行详情 · ${summaryParts.join(" / ")}`;
   }
 
   function normalizeCommandArtifactInlineText(value) {
@@ -735,8 +772,52 @@ export function createCommandWorkshopActions({
     return detail;
   }
 
+  function getCommandArtifactAuxiliaryStepTitle(step) {
+    if (step?.type === "skill_handler_completed") {
+      return "执行 Skill Handler";
+    }
+
+    if (step?.type === "skill_handler_failed") {
+      return "Skill Handler 执行失败";
+    }
+
+    if (step?.type === "workspace_permission_granted") {
+      return "已授权外部路径访问";
+    }
+
+    if (step?.type === "workspace_permission_denied") {
+      return "外部路径访问被拒绝";
+    }
+
+    if (step?.type === "computer_use_permission_granted") {
+      return "已授权桌面控制";
+    }
+
+    if (step?.type === "computer_use_permission_denied") {
+      return "桌面控制授权被拒绝";
+    }
+
+    return step?.title ?? "执行动作";
+  }
+
+  function normalizeCommandArtifactAuxiliaryStep(step, index = 0) {
+    if (!COMMAND_VISIBLE_AUXILIARY_STEP_TYPES.has(step?.type)) {
+      return null;
+    }
+
+    return {
+      id: step?.id ?? `step_${index}`,
+      kind: "step",
+      className: step?.type?.endsWith("_failed") || step?.type?.endsWith("_denied") ? "is-error" : "",
+      title: getCommandArtifactAuxiliaryStepTitle(step),
+      secondary: getCommandArtifactStepSecondary(step),
+      createdAt: step?.createdAt ?? "",
+      step
+    };
+  }
+
   function getCommandArtifactCallTitle(call) {
-    return `第 ${call?.round ?? "-"} 轮 · ${call?.serverName ?? "工具服务"} / ${call?.toolName ?? "工具"}`;
+    return `使用工具：${call?.serverName ?? "工具服务"} / ${call?.toolName ?? "工具"}`;
   }
 
   function getCommandArtifactCallArgumentsText(call) {
@@ -750,10 +831,6 @@ export function createCommandWorkshopActions({
   function getCommandArtifactCallSecondary(call) {
     const secondaryParts = [];
 
-    if (call?.autoSelected) {
-      secondaryParts.push("自动选择");
-    }
-
     if (call?.recovered) {
       secondaryParts.push(`重试恢复 x${call.attemptCount}`);
     } else if (call?.attemptCount > 1) {
@@ -765,11 +842,11 @@ export function createCommandWorkshopActions({
     }
 
     if (call?.fallbackFromToolName) {
-      secondaryParts.push(`fallback ${call.fallbackFromServerName ?? call.serverName}/${call.fallbackFromToolName}`);
+      secondaryParts.push(`fallback 来源：${call.fallbackFromServerName ?? call.serverName}/${call.fallbackFromToolName}`);
     }
 
     if (call?.isError) {
-      secondaryParts.push("返回错误标记");
+      secondaryParts.push("调用失败");
     }
 
     if (call?.failureKind) {
@@ -784,10 +861,129 @@ export function createCommandWorkshopActions({
     if (failureReason) {
       secondaryParts.push(failureReason);
     } else if (resultText) {
-      secondaryParts.push(resultText);
+      secondaryParts.push(`完成：${truncateText(resultText, 180)}`);
     }
 
     return secondaryParts.join(" · ");
+  }
+
+  function normalizeCommandArtifactCallItem(call, index = 0) {
+    if (!call || typeof call !== "object") {
+      return null;
+    }
+
+    return {
+      id: `${call.createdAt ?? "tool"}-${call.serverName ?? "server"}-${call.toolName ?? "tool"}-${call.round ?? index}`,
+      kind: "tool",
+      className: call.isError ? "is-mcp is-error" : "is-mcp",
+      title: getCommandArtifactCallTitle(call),
+      secondary: getCommandArtifactCallSecondary(call),
+      createdAt: call.createdAt ?? "",
+      call
+    };
+  }
+
+  function getCommandArtifactToolNameFromStep(step) {
+    return String(step?.detail ?? "")
+      .split(" / 参数：")[0]
+      .trim();
+  }
+
+  function getCommandArtifactServerNameFromStep(step) {
+    return String(step?.detail ?? "")
+      .split(" / ")[0]
+      .trim();
+  }
+
+  function normalizeCommandArtifactPendingToolItem(steps, calls) {
+    const selectedToolSteps = steps.filter((step) => step?.type === "mcp_tool_selected");
+
+    if (!selectedToolSteps.length || selectedToolSteps.length <= calls.length) {
+      return null;
+    }
+
+    const selectedStep = selectedToolSteps[selectedToolSteps.length - 1];
+    const selectedStepIndex = steps.indexOf(selectedStep);
+    const serverStep = steps
+      .slice(0, selectedStepIndex)
+      .reverse()
+      .find((step) => step?.type === "mcp_server_selected");
+    const toolName = getCommandArtifactToolNameFromStep(selectedStep) || "工具";
+    const serverName = getCommandArtifactServerNameFromStep(serverStep);
+    const title = serverName ? `使用工具：${serverName} / ${toolName}` : `使用工具：${toolName}`;
+
+    return {
+      id: `${selectedStep?.id ?? selectedStep?.createdAt ?? "tool"}_pending`,
+      kind: "tool",
+      className: "is-mcp",
+      title,
+      secondary: "执行中",
+      createdAt: selectedStep?.createdAt ?? ""
+    };
+  }
+
+  function getCommandArtifactExecutionItems(artifact) {
+    const calls = Array.isArray(artifact?.mcpCalls) ? artifact.mcpCalls : [];
+    const steps = Array.isArray(artifact?.steps) ? artifact.steps : [];
+    const pendingToolItem = normalizeCommandArtifactPendingToolItem(steps, calls);
+    const items = [
+      ...steps.map((step, index) => normalizeCommandArtifactAuxiliaryStep(step, index)).filter(Boolean),
+      ...(pendingToolItem ? [pendingToolItem] : []),
+      ...calls.map((call, index) => normalizeCommandArtifactCallItem(call, index)).filter(Boolean)
+    ].sort((left, right) => String(left.createdAt || "").localeCompare(String(right.createdAt || "")));
+
+    if (items.length) {
+      return items;
+    }
+
+    const hasCompletedReply = steps.some((step) => step?.type === "model_invoked" || step?.type === "completed");
+
+    if (!artifact?.stopReason && !hasCompletedReply) {
+      return [];
+    }
+
+    return [
+      {
+        id: `direct_${artifact?.createdAt ?? "now"}`,
+        kind: "direct",
+        className: "",
+        title: artifact?.stopReason ? "运行停止" : "生成回复",
+        secondary: normalizeCommandArtifactInlineText(artifact?.stopReason),
+        createdAt: artifact?.createdAt ?? ""
+      }
+    ];
+  }
+
+  function getCommandLiveStatusText(liveProgress) {
+    const artifact = liveProgress?.artifact;
+    const calls = Array.isArray(artifact?.mcpCalls) ? artifact.mcpCalls : [];
+    const lastCall = calls[calls.length - 1];
+
+    if (lastCall?.isError) {
+      return `工具调用失败：${lastCall.serverName ?? "工具服务"} / ${lastCall.toolName ?? "工具"}`;
+    }
+
+    if (lastCall) {
+      return `已完成工具调用：${lastCall.serverName ?? "工具服务"} / ${lastCall.toolName ?? "工具"}`;
+    }
+
+    const latestStep = Array.isArray(artifact?.steps) ? artifact.steps[artifact.steps.length - 1] : null;
+
+    if (latestStep?.type === "workspace_permission_requested") {
+      return "正在等待外部路径访问授权...";
+    }
+
+    if (latestStep?.type === "computer_use_permission_requested") {
+      return "正在等待桌面控制授权...";
+    }
+
+    const statusText = normalizeCommandArtifactInlineText(liveProgress?.statusText);
+
+    if (/最终回复|整理输出|模型调用完成|运行完成/u.test(statusText)) {
+      return "正在整理回复...";
+    }
+
+    return "正在处理请求...";
   }
 
   return {
@@ -806,10 +1002,12 @@ export function createCommandWorkshopActions({
     getCommandArtifactCallArgumentsText,
     getCommandArtifactCallRepairedArgumentsText,
     getCommandArtifactCallTitle,
+    getCommandArtifactExecutionItems,
     getCommandArtifactInlineText,
     getCommandArtifactProducts,
     getCommandArtifactStepSecondary,
     getCommandArtifactSummary,
+    getCommandLiveStatusText,
     getCommandWorkshopModeLabel,
     getCommandWorkshopToolModeLabel,
     handleAgentRunProgress,
