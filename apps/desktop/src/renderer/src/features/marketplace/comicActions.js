@@ -21,6 +21,8 @@ function getErrorMessage(error) {
   return error instanceof Error ? error.message : "未知错误";
 }
 
+const EMPTY_TITLE_RESTORE_DELAY = 10000;
+
 export function createComicActions({
   activeFeature,
   comicChapterDropdownMenuRef,
@@ -36,6 +38,9 @@ export function createComicActions({
   let comicAutosaveTimer = null;
   let comicSaveInFlight = false;
   let comicQueuedSaveProjectId = null;
+  const comicProjectSaveVersions = new Map();
+  const comicTitleBaselines = new Map();
+  const comicTitleRestoreTimers = new Map();
 
   const comicProjects = computed(() => ui.marketplace.comic.projects ?? []);
   const activeComicProject = computed(
@@ -493,10 +498,60 @@ export function createComicActions({
     }
 
     project.updatedAt = new Date().toISOString();
+    markComicProjectDraftChange(project);
 
     if (options.persist !== false) {
       scheduleComicProjectAutosave(project.id);
     }
+  }
+
+  function markComicProjectDraftChange(project) {
+    if (project?.id) {
+      comicProjectSaveVersions.set(project.id, (comicProjectSaveVersions.get(project.id) ?? 0) + 1);
+    }
+  }
+
+  function getComicProjectTitleRestoreKey(projectId) {
+    return `project-title:${String(projectId ?? "").trim()}`;
+  }
+
+  function getComicAssetNameRestoreKey(projectId, assetId) {
+    return `asset-name:${String(projectId ?? "").trim()}:${String(assetId ?? "").trim()}`;
+  }
+
+  function rememberComicTitleBaseline(key, value) {
+    const baseline = String(value ?? "").trim();
+
+    if (key && baseline) {
+      comicTitleBaselines.set(key, baseline);
+    }
+  }
+
+  function clearComicTitleRestoreTimer(key) {
+    const timer = comicTitleRestoreTimers.get(key);
+
+    if (timer) {
+      clearTimeout(timer);
+      comicTitleRestoreTimers.delete(key);
+    }
+  }
+
+  function scheduleComicEmptyTitleRestore(key, fallbackValue, restore) {
+    const fallback = comicTitleBaselines.get(key) ?? String(fallbackValue ?? "").trim();
+
+    clearComicTitleRestoreTimer(key);
+
+    if (!key || !fallback) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      comicTitleRestoreTimers.delete(key);
+      comicTitleBaselines.delete(key);
+      restore(fallback);
+    }, EMPTY_TITLE_RESTORE_DELAY);
+
+    comicTitleRestoreTimers.set(key, timer);
   }
 
   async function persistComicProjectById(projectId, options = {}) {
@@ -515,11 +570,15 @@ export function createComicActions({
       return;
     }
 
+    const saveVersion = comicProjectSaveVersions.get(projectId) ?? 0;
     comicSaveInFlight = true;
 
     try {
       const savedProjects = await desktopApi.upsertComicProject(buildComicProjectSavePayload(project));
-      applyComicProjectsFromStorage(savedProjects, { preferProjectId: projectId });
+
+      if ((comicProjectSaveVersions.get(projectId) ?? 0) === saveVersion) {
+        applyComicProjectsFromStorage(savedProjects, { preferProjectId: projectId });
+      }
 
       if (!options.silent) {
         setStatus("漫画项目已写入本地。", "success");
@@ -892,7 +951,46 @@ export function createComicActions({
   }
 
   function setComicProjectTitle(value) {
-    setComicProjectField("title", value);
+    const project = activeComicProject.value;
+
+    if (!project) {
+      return;
+    }
+
+    const nextTitle = String(value ?? "");
+    const previousTitle = String(project.title ?? "");
+    const titleKey = getComicProjectTitleRestoreKey(project.id);
+
+    if (!nextTitle.trim()) {
+      project.title = nextTitle;
+      clearComicAutosaveTimer();
+      markComicProjectDraftChange(project);
+      scheduleComicEmptyTitleRestore(titleKey, previousTitle, (fallback) => {
+        const targetProject = comicProjects.value.find((entry) => entry.id === project.id);
+
+        if (!targetProject || String(targetProject.title ?? "").trim()) {
+          return;
+        }
+
+        targetProject.title = fallback;
+        touchComicProject(targetProject);
+      });
+      return;
+    }
+
+    clearComicTitleRestoreTimer(titleKey);
+    project.title = nextTitle;
+    touchComicProject(project);
+  }
+
+  function rememberComicProjectTitleBaseline() {
+    const project = activeComicProject.value;
+
+    if (!project) {
+      return;
+    }
+
+    rememberComicTitleBaseline(getComicProjectTitleRestoreKey(project.id), project.title);
   }
 
   function setComicProjectFormat(value) {
@@ -1003,6 +1101,9 @@ export function createComicActions({
       assetRefs: normalizeComicAssetRefsForUi(chapter.assetRefs).filter((ref) => ref !== normalizedAssetId)
     }));
     ui.marketplace.comic.activeAssetId = project.assets[0]?.id ?? "";
+    const nameKey = getComicAssetNameRestoreKey(project.id, normalizedAssetId);
+    clearComicTitleRestoreTimer(nameKey);
+    comicTitleBaselines.delete(nameKey);
     touchComicProject(project);
     setStatus("素材已删除，并已清理章节引用。", "success");
   }
@@ -1026,8 +1127,43 @@ export function createComicActions({
       return;
     }
 
-    asset.name = getUniqueComicAssetName(project, value, asset.id);
+    const nextName = String(value ?? "");
+    const previousName = String(asset.name ?? "");
+    const nameKey = getComicAssetNameRestoreKey(project.id, asset.id);
+
+    if (!nextName.trim()) {
+      asset.name = nextName;
+      clearComicAutosaveTimer();
+      markComicProjectDraftChange(project);
+      scheduleComicEmptyTitleRestore(nameKey, previousName, (fallback) => {
+        const targetProject = comicProjects.value.find((entry) => entry.id === project.id);
+        const targetAsset = getComicAssets(targetProject).find((entry) => entry.id === asset.id);
+
+        if (!targetProject || !targetAsset || String(targetAsset.name ?? "").trim()) {
+          return;
+        }
+
+        targetAsset.name = getUniqueComicAssetName(targetProject, fallback, targetAsset.id);
+        targetAsset.updatedAt = new Date().toISOString();
+        touchComicProject(targetProject);
+      });
+      return;
+    }
+
+    clearComicTitleRestoreTimer(nameKey);
+    asset.name = getUniqueComicAssetName(project, nextName, asset.id);
     touchComicAsset(asset);
+  }
+
+  function rememberComicAssetNameBaseline(assetId) {
+    const project = activeComicProject.value;
+    const asset = getComicAssets(project).find((entry) => entry.id === assetId);
+
+    if (!project || !asset) {
+      return;
+    }
+
+    rememberComicTitleBaseline(getComicAssetNameRestoreKey(project.id, asset.id), asset.name);
   }
 
   function setComicAssetType(assetId, value) {
@@ -1537,6 +1673,8 @@ export function createComicActions({
     openComicAppShelf,
     openComicExportDialog,
     openComicProject,
+    rememberComicAssetNameBaseline,
+    rememberComicProjectTitleBaseline,
     removeComicAssetView,
     selectComicAsset,
     selectComicChapter,
