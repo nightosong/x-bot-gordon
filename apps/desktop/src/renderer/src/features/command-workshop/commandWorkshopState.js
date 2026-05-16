@@ -20,6 +20,7 @@ export function createCommandWorkshopState() {
     attachments: [],
     availableMcpTools: [],
     isRunning: false,
+    cancelRequested: false,
     isInputComposing: false,
     liveProgress: null
   };

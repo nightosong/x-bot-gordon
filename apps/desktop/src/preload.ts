@@ -137,6 +137,7 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
   toggleAgentProfileStatus: (profileId: string) => ipcRenderer.invoke("gordon:agent-profiles:toggle-status", profileId),
   deleteAgentProfile: (profileId: string) => ipcRenderer.invoke("gordon:agent-profiles:delete", profileId),
   runAgent: (request: AgentRunRequest) => ipcRenderer.invoke("gordon:agent:run", toPlainIpcData(request)),
+  cancelAgentRun: (progressEventId: string) => ipcRenderer.invoke("gordon:agent:cancel-run", progressEventId),
   onAgentRunProgress: (listener: (payload: AgentRunProgressEvent) => void): string => {
     const listenerId = `agent_progress_listener_${Date.now()}_${progressListenerIdSeed++}`;
     const wrapped = (_event: Electron.IpcRendererEvent, payload: AgentRunProgressEvent) => listener(payload);

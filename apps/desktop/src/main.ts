@@ -67,6 +67,7 @@ const desktopAssetDir = path.resolve(currentDir, "..", "assets");
 const appIconFileName = process.platform === "win32" ? "gordon.ico" : "gordon.icns";
 const appIconPath = path.join(desktopAssetDir, appIconFileName);
 const modelTextAbortControllers = new Map<string, AbortController>();
+const agentRunAbortControllers = new Map<string, AbortController>();
 const MAIN_WINDOW_MIN_WIDTH = 1180;
 const MAIN_WINDOW_MIN_HEIGHT = 760;
 const MODEL_BALANCE_POLL_INTERVAL_MS = 60 * 60 * 1000;
@@ -1554,72 +1555,99 @@ app.whenReady().then(async () => {
   ipcMain.handle("gordon:agent:run", async (event, request) => {
     const grantedWorkspaceRoots = new Set<string>();
     let computerUseGranted = false;
+    const progressEventId = typeof request?.progressEventId === "string" && request.progressEventId.trim()
+      ? request.progressEventId.trim()
+      : "";
+    const abortController = new AbortController();
 
-    const result = await runAgent(toCloneableIpcValue(request), {
-      onProgress: (payload: AgentRunProgressEvent) => {
-        if (!event.sender.isDestroyed()) {
-          try {
-            event.sender.send("gordon:agent:progress", toCloneableIpcValue(payload));
-          } catch (error) {
-            console.error("Failed to send agent progress event", error);
+    if (progressEventId) {
+      agentRunAbortControllers.set(progressEventId, abortController);
+    }
+
+    try {
+      const result = await runAgent(toCloneableIpcValue(request), {
+        signal: abortController.signal,
+        onProgress: (payload: AgentRunProgressEvent) => {
+          if (!event.sender.isDestroyed()) {
+            try {
+              event.sender.send("gordon:agent:progress", toCloneableIpcValue(payload));
+            } catch (error) {
+              console.error("Failed to send agent progress event", error);
+            }
           }
+        },
+        onWorkspacePermissionRequest: async (permissionRequest) => {
+          if (grantedWorkspaceRoots.has(permissionRequest.suggestedRoot)) {
+            return true;
+          }
+
+          const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+          const granted = await showGordonConfirmWindow(ownerWindow, {
+            tone: "warning",
+            eyebrow: "Permission",
+            title: "Gordon 需要访问外部路径",
+            message: "是否允许 Gordon 本次访问工作区外的路径？授权只对当前这次 Agent 运行生效，不会写入长期配置。",
+            detailLines: [
+              `请求路径：${permissionRequest.path}`,
+              `授权范围：${permissionRequest.suggestedRoot}`,
+              `工具：${permissionRequest.serverName} / ${permissionRequest.toolName}`
+            ],
+            confirmText: "允许本次访问",
+            cancelText: "拒绝"
+          });
+
+          if (granted) {
+            grantedWorkspaceRoots.add(permissionRequest.suggestedRoot);
+          }
+
+          return granted;
+        },
+        onComputerUsePermissionRequest: async (permissionRequest) => {
+          if (computerUseGranted) {
+            return true;
+          }
+
+          const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+          const granted = await showGordonConfirmWindow(ownerWindow, {
+            tone: "danger",
+            eyebrow: "Computer Use",
+            title: "Gordon 需要使用桌面控制",
+            message: "是否允许 Gordon 本次读取和控制你的桌面？授权只对当前这次 Agent 运行生效，后续运行会重新询问。",
+            detailLines: [
+              `动作：${permissionRequest.action}`,
+              `工具：${permissionRequest.serverName} / ${permissionRequest.toolName}`,
+              `原因：${permissionRequest.reason}`
+            ],
+            confirmText: "允许本次使用",
+            cancelText: "拒绝"
+          });
+
+          if (granted) {
+            computerUseGranted = true;
+          }
+
+          return granted;
         }
-      },
-      onWorkspacePermissionRequest: async (permissionRequest) => {
-        if (grantedWorkspaceRoots.has(permissionRequest.suggestedRoot)) {
-          return true;
-        }
+      });
 
-        const ownerWindow = BrowserWindow.fromWebContents(event.sender);
-        const granted = await showGordonConfirmWindow(ownerWindow, {
-          tone: "warning",
-          eyebrow: "Permission",
-          title: "Gordon 需要访问外部路径",
-          message: "是否允许 Gordon 本次访问工作区外的路径？授权只对当前这次 Agent 运行生效，不会写入长期配置。",
-          detailLines: [
-            `请求路径：${permissionRequest.path}`,
-            `授权范围：${permissionRequest.suggestedRoot}`,
-            `工具：${permissionRequest.serverName} / ${permissionRequest.toolName}`
-          ],
-          confirmText: "允许本次访问",
-          cancelText: "拒绝"
-        });
-
-        if (granted) {
-          grantedWorkspaceRoots.add(permissionRequest.suggestedRoot);
-        }
-
-        return granted;
-      },
-      onComputerUsePermissionRequest: async (permissionRequest) => {
-        if (computerUseGranted) {
-          return true;
-        }
-
-        const ownerWindow = BrowserWindow.fromWebContents(event.sender);
-        const granted = await showGordonConfirmWindow(ownerWindow, {
-          tone: "danger",
-          eyebrow: "Computer Use",
-          title: "Gordon 需要使用桌面控制",
-          message: "是否允许 Gordon 本次读取和控制你的桌面？授权只对当前这次 Agent 运行生效，后续运行会重新询问。",
-          detailLines: [
-            `动作：${permissionRequest.action}`,
-            `工具：${permissionRequest.serverName} / ${permissionRequest.toolName}`,
-            `原因：${permissionRequest.reason}`
-          ],
-          confirmText: "允许本次使用",
-          cancelText: "拒绝"
-        });
-
-        if (granted) {
-          computerUseGranted = true;
-        }
-
-        return granted;
+      return toCloneableIpcValue(result);
+    } finally {
+      if (progressEventId) {
+        agentRunAbortControllers.delete(progressEventId);
       }
-    });
+    }
+  });
+  ipcMain.handle("gordon:agent:cancel-run", async (_event, progressEventId) => {
+    const normalizedProgressEventId = typeof progressEventId === "string" ? progressEventId.trim() : "";
+    const abortController = normalizedProgressEventId ? agentRunAbortControllers.get(normalizedProgressEventId) : null;
 
-    return toCloneableIpcValue(result);
+    if (!abortController) {
+      return false;
+    }
+
+    abortController.abort();
+    agentRunAbortControllers.delete(normalizedProgressEventId);
+    return true;
   });
   ipcMain.handle("gordon:command-workshop:list", async () => listCommandWorkshopSessions());
   ipcMain.handle("gordon:command-workshop:select-attachments", async (event) => {

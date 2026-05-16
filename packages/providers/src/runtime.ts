@@ -10,6 +10,27 @@ const OPENAI_COMPATIBLE_PROVIDERS = new Set([
   "zhipu",
   "grok"
 ]);
+const NON_STREAM_ONLY_PROFILE_IDS = new Set<string>();
+
+interface ModelTextInvokeOptions {
+  signal?: AbortSignal;
+  onTextDelta?: (delta: string, text: string) => void;
+}
+
+interface SseEvent {
+  event: string;
+  data: string;
+}
+
+class ModelStreamReadError extends Error {
+  readonly accumulatedText: string;
+
+  constructor(message: string, accumulatedText = "") {
+    super(message);
+    this.name = "ModelStreamReadError";
+    this.accumulatedText = accumulatedText;
+  }
+}
 
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, "");
@@ -73,6 +94,29 @@ function getConversationMessages(messages: ModelMessage[]): ModelMessage[] {
   const conversation = messages.filter((message) => message.role !== "system");
 
   return conversation.length ? conversation : [{ role: "user", content: "" }];
+}
+
+function formatConversationForResponsesInput(messages: ModelMessage[]): string {
+  const conversation = getConversationMessages(messages)
+    .map((message) => ({
+      role: message.role,
+      content: message.content.trim()
+    }))
+    .filter((message) => message.content);
+
+  if (conversation.length === 1 && conversation[0]?.role === "user") {
+    return conversation[0].content;
+  }
+
+  const roleLabels: Record<ModelMessage["role"], string> = {
+    system: "System",
+    user: "User",
+    assistant: "Assistant"
+  };
+
+  return conversation
+    .map((message) => `${roleLabels[message.role] ?? message.role}:\n${message.content}`)
+    .join("\n\n");
 }
 
 function parseOpenAiMessageContent(content: unknown): string {
@@ -139,6 +183,149 @@ function parseOpenAiMessageContent(content: unknown): string {
   return "";
 }
 
+function parseSseBlock(block: string): SseEvent | null {
+  const normalizedBlock = block.trimEnd();
+
+  if (!normalizedBlock.trim()) {
+    return null;
+  }
+
+  let event = "message";
+  const dataLines: string[] = [];
+
+  for (const rawLine of normalizedBlock.split("\n")) {
+    const line = rawLine.trimEnd();
+
+    if (!line || line.startsWith(":")) {
+      continue;
+    }
+
+    const separatorIndex = line.indexOf(":");
+    const field = separatorIndex >= 0 ? line.slice(0, separatorIndex) : line;
+    const rawValue = separatorIndex >= 0 ? line.slice(separatorIndex + 1) : "";
+    const value = rawValue.startsWith(" ") ? rawValue.slice(1) : rawValue;
+
+    if (field === "event") {
+      event = value || "message";
+    } else if (field === "data") {
+      dataLines.push(value);
+    }
+  }
+
+  if (!dataLines.length) {
+    return null;
+  }
+
+  return {
+    event,
+    data: dataLines.join("\n")
+  };
+}
+
+async function consumeSseEvents(response: Response, onEvent: (event: SseEvent) => void | Promise<void>): Promise<void> {
+  const reader = response.body?.getReader();
+
+  if (!reader) {
+    throw new Error("模型服务没有返回可读取的流式响应");
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  const flushBlocks = async (flushRemaining = false): Promise<void> => {
+    let separatorIndex = buffer.indexOf("\n\n");
+
+    while (separatorIndex >= 0) {
+      const block = buffer.slice(0, separatorIndex);
+      buffer = buffer.slice(separatorIndex + 2);
+      const event = parseSseBlock(block);
+
+      if (event) {
+        await onEvent(event);
+      }
+
+      separatorIndex = buffer.indexOf("\n\n");
+    }
+
+    if (flushRemaining && buffer.trim()) {
+      const event = parseSseBlock(buffer);
+      buffer = "";
+
+      if (event) {
+        await onEvent(event);
+      }
+    }
+  };
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+      await flushBlocks();
+    }
+
+    buffer += decoder.decode().replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    await flushBlocks(true);
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function emitTextDelta(options: ModelTextInvokeOptions, delta: string, accumulatedText: string): void {
+  if (!delta) {
+    return;
+  }
+
+  options.onTextDelta?.(delta, accumulatedText);
+}
+
+function withoutTextDelta(options: ModelTextInvokeOptions): ModelTextInvokeOptions {
+  return {
+    ...(options.signal ? { signal: options.signal } : {})
+  };
+}
+
+function shouldFallbackToNonStream(error: unknown, signal?: AbortSignal): boolean {
+  if (signal?.aborted) {
+    return false;
+  }
+
+  return error instanceof ModelStreamReadError && !error.accumulatedText.trim();
+}
+
+function shouldDisableStreamForPayload(payload: unknown): boolean {
+  return Boolean(extractErrorMessage(payload) || !extractOpenAiCompatibleText(payload).trim());
+}
+
+function rememberNonStreamOnlyProfile(profile: ModelProfile): void {
+  NON_STREAM_ONLY_PROFILE_IDS.add(profile.id);
+}
+
+function canAttemptStream(profile: ModelProfile, options: ModelTextInvokeOptions): boolean {
+  return typeof options.onTextDelta === "function" && profile.supportsStreaming !== false && !NON_STREAM_ONLY_PROFILE_IDS.has(profile.id);
+}
+
+function logStreamFallback(
+  label: string,
+  profile: ModelProfile,
+  endpoint: string,
+  reason: string
+): void {
+  console.warn(`[providers] ${label} stream failed before output, falling back to non-stream request`, {
+    provider: profile.provider,
+    profileId: profile.id,
+    profileLabel: profile.displayName,
+    model: profile.model,
+    endpoint: sanitizeUrlForLogging(endpoint),
+    reason
+  });
+}
+
 function extractOpenAiCompatibleText(payload: unknown): string {
   const directCandidates = [
     getNestedValue(payload, ["choices", 0, "message", "content"]),
@@ -196,6 +383,81 @@ function extractOpenAiCompatibleText(payload: unknown): string {
   }
 
   return "";
+}
+
+function extractOpenAiResponsesText(payload: unknown): string {
+  const directCandidates = [
+    getNestedValue(payload, ["output_text"]),
+    getNestedValue(payload, ["response", "output_text"])
+  ];
+
+  for (const candidate of directCandidates) {
+    const text = parseOpenAiMessageContent(candidate);
+
+    if (text) {
+      return text;
+    }
+  }
+
+  const output = getNestedValue(payload, ["output"]) ?? getNestedValue(payload, ["response", "output"]);
+
+  if (Array.isArray(output)) {
+    const parts = output
+      .map((item) => {
+        if (!isRecord(item)) {
+          return "";
+        }
+
+        return parseOpenAiMessageContent(item.content);
+      })
+      .filter(Boolean);
+
+    if (parts.length) {
+      return parts.join("\n");
+    }
+  }
+
+  return extractOpenAiCompatibleText(payload);
+}
+
+function extractOpenAiResponsesStreamDelta(payload: unknown): string {
+  return readTextValue(getNestedValue(payload, ["delta"]))
+    || readTextValue(getNestedValue(payload, ["part", "text"]))
+    || readTextValue(getNestedValue(payload, ["item", "content", 0, "text"]));
+}
+
+function extractOpenAiCompatibleStreamDelta(payload: unknown): string {
+  const choices = getNestedValue(payload, ["choices"]);
+  const deltas: string[] = [];
+
+  if (Array.isArray(choices)) {
+    for (const choice of choices) {
+      const delta = getNestedValue(choice, ["delta"]);
+      const candidates = [
+        getNestedValue(delta, ["content"]),
+        getNestedValue(delta, ["text"]),
+        getNestedValue(delta, ["output_text"]),
+        getNestedValue(choice, ["text"]),
+        getNestedValue(choice, ["message", "content"])
+      ];
+
+      for (const candidate of candidates) {
+        const text = parseOpenAiMessageContent(candidate);
+
+        if (text) {
+          deltas.push(text);
+          break;
+        }
+      }
+    }
+  }
+
+  if (deltas.length) {
+    return deltas.join("");
+  }
+
+  return parseOpenAiMessageContent(getNestedValue(payload, ["delta", "content"]))
+    || parseOpenAiMessageContent(getNestedValue(payload, ["output_text"]));
 }
 
 function sanitizeUrlForLogging(value: string): string {
@@ -265,6 +527,12 @@ function buildMissingTextReason(payload: unknown): string | null {
     return `finish_reason=${finishReason.trim()}`;
   }
 
+  const status = readTextValue(getNestedValue(payload, ["status"])) || readTextValue(getNestedValue(payload, ["response", "status"]));
+
+  if (status && status !== "completed") {
+    return `status=${status}`;
+  }
+
   const refusal = parseOpenAiMessageContent(getNestedValue(payload, ["choices", 0, "message", "refusal"])).trim();
 
   if (refusal) {
@@ -317,6 +585,18 @@ function extractErrorMessage(payload: unknown): string | null {
 
   if ("message" in payload && typeof payload.message === "string") {
     return payload.message;
+  }
+
+  if ("code_msg" in payload && typeof payload.code_msg === "string") {
+    return payload.code_msg;
+  }
+
+  if ("response" in payload) {
+    const responseErrorMessage = extractErrorMessage(payload.response);
+
+    if (responseErrorMessage) {
+      return responseErrorMessage;
+    }
   }
 
   return null;
@@ -378,12 +658,236 @@ function buildAzureEndpoint(profile: ModelProfile): string {
     : `${endpoint}${endpoint.includes("?") ? "&" : "?"}api-version=${defaultApiVersion}`;
 }
 
+function shouldUseSseStream(response: Response): boolean {
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+
+  return !contentType.includes("application/json");
+}
+
+function buildOpenAiStyleEndpoint(profile: ModelProfile, path: "/chat/completions" | "/responses"): string {
+  const baseUrl = trimTrailingSlash(profile.baseUrl?.trim() || "https://api.openai.com/v1");
+
+  if (baseUrl.endsWith(path)) {
+    return baseUrl;
+  }
+
+  if (path === "/responses" && baseUrl.endsWith("/chat/completions")) {
+    return `${baseUrl.slice(0, -"/chat/completions".length)}/responses`;
+  }
+
+  if (path === "/chat/completions" && baseUrl.endsWith("/responses")) {
+    return `${baseUrl.slice(0, -"/responses".length)}/chat/completions`;
+  }
+
+  return `${baseUrl}${path}`;
+}
+
+function buildOpenAiResponsesPromptCacheKey(profile: ModelProfile): string {
+  return `gordon-${profile.id || profile.displayName || profile.model}`.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 96);
+}
+
+async function readOpenAiCompatibleStream(
+  profile: ModelProfile,
+  endpoint: string,
+  response: Response,
+  options: ModelTextInvokeOptions
+): Promise<string> {
+  let accumulatedText = "";
+
+  try {
+    await consumeSseEvents(response, (event) => {
+      const data = event.data.trim();
+
+      if (!data || data === "[DONE]") {
+        return;
+      }
+
+      let payload: unknown;
+
+      try {
+        payload = JSON.parse(data) as unknown;
+      } catch (error) {
+        throw new ModelStreamReadError(
+          `模型流式响应解析失败：${error instanceof Error ? error.message : "未知错误"}`,
+          accumulatedText
+        );
+      }
+
+      const payloadErrorMessage = extractErrorMessage(payload);
+
+      if (payloadErrorMessage) {
+        throw new ModelStreamReadError(`模型服务错误：${payloadErrorMessage}`, accumulatedText);
+      }
+
+      const delta = extractOpenAiCompatibleStreamDelta(payload);
+
+      if (delta) {
+        accumulatedText += delta;
+        emitTextDelta(options, delta, accumulatedText);
+      }
+    });
+  } catch (error) {
+    if (error instanceof ModelStreamReadError) {
+      throw error;
+    }
+
+    throw new ModelStreamReadError(error instanceof Error ? error.message : "模型流式响应读取失败", accumulatedText);
+  }
+
+  const text = accumulatedText.trim();
+
+  if (!text) {
+    throw new ModelStreamReadError("模型没有返回可用文本内容", accumulatedText);
+  }
+
+  return text;
+}
+
+async function readOpenAiResponsesStream(
+  profile: ModelProfile,
+  endpoint: string,
+  response: Response,
+  options: ModelTextInvokeOptions
+): Promise<string> {
+  let accumulatedText = "";
+
+  try {
+    await consumeSseEvents(response, (event) => {
+      const data = event.data.trim();
+
+      if (!data || data === "[DONE]") {
+        return;
+      }
+
+      let payload: unknown;
+
+      try {
+        payload = JSON.parse(data) as unknown;
+      } catch (error) {
+        throw new ModelStreamReadError(
+          `模型流式响应解析失败：${error instanceof Error ? error.message : "未知错误"}`,
+          accumulatedText
+        );
+      }
+
+      const payloadErrorMessage = extractErrorMessage(payload);
+
+      if (payloadErrorMessage) {
+        throw new ModelStreamReadError(`模型服务错误：${payloadErrorMessage}`, accumulatedText);
+      }
+
+      const delta = extractOpenAiResponsesStreamDelta(payload);
+
+      if (delta) {
+        accumulatedText += delta;
+        emitTextDelta(options, delta, accumulatedText);
+      }
+    });
+  } catch (error) {
+    if (error instanceof ModelStreamReadError) {
+      throw error;
+    }
+
+    throw new ModelStreamReadError(error instanceof Error ? error.message : "模型流式响应读取失败", accumulatedText);
+  }
+
+  const text = accumulatedText.trim();
+
+  if (!text) {
+    throw new ModelStreamReadError("模型没有返回可用文本内容", accumulatedText);
+  }
+
+  return text;
+}
+
+async function invokeOpenAiResponses(
+  profile: ModelProfile,
+  request: ModelTextRequest,
+  options: ModelTextInvokeOptions = {}
+): Promise<ModelTextResponse> {
+  const endpoint = buildOpenAiStyleEndpoint(profile, "/responses");
+  const stream = canAttemptStream(profile, options);
+  const instructions = getSystemPrompt(request.messages);
+  const response = await fetch(endpoint, {
+    method: "POST",
+    signal: options.signal,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${profile.apiKey}`,
+      ...(profile.organization?.trim() ? { "OpenAI-Organization": profile.organization.trim() } : {})
+    },
+    body: JSON.stringify({
+      model: profile.model,
+      input: formatConversationForResponsesInput(request.messages),
+      ...(instructions ? { instructions } : {}),
+      prompt_cache_key: buildOpenAiResponsesPromptCacheKey(profile),
+      store: false,
+      ...(typeof request.temperature === "number" ? { temperature: request.temperature } : {}),
+      ...(typeof request.maxOutputTokens === "number" ? { max_output_tokens: request.maxOutputTokens } : {}),
+      ...(stream ? { stream: true } : {})
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseErrorResponse(response));
+  }
+
+  if (stream && shouldUseSseStream(response)) {
+    try {
+      return {
+        text: await readOpenAiResponsesStream(profile, endpoint, response, options),
+        model: profile.model,
+        profileId: profile.id,
+        profileLabel: profile.displayName,
+        provider: profile.provider
+      };
+    } catch (error) {
+      if (shouldFallbackToNonStream(error, options.signal)) {
+        rememberNonStreamOnlyProfile(profile);
+        logStreamFallback("OpenAI Responses", profile, endpoint, error instanceof Error ? error.message : "unknown");
+        return invokeOpenAiResponses(profile, request, withoutTextDelta(options));
+      }
+
+      throw error;
+    }
+  }
+
+  const payload = (await response.json()) as unknown;
+  const payloadErrorMessage = extractErrorMessage(payload);
+
+  if (payloadErrorMessage) {
+    logMissingOpenAiStyleText(profile, endpoint, payload);
+    throw new Error(`模型服务错误：${payloadErrorMessage}`);
+  }
+
+  const text = extractOpenAiResponsesText(payload).trim();
+
+  if (!text) {
+    logMissingOpenAiStyleText(profile, endpoint, payload);
+    const reason = buildMissingTextReason(payload);
+    throw new Error(reason ? `模型没有返回可用文本内容（${reason}）` : "模型没有返回可用文本内容");
+  }
+
+  return {
+    text,
+    model: profile.model,
+    profileId: profile.id,
+    profileLabel: profile.displayName,
+    provider: profile.provider
+  };
+}
+
 async function invokeOpenAiCompatible(
   profile: ModelProfile,
   request: ModelTextRequest,
-  options: { signal?: AbortSignal } = {}
+  options: ModelTextInvokeOptions = {}
 ): Promise<ModelTextResponse> {
-  const endpoint = `${trimTrailingSlash(profile.baseUrl?.trim() || "https://api.openai.com/v1")}/chat/completions`;
+  if (profile.apiFormat === "responses") {
+    return invokeOpenAiResponses(profile, request, options);
+  }
+
+  const endpoint = buildOpenAiStyleEndpoint(profile, "/chat/completions");
+  const stream = canAttemptStream(profile, options);
   const response = await fetch(endpoint, {
     method: "POST",
     signal: options.signal,
@@ -399,12 +903,33 @@ async function invokeOpenAiCompatible(
         content: message.content
       })),
       ...(typeof request.temperature === "number" ? { temperature: request.temperature } : {}),
-      ...(typeof request.maxOutputTokens === "number" ? { max_tokens: request.maxOutputTokens } : {})
+      ...(typeof request.maxOutputTokens === "number" ? { max_tokens: request.maxOutputTokens } : {}),
+      ...(stream ? { stream: true } : {})
     })
   });
 
   if (!response.ok) {
     throw new Error(await parseErrorResponse(response));
+  }
+
+  if (stream && shouldUseSseStream(response)) {
+    try {
+      return {
+        text: await readOpenAiCompatibleStream(profile, endpoint, response, options),
+        model: profile.model,
+        profileId: profile.id,
+        profileLabel: profile.displayName,
+        provider: profile.provider
+      };
+    } catch (error) {
+      if (shouldFallbackToNonStream(error, options.signal)) {
+        rememberNonStreamOnlyProfile(profile);
+        logStreamFallback("OpenAI-style", profile, endpoint, error instanceof Error ? error.message : "unknown");
+        return invokeOpenAiCompatible(profile, request, withoutTextDelta(options));
+      }
+
+      throw error;
+    }
   }
 
   const payload = (await response.json()) as {
@@ -417,6 +942,12 @@ async function invokeOpenAiCompatible(
   const payloadErrorMessage = extractErrorMessage(payload);
 
   if (payloadErrorMessage) {
+    if (stream && shouldDisableStreamForPayload(payload)) {
+      rememberNonStreamOnlyProfile(profile);
+      logStreamFallback("OpenAI-style JSON", profile, endpoint, payloadErrorMessage);
+      return invokeOpenAiCompatible(profile, request, withoutTextDelta(options));
+    }
+
     logMissingOpenAiStyleText(profile, endpoint, payload);
     throw new Error(`模型服务错误：${payloadErrorMessage}`);
   }
@@ -424,6 +955,13 @@ async function invokeOpenAiCompatible(
   const text = extractOpenAiCompatibleText(payload).trim();
 
   if (!text) {
+    if (stream && shouldDisableStreamForPayload(payload)) {
+      const reason = buildMissingTextReason(payload);
+      rememberNonStreamOnlyProfile(profile);
+      logStreamFallback("OpenAI-style JSON", profile, endpoint, reason ?? "模型没有返回可用文本内容");
+      return invokeOpenAiCompatible(profile, request, withoutTextDelta(options));
+    }
+
     logMissingOpenAiStyleText(profile, endpoint, payload);
     const reason = buildMissingTextReason(payload);
     throw new Error(reason ? `模型没有返回可用文本内容（${reason}）` : "模型没有返回可用文本内容");
@@ -441,9 +979,11 @@ async function invokeOpenAiCompatible(
 async function invokeAzure(
   profile: ModelProfile,
   request: ModelTextRequest,
-  options: { signal?: AbortSignal } = {}
+  options: ModelTextInvokeOptions = {}
 ): Promise<ModelTextResponse> {
-  const response = await fetch(buildAzureEndpoint(profile), {
+  const endpoint = buildAzureEndpoint(profile);
+  const stream = canAttemptStream(profile, options);
+  const response = await fetch(endpoint, {
     method: "POST",
     signal: options.signal,
     headers: {
@@ -456,12 +996,33 @@ async function invokeAzure(
         content: message.content
       })),
       ...(typeof request.temperature === "number" ? { temperature: request.temperature } : {}),
-      ...(typeof request.maxOutputTokens === "number" ? { max_tokens: request.maxOutputTokens } : {})
+      ...(typeof request.maxOutputTokens === "number" ? { max_tokens: request.maxOutputTokens } : {}),
+      ...(stream ? { stream: true } : {})
     })
   });
 
   if (!response.ok) {
     throw new Error(await parseErrorResponse(response));
+  }
+
+  if (stream && shouldUseSseStream(response)) {
+    try {
+      return {
+        text: await readOpenAiCompatibleStream(profile, endpoint, response, options),
+        model: profile.model,
+        profileId: profile.id,
+        profileLabel: profile.displayName,
+        provider: profile.provider
+      };
+    } catch (error) {
+      if (shouldFallbackToNonStream(error, options.signal)) {
+        rememberNonStreamOnlyProfile(profile);
+        logStreamFallback("Azure", profile, endpoint, error instanceof Error ? error.message : "unknown");
+        return invokeAzure(profile, request, withoutTextDelta(options));
+      }
+
+      throw error;
+    }
   }
 
   const payload = (await response.json()) as {
@@ -474,14 +1035,27 @@ async function invokeAzure(
   const payloadErrorMessage = extractErrorMessage(payload);
 
   if (payloadErrorMessage) {
-    logMissingOpenAiStyleText(profile, buildAzureEndpoint(profile), payload);
+    if (stream && shouldDisableStreamForPayload(payload)) {
+      rememberNonStreamOnlyProfile(profile);
+      logStreamFallback("Azure JSON", profile, endpoint, payloadErrorMessage);
+      return invokeAzure(profile, request, withoutTextDelta(options));
+    }
+
+    logMissingOpenAiStyleText(profile, endpoint, payload);
     throw new Error(`模型服务错误：${payloadErrorMessage}`);
   }
 
   const text = extractOpenAiCompatibleText(payload).trim();
 
   if (!text) {
-    logMissingOpenAiStyleText(profile, buildAzureEndpoint(profile), payload);
+    if (stream && shouldDisableStreamForPayload(payload)) {
+      const reason = buildMissingTextReason(payload);
+      rememberNonStreamOnlyProfile(profile);
+      logStreamFallback("Azure JSON", profile, endpoint, reason ?? "模型没有返回可用文本内容");
+      return invokeAzure(profile, request, withoutTextDelta(options));
+    }
+
+    logMissingOpenAiStyleText(profile, endpoint, payload);
     const reason = buildMissingTextReason(payload);
     throw new Error(reason ? `模型没有返回可用文本内容（${reason}）` : "模型没有返回可用文本内容");
   }
@@ -498,10 +1072,11 @@ async function invokeAzure(
 async function invokeAnthropic(
   profile: ModelProfile,
   request: ModelTextRequest,
-  options: { signal?: AbortSignal } = {}
+  options: ModelTextInvokeOptions = {}
 ): Promise<ModelTextResponse> {
   const endpoint = `${trimTrailingSlash(profile.baseUrl?.trim() || "https://api.anthropic.com")}/v1/messages`;
   const conversation = getConversationMessages(request.messages);
+  const stream = canAttemptStream(profile, options);
   const response = await fetch(endpoint, {
     method: "POST",
     signal: options.signal,
@@ -515,6 +1090,7 @@ async function invokeAnthropic(
       max_tokens: request.maxOutputTokens ?? 1200,
       ...(typeof request.temperature === "number" ? { temperature: request.temperature } : {}),
       ...(getSystemPrompt(request.messages) ? { system: getSystemPrompt(request.messages) } : {}),
+      ...(stream ? { stream: true } : {}),
       messages: conversation.map((message) => ({
         role: message.role,
         content: [{ type: "text", text: message.content }]
@@ -524,6 +1100,53 @@ async function invokeAnthropic(
 
   if (!response.ok) {
     throw new Error(await parseErrorResponse(response));
+  }
+
+  if (stream && shouldUseSseStream(response)) {
+    let accumulatedText = "";
+
+    await consumeSseEvents(response, (event) => {
+      if (!event.data.trim() || event.data.trim() === "[DONE]") {
+        return;
+      }
+
+      let payload: unknown;
+
+      try {
+        payload = JSON.parse(event.data) as unknown;
+      } catch (error) {
+        throw new Error(`模型流式响应解析失败：${error instanceof Error ? error.message : "未知错误"}`);
+      }
+
+      const payloadErrorMessage = extractErrorMessage(payload);
+
+      if (payloadErrorMessage) {
+        throw new Error(`模型服务错误：${payloadErrorMessage}`);
+      }
+
+      const delta = event.event === "content_block_delta"
+        ? readTextValue(getNestedValue(payload, ["delta", "text"]))
+        : "";
+
+      if (delta) {
+        accumulatedText += delta;
+        emitTextDelta(options, delta, accumulatedText);
+      }
+    });
+
+    const text = accumulatedText.trim();
+
+    if (!text) {
+      throw new Error("模型没有返回可用文本内容");
+    }
+
+    return {
+      text,
+      model: profile.model,
+      profileId: profile.id,
+      profileLabel: profile.displayName,
+      provider: profile.provider
+    };
   }
 
   const payload = (await response.json()) as {
@@ -550,35 +1173,40 @@ async function invokeAnthropic(
   };
 }
 
-function buildGoogleEndpoint(profile: ModelProfile): string {
+function buildGoogleEndpoint(profile: ModelProfile, stream = false): string {
   const baseUrl = profile.baseUrl?.trim();
-  const defaultEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(profile.model)}:generateContent?key=${encodeURIComponent(profile.apiKey)}`;
+  const method = stream ? "streamGenerateContent" : "generateContent";
+  const defaultEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(profile.model)}:${method}?key=${encodeURIComponent(profile.apiKey)}${stream ? "&alt=sse" : ""}`;
 
   if (!baseUrl) {
     return defaultEndpoint;
   }
 
-  if (baseUrl.includes(":generateContent")) {
-    return `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}key=${encodeURIComponent(profile.apiKey)}`;
+  if (baseUrl.includes(":generateContent") || baseUrl.includes(":streamGenerateContent")) {
+    const resolvedBaseUrl = stream
+      ? baseUrl.replace(":generateContent", ":streamGenerateContent")
+      : baseUrl.replace(":streamGenerateContent", ":generateContent");
+    return `${resolvedBaseUrl}${resolvedBaseUrl.includes("?") ? "&" : "?"}key=${encodeURIComponent(profile.apiKey)}${stream ? "&alt=sse" : ""}`;
   }
 
   if (baseUrl.includes("{model}")) {
     const resolved = baseUrl.replaceAll("{model}", encodeURIComponent(profile.model));
-    return `${resolved}${resolved.includes("?") ? "&" : "?"}key=${encodeURIComponent(profile.apiKey)}`;
+    return `${resolved}${resolved.includes("?") ? "&" : "?"}key=${encodeURIComponent(profile.apiKey)}${stream ? "&alt=sse" : ""}`;
   }
 
   const normalizedBaseUrl = trimTrailingSlash(baseUrl);
-  return `${normalizedBaseUrl}/${encodeURIComponent(profile.model)}:generateContent?key=${encodeURIComponent(profile.apiKey)}`;
+  return `${normalizedBaseUrl}/${encodeURIComponent(profile.model)}:${method}?key=${encodeURIComponent(profile.apiKey)}${stream ? "&alt=sse" : ""}`;
 }
 
 async function invokeGoogle(
   profile: ModelProfile,
   request: ModelTextRequest,
-  options: { signal?: AbortSignal } = {}
+  options: ModelTextInvokeOptions = {}
 ): Promise<ModelTextResponse> {
   const systemPrompt = getSystemPrompt(request.messages);
   const conversation = getConversationMessages(request.messages);
-  const response = await fetch(buildGoogleEndpoint(profile), {
+  const stream = canAttemptStream(profile, options);
+  const response = await fetch(buildGoogleEndpoint(profile, stream), {
     method: "POST",
     signal: options.signal,
     headers: {
@@ -599,6 +1227,53 @@ async function invokeGoogle(
 
   if (!response.ok) {
     throw new Error(await parseErrorResponse(response));
+  }
+
+  if (stream && shouldUseSseStream(response)) {
+    let accumulatedText = "";
+
+    await consumeSseEvents(response, (event) => {
+      if (!event.data.trim() || event.data.trim() === "[DONE]") {
+        return;
+      }
+
+      let payload: unknown;
+
+      try {
+        payload = JSON.parse(event.data) as unknown;
+      } catch (error) {
+        throw new Error(`模型流式响应解析失败：${error instanceof Error ? error.message : "未知错误"}`);
+      }
+
+      const payloadErrorMessage = extractErrorMessage(payload);
+
+      if (payloadErrorMessage) {
+        throw new Error(`模型服务错误：${payloadErrorMessage}`);
+      }
+
+      const delta = (getNestedValue(payload, ["candidates", 0, "content", "parts"]) as unknown[] | undefined)
+        ?.map((part) => readTextValue(getNestedValue(part, ["text"])))
+        .join("") ?? "";
+
+      if (delta) {
+        accumulatedText += delta;
+        emitTextDelta(options, delta, accumulatedText);
+      }
+    });
+
+    const text = accumulatedText.trim();
+
+    if (!text) {
+      throw new Error("模型没有返回可用文本内容");
+    }
+
+    return {
+      text,
+      model: profile.model,
+      profileId: profile.id,
+      profileLabel: profile.displayName,
+      provider: profile.provider
+    };
   }
 
   const payload = (await response.json()) as {
@@ -631,7 +1306,7 @@ async function invokeGoogle(
 export async function invokeModelText(
   profile: ModelProfile,
   request: ModelTextRequest,
-  options: { signal?: AbortSignal } = {}
+  options: ModelTextInvokeOptions = {}
 ): Promise<ModelTextResponse> {
   if (OPENAI_COMPATIBLE_PROVIDERS.has(profile.provider)) {
     return invokeOpenAiCompatible(profile, request, options);

@@ -405,15 +405,28 @@
                 </button>
 
                 <button
+                  v-if="ui.command.isRunning"
+                  type="button"
+                  class="model-icon-button command-input-submit is-running"
+                  :class="{ 'is-cancelling': ui.command.cancelRequested }"
+                  :disabled="ui.command.cancelRequested"
+                  aria-label="停止运行"
+                  :title="ui.command.cancelRequested ? '正在停止' : '停止运行'"
+                  @click="handleCommandRunCancel"
+                >
+                  <GIcon v-if="ui.command.cancelRequested" name="loading" spin />
+                  <GIcon v-else name="stop" />
+                </button>
+
+                <button
+                  v-else
                   type="submit"
                   class="model-icon-button command-input-submit"
-                  :class="{ 'is-running': ui.command.isRunning }"
-                  :disabled="!commandSelectedAgent || ui.command.isRunning"
-                  :aria-label="ui.command.isRunning ? '处理中' : '发送消息'"
-                  :title="ui.command.isRunning ? '处理中' : '发送消息'"
+                  :disabled="!commandSelectedAgent"
+                  aria-label="发送消息"
+                  title="发送消息"
                 >
-                  <GIcon v-if="ui.command.isRunning" name="loading" spin />
-                  <GIcon v-else name="enter" />
+                  <GIcon name="enter" />
                 </button>
               </div>
             </div>
@@ -517,6 +530,7 @@ defineProps({
   handleCommandInputCompositionStart: { type: Function, required: true },
   handleCommandInputEnterKeydown: { type: Function, required: true },
   handleCommandLoadMcpTools: { type: Function, required: true },
+  handleCommandRunCancel: { type: Function, required: true },
   handleCommandServerChange: { type: Function, required: true },
   handleCommandSessionDelete: { type: Function, required: true },
   handleCommandSubmit: { type: Function, required: true },

@@ -84,6 +84,17 @@
                   <p class="model-card-meta">
                     {{ getProviderMeta(profile.provider).label }} / {{ profile.model }}
                   </p>
+                  <div class="model-card-tags">
+                    <span class="model-stream-tag">
+                      {{ profile.apiFormat === "responses" ? "Responses" : "Chat" }}
+                    </span>
+                    <span
+                      class="model-stream-tag"
+                      :class="{ 'is-muted': profile.supportsStreaming === false }"
+                    >
+                      {{ profile.supportsStreaming === false ? "非流式" : "流式" }}
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -352,7 +363,38 @@
 
           <form class="model-form" @submit.prevent="handleModelEditorSave" @input="markModelEditorDirty" @change="markModelEditorDirty">
             <template v-for="field in modelEditorFields" :key="field.key">
-              <label
+              <div v-if="field.key === 'baseUrl'" class="model-endpoint-control-row field-full">
+                <label class="field model-endpoint-input-field">
+                  <span class="field-label">{{ field.label }}</span>
+                  <input
+                    v-model="ui.modelManagement.editor.values[field.key]"
+                    class="field-input"
+                    :placeholder="field.placeholder"
+                    :required="field.required"
+                  />
+                </label>
+
+                <div class="field model-api-options-field">
+                  <span class="field-label">接口格式</span>
+                  <div class="model-api-options-controls">
+                    <GCompactSelect
+                      v-model="ui.modelManagement.editor.values.apiFormat"
+                      class="model-api-format-select"
+                      aria-label="接口格式"
+                      :options="MODEL_API_FORMAT_OPTIONS"
+                      @change="markModelEditorDirty"
+                    />
+                    <label class="model-input-side-toggle">
+                      <input v-model="ui.modelManagement.editor.values.supportsStreaming" type="checkbox" />
+                      <span>流式输出</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <component
+                v-else
+                :is="field.key === 'apiKey' ? 'div' : 'label'"
                 class="field"
                 :class="{
                   'field-full': field.full,
@@ -394,7 +436,7 @@
                   :placeholder="field.placeholder"
                   :required="field.required"
                 />
-              </label>
+              </component>
             </template>
 
             <div class="field field-full">
@@ -500,7 +542,13 @@
 </template>
 
 <script setup>
+import GCompactSelect from "../../components/GCompactSelect.vue";
 import GIcon from "../../components/GIcon.vue";
+
+const MODEL_API_FORMAT_OPTIONS = [
+  { value: "chat_completions", label: "Chat" },
+  { value: "responses", label: "Responses" }
+];
 
 defineProps({
   ui: { type: Object, required: true },

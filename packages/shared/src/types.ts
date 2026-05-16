@@ -300,6 +300,8 @@ export interface ModelProfile {
   project?: string;
   location?: string;
   notes?: string;
+  apiFormat?: "chat_completions" | "responses";
+  supportsStreaming?: boolean;
   balanceQueryCode?: string;
   balanceSnapshot?: ModelBalanceSnapshot | null;
   updatedAt: string;

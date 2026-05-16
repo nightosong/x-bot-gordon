@@ -5514,6 +5514,33 @@ canvas {
   font-size: 12px;
 }
 
+.model-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.model-stream-tag {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 20px;
+  margin-top: 6px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(92, 225, 194, 0.18);
+  background: rgba(92, 225, 194, 0.08);
+  color: rgba(188, 248, 234, 0.9);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.model-stream-tag.is-muted {
+  border-color: rgba(247, 243, 235, 0.12);
+  background: rgba(247, 243, 235, 0.06);
+  color: rgba(247, 243, 235, 0.58);
+}
+
 .model-card-actions {
   display: flex;
   flex-wrap: wrap;
@@ -6413,6 +6440,86 @@ canvas {
 .model-form > .model-config-endpoint-field {
   justify-self: start;
   width: 66.666%;
+}
+
+.model-endpoint-control-row.field-full {
+  grid-column: 1 / -1;
+}
+
+.model-endpoint-control-row {
+  display: grid;
+  grid-template-columns: minmax(0, 66.666%) minmax(214px, 1fr);
+  align-items: end;
+  gap: 12px;
+}
+
+.model-endpoint-input-field,
+.model-api-options-field {
+  min-width: 0;
+}
+
+.model-api-options-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+}
+
+.model-api-format-select {
+  position: relative;
+  display: grid;
+  width: 148px;
+  height: 42px;
+  min-height: 42px;
+  padding: 0;
+  overflow: visible;
+  border-radius: 16px;
+  font-size: 12px;
+}
+
+.model-api-format-select .compact-select-trigger {
+  padding: 0 10px 0 13px;
+  border-color: rgba(247, 243, 235, 0.1);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.model-api-format-select .compact-select-trigger .action-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.model-api-format-select .compact-select-menu {
+  border-radius: 14px;
+}
+
+.model-api-format-select .compact-select-option {
+  min-height: 30px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 28px;
+}
+
+.model-input-side-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 42px;
+  color: rgba(247, 243, 235, 0.58);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.model-input-side-toggle input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--accent);
 }
 
 .field-label {
@@ -11225,11 +11332,18 @@ canvas {
   transform: none;
 }
 
+.command-input-submit.is-running {
+  border-color: rgba(236, 111, 92, 0.38);
+  background: rgba(236, 111, 92, 0.14);
+  color: var(--danger);
+}
+
+.command-input-submit.is-cancelling {
+  cursor: progress;
+}
+
 .command-input-submit.is-running:disabled {
   opacity: 0.86;
-  border-color: rgba(92, 225, 194, 0.34);
-  background: rgba(92, 225, 194, 0.18);
-  color: var(--accent);
 }
 
 @keyframes model-balance-spin {
@@ -11317,6 +11431,10 @@ canvas {
 
   .model-form > .model-config-endpoint-field {
     width: 100%;
+  }
+
+  .model-endpoint-control-row {
+    grid-template-columns: 1fr;
   }
 
   .writing-detail-head {

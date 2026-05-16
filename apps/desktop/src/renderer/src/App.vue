@@ -183,6 +183,7 @@
               :handle-command-input-composition-start="handleCommandInputCompositionStart"
               :handle-command-input-enter-keydown="handleCommandInputEnterKeydown"
               :handle-command-load-mcp-tools="handleCommandLoadMcpTools"
+              :handle-command-run-cancel="handleCommandRunCancel"
               :handle-command-server-change="handleCommandServerChange"
               :handle-command-session-delete="handleCommandSessionDelete"
               :handle-command-submit="handleCommandSubmit"
@@ -749,6 +750,7 @@ const {
   handleCommandInputCompositionStart,
   handleCommandInputEnterKeydown,
   handleCommandLoadMcpTools,
+  handleCommandRunCancel,
   handleCommandServerChange,
   handleCommandSessionDelete,
   handleCommandSubmit,

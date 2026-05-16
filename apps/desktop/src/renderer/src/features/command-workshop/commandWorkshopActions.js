@@ -30,6 +30,10 @@ function getErrorMessage(error) {
   return error instanceof Error ? error.message : "未知错误";
 }
 
+function isAbortError(error) {
+  return error instanceof Error && (error.name === "AbortError" || /aborted|abort|停止|中断/u.test(error.message));
+}
+
 function formatCommandFailureKind(failureKind) {
   if (failureKind === "schema_mismatch") {
     return "Schema 不匹配";
@@ -425,6 +429,28 @@ export function createCommandWorkshopActions({
     ui.command.attachments = ui.command.attachments.filter((attachment) => attachment.id !== attachmentId);
   }
 
+  async function handleCommandRunCancel() {
+    const progressEventId = ui.command.activeProgressEventId;
+
+    if (!desktopApi?.cancelAgentRun || !progressEventId || !ui.command.isRunning) {
+      return;
+    }
+
+    ui.command.cancelRequested = true;
+    setStatus("正在停止命令工坊本轮运行...", "warning");
+
+    try {
+      const cancelled = await desktopApi.cancelAgentRun(progressEventId);
+
+      if (!cancelled) {
+        setStatus("当前运行已进入收尾阶段，正在等待结束。", "warning");
+      }
+    } catch (error) {
+      console.error("Failed to cancel command workshop run", error);
+      setStatus(`停止失败：${getErrorMessage(error)}`, "danger");
+    }
+  }
+
   function handleAgentRunProgress(payload) {
     if (!payload?.progressEventId || payload.progressEventId !== ui.command.activeProgressEventId) {
       return;
@@ -434,6 +460,7 @@ export function createCommandWorkshopActions({
       progressEventId: payload.progressEventId,
       phase: payload.phase ?? "running",
       statusText: payload.statusText || "正在执行中",
+      text: typeof payload.text === "string" ? payload.text : ui.command.liveProgress?.text ?? "",
       updatedAt: payload.updatedAt ?? new Date().toISOString(),
       artifact: buildCommandWorkshopLiveArtifact(payload)
     };
@@ -553,12 +580,14 @@ export function createCommandWorkshopActions({
 
     upsertCommandWorkshopSessionState(pendingSession);
     ui.command.isRunning = true;
+    ui.command.cancelRequested = false;
     ui.command.isInputComposing = false;
     ui.command.activeProgressEventId = progressEventId;
     ui.command.liveProgress = {
       progressEventId,
       phase: "running",
       statusText: `命令工坊正在运行 Agent「${agent.name}」...`,
+      text: "",
       updatedAt: startedAt,
       artifact: buildCommandWorkshopLiveArtifact({
         profileLabel: "",
@@ -629,6 +658,7 @@ export function createCommandWorkshopActions({
         await refreshWorkbenchSnapshot();
       }
       ui.command.isRunning = false;
+      ui.command.cancelRequested = false;
       ui.command.activeProgressEventId = null;
       ui.command.liveProgress = null;
       setStatus(`命令工坊已完成本轮响应（${result.profileLabel}）。`, "success");
@@ -636,12 +666,16 @@ export function createCommandWorkshopActions({
     } catch (error) {
       console.error("Failed to run command workshop session", error);
       const failedAt = new Date().toISOString();
+      const wasCancelled = ui.command.cancelRequested || isAbortError(error);
+      const streamedText = String(ui.command.liveProgress?.text ?? "").trim();
+      const stoppedContent = streamedText ? `${streamedText}\n\n（已停止）` : "本轮运行已停止。";
       const assistantMessage = {
-        id: `command_message_${Date.now()}_error`,
+        id: `command_message_${Date.now()}_${wasCancelled ? "stopped" : "error"}`,
         role: "assistant",
-        content: `运行失败：${getErrorMessage(error)}`,
-        state: "error",
-        createdAt: failedAt
+        content: wasCancelled ? stoppedContent : `运行失败：${getErrorMessage(error)}`,
+        state: wasCancelled ? "stopped" : "error",
+        createdAt: failedAt,
+        ...(ui.command.liveProgress?.artifact ? { artifact: ui.command.liveProgress.artifact } : {})
       };
       const failedSession = {
         ...pendingSession,
@@ -660,16 +694,20 @@ export function createCommandWorkshopActions({
       }
 
       ui.command.isRunning = false;
+      ui.command.cancelRequested = false;
       ui.command.activeProgressEventId = null;
       ui.command.liveProgress = null;
-      setStatus(`命令工坊运行失败：${getErrorMessage(error)}`, "danger");
-      void showAlertDialog({
-        tone: "danger",
-        title: "命令工坊运行失败",
-        message: getErrorMessage(error),
-        detail: "失败消息已保留在当前会话中，可回到消息流查看上下文后重试。",
-        confirmText: "知道了"
-      });
+      setStatus(wasCancelled ? "命令工坊已停止，本轮部分输出已保留。" : `命令工坊运行失败：${getErrorMessage(error)}`, wasCancelled ? "warning" : "danger");
+
+      if (!wasCancelled) {
+        void showAlertDialog({
+          tone: "danger",
+          title: "命令工坊运行失败",
+          message: getErrorMessage(error),
+          detail: "失败消息已保留在当前会话中，可回到消息流查看上下文后重试。",
+          confirmText: "知道了"
+        });
+      }
       scrollCommandToBottom();
     }
   }
@@ -955,6 +993,12 @@ export function createCommandWorkshopActions({
   }
 
   function getCommandLiveStatusText(liveProgress) {
+    const streamedText = String(liveProgress?.text ?? "").trim();
+
+    if (streamedText) {
+      return streamedText;
+    }
+
     const artifact = liveProgress?.artifact;
     const calls = Array.isArray(artifact?.mcpCalls) ? artifact.mcpCalls : [];
     const lastCall = calls[calls.length - 1];
@@ -1017,6 +1061,7 @@ export function createCommandWorkshopActions({
     handleCommandInputCompositionStart,
     handleCommandInputEnterKeydown,
     handleCommandLoadMcpTools,
+    handleCommandRunCancel,
     handleCommandServerChange,
     handleCommandSessionDelete,
     handleCommandSubmit,
