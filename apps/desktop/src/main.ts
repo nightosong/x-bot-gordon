@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell } from "electron";
 import type { IpcMainEvent } from "electron";
 import { spawn } from "node:child_process";
+import { createHmac } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,6 +21,7 @@ import {
   deleteSkillDefinition,
   deleteWeeklyProgress,
   deleteWritingBook,
+  getWeeklyFeishuSettings,
   importSkillDefinitionFromGithub,
   listAgentProfiles,
   listCommandWorkshopSessions,
@@ -33,6 +35,7 @@ import {
   listVideoProjects,
   listWritingBooks,
   listModelSettings,
+  saveWeeklyFeishuSettings,
   saveWritingBook,
   saveWeeklyProgress,
   toggleAgentProfileStatus,
@@ -58,6 +61,9 @@ import type {
   MusicProjectExportFormat,
   MusicProjectExportRequest,
   MusicProject,
+  WeeklyDailyReportFeishuSendRequest,
+  WeeklyDailyReportFeishuSendResult,
+  WeeklyFeishuSettings,
   VideoProjectExportFormat,
   VideoProjectExportRequest,
   WritingBookExportFormat,
@@ -80,6 +86,7 @@ const MODEL_BALANCE_POLL_INTERVAL_MS = 60 * 60 * 1000;
 const MODEL_BALANCE_INITIAL_POLL_DELAY_MS = 60 * 1000;
 let modelBalancePollingTimer: NodeJS.Timeout | null = null;
 let modelBalancePollingInFlight = false;
+const FEISHU_DAILY_REPORT_CONTENT_LIMIT = 15000;
 
 type GordonConfirmWindowTone = "neutral" | "warning" | "danger";
 
@@ -256,6 +263,157 @@ function toCloneableIpcValue<T>(value: T): T {
   }
 
   return normalize(value) as T;
+}
+
+function normalizeFeishuWebhookUrl(value: string): string {
+  const webhookUrl = String(value ?? "").trim();
+
+  if (!webhookUrl) {
+    throw new Error("请先设置飞书群机器人 Webhook。");
+  }
+
+  const url = new URL(webhookUrl);
+
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new Error("飞书 Webhook 必须是 HTTP 或 HTTPS 地址。");
+  }
+
+  return url.toString();
+}
+
+function buildFeishuSignature(secret: string): { timestamp: string; sign: string } | null {
+  const normalizedSecret = String(secret ?? "").trim();
+
+  if (!normalizedSecret) {
+    return null;
+  }
+
+  const timestamp = `${Math.floor(Date.now() / 1000)}`;
+  const stringToSign = `${timestamp}\n${normalizedSecret}`;
+  const sign = createHmac("sha256", stringToSign).digest("base64");
+
+  return { timestamp, sign };
+}
+
+function truncateFeishuDailyReportContent(content: string): string {
+  if (content.length <= FEISHU_DAILY_REPORT_CONTENT_LIMIT) {
+    return content;
+  }
+
+  return `${content.slice(0, FEISHU_DAILY_REPORT_CONTENT_LIMIT)}\n\n... 内容较长，已自动截断后发送。`;
+}
+
+function buildFeishuDailyReportPayload(
+  settings: WeeklyFeishuSettings,
+  request: WeeklyDailyReportFeishuSendRequest
+): Record<string, unknown> {
+  const titlePrefix = String(settings.titlePrefix ?? "").trim();
+  const title = [titlePrefix, String(request.title ?? "").trim()].filter(Boolean).join(" · ") || "Gordon 日报";
+  const content = truncateFeishuDailyReportContent(String(request.content ?? "").trim());
+  const signature = buildFeishuSignature(settings.secret);
+  const payload: Record<string, unknown> = {
+    msg_type: "interactive",
+    card: {
+      config: {
+        wide_screen_mode: true
+      },
+      header: {
+        template: "turquoise",
+        title: {
+          tag: "plain_text",
+          content: title
+        }
+      },
+      elements: [
+        {
+          tag: "div",
+          text: {
+            tag: "lark_md",
+            content
+          }
+        },
+        {
+          tag: "hr"
+        },
+        {
+          tag: "note",
+          elements: [
+            {
+              tag: "plain_text",
+              content: `来自 Gordon · ${new Date().toLocaleString("zh-CN", { hour12: false })}`
+            }
+          ]
+        }
+      ]
+    }
+  };
+
+  if (signature) {
+    payload.timestamp = signature.timestamp;
+    payload.sign = signature.sign;
+  }
+
+  return payload;
+}
+
+async function parseFeishuWebhookResponse(response: Response): Promise<Record<string, unknown>> {
+  const responseText = await response.text();
+
+  if (!responseText.trim()) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(responseText) as Record<string, unknown>;
+  } catch {
+    return { message: responseText };
+  }
+}
+
+function getFeishuResponseCode(payload: Record<string, unknown>): number | null {
+  const rawCode = payload.code ?? payload.Code ?? payload.StatusCode ?? payload.statusCode;
+  const code = Number(rawCode);
+
+  return Number.isFinite(code) ? code : null;
+}
+
+function getFeishuResponseMessage(payload: Record<string, unknown>): string {
+  return String(payload.msg ?? payload.message ?? payload.StatusMessage ?? payload.statusMessage ?? "").trim();
+}
+
+async function sendWeeklyDailyReportToFeishu(
+  request: WeeklyDailyReportFeishuSendRequest
+): Promise<WeeklyDailyReportFeishuSendResult> {
+  const settings = await getWeeklyFeishuSettings();
+  const webhookUrl = normalizeFeishuWebhookUrl(settings.webhookUrl);
+  const content = String(request.content ?? "").trim();
+
+  if (!content) {
+    throw new Error("当前没有可发送的日报内容。");
+  }
+
+  const response = await fetch(webhookUrl, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify(buildFeishuDailyReportPayload(settings, { ...request, content }))
+  });
+  const responsePayload = await parseFeishuWebhookResponse(response);
+  const responseCode = getFeishuResponseCode(responsePayload);
+  const responseMessage = getFeishuResponseMessage(responsePayload) || (response.ok ? "success" : response.statusText);
+  const isBusinessOk = responseCode === null || responseCode === 0;
+
+  if (!response.ok || !isBusinessOk) {
+    throw new Error(`飞书返回异常：${responseMessage || `HTTP ${response.status}`}`);
+  }
+
+  return {
+    ok: true,
+    sentAt: new Date().toISOString(),
+    statusCode: responseCode ?? response.status,
+    responseMessage
+  };
 }
 
 function normalizeWritingBookExportFormat(value: unknown): WritingBookExportFormat {
@@ -1914,6 +2072,14 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("gordon:weekly-progress:generate-report", async (_event, request) =>
     generateWeeklyProgressReport(request)
+  );
+  ipcMain.handle("gordon:weekly-progress:feishu-settings:get", async () => getWeeklyFeishuSettings());
+  ipcMain.handle("gordon:weekly-progress:feishu-settings:save", async (_event, settings: WeeklyFeishuSettings) =>
+    saveWeeklyFeishuSettings(settings)
+  );
+  ipcMain.handle(
+    "gordon:weekly-progress:send-daily-report-to-feishu",
+    async (_event, request: WeeklyDailyReportFeishuSendRequest) => sendWeeklyDailyReportToFeishu(request)
   );
 
   await createMainWindow();

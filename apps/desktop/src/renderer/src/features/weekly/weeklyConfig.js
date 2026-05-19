@@ -19,7 +19,27 @@ export function createWeeklyState() {
     reportFeedbackText: "",
     reportFeedbackTone: "neutral",
     reportCopyState: "idle",
+    dailyReportShareState: "idle",
+    isSendingDailyReport: false,
     dailyReportUseModelOptimization: false,
+    feishuSettings: {
+      webhookUrl: "",
+      secret: "",
+      titlePrefix: "Gordon 日报",
+      updatedAt: ""
+    },
+    feishuSettingsDraft: {
+      webhookUrl: "",
+      secret: "",
+      titlePrefix: "Gordon 日报",
+      updatedAt: ""
+    },
+    isFeishuSettingsLoaded: false,
+    isFeishuSettingsDialogOpen: false,
+    isFeishuSettingsLoading: false,
+    isFeishuSettingsSaving: false,
+    feishuSettingsFeedback: "",
+    feishuSettingsFeedbackTone: "neutral",
     isReportTemplateCollapsed: true,
     reportTemplateAi: {
       isOpen: false,

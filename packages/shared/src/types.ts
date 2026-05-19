@@ -194,6 +194,26 @@ export interface WeeklyProgressRecord {
   archivedAt?: string;
 }
 
+export interface WeeklyFeishuSettings {
+  webhookUrl: string;
+  secret: string;
+  titlePrefix: string;
+  updatedAt: string;
+}
+
+export interface WeeklyDailyReportFeishuSendRequest {
+  title: string;
+  weekTitle: string;
+  content: string;
+}
+
+export interface WeeklyDailyReportFeishuSendResult {
+  ok: boolean;
+  sentAt: string;
+  statusCode: number;
+  responseMessage: string;
+}
+
 export interface DatabaseConnectionItem {
   id: string;
   label: string;

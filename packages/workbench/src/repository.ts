@@ -48,6 +48,7 @@ import type {
   WorkflowRecord,
   WorkflowRequestStep,
   WorkflowVariableBinding,
+  WeeklyFeishuSettings,
   WeeklyProgressItemStatus,
   WeeklyProgressProjectItem,
   WeeklyProgressRecord,
@@ -91,6 +92,29 @@ function getDefaultModelSettings(): ModelSettings {
   };
 }
 
+function getDefaultWeeklyFeishuSettings(): WeeklyFeishuSettings {
+  return {
+    webhookUrl: "",
+    secret: "",
+    titlePrefix: "Gordon 日报",
+    updatedAt: ""
+  };
+}
+
+function normalizeWeeklyFeishuSettings(
+  settings: Partial<WeeklyFeishuSettings> | null | undefined,
+  options: { touch?: boolean } = {}
+): WeeklyFeishuSettings {
+  const fallback = getDefaultWeeklyFeishuSettings();
+
+  return {
+    webhookUrl: String(settings?.webhookUrl ?? fallback.webhookUrl).trim(),
+    secret: String(settings?.secret ?? fallback.secret).trim(),
+    titlePrefix: String(settings?.titlePrefix ?? fallback.titlePrefix).trim() || fallback.titlePrefix,
+    updatedAt: options.touch ? new Date().toISOString() : String(settings?.updatedAt ?? fallback.updatedAt).trim()
+  };
+}
+
 const LEGACY_DEFAULT_WEEKLY_REPORT_TEMPLATE = readPromptAsset("weeklyReportTemplateLegacy");
 const DEFAULT_WEEKLY_REPORT_TEMPLATE = readPromptAsset("weeklyReportTemplateDefault");
 const DEFAULT_WEEKLY_REPORT_TEMPLATE_ID = "builtin:weekly-report-template:default";
@@ -101,6 +125,10 @@ const WEEKLY_PROGRESS_FALLBACK_PROJECT_TITLE = "未分类项目";
 
 function getWeeklyProgressFilePath(): string {
   return resolveFromRoot("data", "workbench", "weekly-progress.json");
+}
+
+function getWeeklyFeishuSettingsFilePath(): string {
+  return resolveFromRoot("data", "workbench", "weekly-feishu-settings.json");
 }
 
 function getWorkbenchDirectoryPath(): string {
@@ -1672,6 +1700,31 @@ export async function deleteWeeklyProgress(recordId: string): Promise<WeeklyProg
 
   await writeWeeklyProgressRecords(nextRecords);
   return ensureWeeklyProgressRecords();
+}
+
+export async function getWeeklyFeishuSettings(): Promise<WeeklyFeishuSettings> {
+  const filePath = getWeeklyFeishuSettingsFilePath();
+
+  try {
+    return normalizeWeeklyFeishuSettings(await readJsonFile<WeeklyFeishuSettings>(filePath));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return getDefaultWeeklyFeishuSettings();
+    }
+
+    throw error;
+  }
+}
+
+export async function saveWeeklyFeishuSettings(settings: WeeklyFeishuSettings): Promise<WeeklyFeishuSettings> {
+  const directory = getWorkbenchDirectoryPath();
+  const filePath = getWeeklyFeishuSettingsFilePath();
+  const normalizedSettings = normalizeWeeklyFeishuSettings(settings, { touch: true });
+
+  await mkdir(directory, { recursive: true });
+  await writeFile(filePath, `${JSON.stringify(normalizedSettings, null, 2)}\n`, "utf8");
+
+  return normalizedSettings;
 }
 
 async function readWorkbenchCollection<T>(filePath: string): Promise<T[]> {

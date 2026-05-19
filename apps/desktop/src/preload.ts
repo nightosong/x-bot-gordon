@@ -30,6 +30,9 @@ import type {
   WritingBookSaveOptions,
   SkillDefinition,
   WorkflowLibraryItem,
+  WeeklyDailyReportFeishuSendRequest,
+  WeeklyDailyReportFeishuSendResult,
+  WeeklyFeishuSettings,
   WritingBook,
   WeeklyProgressRecord,
   WeeklyProgressRewriteRequest,
@@ -231,5 +234,13 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
   generateDailyProgressReport: (request: DailyReportGenerateRequest) =>
     ipcRenderer.invoke("gordon:weekly-progress:generate-daily-report", request),
   generateWeeklyProgressReport: (request: WeeklyReportGenerateRequest) =>
-    ipcRenderer.invoke("gordon:weekly-progress:generate-report", request)
+    ipcRenderer.invoke("gordon:weekly-progress:generate-report", request),
+  getWeeklyFeishuSettings: (): Promise<WeeklyFeishuSettings> =>
+    ipcRenderer.invoke("gordon:weekly-progress:feishu-settings:get"),
+  saveWeeklyFeishuSettings: (settings: WeeklyFeishuSettings): Promise<WeeklyFeishuSettings> =>
+    ipcRenderer.invoke("gordon:weekly-progress:feishu-settings:save", toPlainIpcData(settings)),
+  sendWeeklyDailyReportToFeishu: (
+    request: WeeklyDailyReportFeishuSendRequest
+  ): Promise<WeeklyDailyReportFeishuSendResult> =>
+    ipcRenderer.invoke("gordon:weekly-progress:send-daily-report-to-feishu", toPlainIpcData(request))
 });

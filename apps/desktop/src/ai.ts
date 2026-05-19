@@ -66,8 +66,8 @@ export async function rewriteWeeklyProgressItem(
   }
 
   return invokeActiveModel({
-    temperature: 0.4,
-    maxOutputTokens: 500,
+    temperature: 0.34,
+    maxOutputTokens: 420,
     messages: [
       {
         role: "system",
@@ -77,6 +77,12 @@ export async function rewriteWeeklyProgressItem(
         role: "user",
         content: `当前周标题：
 ${request.weekTitle}
+
+优化目标：
+把“需要优化的选中内容”重写成一条可以直接放进今日日报 / 本周任务清单的任务描述。
+请重点提升信息密度：补齐动作、对象、内容/范围、目的/影响，避免只做同义词替换。
+若原文类似“更新 vidu 系列模型协议配置”，应输出“完成 Vidu 系列模型协议配置对齐，优化统一调用兼容性”这种工程化表达。
+不要原样返回，不要解释。
 
 完整上下文：
 ${request.fullContent || "(空)"}
