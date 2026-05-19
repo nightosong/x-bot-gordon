@@ -1,13 +1,13 @@
 <template>
 <div
   class="workspace-stage workspace-stage-scroll"
-  :class="{ 'workspace-stage-flush': ui.marketplace.view === 'writingDetail' || ui.marketplace.view === 'comicDetail' || ui.marketplace.view === 'videoDetail' || ui.marketplace.view === 'fortune' || ui.marketplace.view === 'music' }"
+  :class="{ 'workspace-stage-flush': ui.marketplace.view === 'writingDetail' || ui.marketplace.view === 'comicDetail' || ui.marketplace.view === 'videoDetail' || ui.marketplace.view === 'musicDetail' || ui.marketplace.view === 'fortune' }"
 >
   <div
     class="marketplace-shell"
     :class="{
-      'marketplace-shell-detail': ui.marketplace.view === 'writingDetail' || ui.marketplace.view === 'comicDetail' || ui.marketplace.view === 'videoDetail' || ui.marketplace.view === 'fortune' || ui.marketplace.view === 'music',
-      'marketplace-shell-shelf': ui.marketplace.view === 'writingShelf' || ui.marketplace.view === 'comicShelf' || ui.marketplace.view === 'videoShelf'
+      'marketplace-shell-detail': ui.marketplace.view === 'writingDetail' || ui.marketplace.view === 'comicDetail' || ui.marketplace.view === 'videoDetail' || ui.marketplace.view === 'musicDetail' || ui.marketplace.view === 'fortune',
+      'marketplace-shell-shelf': ui.marketplace.view === 'writingShelf' || ui.marketplace.view === 'comicShelf' || ui.marketplace.view === 'videoShelf' || ui.marketplace.view === 'musicShelf'
     }"
   >
     <template v-if="ui.marketplace.view === 'apps'">
@@ -139,161 +139,603 @@
       </section>
     </template>
 
-    <template v-else-if="ui.marketplace.view === 'music'">
-      <section class="writing-detail-shell fortune-detail-shell music-detail-shell">
-        <header class="writing-detail-head fortune-detail-head music-detail-head">
+    <template v-else-if="ui.marketplace.view === 'musicShelf'">
+      <section class="workflow-library-detail-head writing-shelf-head music-shelf-head">
+        <div class="workflow-library-detail-head-side">
           <button type="button" class="model-icon-button weekly-back-button" aria-label="返回应用广场" title="返回应用广场" @click="backMusicMarketplace">
             <GIcon name="return" />
           </button>
+        </div>
 
-          <div class="writing-detail-title">
-            <p class="fortune-title-text music-title-text">{{ MUSIC_APP_NAME }}</p>
+        <div class="workflow-library-detail-head-center">
+          <p class="workflow-library-detail-title">{{ MUSIC_APP_NAME }}</p>
+        </div>
+
+        <div class="workflow-library-detail-head-side workflow-library-detail-head-side-end">
+          <span class="status-pill">{{ musicProjects.length }} 张专辑</span>
+          <button type="button" class="model-icon-button" aria-label="新建音乐专辑" title="新建音乐专辑" @click="createMusicProject">
+            <GIcon name="add" />
+          </button>
+        </div>
+      </section>
+
+      <section class="writing-shelf-grid music-project-grid" :class="{ 'is-empty': !musicProjects.length }">
+        <p v-if="!musicProjects.length" class="writing-shelf-empty" role="status">暂无音乐专辑</p>
+        <article
+          v-for="project in musicProjects"
+          :key="project.id"
+          class="writing-book-card music-project-card"
+          :class="`is-${project.coverTone}`"
+          role="button"
+          tabindex="0"
+          :aria-label="`打开${project.title}`"
+          @click="openMusicProject(project.id)"
+          @keydown.enter.prevent="openMusicProject(project.id)"
+          @keydown.space.prevent="openMusicProject(project.id)"
+        >
+          <button
+            type="button"
+            class="shelf-card-delete"
+            aria-label="删除音乐专辑"
+            @click.stop="deleteMusicProjectFromWorkbench(project.id)"
+            @keydown.enter.stop
+            @keydown.space.stop
+          >
+            <GIcon name="delete" :size="12" />
+          </button>
+          <div class="music-album-cover music-project-cover" :class="`is-${project.coverTone}`" aria-hidden="true">
+            <span>{{ project.title.slice(0, 1) || "音" }}</span>
+          </div>
+          <div class="writing-book-card-main">
+            <div>
+              <p class="writing-book-title">{{ project.title }}</p>
+              <p class="writing-book-meta">{{ project.artist }} / {{ project.genre }}</p>
+            </div>
+            <p class="models-copy">{{ truncateText(project.summary || project.mood, 98) }}</p>
+            <div class="writing-book-card-foot">
+              <span class="pill">{{ project.status }}</span>
+              <span class="pill pill-neutral">{{ project.tracks.length }} 首</span>
+              <span class="pill pill-neutral">{{ getMusicProjectFinishedCount(project) }} 成品</span>
+            </div>
+          </div>
+        </article>
+      </section>
+    </template>
+
+    <template v-else-if="ui.marketplace.view === 'musicDetail' && activeMusicProject">
+      <section class="writing-detail-shell music-detail-shell">
+        <header class="writing-detail-head music-detail-head">
+          <button type="button" class="model-icon-button weekly-back-button" aria-label="返回专辑列表" title="返回专辑列表" @click="backMusicShelf">
+            <GIcon name="return" />
+          </button>
+
+          <div class="writing-tab-bar writing-detail-head-tabs" role="tablist" aria-label="音乐专辑详情模块">
+            <button
+              v-for="tab in MUSIC_APP_TABS"
+              :key="tab.id"
+              type="button"
+              class="writing-tab"
+              :class="{ 'is-active': ui.marketplace.music.activeTab === tab.id }"
+              :aria-label="tab.label"
+              :aria-selected="ui.marketplace.music.activeTab === tab.id ? 'true' : 'false'"
+              :title="tab.label"
+              @click="setMusicTab(tab.id)"
+            >
+              <span>{{ tab.kicker }}</span>
+            </button>
           </div>
 
           <div class="model-section-actions">
-            <span class="pill">{{ activeMusicModeMeta.label }}</span>
-            <span class="pill pill-neutral">创作草案</span>
+            <span class="pill">{{ activeMusicProject.status }}</span>
+            <span class="pill pill-neutral">{{ activeMusicTracks.length }} 首</span>
+            <span class="pill pill-neutral">{{ activeMusicFinishedCount }} 成品</span>
+            <button
+              type="button"
+              class="model-icon-button writing-ai-float-trigger"
+              :aria-label="ui.marketplace.music.isAiDrawerOpen ? '收起瑶音小筑' : '打开瑶音小筑'"
+              :title="ui.marketplace.music.isAiDrawerOpen ? '收起瑶音小筑' : '打开瑶音小筑'"
+              @click="setMusicAiDrawerOpen(!ui.marketplace.music.isAiDrawerOpen)"
+            >
+              <GIcon name="sparkles" />
+            </button>
           </div>
         </header>
 
-        <section class="fortune-workbench music-workbench">
-          <aside class="fortune-rail music-rail">
-            <div class="music-mark-large" aria-hidden="true">
-              <span>音</span>
-            </div>
+        <section
+          class="writing-detail-layout music-detail-layout"
+          :class="{
+            'is-profile-collapsed': ui.marketplace.music.isProfileCollapsed,
+            'is-ai-open': ui.marketplace.music.isAiDrawerOpen
+          }"
+        >
+          <aside class="writing-detail-rail music-detail-rail" :aria-expanded="ui.marketplace.music.isProfileCollapsed ? 'false' : 'true'">
+            <button
+              type="button"
+              class="model-icon-button writing-profile-toggle"
+              :aria-label="ui.marketplace.music.isProfileCollapsed ? '展开专辑信息' : '折叠专辑信息'"
+              :title="ui.marketplace.music.isProfileCollapsed ? '展开专辑信息' : '折叠专辑信息'"
+              @click="toggleMusicProfileRail"
+            >
+              <GIcon :name="ui.marketplace.music.isProfileCollapsed ? 'chevronRight' : 'chevronLeft'" />
+            </button>
 
-            <div class="fortune-mode-list music-mode-list" role="tablist" aria-label="瑶琴映月创作类型">
-              <button
-                v-for="mode in MUSIC_CREATION_MODES"
-                :key="mode.id"
-                type="button"
-                class="fortune-mode-button music-mode-button"
-                :class="{ 'is-active': ui.marketplace.music.activeMode === mode.id }"
-                :aria-selected="ui.marketplace.music.activeMode === mode.id ? 'true' : 'false'"
-                @click="setMusicMode(mode.id)"
-              >
-                <span>{{ mode.kicker }}</span>
-                <strong>{{ mode.label }}</strong>
-              </button>
-            </div>
-          </aside>
-
-          <main class="fortune-main-stage music-main-stage">
-            <article class="writing-editor-card fortune-input-card music-input-card">
-              <div class="writing-editor-head">
-                <div>
-                  <p class="feature-kicker">{{ activeMusicModeMeta.kicker }}</p>
-                  <p class="model-section-title">{{ activeMusicModeMeta.label }}</p>
+            <div v-if="!ui.marketplace.music.isProfileCollapsed" class="writing-rail-content music-rail-content">
+              <div class="music-project-profile">
+                <div class="music-album-cover music-project-cover-large" :class="`is-${activeMusicProject.coverTone}`" aria-hidden="true">
+                  <span>{{ activeMusicProject.title.slice(0, 1) || "音" }}</span>
                 </div>
-                <button
-                  type="button"
-                  class="model-action fortune-run-button music-run-button"
-                  :disabled="ui.marketplace.music.isGenerating"
-                  @click="generateMusicDraft"
-                >
-                  <GIcon
-                    :name="ui.marketplace.music.isGenerating ? 'loading' : 'sparkles'"
-                    :spin="ui.marketplace.music.isGenerating"
-                    :size="15"
+
+                <label class="field writing-rail-title-field">
+                  <span class="field-label">专辑名称</span>
+                  <input
+                    :value="activeMusicProject.title"
+                    class="field-input writing-rail-title-input"
+                    aria-label="音乐专辑名"
+                    @input="setMusicProjectTitle($event.target.value)"
                   />
-                  {{ ui.marketplace.music.isGenerating ? "谱写中" : "生成草案" }}
-                </button>
-              </div>
-
-              <div class="fortune-form-grid music-form-grid">
-                <div class="field field-full">
-                  <span class="field-label">主题 / 需求</span>
-                  <FieldAiOptimizer
-                    :actions="fieldAiActions"
-                    :state="ui.marketplace.fieldAi"
-                    :field-id="`music-theme-${ui.marketplace.music.activeMode}`"
-                    :app-name="MUSIC_APP_NAME"
-                    label="主题 / 需求"
-                    :value="ui.marketplace.music.theme"
-                    :context="buildMusicFieldAiContext('主题 / 需求')"
-                    :disabled="ui.marketplace.music.isGenerating"
-                    :set-value="setMusicTheme"
-                  >
-                    <textarea
-                      :value="ui.marketplace.music.theme"
-                      class="field-textarea fortune-question-textarea music-theme-textarea"
-                      :placeholder="activeMusicModeMeta.placeholder"
-                      :disabled="ui.marketplace.music.isGenerating"
-                      @input="setMusicTheme($event.target.value)"
-                    ></textarea>
-                  </FieldAiOptimizer>
-                </div>
+                </label>
 
                 <label class="field">
-                  <span class="field-label">曲风 / 情绪 / 场景</span>
+                  <span class="field-label">制作人</span>
                   <input
-                    :value="ui.marketplace.music.style"
-                    class="field-input"
-                    placeholder="例如 City Pop、国风电子、民谣、Lo-fi、温柔、热烈"
-                    :disabled="ui.marketplace.music.isGenerating"
-                    @input="setMusicStyle($event.target.value)"
+                    :value="activeMusicProject.artist"
+                    class="field-input writing-mini-input"
+                    @input="setMusicProjectArtist($event.target.value)"
+                  />
+                </label>
+
+                <label class="field">
+                  <span class="field-label">风格</span>
+                  <input
+                    :value="activeMusicProject.genre"
+                    class="field-input writing-mini-input"
+                    @input="setMusicProjectGenre($event.target.value)"
+                  />
+                </label>
+
+                <label class="field">
+                  <span class="field-label">情绪</span>
+                  <input
+                    :value="activeMusicProject.mood"
+                    class="field-input writing-mini-input"
+                    @input="setMusicProjectMood($event.target.value)"
+                  />
+                </label>
+
+                <label class="field">
+                  <span class="field-label">状态</span>
+                  <input
+                    :value="activeMusicProject.status"
+                    class="field-input writing-mini-input"
+                    @input="setMusicProjectStatus($event.target.value)"
                   />
                 </label>
 
                 <div class="field">
-                  <span class="field-label">参考歌词 / 素材</span>
+                  <span class="field-label">专辑方向</span>
                   <FieldAiOptimizer
                     :actions="fieldAiActions"
                     :state="ui.marketplace.fieldAi"
-                    :field-id="`music-reference-${ui.marketplace.music.activeMode}`"
+                    :field-id="`music-project-summary-${activeMusicProject.id}`"
                     :app-name="MUSIC_APP_NAME"
-                    label="参考歌词 / 素材"
-                    :value="ui.marketplace.music.reference"
-                    :context="buildMusicFieldAiContext('参考歌词 / 素材')"
-                    :disabled="ui.marketplace.music.isGenerating"
-                    :set-value="setMusicReference"
+                    label="专辑方向"
+                    :value="activeMusicProject.summary"
+                    :context="`专辑：${activeMusicProject.title}\n风格：${activeMusicProject.genre}\n情绪：${activeMusicProject.mood}`"
+                    :set-value="setMusicProjectSummary"
                   >
                     <textarea
-                      :value="ui.marketplace.music.reference"
-                      class="field-textarea fortune-context-textarea music-reference-textarea"
-                      placeholder="可选，贴已有歌词、旋律描述、参考歌气质或使用场景。"
-                      :disabled="ui.marketplace.music.isGenerating"
-                      @input="setMusicReference($event.target.value)"
+                      :value="activeMusicProject.summary"
+                      class="field-textarea music-project-summary-textarea"
+                      placeholder="专辑主题、听感、曲目边界和使用场景。"
+                      @input="setMusicProjectSummary($event.target.value)"
                     ></textarea>
                   </FieldAiOptimizer>
                 </div>
               </div>
-            </article>
 
-            <article class="writing-editor-card fortune-output-card music-output-card">
-              <div class="writing-editor-head">
-                <div>
-                  <p class="feature-kicker">Draft</p>
-                  <p class="model-section-title">音乐草案</p>
+              <div class="comic-rail-footer">
+                <div class="writing-stat-list">
+                  <span class="pill pill-neutral">{{ getMusicProjectDraftCount(activeMusicProject) }} 草稿</span>
+                  <span class="pill pill-neutral">{{ getMusicTotalDuration(activeMusicProject) }} 秒</span>
                 </div>
-                <button
-                  type="button"
-                  class="model-action-secondary fortune-clear-button music-clear-button"
-                  :disabled="ui.marketplace.music.isGenerating || !ui.marketplace.music.output"
-                  @click="clearMusicOutput"
-                >
-                  清空
+              </div>
+            </div>
+
+            <div v-if="!ui.marketplace.music.isProfileCollapsed" class="writing-profile-actions">
+              <span class="pill pill-neutral writing-profile-update-pill">更新 {{ formatWritingBookUpdatedAt(activeMusicProject.updatedAt) }}</span>
+              <button
+                type="button"
+                class="writing-mini-text-button"
+                :disabled="ui.marketplace.music.isExporting"
+                :title="`导出 ${activeMusicExportFileName}`"
+                @click="openMusicExportDialog"
+              >
+                导出
+              </button>
+            </div>
+          </aside>
+
+          <main class="writing-main-stage music-main-stage">
+            <section class="music-editor-surface">
+              <div class="music-track-toolbar">
+                <div class="music-track-toolbar-copy">
+                  <span class="status-pill">{{ activeMusicTabMeta.label }}</span>
+                  <span>{{ filteredMusicTrackEntries.length }} / {{ activeMusicTracks.length }} 首</span>
+                </div>
+                <button type="button" class="model-action-secondary music-new-track-button" @click="createMusicTrack()">
+                  <GIcon name="add" :size="14" />
+                  新曲目
                 </button>
               </div>
 
-              <div class="fortune-output-body music-output-body">
-                <pre v-if="ui.marketplace.music.output">{{ ui.marketplace.music.output }}</pre>
-                <div v-else class="fortune-output-empty music-output-empty">
-                  <strong>{{ activeMusicModeMeta.focus }}</strong>
-                  <span>填写主题后生成草案，结果会落在这里。</span>
-                </div>
+              <div class="music-editor-grid">
+                <section class="music-track-list-panel">
+                  <div class="music-track-list" :class="{ 'is-empty': !filteredMusicTrackEntries.length }">
+                    <p v-if="!filteredMusicTrackEntries.length" class="music-empty-copy">当前筛选下暂无曲目</p>
+                    <button
+                      v-for="entry in filteredMusicTrackEntries"
+                      :key="entry.track.id"
+                      type="button"
+                      class="music-track-item"
+                      :class="{ 'is-active': activeMusicTrack?.id === entry.track.id }"
+                      @click="selectMusicTrack(entry.track.id)"
+                    >
+                      <span class="music-track-index">{{ entry.track.index }}</span>
+                      <span class="music-track-main">
+                        <strong>{{ entry.track.title }}</strong>
+                        <small>{{ getMusicTrackKindLabel(entry.track.kind) }} · {{ entry.track.style || "未写曲风" }}</small>
+                      </span>
+                      <span class="status-pill" :class="getMusicTrackStatusClass(entry.track.status)">
+                        {{ getMusicTrackStatusLabel(entry.track.status) }}
+                      </span>
+                    </button>
+                  </div>
+                </section>
+
+                <section v-if="activeMusicTrack" class="music-track-editor">
+                  <div class="music-player-panel">
+                    <div class="music-player-cover" :class="`is-${activeMusicProject.coverTone}`">
+                      <img v-if="activeMusicTrack.coverUrl" :src="activeMusicTrack.coverUrl" :alt="activeMusicTrack.title" />
+                      <span v-else>{{ activeMusicTrackIndex + 1 }}</span>
+                    </div>
+                    <div class="music-player-meta">
+                      <p class="feature-kicker">Now Editing</p>
+                      <p class="model-section-title">{{ getMusicTrackDisplayTitle(activeMusicTrack, activeMusicTrackIndex) }}</p>
+                      <p>{{ getMusicProviderLabel(activeMusicTrack.provider) }} · {{ activeMusicTrack.durationSeconds || 0 }}s · {{ activeMusicTrack.taskId || "无任务" }}</p>
+                    </div>
+                    <audio v-if="activeMusicTrack.audioUrl" class="music-audio-player" :src="activeMusicTrack.audioUrl" controls></audio>
+                    <div v-else class="music-audio-empty">
+                      <GIcon name="music" :size="18" />
+                      <span>音频生成后会出现在这里</span>
+                    </div>
+                  </div>
+
+                  <div class="music-editor-fields">
+                    <label class="field field-mini">
+                      <span class="field-label">曲名</span>
+                      <input
+                        :value="activeMusicTrack.title"
+                        class="field-input"
+                        placeholder="曲目名称"
+                        @input="setMusicTrackField(activeMusicTrack, 'title', $event.target.value)"
+                      />
+                    </label>
+
+                    <label class="field field-mini">
+                      <span class="field-label">类型</span>
+                      <GCompactSelect
+                        :model-value="activeMusicTrack.kind"
+                        :options="musicTrackKindOptions"
+                        aria-label="曲目类型"
+                        @change="setMusicTrackField(activeMusicTrack, 'kind', $event)"
+                      />
+                    </label>
+
+                    <label class="field field-mini">
+                      <span class="field-label">状态</span>
+                      <GCompactSelect
+                        :model-value="activeMusicTrack.status"
+                        :options="musicTrackStatusOptions"
+                        aria-label="曲目状态"
+                        @change="setMusicTrackField(activeMusicTrack, 'status', $event)"
+                      />
+                    </label>
+
+                    <label class="field field-mini">
+                      <span class="field-label">时长</span>
+                      <input
+                        :value="activeMusicTrack.durationSeconds"
+                        class="field-input"
+                        type="number"
+                        min="0"
+                        max="3600"
+                        @input="setMusicTrackField(activeMusicTrack, 'durationSeconds', $event.target.value)"
+                      />
+                    </label>
+
+                    <div class="field field-full">
+                      <span class="field-label">生成提示词</span>
+                      <FieldAiOptimizer
+                        :actions="fieldAiActions"
+                        :state="ui.marketplace.fieldAi"
+                        :field-id="`music-track-prompt-${activeMusicTrack.id}`"
+                        :app-name="MUSIC_APP_NAME"
+                        label="生成提示词"
+                        :value="activeMusicTrack.prompt"
+                        :context="buildMusicFieldAiContext('生成提示词')"
+                        :disabled="ui.marketplace.music.isGenerating || ui.marketplace.music.isCallingTool"
+                        :set-value="(value) => setMusicTrackField(activeMusicTrack, 'prompt', value)"
+                      >
+                        <textarea
+                          :value="activeMusicTrack.prompt"
+                          class="field-textarea music-prompt-textarea"
+                          :placeholder="activeMusicModeMeta.placeholder"
+                          :disabled="ui.marketplace.music.isGenerating || ui.marketplace.music.isCallingTool"
+                          @input="setMusicTrackField(activeMusicTrack, 'prompt', $event.target.value)"
+                        ></textarea>
+                      </FieldAiOptimizer>
+                    </div>
+
+                    <label class="field field-mini field-full">
+                      <span class="field-label">曲风 / 情绪 / 场景</span>
+                      <input
+                        :value="activeMusicTrack.style"
+                        class="field-input"
+                        placeholder="例如国风电子、City Pop、Lo-fi、温柔、热烈"
+                        :disabled="ui.marketplace.music.isGenerating || ui.marketplace.music.isCallingTool"
+                        @input="setMusicTrackField(activeMusicTrack, 'style', $event.target.value)"
+                      />
+                    </label>
+
+                    <div class="field field-full">
+                      <span class="field-label">歌词 / 素材</span>
+                      <FieldAiOptimizer
+                        :actions="fieldAiActions"
+                        :state="ui.marketplace.fieldAi"
+                        :field-id="`music-track-lyrics-${activeMusicTrack.id}`"
+                        :app-name="MUSIC_APP_NAME"
+                        label="歌词 / 素材"
+                        :value="activeMusicTrack.lyrics"
+                        :context="buildMusicFieldAiContext('歌词 / 素材')"
+                        :disabled="ui.marketplace.music.isGenerating || ui.marketplace.music.isCallingTool"
+                        :set-value="(value) => setMusicTrackField(activeMusicTrack, 'lyrics', value)"
+                      >
+                        <textarea
+                          :value="activeMusicTrack.lyrics"
+                          class="field-textarea music-lyrics-textarea"
+                          placeholder="可选，贴歌词、段落结构、旋律描述或参考文本。"
+                          :disabled="ui.marketplace.music.isGenerating || ui.marketplace.music.isCallingTool"
+                          @input="setMusicTrackField(activeMusicTrack, 'lyrics', $event.target.value)"
+                        ></textarea>
+                      </FieldAiOptimizer>
+                    </div>
+
+                    <label class="field field-mini field-full">
+                      <span class="field-label">负向限制</span>
+                      <input
+                        :value="activeMusicTrack.negativePrompt"
+                        class="field-input"
+                        placeholder="杂音、刺耳、跑调、水印、过度压缩"
+                        @input="setMusicTrackField(activeMusicTrack, 'negativePrompt', $event.target.value)"
+                      />
+                    </label>
+
+                    <label class="field field-mini">
+                      <span class="field-label">Provider</span>
+                      <GCompactSelect
+                        :model-value="ui.marketplace.music.generationProvider || 'default'"
+                        :options="musicGenerationProviderOptions"
+                        aria-label="音乐生成供应商"
+                        @change="setMusicGenerationProvider($event)"
+                      />
+                    </label>
+
+                    <label class="field field-mini">
+                      <span class="field-label">模型</span>
+                      <input
+                        :value="activeMusicTrack.model"
+                        class="field-input"
+                        placeholder="可选"
+                        @input="setMusicTrackField(activeMusicTrack, 'model', $event.target.value)"
+                      />
+                    </label>
+
+                    <label class="field field-mini">
+                      <span class="field-label">任务 ID</span>
+                      <input
+                        :value="activeMusicTrack.taskId"
+                        class="field-input"
+                        placeholder="生成后自动回填"
+                        @input="setMusicTrackField(activeMusicTrack, 'taskId', $event.target.value)"
+                      />
+                    </label>
+
+                    <label class="field field-mini">
+                      <span class="field-label">回调地址</span>
+                      <input
+                        :value="ui.marketplace.music.callbackUrl"
+                        class="field-input"
+                        placeholder="Suno 可选"
+                        @input="setMusicCallbackUrl($event.target.value)"
+                      />
+                    </label>
+
+                    <label class="field field-mini field-full">
+                      <span class="field-label">音频地址</span>
+                      <input
+                        :value="activeMusicTrack.audioUrl"
+                        class="field-input"
+                        placeholder="也可以粘贴外部音频 URL"
+                        @input="setMusicTrackField(activeMusicTrack, 'audioUrl', $event.target.value)"
+                      />
+                    </label>
+
+                    <div class="music-generation-actions">
+                      <button
+                        type="button"
+                        class="model-action music-run-button"
+                        :disabled="ui.marketplace.music.isGenerating || ui.marketplace.music.isCallingTool"
+                        @click="generateMusicDraft"
+                      >
+                        <GIcon :name="ui.marketplace.music.isGenerating ? 'loading' : 'sparkles'" :spin="ui.marketplace.music.isGenerating" :size="15" />
+                        {{ ui.marketplace.music.isGenerating ? "谱写中" : "生成草案" }}
+                      </button>
+                      <button
+                        type="button"
+                        class="model-action music-run-button"
+                        :disabled="ui.marketplace.music.isGenerating || ui.marketplace.music.isCallingTool"
+                        @click="callMusicGeneration"
+                      >
+                        <GIcon :name="ui.marketplace.music.isCallingTool ? 'loading' : 'music'" :spin="ui.marketplace.music.isCallingTool" :size="15" />
+                        {{ ui.marketplace.music.isCallingTool ? "生成中" : "生成音乐" }}
+                      </button>
+                      <button
+                        type="button"
+                        class="model-action-secondary music-clear-button"
+                        :disabled="ui.marketplace.music.isCallingTool || !activeMusicTrack.taskId"
+                        @click="queryMusicGeneration"
+                      >
+                        查询结果
+                      </button>
+                      <button
+                        type="button"
+                        class="model-action-secondary music-clear-button"
+                        @click="markMusicTrackStatus(activeMusicTrack.status === 'finished' ? 'draft' : 'finished')"
+                      >
+                        {{ activeMusicTrack.status === "finished" ? "转草稿" : "标成品" }}
+                      </button>
+                    </div>
+
+                    <div class="field field-full music-notes-field">
+                      <div class="music-notes-label-row">
+                        <span class="field-label">制作草案</span>
+                        <button
+                          type="button"
+                          class="writing-mini-text-button music-inline-clear-button"
+                          :disabled="ui.marketplace.music.isGenerating || !activeMusicTrack.notes"
+                          @click="clearMusicOutput"
+                        >
+                          清空
+                        </button>
+                      </div>
+                      <textarea
+                        :value="activeMusicTrack.notes"
+                        class="field-textarea music-notes-textarea"
+                        placeholder="AI 生成的歌词草案、编曲说明、复听记录会落在这里。"
+                        @input="setMusicTrackField(activeMusicTrack, 'notes', $event.target.value)"
+                      ></textarea>
+                    </div>
+                  </div>
+                </section>
+
+                <section v-else class="music-track-editor music-track-editor-empty">
+                  <button type="button" class="music-create-track-hero" @click="createMusicTrack()">
+                    <GIcon name="add" :size="18" />
+                    <strong>新建第一首曲目</strong>
+                  </button>
+                </section>
               </div>
 
               <p
                 v-if="ui.marketplace.music.feedback"
-                class="writing-export-feedback fortune-feedback music-feedback"
+                class="writing-export-feedback music-feedback"
                 :class="getMusicFeedbackClass()"
                 role="status"
               >
                 {{ ui.marketplace.music.feedback }}
               </p>
-            </article>
+            </section>
           </main>
+
+          <aside v-if="ui.marketplace.music.isAiDrawerOpen" class="writing-ai-card writing-ai-drawer music-ai-drawer">
+            <div class="writing-ai-head">
+              <div>
+                <p class="feature-kicker">AI Copilot</p>
+                <p class="model-section-title">瑶音小筑</p>
+              </div>
+            </div>
+
+            <div class="field writing-ai-task-field">
+              <span class="field-label">创作动作</span>
+              <div class="writing-ai-task-dropdown" :class="{ 'is-open': ui.marketplace.music.isAiTaskPickerOpen }">
+                <button
+                  type="button"
+                  class="writing-ai-task-dropdown-trigger"
+                  :aria-expanded="ui.marketplace.music.isAiTaskPickerOpen ? 'true' : 'false'"
+                  aria-haspopup="listbox"
+                  @click="toggleMusicAiTaskPicker"
+                >
+                  <span>{{ activeMusicModeMeta.label }}</span>
+                  <GIcon name="chevronDown" />
+                </button>
+                <p class="writing-ai-task-target">{{ activeMusicModeMeta.focus }}</p>
+
+                <div v-if="ui.marketplace.music.isAiTaskPickerOpen" class="writing-ai-task-dropdown-menu" role="listbox">
+                  <button
+                    v-for="mode in MUSIC_CREATION_MODES"
+                    :key="mode.id"
+                    type="button"
+                    class="writing-ai-task-dropdown-item"
+                    :class="{ 'is-active': ui.marketplace.music.activeMode === mode.id }"
+                    role="option"
+                    :aria-selected="ui.marketplace.music.activeMode === mode.id ? 'true' : 'false'"
+                    @click="setMusicMode(mode.id)"
+                  >
+                    <span>{{ mode.label }}</span>
+                    <small>{{ mode.focus }}</small>
+                    <em>{{ mode.kicker }}</em>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="writing-ai-run-row music-ai-run-row">
+              <button
+                type="button"
+                class="model-action-secondary writing-ai-run"
+                :disabled="!activeMusicTrack || ui.marketplace.music.isGenerating || ui.marketplace.music.isCallingTool"
+                @click="generateMusicDraft"
+              >
+                <GIcon :name="ui.marketplace.music.isGenerating ? 'loading' : 'sparkles'" :spin="ui.marketplace.music.isGenerating" :size="14" />
+                {{ ui.marketplace.music.isGenerating ? "谱写中" : "生成草案" }}
+              </button>
+            </div>
+
+            <div class="music-ai-tool-row">
+              <button
+                type="button"
+                class="model-action-secondary"
+                :disabled="!activeMusicTrack || ui.marketplace.music.isGenerating || ui.marketplace.music.isCallingTool"
+                @click="callMusicGeneration"
+              >
+                <GIcon :name="ui.marketplace.music.isCallingTool ? 'loading' : 'music'" :spin="ui.marketplace.music.isCallingTool" :size="14" />
+                生成音乐
+              </button>
+              <button
+                type="button"
+                class="model-action-secondary"
+                :disabled="!activeMusicTrack?.taskId || ui.marketplace.music.isCallingTool"
+                @click="queryMusicGeneration"
+              >
+                查询结果
+              </button>
+            </div>
+
+            <div class="writing-ai-output music-ai-output">
+              <div class="writing-ai-output-head">
+                <span class="field-label">当前曲目</span>
+                <span v-if="ui.marketplace.music.feedback" class="status-pill" :class="getMusicFeedbackClass()">
+                  {{ ui.marketplace.music.feedback }}
+                </span>
+              </div>
+              <div class="music-ai-current">
+                <span class="status-pill">{{ activeMusicTrack ? getMusicTrackStatusLabel(activeMusicTrack.status) : "未选择" }}</span>
+                <p>
+                  {{ activeMusicTrack ? `${getMusicTrackDisplayTitle(activeMusicTrack, activeMusicTrackIndex)} · ${activeMusicTrack.style || "未写曲风"}` : "先在右侧新建或选择一首曲目。" }}
+                </p>
+              </div>
+            </div>
+          </aside>
         </section>
       </section>
     </template>
@@ -2412,6 +2854,98 @@
 
 <Transition name="gordon-dialog-fade">
   <div
+    v-if="ui.marketplace.music.isExportDialogOpen"
+    class="gordon-dialog-backdrop writing-export-backdrop"
+    @click.self="closeMusicExportDialog"
+  >
+    <section class="gordon-dialog writing-export-dialog" role="dialog" aria-modal="true" aria-label="音乐专辑导出">
+      <div class="gordon-dialog-head">
+        <div class="gordon-dialog-mark writing-export-mark music-export-mark" aria-hidden="true">音</div>
+
+        <div>
+          <p class="gordon-dialog-kicker">Export</p>
+          <h2 class="gordon-dialog-title">专辑导出</h2>
+        </div>
+      </div>
+
+      <p class="gordon-dialog-message">
+        导出当前音乐专辑的专辑方向、曲目设定、歌词素材、生成提示词、任务 ID 和音频地址，文件名固定为 {{ activeMusicExportFileName }}。
+      </p>
+
+      <div class="writing-export-panel">
+        <div class="writing-export-field">
+          <span class="gordon-dialog-field-label">文件类型</span>
+          <div class="writing-export-format-row" role="radiogroup" aria-label="导出文件类型">
+            <button
+              type="button"
+              class="writing-export-format-button is-active"
+              aria-checked="true"
+              role="radio"
+              :disabled="ui.marketplace.music.isExporting"
+            >
+              Markdown
+            </button>
+          </div>
+        </div>
+
+        <div class="writing-export-field">
+          <span class="gordon-dialog-field-label">输出目录</span>
+          <div class="writing-export-directory-row">
+            <input
+              class="gordon-dialog-input writing-export-directory-input"
+              :value="ui.marketplace.music.exportDirectory || '尚未选择目录'"
+              readonly
+            />
+            <button
+              type="button"
+              class="gordon-dialog-button gordon-dialog-button-secondary"
+              :disabled="ui.marketplace.music.isExporting"
+              @click="selectMusicExportDirectory"
+            >
+              选择目录
+            </button>
+          </div>
+        </div>
+
+        <div class="writing-export-summary">
+          <span>曲目数量：{{ activeMusicTracks.length }}</span>
+          <span>导出文件：{{ activeMusicExportFileName }}</span>
+        </div>
+      </div>
+
+      <p
+        v-if="ui.marketplace.music.exportFeedback"
+        class="writing-export-feedback"
+        :class="`is-${ui.marketplace.music.exportFeedbackTone}`"
+      >
+        {{ ui.marketplace.music.exportFeedback }}
+      </p>
+
+      <div class="gordon-dialog-actions">
+        <button
+          type="button"
+          class="gordon-dialog-button gordon-dialog-button-secondary"
+          :disabled="ui.marketplace.music.isExporting"
+          @click="closeMusicExportDialog"
+        >
+          取消
+        </button>
+
+        <button
+          type="button"
+          class="gordon-dialog-button gordon-dialog-button-primary"
+          :disabled="!canExportActiveMusicProject"
+          @click="exportActiveMusicProject"
+        >
+          {{ ui.marketplace.music.isExporting ? "保存中" : "确认" }}
+        </button>
+      </div>
+    </section>
+  </div>
+</Transition>
+
+<Transition name="gordon-dialog-fade">
+  <div
     v-if="ui.marketplace.comic.isExportDialogOpen"
     class="gordon-dialog-backdrop writing-export-backdrop"
     @click.self="closeComicExportDialog"
@@ -2616,7 +3150,11 @@ import {
   FORTUNE_READING_MODES,
   MARKETPLACE_APP_COUNT,
   MUSIC_APP_NAME,
+  MUSIC_APP_TABS,
   MUSIC_CREATION_MODES,
+  MUSIC_PROVIDER_META,
+  MUSIC_TRACK_KIND_META,
+  MUSIC_TRACK_STATUS_META,
   VIDEO_APP_NAME,
   VIDEO_APP_TABS,
   VIDEO_PROJECT_ASPECT_RATIO_META,
@@ -2755,6 +3293,19 @@ const videoProjectAspectRatioOptions = Object.entries(VIDEO_PROJECT_ASPECT_RATIO
   value,
   label: meta.label
 }));
+const musicTrackKindOptions = Object.entries(MUSIC_TRACK_KIND_META).map(([value, meta]) => ({
+  value,
+  label: meta.label
+}));
+const musicTrackStatusOptions = Object.entries(MUSIC_TRACK_STATUS_META).map(([value, meta]) => ({
+  value,
+  label: meta.label
+}));
+const musicGenerationProviderOptions = [
+  { value: "default", label: "默认供应商" },
+  { value: "mureka", label: MUSIC_PROVIDER_META.mureka.label },
+  { value: "suno", label: MUSIC_PROVIDER_META.suno.label }
+];
 const writingLengthOptions = Object.entries(WRITING_LENGTH_PROFILES).map(([value, meta]) => ({
   value,
   label: meta.label
@@ -2825,16 +3376,63 @@ const {
 } = fortuneActions;
 
 const {
+  activeMusicDraftCount,
+  activeMusicExportFileName,
+  activeMusicFinishedCount,
   activeMusicModeMeta,
+  activeMusicProject,
+  activeMusicTabMeta,
+  activeMusicTrack,
+  activeMusicTrackIndex,
+  activeMusicTracks,
   backMusicMarketplace,
+  backMusicShelf,
+  callMusicGeneration,
+  canExportActiveMusicProject,
   clearMusicOutput,
+  closeMusicExportDialog,
+  createMusicProject,
+  createMusicTrack,
+  deleteMusicProjectFromWorkbench,
+  exportActiveMusicProject,
+  filteredMusicTrackEntries,
   generateMusicDraft,
   getMusicFeedbackClass,
+  getMusicProviderLabel,
+  getMusicProjectDraftCount,
+  getMusicProjectFinishedCount,
+  getMusicTotalDuration,
+  getMusicTrackDisplayTitle,
+  getMusicTrackKindLabel,
+  getMusicTrackStatusClass,
+  getMusicTrackStatusLabel,
+  markMusicTrackStatus,
+  musicProjects,
   openMusicApp,
+  openMusicExportDialog,
+  openMusicProject,
+  queryMusicGeneration,
+  selectMusicExportDirectory,
+  selectMusicProject,
+  selectMusicTrack,
+  setMusicCallbackUrl,
+  setMusicGenerationProvider,
+  setMusicAiDrawerOpen,
   setMusicMode,
+  setMusicProjectArtist,
+  setMusicProjectGenre,
+  setMusicProjectMood,
+  setMusicProjectStatus,
+  setMusicProjectSummary,
+  setMusicProjectTitle,
   setMusicReference,
   setMusicStyle,
-  setMusicTheme
+  setMusicTheme,
+  setMusicTrackField,
+  setMusicTrackFilter,
+  setMusicTab,
+  toggleMusicAiTaskPicker,
+  toggleMusicProfileRail
 } = musicActions;
 
 const {
@@ -2967,10 +3565,15 @@ function formatComicImageCreatedAt(value) {
 
 function buildMusicFieldAiContext(fieldLabel) {
   return compactFieldAiContext([
+    `专辑：${activeMusicProject.value?.title ?? ""}`,
+    `专辑方向：${activeMusicProject.value?.summary ?? ""}`,
+    `曲目：${activeMusicTrack.value?.title ?? ""}`,
     `创作类型：${activeMusicModeMeta.value?.label ?? ""}`,
     `创作重点：${activeMusicModeMeta.value?.focus ?? ""}`,
-    fieldLabel === "主题 / 需求" ? `曲风 / 情绪 / 场景：${ui.marketplace.music.style}` : `主题 / 需求：${ui.marketplace.music.theme}`,
-    `参考歌词 / 素材：${ui.marketplace.music.reference}`
+    fieldLabel === "主题 / 需求" || fieldLabel === "生成提示词"
+      ? `曲风 / 情绪 / 场景：${activeMusicTrack.value?.style || ui.marketplace.music.style}`
+      : `主题 / 需求：${activeMusicTrack.value?.prompt || ui.marketplace.music.theme}`,
+    `参考歌词 / 素材：${activeMusicTrack.value?.lyrics || ui.marketplace.music.reference}`
   ]);
 }
 

@@ -1,6 +1,7 @@
 export function createWorkbenchRuntime({
   activeFeature,
   applyComicProjectsFromStorage,
+  applyMusicProjectsFromStorage,
   applyVideoProjectsFromStorage,
   applyWritingBooksFromStorage,
   desktopApi,
@@ -25,6 +26,7 @@ export function createWorkbenchRuntime({
     applyWritingBooksFromStorage(snapshot?.writingBooks ?? []);
     applyComicProjectsFromStorage(snapshot?.comicProjects ?? []);
     applyVideoProjectsFromStorage(snapshot?.videoProjects ?? []);
+    applyMusicProjectsFromStorage(snapshot?.musicProjects ?? []);
     workbench.skillDefinitions = [...(snapshot?.skillDefinitions ?? [])];
     workbench.mcpServers = [...(snapshot?.mcpServers ?? [])];
     workbench.toolConfigs = [...(snapshot?.toolConfigs ?? [])];

@@ -80,6 +80,12 @@ export const MUSIC_CREATION_MODES = [
   }
 ];
 
+export const MUSIC_APP_TABS = [
+  { id: "all", label: "全部曲目", kicker: "All", filter: "all" },
+  { id: "draft", label: "草稿", kicker: "Draft", filter: "draft" },
+  { id: "finished", label: "成品", kicker: "Master", filter: "finished" }
+];
+
 export const COMIC_PROJECT_FORMAT_META = {
   poster: { label: "单图海报", defaultPages: 1 },
   serial: { label: "连载漫画", defaultPages: 24 }
@@ -146,6 +152,25 @@ export const VIDEO_PROJECT_ASPECT_RATIO_META = {
 };
 
 export const VIDEO_PROJECT_COVER_TONES = ["lumen", "violet", "teal", "coral"];
+export const MUSIC_PROJECT_COVER_TONES = ["lunar", "jade", "amber", "rose"];
+
+export const MUSIC_TRACK_KIND_META = {
+  song: { label: "完整歌曲", operation: "generate_song" },
+  instrumental: { label: "纯音乐", operation: "generate_instrumental" },
+  jingle: { label: "短曲动机", operation: "generate_instrumental" },
+  soundtrack: { label: "场景配乐", operation: "generate_instrumental" }
+};
+
+export const MUSIC_TRACK_STATUS_META = {
+  draft: { label: "草稿", className: "is-warning" },
+  finished: { label: "成品", className: "is-success" }
+};
+
+export const MUSIC_PROVIDER_META = {
+  mureka: { label: "Mureka" },
+  suno: { label: "Suno" },
+  manual: { label: "手动" }
+};
 
 export const COMIC_APP_TABS = [
   { id: "intro", label: "总介绍", kicker: "Overview", fieldLabel: "漫画总介绍" },
@@ -247,12 +272,28 @@ export function createMarketplaceState() {
     },
     music: {
       activeMode: "song",
+      activeTab: "all",
+      projects: [],
+      activeProjectId: null,
+      activeTrackId: "",
+      trackFilter: "all",
+      generationProvider: "",
+      callbackUrl: "",
+      isProfileCollapsed: false,
+      isAiDrawerOpen: false,
+      isAiTaskPickerOpen: false,
+      isCallingTool: false,
       theme: "",
       style: "",
       reference: "",
       output: "",
       feedback: "",
       feedbackTone: "neutral",
+      isExportDialogOpen: false,
+      exportDirectory: "",
+      exportFeedback: "",
+      exportFeedbackTone: "neutral",
+      isExporting: false,
       isGenerating: false
     },
     writing: {

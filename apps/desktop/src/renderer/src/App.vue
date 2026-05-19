@@ -341,6 +341,7 @@ const workbench = reactive({
   writingBooks: [],
   comicProjects: [],
   videoProjects: [],
+  musicProjects: [],
   skillDefinitions: [],
   mcpServers: [],
   toolConfigs: [],
@@ -507,8 +508,15 @@ const musicActions = createMusicActions({
   desktopApi,
   featureMarketplaceId: FEATURE_MARKETPLACE,
   setStatus,
-  ui
+  showConfirmDialog,
+  ui,
+  workbench
 });
+
+const {
+  applyMusicProjectsFromStorage,
+  clearMusicAutosaveTimer
+} = musicActions;
 
 const writingActions = createWritingActions({
   activeFeature,
@@ -948,6 +956,7 @@ const {
 workbenchRuntime = createWorkbenchRuntime({
   activeFeature,
   applyComicProjectsFromStorage,
+  applyMusicProjectsFromStorage,
   applyVideoProjectsFromStorage,
   applyWritingBooksFromStorage,
   desktopApi,
@@ -971,6 +980,7 @@ setupRootWatchers({
   activeFeature,
   bootstrapWorkbench,
   clearComicAutosaveTimer,
+  clearMusicAutosaveTimer,
   clearVideoAutosaveTimer,
   clearWritingAutosaveTimer,
   desktopApi,

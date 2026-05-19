@@ -26,6 +26,11 @@ import type {
   ModelBalanceSnapshot,
   ModelProfile,
   ModelSettings,
+  MusicProject,
+  MusicTrack,
+  MusicTrackKind,
+  MusicTrackProvider,
+  MusicTrackStatus,
   SkillKind,
   SkillDefinition,
   ToolConfig,
@@ -163,6 +168,14 @@ function getVideoProjectsFilePath(): string {
 
 function getVideoProjectDeleteStagingDirectoryPath(): string {
   return resolveFromRoot("data", "workbench", ".delete-staging", "video-projects");
+}
+
+function getMusicProjectsFilePath(): string {
+  return resolveFromRoot("data", "workbench", "music-projects.json");
+}
+
+function getMusicProjectDeleteStagingDirectoryPath(): string {
+  return resolveFromRoot("data", "workbench", ".delete-staging", "music-projects");
 }
 
 function getWritingBooksDirectoryPath(): string {
@@ -1749,6 +1762,51 @@ const TOOL_PROVIDER_RUNTIME_CONFIG: Partial<
         }
       }
     }
+  },
+  music_gen: {
+    mureka: {
+      operations: {
+        generate_song: {
+          endpoint: "v1/song/generate",
+          parameters: ["prompt", "lyrics", "model"]
+        },
+        generate_instrumental: {
+          endpoint: "v1/soundtrack/generate",
+          parameters: ["prompt", "model", "durationSeconds"]
+        },
+        query: {
+          endpoint: "v1/song/query/{task_id}",
+          parameters: ["taskId"]
+        },
+        vocal_clone: {
+          endpoint: "v1/vocal/clone",
+          parameters: ["filePath"]
+        }
+      }
+    },
+    suno: {
+      operations: {
+        generate_song: {
+          endpoint: "api/v1/generate",
+          parameters: ["prompt", "style", "title", "model", "instrumental", "callbackUrl"]
+        },
+        generate_instrumental: {
+          endpoint: "api/v1/generate",
+          parameters: ["prompt", "style", "title", "model", "instrumental", "callbackUrl"]
+        },
+        query: {
+          endpoint: "api/v1/generate/record-info",
+          parameters: ["taskId"]
+        }
+      }
+    }
+  }
+};
+
+const TOOL_PROVIDER_DEFAULT_BASE_URLS: Partial<Record<ToolConfigName, Partial<Record<ToolConfigProvider, string>>>> = {
+  music_gen: {
+    mureka: "https://api.mureka.ai",
+    suno: "https://api.sunoapi.org"
   }
 };
 
@@ -1788,6 +1846,7 @@ function normalizeToolProviderBaseUrl(toolName: ToolConfigName, provider: ToolCo
 
 function createDefaultToolProviderConfig(toolName: ToolConfigName, provider: ToolConfigProvider, label: string): ToolProviderConfig {
   const runtime = getDefaultToolProviderRuntimeConfig(toolName, provider);
+  const baseUrl = TOOL_PROVIDER_DEFAULT_BASE_URLS[toolName]?.[provider] ?? "";
 
   return {
     id: `tool_provider_${toolName}_${provider}`,
@@ -1795,7 +1854,7 @@ function createDefaultToolProviderConfig(toolName: ToolConfigName, provider: Too
     label,
     model: "",
     apiKey: "",
-    baseUrl: "",
+    baseUrl,
     enabled: false,
     notes: "",
     ...(runtime ? { runtime } : {}),
@@ -1843,6 +1902,7 @@ function normalizeToolProviderConfig(
   const normalizedProvider = normalizeToolConfigProvider(provider?.provider) ?? defaultProvider.provider;
   const updatedAt = String(provider?.updatedAt ?? "").trim() || defaultProvider.updatedAt;
   const runtime = cloneToolProviderRuntimeConfig(defaultProvider.runtime);
+  const inputBaseUrl = String(provider?.baseUrl ?? "").trim();
 
   return {
     id: String(provider?.id ?? "").trim() || defaultProvider.id,
@@ -1850,7 +1910,7 @@ function normalizeToolProviderConfig(
     label: String(provider?.label ?? "").trim() || defaultProvider.label,
     model: String(provider?.model ?? ""),
     apiKey: String(provider?.apiKey ?? ""),
-    baseUrl: normalizeToolProviderBaseUrl(toolName, normalizedProvider, String(provider?.baseUrl ?? "")),
+    baseUrl: normalizeToolProviderBaseUrl(toolName, normalizedProvider, inputBaseUrl || defaultProvider.baseUrl || ""),
     enabled: Boolean(provider?.enabled),
     notes: String(provider?.notes ?? ""),
     ...(runtime ? { runtime } : {}),
@@ -3260,6 +3320,139 @@ export async function deleteVideoProject(projectId: string, moveToTrash: (target
   );
 
   return listVideoProjects();
+}
+
+const MUSIC_TRACK_KINDS = new Set<MusicTrackKind>(["song", "instrumental", "jingle", "soundtrack"]);
+const MUSIC_TRACK_STATUSES = new Set<MusicTrackStatus>(["draft", "finished"]);
+const MUSIC_TRACK_PROVIDERS = new Set<MusicTrackProvider>(["mureka", "suno", "manual"]);
+
+function normalizeMusicTrackKind(value: unknown): MusicTrackKind {
+  const kind = String(value ?? "").trim();
+  return MUSIC_TRACK_KINDS.has(kind as MusicTrackKind) ? (kind as MusicTrackKind) : "song";
+}
+
+function normalizeMusicTrackStatus(value: unknown): MusicTrackStatus {
+  const status = String(value ?? "").trim();
+  return MUSIC_TRACK_STATUSES.has(status as MusicTrackStatus) ? (status as MusicTrackStatus) : "draft";
+}
+
+function normalizeMusicTrackProvider(value: unknown): MusicTrackProvider {
+  const provider = String(value ?? "").trim();
+  return MUSIC_TRACK_PROVIDERS.has(provider as MusicTrackProvider) ? (provider as MusicTrackProvider) : "manual";
+}
+
+function normalizeMusicDurationSeconds(value: unknown, fallback = 30): number {
+  const numeric = Number(value);
+  return Math.min(3600, Math.max(0, Math.round(Number.isFinite(numeric) ? numeric : fallback)));
+}
+
+function normalizeMusicRawResult(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value as Record<string, unknown>;
+}
+
+function normalizeMusicTrack(input: Partial<MusicTrack> | null | undefined, index = 0): MusicTrack {
+  const now = new Date().toISOString();
+  const createdAt = String(input?.createdAt ?? "").trim() || now;
+
+  return {
+    id: String(input?.id ?? "").trim() || `music_track_${randomUUID()}`,
+    index: Math.max(1, Math.round(Number(input?.index ?? index + 1) || index + 1)),
+    title: String(input?.title ?? "").trim() || `曲目 ${index + 1}`,
+    kind: normalizeMusicTrackKind(input?.kind),
+    status: normalizeMusicTrackStatus(input?.status),
+    prompt: String(input?.prompt ?? ""),
+    lyrics: String(input?.lyrics ?? ""),
+    style: String(input?.style ?? ""),
+    negativePrompt: String(input?.negativePrompt ?? ""),
+    provider: normalizeMusicTrackProvider(input?.provider),
+    model: String(input?.model ?? ""),
+    taskId: String(input?.taskId ?? "").trim(),
+    audioUrl: String(input?.audioUrl ?? "").trim(),
+    streamUrl: String(input?.streamUrl ?? "").trim(),
+    coverUrl: String(input?.coverUrl ?? "").trim(),
+    durationSeconds: normalizeMusicDurationSeconds(input?.durationSeconds, 30),
+    notes: String(input?.notes ?? ""),
+    ...(normalizeMusicRawResult(input?.rawResult) ? { rawResult: normalizeMusicRawResult(input?.rawResult) } : {}),
+    createdAt,
+    updatedAt: String(input?.updatedAt ?? "").trim() || createdAt
+  };
+}
+
+function normalizeMusicTracks(input: unknown): MusicTrack[] {
+  return (Array.isArray(input) ? input : [])
+    .map((track, index) => normalizeMusicTrack(track as Partial<MusicTrack>, index))
+    .sort((left, right) => left.index - right.index);
+}
+
+function normalizeMusicProject(input: Partial<MusicProject> | null | undefined, index = 0): MusicProject {
+  const now = new Date().toISOString();
+  const createdAt = String(input?.createdAt ?? "").trim() || now;
+  const updatedAt = String(input?.updatedAt ?? "").trim() || createdAt;
+  const id = String(input?.id ?? "").trim() || `music_project_${randomUUID()}`;
+
+  return {
+    id,
+    title: String(input?.title ?? "").trim() || `未命名专辑 ${index + 1}`,
+    artist: String(input?.artist ?? "").trim() || "Gordon Studio",
+    genre: String(input?.genre ?? "").trim() || "音乐 / 待定风格",
+    mood: String(input?.mood ?? "").trim() || "待定",
+    status: String(input?.status ?? "").trim() || "草稿",
+    summary: String(input?.summary ?? ""),
+    coverTone: String(input?.coverTone ?? "").trim() || (index % 2 === 0 ? "lunar" : "jade"),
+    tracks: normalizeMusicTracks(input?.tracks),
+    createdAt,
+    updatedAt
+  };
+}
+
+export async function listMusicProjects(): Promise<MusicProject[]> {
+  const projects = await readWorkbenchCollection<Partial<MusicProject>>(getMusicProjectsFilePath());
+  return sortByUpdatedAtDescending(projects.map((project, index) => normalizeMusicProject(project, index)));
+}
+
+export async function upsertMusicProject(project: MusicProject): Promise<MusicProject[]> {
+  const current = await listMusicProjects();
+  const normalizedProject = normalizeMusicProject(project);
+  const nextProjects = current.some((entry) => entry.id === normalizedProject.id)
+    ? current.map((entry) => (entry.id === normalizedProject.id ? normalizedProject : entry))
+    : [normalizedProject, ...current];
+
+  await writeWorkbenchCollection(getMusicProjectsFilePath(), sortByUpdatedAtDescending(nextProjects));
+  return listMusicProjects();
+}
+
+export async function deleteMusicProject(projectId: string, moveToTrash: (targetPath: string) => Promise<void>): Promise<MusicProject[]> {
+  const normalizedProjectId = String(projectId ?? "").trim();
+
+  if (!normalizedProjectId) {
+    return listMusicProjects();
+  }
+
+  const current = await listMusicProjects();
+  const deletedProject = current.find((entry) => entry.id === normalizedProjectId);
+
+  if (!deletedProject) {
+    return current;
+  }
+
+  const stagingDirectory = getMusicProjectDeleteStagingDirectoryPath();
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const snapshotFileName = `${sanitizeWritingAssetName(deletedProject.title, "music-project")}-${timestamp}.json`;
+  const snapshotPath = path.join(stagingDirectory, snapshotFileName);
+
+  await mkdir(stagingDirectory, { recursive: true });
+  await writeFile(snapshotPath, `${JSON.stringify(deletedProject, null, 2)}\n`, "utf8");
+  await moveToTrash(snapshotPath);
+  await writeWorkbenchCollection(
+    getMusicProjectsFilePath(),
+    sortByUpdatedAtDescending(current.filter((entry) => entry.id !== normalizedProjectId))
+  );
+
+  return listMusicProjects();
 }
 
 function createWorkflowVariableBinding(

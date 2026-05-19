@@ -13,6 +13,7 @@ import {
   deleteComicProject,
   deleteCommandWorkshopSession,
   deleteMcpServer,
+  deleteMusicProject,
   deleteVideoProject,
   activateModelProfile,
   deleteModelProfile,
@@ -23,6 +24,7 @@ import {
   listAgentProfiles,
   listCommandWorkshopSessions,
   listComicProjects,
+  listMusicProjects,
   listModelBalanceHistory,
   listMcpServers,
   listSkillDefinitions,
@@ -41,6 +43,7 @@ import {
   upsertAgentProfile,
   upsertCommandWorkshopSession,
   upsertComicProject,
+  upsertMusicProject,
   upsertVideoProject,
   upsertWorkflowLibraryItem,
   upsertMcpServer,
@@ -52,6 +55,9 @@ import type {
   AgentRunProgressEvent,
   ComicProjectExportFormat,
   ComicProjectExportRequest,
+  MusicProjectExportFormat,
+  MusicProjectExportRequest,
+  MusicProject,
   VideoProjectExportFormat,
   VideoProjectExportRequest,
   WritingBookExportFormat,
@@ -172,6 +178,7 @@ const activeWorkflowRuns = new Map<string, WorkflowActiveRunContext>();
 const WRITING_BOOK_EXPORT_EXTENSIONS = new Set<WritingBookExportFormat>(["txt", "md"]);
 const COMIC_PROJECT_EXPORT_EXTENSIONS = new Set<ComicProjectExportFormat>(["md"]);
 const VIDEO_PROJECT_EXPORT_EXTENSIONS = new Set<VideoProjectExportFormat>(["md"]);
+const MUSIC_PROJECT_EXPORT_EXTENSIONS = new Set<MusicProjectExportFormat>(["md"]);
 
 class WorkflowRunCancelledError extends Error {
   constructor() {
@@ -391,6 +398,58 @@ function resolveVideoProjectExportPath(request: VideoProjectExportRequest): {
   const format = normalizeVideoProjectExportFormat(request?.format);
   const resolvedDirectoryPath = path.resolve(directoryPath);
   const fileName = sanitizeVideoProjectExportFileName(request?.fileName, format);
+  const filePath = path.join(resolvedDirectoryPath, fileName);
+  const relativePath = path.relative(resolvedDirectoryPath, filePath);
+
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    throw new Error("导出路径不合法");
+  }
+
+  return {
+    directoryPath: resolvedDirectoryPath,
+    fileName,
+    filePath,
+    format,
+    content: content.endsWith("\n") ? content : `${content}\n`
+  };
+}
+
+function normalizeMusicProjectExportFormat(value: unknown): MusicProjectExportFormat {
+  const format = String(value ?? "").trim().toLowerCase();
+  return MUSIC_PROJECT_EXPORT_EXTENSIONS.has(format as MusicProjectExportFormat) ? (format as MusicProjectExportFormat) : "md";
+}
+
+function sanitizeMusicProjectExportFileName(value: unknown, format: MusicProjectExportFormat): string {
+  const baseName = String(value ?? "")
+    .replace(/\.[^.]+$/, "")
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
+    .replace(/\s+/g, " ")
+    .replace(/[. ]+$/g, "")
+    .trim();
+  return `${baseName || "未命名音乐专辑"}.${format}`;
+}
+
+function resolveMusicProjectExportPath(request: MusicProjectExportRequest): {
+  directoryPath: string;
+  fileName: string;
+  filePath: string;
+  format: MusicProjectExportFormat;
+  content: string;
+} {
+  const directoryPath = String(request?.directoryPath ?? "").trim();
+  const content = String(request?.content ?? "");
+
+  if (!directoryPath) {
+    throw new Error("请选择输出目录");
+  }
+
+  if (!content.trim()) {
+    throw new Error("没有可导出的音乐专辑内容");
+  }
+
+  const format = normalizeMusicProjectExportFormat(request?.format);
+  const resolvedDirectoryPath = path.resolve(directoryPath);
+  const fileName = sanitizeMusicProjectExportFileName(request?.fileName, format);
   const filePath = path.join(resolvedDirectoryPath, fileName);
   const relativePath = path.relative(resolvedDirectoryPath, filePath);
 
@@ -1767,6 +1826,40 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("gordon:video-projects:export", async (_event, request: VideoProjectExportRequest) => {
     const exportTarget = resolveVideoProjectExportPath(request);
+
+    await mkdir(exportTarget.directoryPath, { recursive: true });
+    await writeFile(exportTarget.filePath, exportTarget.content, "utf8");
+
+    return {
+      filePath: exportTarget.filePath,
+      fileName: exportTarget.fileName,
+      format: exportTarget.format,
+      writtenBytes: Buffer.byteLength(exportTarget.content, "utf8")
+    };
+  });
+  ipcMain.handle("gordon:music-projects:list", async () => listMusicProjects());
+  ipcMain.handle("gordon:music-projects:upsert", async (_event, project: MusicProject) => upsertMusicProject(project));
+  ipcMain.handle("gordon:music-projects:delete", async (_event, projectId: string) =>
+    deleteMusicProject(projectId, (targetPath) => shell.trashItem(targetPath))
+  );
+  ipcMain.handle("gordon:music-projects:select-export-directory", async (event) => {
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+    const openDialogOptions = {
+      title: "选择瑶琴映月导出目录",
+      properties: ["openDirectory", "createDirectory"]
+    } satisfies Electron.OpenDialogOptions;
+    const result = ownerWindow
+      ? await dialog.showOpenDialog(ownerWindow, openDialogOptions)
+      : await dialog.showOpenDialog(openDialogOptions);
+
+    if (result.canceled || !result.filePaths.length) {
+      return null;
+    }
+
+    return result.filePaths[0];
+  });
+  ipcMain.handle("gordon:music-projects:export", async (_event, request: MusicProjectExportRequest) => {
+    const exportTarget = resolveMusicProjectExportPath(request);
 
     await mkdir(exportTarget.directoryPath, { recursive: true });
     await writeFile(exportTarget.filePath, exportTarget.content, "utf8");

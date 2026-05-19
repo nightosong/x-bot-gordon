@@ -817,7 +817,7 @@ export function createCommandWorkshopActions({
     const kind = String(artifact.kind ?? "").trim();
     const src = String(artifact.dataUrl || artifact.url || "").trim();
 
-    if (kind !== "image" || !src) {
+    if (!["image", "audio"].includes(kind) || !src) {
       return null;
     }
 
@@ -830,7 +830,7 @@ export function createCommandWorkshopActions({
       id: String(artifact.id ?? "").trim() || `generated_product_${index}`,
       kind,
       src,
-      title: String(artifact.title ?? "").trim() || `生成图片 ${index + 1}`,
+      title: String(artifact.title ?? "").trim() || (kind === "audio" ? `生成音频 ${index + 1}` : `生成图片 ${index + 1}`),
       url: String(artifact.url ?? "").trim(),
       meta
     };
