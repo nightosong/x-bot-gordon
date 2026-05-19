@@ -18,6 +18,8 @@ export function createCommandWorkshopState() {
     form: createCommandDraft(),
     draftInput: "",
     attachments: [],
+    queuedInput: "",
+    queuedAttachments: [],
     availableMcpTools: [],
     isRunning: false,
     cancelRequested: false,

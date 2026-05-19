@@ -66,9 +66,14 @@
                   <span class="command-message-time">{{ formatLocalDateTime(message.createdAt) }}</span>
                 </div>
 
-                <div class="command-message-body command-rich-text" v-html="renderRichText(message.content)" @click="handleRichTextClick"></div>
+                <div
+                  v-if="message.role !== 'assistant' && message.content"
+                  class="command-message-body command-rich-text"
+                  v-html="renderRichText(message.content)"
+                  @click="handleRichTextClick"
+                ></div>
 
-                <div v-if="message.attachments?.length" class="command-message-attachments">
+                <div v-if="message.role !== 'assistant' && message.attachments?.length" class="command-message-attachments">
                   <span
                     v-for="attachment in message.attachments"
                     :key="attachment.id"
@@ -79,6 +84,41 @@
                     {{ attachment.name }}
                   </span>
                 </div>
+
+                <div v-if="message.role === 'assistant' && getCommandResponseProcessItems(message.artifact).length" class="command-response-process">
+                  <article
+                    v-for="item in getCommandResponseProcessItems(message.artifact)"
+                    :key="item.id"
+                    class="command-response-process-item"
+                    :class="item.className"
+                  >
+                    <span class="command-response-process-rail" aria-hidden="true">
+                      <span class="command-response-process-mark">{{ item.marker }}</span>
+                    </span>
+                    <div class="command-response-process-main">
+                      <div class="command-response-process-head">
+                        <span class="command-response-process-label">{{ item.label }}</span>
+                        <span v-if="item.createdAt" class="command-response-process-time">{{ formatLocalDateTime(item.createdAt) }}</span>
+                      </div>
+                      <p class="command-response-process-title" :title="item.title">{{ item.title }}</p>
+                      <p v-if="item.detail" class="command-response-process-detail" :title="item.detail">{{ item.detail }}</p>
+                      <ol v-if="item.items?.length" class="command-response-plan-list">
+                        <li v-for="planItem in item.items" :key="planItem">{{ planItem }}</li>
+                      </ol>
+                      <div v-if="item.output" class="command-response-output">
+                        <span class="command-response-output-label">{{ item.outputLabel || "中间输出" }}</span>
+                        <pre>{{ item.output }}</pre>
+                      </div>
+                    </div>
+                  </article>
+                </div>
+
+                <div
+                  v-if="message.role === 'assistant' && message.content"
+                  class="command-message-body command-rich-text command-final-reply"
+                  v-html="renderRichText(message.content)"
+                  @click="handleRichTextClick"
+                ></div>
 
                 <div v-if="getCommandArtifactProducts(message.artifact).length" class="command-generated-products">
                   <article
@@ -102,69 +142,6 @@
                     </div>
                   </article>
                 </div>
-
-                <details v-if="message.role === 'assistant' && message.artifact" class="command-artifact-panel">
-                  <summary>{{ getCommandArtifactSummary(message.artifact) }}</summary>
-
-                  <div class="command-artifact-body">
-                    <div v-if="message.artifact.stopReason" class="command-artifact-inline-list">
-                      <div v-if="message.artifact.stopReason" class="command-artifact-inline-row">
-                        <span class="command-artifact-inline-label">停止原因</span>
-                        <p
-                          class="command-artifact-inline-copy"
-                          :title="getCommandArtifactInlineText(message.artifact.stopReason)"
-                        >
-                          {{ getCommandArtifactInlineText(message.artifact.stopReason) }}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div class="command-artifact-section">
-                      <div class="command-artifact-section-head">
-                        <span class="command-artifact-section-title">关键动作</span>
-                        <span class="pill pill-neutral command-artifact-section-count">
-                          {{ getCommandArtifactExecutionItems(message.artifact).length }}
-                        </span>
-                      </div>
-
-                      <div v-if="getCommandArtifactExecutionItems(message.artifact).length" class="command-artifact-chain">
-                        <article
-                          v-for="item in getCommandArtifactExecutionItems(message.artifact)"
-                          :key="item.id"
-                          class="command-artifact-chain-item"
-                          :class="item.className"
-                        >
-                          <span class="command-artifact-chain-rail" aria-hidden="true">
-                            <span class="command-artifact-chain-bead"></span>
-                          </span>
-
-                          <div class="command-artifact-chain-main">
-                            <p class="command-artifact-chain-title" :title="item.title">{{ item.title }}</p>
-                            <p
-                              v-if="item.secondary"
-                              class="command-artifact-chain-secondary"
-                              :title="item.secondary"
-                            >
-                              {{ item.secondary }}
-                            </p>
-
-                            <div v-if="item.call && getCommandArtifactCallArgumentsText(item.call)" class="command-artifact-call-params">
-                              <span class="command-artifact-call-params-label">调用参数</span>
-                              <pre class="command-artifact-call-params-code">{{ getCommandArtifactCallArgumentsText(item.call) }}</pre>
-                            </div>
-
-                            <div v-if="item.call && getCommandArtifactCallRepairedArgumentsText(item.call)" class="command-artifact-call-params is-muted">
-                              <span class="command-artifact-call-params-label">修复前参数</span>
-                              <pre class="command-artifact-call-params-code">{{ getCommandArtifactCallRepairedArgumentsText(item.call) }}</pre>
-                            </div>
-                          </div>
-
-                          <span class="command-artifact-chain-time">{{ formatLocalDateTime(item.createdAt) }}</span>
-                        </article>
-                      </div>
-                    </div>
-                  </div>
-                </details>
               </article>
 
               <article v-if="ui.command.isRunning" class="command-message is-assistant is-pending">
@@ -173,7 +150,42 @@
                   <span class="command-message-time">{{ ui.command.liveProgress?.updatedAt ? formatLocalDateTime(ui.command.liveProgress.updatedAt) : "处理中" }}</span>
                 </div>
 
+                <div v-if="getCommandResponseProcessItems(ui.command.liveProgress?.artifact).length" class="command-response-process is-live">
+                  <article
+                    v-for="item in getCommandResponseProcessItems(ui.command.liveProgress?.artifact)"
+                    :key="item.id"
+                    class="command-response-process-item"
+                    :class="item.className"
+                  >
+                    <span class="command-response-process-rail" aria-hidden="true">
+                      <span class="command-response-process-mark">{{ item.marker }}</span>
+                    </span>
+                    <div class="command-response-process-main">
+                      <div class="command-response-process-head">
+                        <span class="command-response-process-label">{{ item.label }}</span>
+                        <span v-if="item.createdAt" class="command-response-process-time">{{ formatLocalDateTime(item.createdAt) }}</span>
+                      </div>
+                      <p class="command-response-process-title" :title="item.title">{{ item.title }}</p>
+                      <p v-if="item.detail" class="command-response-process-detail" :title="item.detail">{{ item.detail }}</p>
+                      <ol v-if="item.items?.length" class="command-response-plan-list">
+                        <li v-for="planItem in item.items" :key="planItem">{{ planItem }}</li>
+                      </ol>
+                      <div v-if="item.output" class="command-response-output">
+                        <span class="command-response-output-label">{{ item.outputLabel || "中间输出" }}</span>
+                        <pre>{{ item.output }}</pre>
+                      </div>
+                    </div>
+                  </article>
+                </div>
+
                 <div
+                  v-if="ui.command.liveProgress?.text"
+                  class="command-message-body command-rich-text command-final-reply"
+                  v-html="renderRichText(ui.command.liveProgress.text)"
+                ></div>
+
+                <div
+                  v-else-if="!getCommandResponseProcessItems(ui.command.liveProgress?.artifact).length"
                   class="command-message-body command-rich-text"
                   v-html="renderRichText(getCommandLiveStatusText(ui.command.liveProgress))"
                 ></div>
@@ -200,69 +212,6 @@
                     </div>
                   </article>
                 </div>
-
-                <details v-if="ui.command.liveProgress?.artifact" class="command-artifact-panel" open>
-                  <summary>{{ getCommandArtifactSummary(ui.command.liveProgress.artifact) }}</summary>
-
-                  <div class="command-artifact-body">
-                    <div v-if="ui.command.liveProgress.artifact.stopReason" class="command-artifact-inline-list">
-                      <div v-if="ui.command.liveProgress.artifact.stopReason" class="command-artifact-inline-row">
-                        <span class="command-artifact-inline-label">停止原因</span>
-                        <p
-                          class="command-artifact-inline-copy"
-                          :title="getCommandArtifactInlineText(ui.command.liveProgress.artifact.stopReason)"
-                        >
-                          {{ getCommandArtifactInlineText(ui.command.liveProgress.artifact.stopReason) }}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div class="command-artifact-section">
-                      <div class="command-artifact-section-head">
-                        <span class="command-artifact-section-title">关键动作</span>
-                        <span class="pill pill-neutral command-artifact-section-count">
-                          {{ getCommandArtifactExecutionItems(ui.command.liveProgress.artifact).length }}
-                        </span>
-                      </div>
-
-                      <div v-if="getCommandArtifactExecutionItems(ui.command.liveProgress.artifact).length" class="command-artifact-chain">
-                        <article
-                          v-for="item in getCommandArtifactExecutionItems(ui.command.liveProgress.artifact)"
-                          :key="item.id"
-                          class="command-artifact-chain-item"
-                          :class="item.className"
-                        >
-                          <span class="command-artifact-chain-rail" aria-hidden="true">
-                            <span class="command-artifact-chain-bead"></span>
-                          </span>
-
-                          <div class="command-artifact-chain-main">
-                            <p class="command-artifact-chain-title" :title="item.title">{{ item.title }}</p>
-                            <p
-                              v-if="item.secondary"
-                              class="command-artifact-chain-secondary"
-                              :title="item.secondary"
-                            >
-                              {{ item.secondary }}
-                            </p>
-
-                            <div v-if="item.call && getCommandArtifactCallArgumentsText(item.call)" class="command-artifact-call-params">
-                              <span class="command-artifact-call-params-label">调用参数</span>
-                              <pre class="command-artifact-call-params-code">{{ getCommandArtifactCallArgumentsText(item.call) }}</pre>
-                            </div>
-
-                            <div v-if="item.call && getCommandArtifactCallRepairedArgumentsText(item.call)" class="command-artifact-call-params is-muted">
-                              <span class="command-artifact-call-params-label">修复前参数</span>
-                              <pre class="command-artifact-call-params-code">{{ getCommandArtifactCallRepairedArgumentsText(item.call) }}</pre>
-                            </div>
-                          </div>
-
-                          <span class="command-artifact-chain-time">{{ formatLocalDateTime(item.createdAt) }}</span>
-                        </article>
-                      </div>
-                    </div>
-                  </div>
-                </details>
               </article>
             </div>
           </div>
@@ -385,8 +334,8 @@
                   ref="commandInputRef"
                   v-model="ui.command.draftInput"
                   class="field-textarea command-input"
-                  :placeholder="commandSelectedAgent ? '直接告诉 Gordon 你要完成什么工作，Enter 发送，Shift + Enter 换行。' : '先在能力拓展里启用一个 Agent，Gordon 才能开始工作。'"
-                  :disabled="!commandSelectedAgent || ui.command.isRunning"
+                  :placeholder="commandSelectedAgent ? (ui.command.isRunning ? '输入新的引导，Enter 会停止当前轮并继续执行。' : '直接告诉 Gordon 你要完成什么工作，Enter 发送，Shift + Enter 换行。') : '先在能力拓展里启用一个 Agent，Gordon 才能开始工作。'"
+                  :disabled="!commandSelectedAgent"
                   autofocus
                   @compositionstart="handleCommandInputCompositionStart"
                   @compositionend="handleCommandInputCompositionEnd"
@@ -513,15 +462,8 @@ defineProps({
   commandToolOptions: { type: Array, default: () => [] },
   backToCommandList: { type: Function, required: true },
   beginNewCommandSession: { type: Function, required: true },
-  getCommandArtifactCallArgumentsText: { type: Function, required: true },
-  getCommandArtifactCallRepairedArgumentsText: { type: Function, required: true },
-  getCommandArtifactCallSecondary: { type: Function, required: true },
-  getCommandArtifactCallTitle: { type: Function, required: true },
-  getCommandArtifactExecutionItems: { type: Function, required: true },
-  getCommandArtifactInlineText: { type: Function, required: true },
   getCommandArtifactProducts: { type: Function, required: true },
-  getCommandArtifactStepSecondary: { type: Function, required: true },
-  getCommandArtifactSummary: { type: Function, required: true },
+  getCommandResponseProcessItems: { type: Function, required: true },
   getCommandLiveStatusText: { type: Function, required: true },
   getSkillOptionLabel: { type: Function, required: true },
   handleCommandAgentChange: { type: Function, required: true },

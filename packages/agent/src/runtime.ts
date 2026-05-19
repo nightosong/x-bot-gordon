@@ -29,7 +29,7 @@ import type {
 } from "../../shared/src/index.js";
 import { callToolOnMcpServer, listToolsFromMcpServer } from "./mcp.js";
 
-const MAX_AUTO_MCP_ROUNDS = 3;
+const MAX_AUTO_MCP_ROUNDS = 6;
 const MAX_CONSECUTIVE_AUTO_MCP_FAILURES = 2;
 const MAX_MCP_TOOL_ATTEMPTS = 3;
 const MCP_RETRY_BASE_DELAY_MS = 400;
@@ -1051,6 +1051,8 @@ JSON 结构必须为：
 
 约束：
 - 只有当调用工具能明显提升结果质量时才调用
+- 用户明确要求新增、创建、保存、写入、修改或删除本地资产时，必须优先选择合适工具执行，不能只用文字承诺已经完成
+- 对应用广场资产的读写优先使用 Application Tools；没有工具返回成功前，不要判断资产已经变更
 - serverId 和 toolName 必须来自提供给你的候选列表
 - arguments 必须是一个 JSON 对象
 - 如果不需要调用工具，shouldCall 设为 false，其余字段可设为 null 或 {}
@@ -1412,7 +1414,9 @@ function buildSystemPrompt(agent: AgentProfile, skill: SkillDefinition | null, a
 
   sections.push(`工具上下文：\n${buildToolScopeText(authorizedMcpServers)}`);
 
-  sections.push("输出只返回最终结果，不要解释内部推理过程；不要把内置本地工具描述成用户已经接入外部 MCP。");
+  sections.push(
+    "输出只返回最终结果，不要解释内部隐藏推理过程；可以简要说明已经执行的可见步骤和工具结果。不要把内置本地工具描述成用户已经接入外部 MCP。用户要求新增、创建、保存、写入、修改或删除本地资产时，必须通过工具完成；没有成功的工具结果前，不要声称已经完成。"
+  );
 
   return sections.filter(Boolean).join("\n\n");
 }

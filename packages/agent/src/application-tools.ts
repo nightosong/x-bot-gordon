@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { listWritingBooks, saveWritingBook } from "../../workbench/src/index.js";
 import type {
   McpServerConfig,
@@ -5,6 +7,7 @@ import type {
   McpToolCallResult,
   McpToolDefinition,
   WritingBook,
+  WritingBookLength,
   WritingChapter
 } from "../../shared/src/index.js";
 
@@ -52,6 +55,66 @@ function asPositiveInteger(value: unknown, fallback: number, max = 100): number 
   }
 
   return Math.max(1, Math.min(max, Math.floor(parsed)));
+}
+
+function asWritingBookLength(value: unknown): WritingBookLength {
+  const normalized = asString(value);
+
+  if (["short", "medium", "long"].includes(normalized)) {
+    return normalized as WritingBookLength;
+  }
+
+  if (/短篇/u.test(normalized)) {
+    return "short";
+  }
+
+  if (/长篇|長篇/u.test(normalized)) {
+    return "long";
+  }
+
+  return "medium";
+}
+
+function asWritingChapterStatus(value: unknown): WritingChapter["status"] {
+  const normalized = asString(value);
+
+  if (["todo", "inProgress", "done"].includes(normalized)) {
+    return normalized as WritingChapter["status"];
+  }
+
+  if (/完成|done/u.test(normalized)) {
+    return "done";
+  }
+
+  if (/进行|編写|编写|in.?progress/u.test(normalized)) {
+    return "inProgress";
+  }
+
+  return "todo";
+}
+
+function createLocalId(prefix: string): string {
+  return `${prefix}_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+}
+
+function createEmptyWritingStoryAssets(bookId: string, premise: string, timestamp: string): WritingBook["storyAssets"] {
+  return {
+    premise,
+    worldview: [],
+    characters: [],
+    relationships: [],
+    timeline: [],
+    foreshadows: [],
+    rules: [],
+    styleProfile: {
+      voice: "",
+      pacing: "",
+      genreSignals: [],
+      taboos: []
+    },
+    memoryNotes: [],
+    updatedAt: timestamp
+  };
 }
 
 function truncateText(value: unknown, maxChars = MAX_TEXT_CHARS): string {
@@ -199,6 +262,55 @@ function createToolDefinition(server: McpServerConfig, definition: Omit<McpToolD
 function getApplicationToolDefinitions(server: McpServerConfig): McpToolDefinition[] {
   return [
     createToolDefinition(server, {
+      name: "writing_create_book",
+      description:
+        "在应用广场「墨笔生花」中新建一本小说并写入本地书稿目录。仅当用户明确要求新增、创建、增加一本小说/书稿时使用；普通创意讨论不要调用。默认 dryRun=false 会直接保存。",
+      inputSchema: {
+        type: "object",
+        required: ["title"],
+        properties: {
+          title: { type: "string", description: "新小说书名" },
+          author: { type: "string", description: "可选，作者名，默认 Song" },
+          length: { type: "string", enum: ["short", "medium", "long"], description: "可选，篇幅，默认 medium" },
+          genre: { type: "string", description: "可选，类型/题材" },
+          status: { type: "string", description: "可选，书籍状态，默认 新建" },
+          intro: { type: "string", description: "可选，简短介绍" },
+          outlineGuide: { type: "string", description: "可选，大纲指导/创作方向" },
+          chapters: {
+            type: "array",
+            description: "可选，初始章节目录。每项可包含 title、summary、content、status、partIndex",
+            items: {
+              type: "object",
+              properties: {
+                title: { type: "string" },
+                summary: { type: "string" },
+                content: { type: "string" },
+                status: { type: "string", enum: ["todo", "inProgress", "done"] },
+                partIndex: { type: "integer", minimum: 1 }
+              },
+              additionalProperties: false
+            }
+          },
+          parts: {
+            type: "array",
+            description: "可选，幕/卷设计。每项可包含 title、description、type",
+            items: {
+              type: "object",
+              properties: {
+                title: { type: "string" },
+                description: { type: "string" },
+                type: { type: "string", enum: ["act", "volume"] }
+              },
+              additionalProperties: false
+            }
+          },
+          premise: { type: "string", description: "可选，故事命题，会写入 storyAssets.premise" },
+          dryRun: { type: "boolean", description: "可选，默认 false。true 只预览，false 直接写入本地书稿" }
+        },
+        additionalProperties: false
+      }
+    }),
+    createToolDefinition(server, {
       name: "writing_list_books",
       description: "列出应用广场「墨笔生花」中的小说书稿。用于根据书名、id、章节数量和更新时间定位目标小说。",
       inputSchema: {
@@ -322,6 +434,130 @@ async function handleWritingListBooks(args: JsonObject) {
       resourceType: "book",
       total: books.length,
       books: selectedBooks.map((book) => summarizeBook(book, includeChapters))
+    }
+  );
+}
+
+function normalizeInitialBookParts(args: JsonObject, bookId: string): WritingBook["parts"] {
+  const parts = Array.isArray(args.parts) ? args.parts : [];
+
+  return parts
+    .filter(isObject)
+    .map((part, index) => {
+      const normalizedType = asString(part.type) === "volume" ? "volume" : "act";
+
+      return {
+        id: createLocalId(`${bookId}_part`),
+        type: normalizedType,
+        index: index + 1,
+        title: asString(part.title) || `${normalizedType === "volume" ? "卷" : "幕"} ${index + 1}`,
+        description: String(part.description ?? "")
+      };
+    });
+}
+
+function normalizeInitialBookChapters(args: JsonObject, bookId: string, timestamp: string): WritingChapter[] {
+  const rawChapters = Array.isArray(args.chapters) ? args.chapters.filter(isObject) : [];
+  const chapters = rawChapters.length
+    ? rawChapters
+    : [
+        {
+          title: "开场章节",
+          summary: "建立主角、梦境穿越规则和第一次异世界危机。",
+          content: "",
+          status: "todo"
+        }
+      ];
+
+  return chapters.map((chapter, index) => {
+    const partIndex = Number(chapter.partIndex);
+
+    return {
+      id: createLocalId(`${bookId}_chapter`),
+      index: index + 1,
+      ...(Number.isInteger(partIndex) && partIndex > 0 ? { partIndex } : {}),
+      title: asString(chapter.title).replace(/^第\s*\d+\s*章\s*/u, "") || `未命名章节 ${index + 1}`,
+      summary: String(chapter.summary ?? ""),
+      content: String(chapter.content ?? ""),
+      status: asWritingChapterStatus(chapter.status),
+      updatedAt: timestamp
+    };
+  });
+}
+
+async function handleWritingCreateBook(args: JsonObject) {
+  const title = asString(args.title);
+
+  if (!title) {
+    throw new Error("title 不能为空");
+  }
+
+  const dryRun = asBoolean(args.dryRun, false);
+  const timestamp = new Date().toISOString();
+  const bookId = createLocalId("writing_book");
+  const premise = asString(args.premise) || asString(args.intro);
+  const book: WritingBook = {
+    id: bookId,
+    title,
+    author: asString(args.author) || "Song",
+    length: asWritingBookLength(args.length),
+    genre: asString(args.genre) || "小说 / 待定类型",
+    status: asString(args.status) || "新建",
+    updatedAt: timestamp,
+    coverTone: "teal",
+    intro: String(args.intro ?? ""),
+    outlineGuide: String(args.outlineGuide ?? ""),
+    seriesPlan: "",
+    extraIntroSections: [],
+    parts: normalizeInitialBookParts(args, bookId),
+    storyAssets: createEmptyWritingStoryAssets(bookId, premise, timestamp),
+    chapters: normalizeInitialBookChapters(args, bookId, timestamp)
+  };
+
+  if (dryRun) {
+    return buildTextResult(
+      `小说创建预览（未写回）：${book.title}
+类型：${book.genre}
+篇幅：${book.length}
+初始章节：${book.chapters.length} 章
+
+如需保存，请在用户确认后再次调用 writing_create_book 并设置 dryRun=false。`,
+      {
+        applicationId: "writing",
+        resourceType: "book",
+        applied: false,
+        dryRun: true,
+        proposedBook: {
+          ...summarizeBook(book, true),
+          intro: truncateText(book.intro, MAX_TEXT_CHARS),
+          outlineGuide: truncateText(book.outlineGuide, MAX_TEXT_CHARS),
+          storyAssets: book.storyAssets
+        }
+      }
+    );
+  }
+
+  const savedBooks = await saveWritingBook(book);
+  const savedBook = savedBooks.find((entry) => entry.id === book.id) ?? book;
+
+  return buildTextResult(
+    `已新建小说：${savedBook.title}
+id=${savedBook.id}
+类型=${savedBook.genre}
+初始章节=${savedBook.chapters.length} 章
+更新时间=${savedBook.updatedAt}`,
+    {
+      applicationId: "writing",
+      resourceType: "book",
+      applied: true,
+      dryRun: false,
+      bookId: savedBook.id,
+      savedBook: {
+        ...summarizeBook(savedBook, true),
+        intro: truncateText(savedBook.intro, MAX_TEXT_CHARS),
+        outlineGuide: truncateText(getUnifiedWritingOutlineGuide(savedBook), MAX_TEXT_CHARS),
+        storyAssets: savedBook.storyAssets
+      }
     }
   );
 }
@@ -669,6 +905,9 @@ export async function callApplicationTool(server: McpServerConfig, request: McpT
   let result: Omit<McpToolCallResult, "serverId" | "serverName" | "toolName" | "isError">;
 
   switch (request.toolName) {
+    case "writing_create_book":
+      result = await handleWritingCreateBook(args);
+      break;
     case "writing_list_books":
       result = await handleWritingListBooks(args);
       break;

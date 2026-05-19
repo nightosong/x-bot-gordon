@@ -53,6 +53,8 @@ function formatCommandFailureKind(failureKind) {
 const MAX_COMMAND_ARGUMENT_STRING_LENGTH = 320;
 const MAX_COMMAND_ARGUMENT_ARRAY_ITEMS = 12;
 const MAX_COMMAND_ARGUMENT_OBJECT_KEYS = 24;
+const MAX_COMMAND_PROCESS_OUTPUT_LENGTH = 900;
+const MAX_COMMAND_PROCESS_DETAIL_LENGTH = 260;
 const COMMAND_VISIBLE_AUXILIARY_STEP_TYPES = new Set([
   "skill_handler_completed",
   "skill_handler_failed",
@@ -289,6 +291,8 @@ export function createCommandWorkshopActions({
     ui.command.form = normalizeCommandWorkshopConfig(ui.command.form);
     ui.command.draftInput = "";
     ui.command.attachments = [];
+    ui.command.queuedInput = "";
+    ui.command.queuedAttachments = [];
     ui.command.availableMcpTools = [];
     ui.command.liveProgress = null;
     focusCommandInput();
@@ -315,6 +319,8 @@ export function createCommandWorkshopActions({
     ui.command.availableMcpTools = [];
     ui.command.draftInput = "";
     ui.command.attachments = [];
+    ui.command.queuedInput = "";
+    ui.command.queuedAttachments = [];
     ui.command.liveProgress = null;
     scrollCommandToBottom();
   }
@@ -451,6 +457,31 @@ export function createCommandWorkshopActions({
     }
   }
 
+  function queueCommandGuidance(input, attachments = []) {
+    ui.command.queuedInput = String(input ?? "").trim();
+    ui.command.queuedAttachments = toPlainIpcData(attachments ?? [], []);
+    ui.command.draftInput = "";
+    ui.command.attachments = [];
+  }
+
+  function runQueuedCommandGuidanceIfNeeded() {
+    const queuedInput = String(ui.command.queuedInput ?? "").trim();
+    const queuedAttachments = toPlainIpcData(ui.command.queuedAttachments ?? [], []);
+
+    if (!queuedInput && !queuedAttachments.length) {
+      return false;
+    }
+
+    ui.command.queuedInput = "";
+    ui.command.queuedAttachments = [];
+    ui.command.draftInput = queuedInput;
+    ui.command.attachments = queuedAttachments;
+    runOnNextTick(() => {
+      void handleCommandSubmit();
+    });
+    return true;
+  }
+
   function handleAgentRunProgress(payload) {
     if (!payload?.progressEventId || payload.progressEventId !== ui.command.activeProgressEventId) {
       return;
@@ -504,14 +535,22 @@ export function createCommandWorkshopActions({
       return;
     }
 
-    if (ui.command.isRunning) {
-      setStatus("上一轮任务仍在运行，请等待当前结果返回。", "warning");
-      return;
-    }
-
     const agent = getAgentById(ui.command.form.agentProfileId);
     const userInput = ui.command.draftInput.trim();
     const attachments = toPlainIpcData(ui.command.attachments ?? [], []);
+
+    if (ui.command.isRunning) {
+      if (!userInput && !attachments.length) {
+        setStatus("当前任务仍在运行；输入新的引导后可中断并接着执行。", "warning");
+        return;
+      }
+
+      queueCommandGuidance(userInput, attachments);
+      setStatus("已收到新的引导，正在停止当前运行并准备接着执行。", "warning");
+      await handleCommandRunCancel();
+      return;
+    }
+
     const applicationContext = buildCommandApplicationContext(ui, workbench);
     const agentUserInput = buildCommandUserInputForAgent(userInput, attachments, applicationContext);
     let mcpArguments = undefined;
@@ -662,6 +701,9 @@ export function createCommandWorkshopActions({
       ui.command.activeProgressEventId = null;
       ui.command.liveProgress = null;
       setStatus(`命令工坊已完成本轮响应（${result.profileLabel}）。`, "success");
+      if (runQueuedCommandGuidanceIfNeeded()) {
+        setStatus("正在按新的引导继续执行。", "neutral");
+      }
       scrollCommandToBottom();
     } catch (error) {
       console.error("Failed to run command workshop session", error);
@@ -698,6 +740,9 @@ export function createCommandWorkshopActions({
       ui.command.activeProgressEventId = null;
       ui.command.liveProgress = null;
       setStatus(wasCancelled ? "命令工坊已停止，本轮部分输出已保留。" : `命令工坊运行失败：${getErrorMessage(error)}`, wasCancelled ? "warning" : "danger");
+      if (runQueuedCommandGuidanceIfNeeded()) {
+        setStatus("正在按新的引导继续执行。", "neutral");
+      }
 
       if (!wasCancelled) {
         void showAlertDialog({
@@ -921,6 +966,454 @@ export function createCommandWorkshopActions({
     };
   }
 
+  function truncateCommandProcessText(value, maxLength = MAX_COMMAND_PROCESS_DETAIL_LENGTH) {
+    return truncateText(normalizeCommandArtifactInlineText(value), maxLength);
+  }
+
+  function truncateCommandProcessOutput(value, maxLength = MAX_COMMAND_PROCESS_OUTPUT_LENGTH) {
+    const text = String(value ?? "")
+      .replace(/\r\n/g, "\n")
+      .replace(/[ \t]+\n/g, "\n")
+      .replace(/\n{4,}/g, "\n\n\n")
+      .trim();
+
+    if (!text) {
+      return "";
+    }
+
+    const chars = Array.from(text);
+    return chars.length > maxLength ? `${chars.slice(0, maxLength).join("")}\n...（已截断）` : text;
+  }
+
+  function getCommandStepRound(step) {
+    const source = `${step?.title ?? ""} ${step?.detail ?? ""}`;
+    const match = source.match(/第\s*(\d+)\s*轮/u);
+    return match?.[1] ?? "";
+  }
+
+  function isCommandPlanningResultStep(step) {
+    return step?.type === "mcp_auto_planning" && /结果/u.test(String(step?.title ?? ""));
+  }
+
+  function isCommandPlanningStartStep(step) {
+    return step?.type === "mcp_auto_planning" && !isCommandPlanningResultStep(step);
+  }
+
+  function getCommandProcessCallDetail(call) {
+    const detailParts = [];
+    const argumentText = truncateCommandProcessText(stringifyCommandArtifactArguments(getCommandArtifactResolvedCallArguments(call)), 180);
+
+    if (argumentText) {
+      detailParts.push(`参数：${argumentText}`);
+    }
+
+    if (call?.recovered) {
+      detailParts.push(`重试恢复 x${call.attemptCount}`);
+    } else if (call?.attemptCount > 1) {
+      detailParts.push(`尝试 x${call.attemptCount}`);
+    }
+
+    if (call?.repairedFromArguments) {
+      detailParts.push(call.repairReason ? truncateCommandProcessText(call.repairReason, 120) : "参数已修复");
+    }
+
+    if (call?.fallbackFromToolName) {
+      detailParts.push(`fallback：${call.fallbackFromServerName ?? call.serverName}/${call.fallbackFromToolName}`);
+    }
+
+    if (call?.failureKind) {
+      const failureKindLabel =
+        typeof formatFailureKind === "function" ? formatFailureKind(call.failureKind) : formatCommandFailureKind(call.failureKind);
+      detailParts.push(failureKindLabel);
+    }
+
+    if (call?.isError && call?.failureReason) {
+      detailParts.push(truncateCommandProcessText(call.failureReason, 160));
+    }
+
+    return detailParts.join(" · ");
+  }
+
+  function normalizeCommandResponseProcessCall(call, index = 0) {
+    if (!call || typeof call !== "object") {
+      return null;
+    }
+
+    const roundText = call.round ? `Plan ${call.round}` : `Plan ${index + 1}`;
+    const output = truncateCommandProcessOutput(call.resultText);
+
+    return {
+      id: `process_call_${call.createdAt ?? "tool"}_${call.toolName ?? index}`,
+      kind: "execute",
+      marker: call.isError ? "!" : "执",
+      label: call.isError ? `执行失败 · ${roundText}` : `执行 · ${roundText}`,
+      className: call.isError ? "is-execute is-error" : "is-execute is-done",
+      title: `${call.serverName ?? "工具服务"} / ${call.toolName ?? "工具"}`,
+      detail: getCommandProcessCallDetail(call),
+      output,
+      outputLabel: call.isError ? "错误输出" : "中间输出",
+      createdAt: call.createdAt ?? ""
+    };
+  }
+
+  function normalizeCommandResponsePendingTool(steps, calls) {
+    const selectedToolSteps = steps.filter((step) => step?.type === "mcp_tool_selected");
+
+    if (!selectedToolSteps.length || selectedToolSteps.length <= calls.length) {
+      return null;
+    }
+
+    const selectedStep = selectedToolSteps[selectedToolSteps.length - 1];
+    const selectedStepIndex = steps.indexOf(selectedStep);
+    const serverStep = steps
+      .slice(0, selectedStepIndex)
+      .reverse()
+      .find((step) => step?.type === "mcp_server_selected");
+    const round = getCommandStepRound(selectedStep);
+    const toolName = getCommandArtifactToolNameFromStep(selectedStep) || "工具";
+    const serverName = getCommandArtifactServerNameFromStep(serverStep) || "工具服务";
+    const argumentText = String(selectedStep?.detail ?? "").split(" / 参数：")[1] ?? "";
+
+    return {
+      id: `${selectedStep?.id ?? selectedStep?.createdAt ?? "tool"}_process_pending`,
+      kind: "execute",
+      marker: "执",
+      label: `执行中 · Plan ${round || calls.length + 1}`,
+      className: "is-execute is-running",
+      title: `${serverName} / ${toolName}`,
+      detail: argumentText ? `参数：${truncateCommandProcessText(argumentText, 180)}` : "参数已确定，正在等待工具返回。",
+      output: "工具正在运行，返回后会把中间输出接在这里。",
+      outputLabel: "中间输出",
+      createdAt: selectedStep?.createdAt ?? ""
+    };
+  }
+
+  function normalizeCommandResponseProcessStep(step, index = 0, planningResultRounds = new Set()) {
+    if (!step || typeof step !== "object") {
+      return null;
+    }
+
+    const detail = truncateCommandProcessText(step.detail);
+    const round = getCommandStepRound(step);
+    const id = step.id ?? `process_step_${index}`;
+    const createdAt = step.createdAt ?? "";
+
+    if (isCommandPlanningResultStep(step)) {
+      return {
+        id,
+        kind: "thought",
+        marker: "思",
+        label: round ? `思考 · 第 ${round} 轮` : "思考",
+        className: "is-thought",
+        title: round ? `我判断第 ${round} 轮下一步` : "我判断下一步",
+        detail,
+        createdAt
+      };
+    }
+
+    if (isCommandPlanningStartStep(step)) {
+      if (round && planningResultRounds.has(round)) {
+        return null;
+      }
+
+      return {
+        id,
+        kind: "thought",
+        marker: "思",
+        label: round ? `思考中 · 第 ${round} 轮` : "思考中",
+        className: "is-thought is-running",
+        title: "正在选择下一步动作",
+        detail,
+        createdAt
+      };
+    }
+
+    if (step.type === "mcp_auto_stopped") {
+      const hasFailure = /失败|停止|重复|最大/u.test(`${step.title ?? ""} ${step.detail ?? ""}`);
+
+      return {
+        id,
+        kind: "reflect",
+        marker: hasFailure ? "!" : "判",
+        label: hasFailure ? "复盘" : "继续判断",
+        className: hasFailure ? "is-reflect is-error" : "is-reflect",
+        title: step.title ?? "工具规划完成",
+        detail,
+        createdAt
+      };
+    }
+
+    if (step.type === "mcp_args_repaired") {
+      return {
+        id,
+        kind: "adjust",
+        marker: "调",
+        label: "调整",
+        className: "is-adjust",
+        title: "修正工具参数",
+        detail,
+        createdAt
+      };
+    }
+
+    if (step.type === "mcp_retrying") {
+      return {
+        id,
+        kind: "adjust",
+        marker: "重",
+        label: "重试",
+        className: "is-adjust is-running",
+        title: "工具调用重试",
+        detail,
+        createdAt
+      };
+    }
+
+    if (step.type === "mcp_fallback_planned" || step.type === "mcp_fallback_selected") {
+      return {
+        id,
+        kind: "reflect",
+        marker: "换",
+        label: "恢复策略",
+        className: "is-reflect",
+        title: step.title ?? "切换备用工具",
+        detail,
+        createdAt
+      };
+    }
+
+    if (step.type === "workspace_permission_requested" || step.type === "computer_use_permission_requested") {
+      return {
+        id,
+        kind: "permission",
+        marker: "权",
+        label: "等待授权",
+        className: "is-permission is-running",
+        title: step.title ?? "请求授权",
+        detail,
+        createdAt
+      };
+    }
+
+    if (step.type === "workspace_permission_granted" || step.type === "computer_use_permission_granted") {
+      return {
+        id,
+        kind: "permission",
+        marker: "权",
+        label: "授权完成",
+        className: "is-permission is-done",
+        title: step.title ?? "授权完成",
+        detail,
+        createdAt
+      };
+    }
+
+    if (step.type === "workspace_permission_denied" || step.type === "computer_use_permission_denied") {
+      return {
+        id,
+        kind: "permission",
+        marker: "!",
+        label: "授权拒绝",
+        className: "is-permission is-error",
+        title: step.title ?? "授权被拒绝",
+        detail,
+        createdAt
+      };
+    }
+
+    if (step.type === "skill_handler_started") {
+      return {
+        id,
+        kind: "execute",
+        marker: "执",
+        label: "执行 Skill",
+        className: "is-execute is-running",
+        title: step.title ?? "执行 Skill Handler",
+        detail,
+        createdAt
+      };
+    }
+
+    if (step.type === "skill_handler_completed") {
+      return {
+        id,
+        kind: "execute",
+        marker: "执",
+        label: "执行 Skill",
+        className: "is-execute is-done",
+        title: "Skill Handler 执行完成",
+        detail,
+        createdAt
+      };
+    }
+
+    if (step.type === "skill_handler_failed") {
+      return {
+        id,
+        kind: "execute",
+        marker: "!",
+        label: "执行 Skill",
+        className: "is-execute is-error",
+        title: "Skill Handler 执行失败",
+        detail,
+        createdAt
+      };
+    }
+
+    if (step.type === "model_invoked") {
+      return {
+        id,
+        kind: "final",
+        marker: "答",
+        label: "整理",
+        className: "is-final is-running",
+        title: "整理最终答复",
+        detail: detail || "工具输出已经汇总，正在生成最终回复。",
+        createdAt
+      };
+    }
+
+    if (step.type === "completed") {
+      return {
+        id,
+        kind: "final",
+        marker: "成",
+        label: "完成",
+        className: "is-final is-done",
+        title: "本轮处理完成",
+        detail,
+        createdAt
+      };
+    }
+
+    return null;
+  }
+
+  function getCommandResponseThoughtDetail(artifact) {
+    const steps = Array.isArray(artifact?.steps) ? artifact.steps : [];
+    const calls = Array.isArray(artifact?.mcpCalls) ? artifact.mcpCalls : [];
+    const firstPlanResult = steps.find((step) => isCommandPlanningResultStep(step) && normalizeCommandArtifactInlineText(step.detail));
+    const stopStep = steps.find((step) => step?.type === "mcp_auto_stopped" && normalizeCommandArtifactInlineText(step.detail));
+
+    if (calls.length) {
+      return firstPlanResult
+        ? `我先判断这轮需要动用工具：${truncateCommandProcessText(firstPlanResult.detail, 180)}`
+        : "我先把需求拆成可执行动作，再调用工具把结果落到本地或当前应用里。";
+    }
+
+    if (stopStep) {
+      return `我先判断是否需要工具：${truncateCommandProcessText(stopStep.detail, 180)}`;
+    }
+
+    if (steps.some((step) => step?.type === "mcp_authorized")) {
+      return "我先确认可用工具范围，再判断这轮是直接回复还是进入工具执行。";
+    }
+
+    return "我先理解你的问题和当前上下文，再把可执行结果整理给你。";
+  }
+
+  function getCommandResponsePlanItems(artifact) {
+    const steps = Array.isArray(artifact?.steps) ? artifact.steps : [];
+    const calls = Array.isArray(artifact?.mcpCalls) ? artifact.mcpCalls : [];
+    const pendingTool = normalizeCommandResponsePendingTool(steps, calls);
+    const planItems = [];
+
+    if (artifact?.skillName) {
+      planItems.push(`加载 Skill：${artifact.skillName}`);
+    }
+
+    const toolItems = [
+      ...calls.map((call, index) => {
+        const roundText = call.round ? `Plan ${call.round}` : `Plan ${index + 1}`;
+        return `${roundText}：调用 ${call.serverName ?? "工具服务"} / ${call.toolName ?? "工具"}`;
+      }),
+      ...(pendingTool ? [`${pendingTool.label.replace("执行中 · ", "")}：调用 ${pendingTool.title}`] : [])
+    ];
+
+    if (toolItems.length) {
+      planItems.push(...toolItems);
+      planItems.push("根据中间输出判断是否继续调用工具");
+      planItems.push("整理最终答复");
+    } else {
+      const stoppedStep = steps.find((step) => step?.type === "mcp_auto_stopped");
+
+      if (stoppedStep) {
+        planItems.push("确认无需继续调用工具");
+      } else {
+        planItems.push("理解问题与当前上下文");
+        planItems.push("按需判断是否调用工具");
+      }
+
+      planItems.push("整理回复");
+    }
+
+    return Array.from(new Set(planItems)).slice(0, 8);
+  }
+
+  function getCommandResponseProcessItems(artifact) {
+    if (!artifact || typeof artifact !== "object") {
+      return [];
+    }
+
+    const steps = Array.isArray(artifact.steps) ? artifact.steps : [];
+    const calls = Array.isArray(artifact.mcpCalls) ? artifact.mcpCalls : [];
+
+    if (!steps.length && !calls.length && !artifact.stopReason) {
+      return [];
+    }
+
+    const firstCreatedAt = steps[0]?.createdAt ?? calls[0]?.createdAt ?? artifact.createdAt ?? "";
+    const planningResultRounds = new Set(
+      steps.filter(isCommandPlanningResultStep).map((step) => getCommandStepRound(step)).filter(Boolean)
+    );
+    const timelineItems = [
+      ...steps.map((step, index) => normalizeCommandResponseProcessStep(step, index, planningResultRounds)).filter(Boolean),
+      ...calls.map((call, index) => normalizeCommandResponseProcessCall(call, index)).filter(Boolean)
+    ];
+    const pendingTool = normalizeCommandResponsePendingTool(steps, calls);
+
+    if (pendingTool) {
+      timelineItems.push(pendingTool);
+    }
+
+    if (artifact.stopReason && !steps.some((step) => step?.type === "mcp_auto_stopped")) {
+      timelineItems.push({
+        id: `process_stop_${artifact.createdAt ?? "now"}`,
+        kind: "reflect",
+        marker: "!",
+        label: "复盘",
+        className: "is-reflect is-error",
+        title: "运行停止",
+        detail: truncateCommandProcessText(artifact.stopReason),
+        createdAt: artifact.createdAt ?? ""
+      });
+    }
+
+    return [
+      {
+        id: `process_thought_${(artifact.createdAt ?? firstCreatedAt) || "now"}`,
+        kind: "thought",
+        marker: "思",
+        label: "思路摘要",
+        className: "is-thought",
+        title: "我先判断任务路径",
+        detail: getCommandResponseThoughtDetail(artifact),
+        createdAt: firstCreatedAt
+      },
+      {
+        id: `process_plan_${(artifact.createdAt ?? firstCreatedAt) || "now"}`,
+        kind: "plan",
+        marker: "计",
+        label: "执行计划",
+        className: "is-plan",
+        title: "这轮按这些步骤推进",
+        items: getCommandResponsePlanItems(artifact),
+        createdAt: firstCreatedAt
+      },
+      ...timelineItems.sort((left, right) => String(left.createdAt || "").localeCompare(String(right.createdAt || "")))
+    ];
+  }
+
   function getCommandArtifactToolNameFromStep(step) {
     return String(step?.detail ?? "")
       .split(" / 参数：")[0]
@@ -1042,15 +1535,8 @@ export function createCommandWorkshopActions({
     commandSettingsSummary,
     commandToolOptions,
     focusCommandInput,
-    getCommandArtifactCallSecondary,
-    getCommandArtifactCallArgumentsText,
-    getCommandArtifactCallRepairedArgumentsText,
-    getCommandArtifactCallTitle,
-    getCommandArtifactExecutionItems,
-    getCommandArtifactInlineText,
     getCommandArtifactProducts,
-    getCommandArtifactStepSecondary,
-    getCommandArtifactSummary,
+    getCommandResponseProcessItems,
     getCommandLiveStatusText,
     getCommandWorkshopModeLabel,
     getCommandWorkshopToolModeLabel,

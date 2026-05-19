@@ -166,15 +166,8 @@
               :command-tool-options="commandToolOptions"
               :back-to-command-list="backToCommandList"
               :begin-new-command-session="beginNewCommandSession"
-              :get-command-artifact-call-arguments-text="getCommandArtifactCallArgumentsText"
-              :get-command-artifact-call-repaired-arguments-text="getCommandArtifactCallRepairedArgumentsText"
-              :get-command-artifact-call-secondary="getCommandArtifactCallSecondary"
-              :get-command-artifact-call-title="getCommandArtifactCallTitle"
-              :get-command-artifact-execution-items="getCommandArtifactExecutionItems"
-              :get-command-artifact-inline-text="getCommandArtifactInlineText"
               :get-command-artifact-products="getCommandArtifactProducts"
-              :get-command-artifact-step-secondary="getCommandArtifactStepSecondary"
-              :get-command-artifact-summary="getCommandArtifactSummary"
+              :get-command-response-process-items="getCommandResponseProcessItems"
               :get-command-live-status-text="getCommandLiveStatusText"
               :get-skill-option-label="getSkillOptionLabel"
               :handle-command-agent-change="handleCommandAgentChange"
@@ -733,15 +726,8 @@ const {
   commandSettingsSummary,
   commandToolOptions,
   focusCommandInput,
-  getCommandArtifactCallArgumentsText,
-  getCommandArtifactCallRepairedArgumentsText,
-  getCommandArtifactCallSecondary,
-  getCommandArtifactCallTitle,
-  getCommandArtifactExecutionItems,
-  getCommandArtifactInlineText,
   getCommandArtifactProducts,
-  getCommandArtifactStepSecondary,
-  getCommandArtifactSummary,
+  getCommandResponseProcessItems,
   getCommandLiveStatusText,
   handleAgentRunProgress,
   handleCommandAgentChange,
