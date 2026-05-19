@@ -61,7 +61,12 @@
               :add-weekly-project="addWeeklyProject"
               :add-weekly-report-template="addWeeklyReportTemplate"
               :add-weekly-task="addWeeklyTask"
+              :apply-weekly-report-template-ai-output="applyWeeklyReportTemplateAiOutput"
+              :cancel-weekly-report-template-ai-run="cancelWeeklyReportTemplateAiRun"
               :close-weekly-editor="closeWeeklyEditor"
+              :close-weekly-report-template-ai="closeWeeklyReportTemplateAi"
+              :generate-weekly-report-template-ai-output="generateWeeklyReportTemplateAiOutput"
+              :get-weekly-report-template-ai-feedback-class="getWeeklyReportTemplateAiFeedbackClass"
               :handle-rich-text-click="handleRichTextClick"
               :handle-weekly-active-report-generation="handleWeeklyActiveReportGeneration"
               :handle-weekly-delete="handleWeeklyDelete"
@@ -75,9 +80,12 @@
               :remove-weekly-selected-report-template="removeWeeklySelectedReportTemplate"
               :remove-weekly-task="removeWeeklyTask"
               :reset-weekly-report-copy-state="resetWeeklyReportCopyState"
+              :set-weekly-report-template-ai-instruction="setWeeklyReportTemplateAiInstruction"
+              :set-weekly-report-template-ai-output="setWeeklyReportTemplateAiOutput"
               :set-weekly-reporting-mode="setWeeklyReportingMode"
               :set-weekly-report-output-mode="setWeeklyReportOutputMode"
               :set-weekly-task-status="setWeeklyTaskStatus"
+              :toggle-weekly-report-template-collapsed="toggleWeeklyReportTemplateCollapsed"
               :toggle-weekly-project-collapsed="toggleWeeklyProjectCollapsed"
               :touch-weekly-task-by-id="touchWeeklyTaskById"
             />
@@ -158,14 +166,9 @@
               :command-tool-options="commandToolOptions"
               :back-to-command-list="backToCommandList"
               :begin-new-command-session="beginNewCommandSession"
-              :get-command-artifact-call-arguments-text="getCommandArtifactCallArgumentsText"
-              :get-command-artifact-call-repaired-arguments-text="getCommandArtifactCallRepairedArgumentsText"
-              :get-command-artifact-call-secondary="getCommandArtifactCallSecondary"
-              :get-command-artifact-call-title="getCommandArtifactCallTitle"
-              :get-command-artifact-inline-text="getCommandArtifactInlineText"
               :get-command-artifact-products="getCommandArtifactProducts"
-              :get-command-artifact-step-secondary="getCommandArtifactStepSecondary"
-              :get-command-artifact-summary="getCommandArtifactSummary"
+              :get-command-response-process-items="getCommandResponseProcessItems"
+              :get-command-live-status-text="getCommandLiveStatusText"
               :get-skill-option-label="getSkillOptionLabel"
               :handle-command-agent-change="handleCommandAgentChange"
               :handle-command-attachment-select="handleCommandAttachmentSelect"
@@ -173,6 +176,7 @@
               :handle-command-input-composition-start="handleCommandInputCompositionStart"
               :handle-command-input-enter-keydown="handleCommandInputEnterKeydown"
               :handle-command-load-mcp-tools="handleCommandLoadMcpTools"
+              :handle-command-run-cancel="handleCommandRunCancel"
               :handle-command-server-change="handleCommandServerChange"
               :handle-command-session-delete="handleCommandSessionDelete"
               :handle-command-submit="handleCommandSubmit"
@@ -722,14 +726,9 @@ const {
   commandSettingsSummary,
   commandToolOptions,
   focusCommandInput,
-  getCommandArtifactCallArgumentsText,
-  getCommandArtifactCallRepairedArgumentsText,
-  getCommandArtifactCallSecondary,
-  getCommandArtifactCallTitle,
-  getCommandArtifactInlineText,
   getCommandArtifactProducts,
-  getCommandArtifactStepSecondary,
-  getCommandArtifactSummary,
+  getCommandResponseProcessItems,
+  getCommandLiveStatusText,
   handleAgentRunProgress,
   handleCommandAgentChange,
   handleCommandAttachmentSelect,
@@ -737,6 +736,7 @@ const {
   handleCommandInputCompositionStart,
   handleCommandInputEnterKeydown,
   handleCommandLoadMcpTools,
+  handleCommandRunCancel,
   handleCommandServerChange,
   handleCommandSessionDelete,
   handleCommandSubmit,
@@ -758,6 +758,7 @@ const {
   getMcpServerById,
   getSkillById,
   nextTick,
+  refreshWorkbenchSnapshot,
   resolveBoundModelName,
   setStatus,
   showAlertDialog,
@@ -896,8 +897,13 @@ const {
   addWeeklyProject,
   addWeeklyReportTemplate,
   addWeeklyTask,
+  applyWeeklyReportTemplateAiOutput,
+  cancelWeeklyReportTemplateAiRun,
   closeWeeklyEditor,
+  closeWeeklyReportTemplateAi,
   disposeWeeklyRuntime,
+  generateWeeklyReportTemplateAiOutput,
+  getWeeklyReportTemplateAiFeedbackClass,
   handleWeeklyActiveReportGeneration,
   handleWeeklyDelete,
   handleWeeklyDraftSnapshotChange,
@@ -914,10 +920,13 @@ const {
   removeWeeklySelectedReportTemplate,
   removeWeeklyTask,
   resetWeeklyReportCopyState,
+  setWeeklyReportTemplateAiInstruction,
+  setWeeklyReportTemplateAiOutput,
   setWeeklyReportingMode,
   setWeeklyReportOutputMode,
   setWeeklyTaskStatus,
   syncWeeklyEditorState,
+  toggleWeeklyReportTemplateCollapsed,
   toggleWeeklyProjectCollapsed,
   touchWeeklyTaskById
 } = createWeeklyActions({

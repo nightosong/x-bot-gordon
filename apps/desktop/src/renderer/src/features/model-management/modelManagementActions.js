@@ -62,6 +62,8 @@ export function createModelEditorState(provider = "openai", profile = null) {
       project: profile?.project ?? "",
       location: profile?.location ?? "",
       notes: profile?.notes ?? "",
+      apiFormat: profile?.apiFormat === "responses" ? "responses" : "chat_completions",
+      supportsStreaming: profile?.supportsStreaming !== false,
       balanceQueryCode: profile?.balanceQueryCode ?? ""
     },
     balanceQueryResult: profile?.balanceSnapshot ?? null,
@@ -466,6 +468,8 @@ export function createModelManagementActions({
       project: String(profile?.project ?? ""),
       location: String(profile?.location ?? ""),
       notes: String(profile?.notes ?? ""),
+      apiFormat: profile?.apiFormat === "responses" ? "responses" : "chat_completions",
+      supportsStreaming: profile?.supportsStreaming !== false,
       balanceQueryCode: String(profile?.balanceQueryCode ?? ""),
       updatedAt: String(profile?.updatedAt ?? "")
     };
@@ -505,6 +509,8 @@ export function createModelManagementActions({
       project: ui.modelManagement.editor.values.project.trim(),
       location: ui.modelManagement.editor.values.location.trim(),
       notes: ui.modelManagement.editor.values.notes.trim(),
+      apiFormat: ui.modelManagement.editor.values.apiFormat === "responses" ? "responses" : "chat_completions",
+      supportsStreaming: ui.modelManagement.editor.values.supportsStreaming !== false,
       balanceQueryCode,
       balanceSnapshot: shouldReuseBalanceSnapshot ? ui.modelManagement.editor.balanceQueryResult ?? null : null,
       updatedAt: new Date().toISOString()

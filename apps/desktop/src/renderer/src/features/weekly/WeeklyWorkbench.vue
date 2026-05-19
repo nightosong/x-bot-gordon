@@ -263,6 +263,14 @@
 
                       <div class="weekly-report-toolbar-side">
                         <template v-if="weeklyIsWeeklyReportMode">
+                          <GCompactSelect
+                            v-model="state.draft.selectedReportTemplateId"
+                            class="weekly-template-select"
+                            aria-label="周报模板"
+                            :disabled="state.isGeneratingReport"
+                            :options="weeklyReportTemplateOptions"
+                            @change="handleWeeklyReportTemplateSelectionChange"
+                          />
                           <button
                             type="button"
                             class="weekly-mini-action weekly-mini-action-primary"
@@ -289,32 +297,155 @@
                       </div>
                     </div>
 
-                    <div v-if="weeklyIsWeeklyReportMode" class="weekly-template-toolbar">
-                      <label class="field weekly-template-select-field">
-                        <span class="field-label">{{ weeklyReportSelectorLabel }}</span>
-                        <select
-                          v-model="state.draft.selectedReportTemplateId"
-                          class="field-input weekly-template-select"
-                          :disabled="state.isGeneratingReport"
-                          @change="handleWeeklyReportTemplateSelectionChange"
+                    <section
+                      v-if="weeklyIsWeeklyReportMode"
+                      class="weekly-template-editor-card"
+                      :class="{
+                        'is-collapsed': state.isReportTemplateCollapsed,
+                        'is-ai-open': weeklyReportTemplateAiState.isOpen
+                      }"
+                    >
+                      <div class="weekly-template-editor-head">
+                        <button
+                          type="button"
+                          class="weekly-template-collapse-button"
+                          :aria-expanded="state.isReportTemplateCollapsed ? 'false' : 'true'"
+                          aria-controls="weekly-report-template-editor"
+                          @click="toggleWeeklyReportTemplateCollapsed"
                         >
-                          <option v-for="template in weeklyReportTemplates" :key="template.id" :value="template.id">
-                            {{ getWeeklyReportTemplateOptionLabel(template) }}
-                          </option>
-                        </select>
-                      </label>
-                    </div>
+                          <GIcon :name="state.isReportTemplateCollapsed ? 'chevronDown' : 'chevronUp'" />
+                          <span>{{ weeklyReportGuideLabel }}</span>
+                          <small>{{ weeklyReportTemplateMetaLabel }}</small>
+                        </button>
 
-                    <label v-if="weeklyIsWeeklyReportMode" class="field field-full">
-                      <span class="field-label">{{ weeklyReportGuideLabel }}</span>
-                      <textarea
-                        v-model="weeklyReportGuideContent"
-                        class="field-textarea weekly-textarea weekly-textarea-secondary"
-                        :class="{ 'is-readonly': weeklyReportGuideReadonly }"
-                        :readonly="weeklyReportGuideReadonly"
-                        :placeholder="weeklyReportGuidePlaceholder"
-                      ></textarea>
-                    </label>
+                        <div class="weekly-template-editor-actions">
+                          <div class="weekly-template-ai-control">
+                            <button
+                              type="button"
+                              class="field-ai-trigger weekly-template-ai-trigger"
+                              :class="{ 'is-active': weeklyReportTemplateAiState.isOpen }"
+                              :disabled="state.isGeneratingReport"
+                              :aria-label="weeklyReportTemplateAiButtonLabel"
+                              :title="weeklyReportTemplateAiButtonTitle"
+                              @click.stop="weeklyReportTemplateAiState.isOpen ? closeWeeklyReportTemplateAi() : openWeeklyReportTemplateAi()"
+                            >
+                              <GIcon
+                                :name="weeklyReportTemplateAiState.isGenerating ? 'loading' : 'sparkles'"
+                                :spin="weeklyReportTemplateAiState.isGenerating"
+                                :size="13"
+                              />
+                            </button>
+
+                            <Transition name="field-ai-popover">
+                              <section
+                                v-if="weeklyReportTemplateAiState.isOpen"
+                                class="field-ai-popover weekly-template-ai-popover"
+                                role="dialog"
+                                aria-label="周报模板 AI 优化"
+                                @click.stop
+                              >
+                                <div class="field-ai-head">
+                                  <div class="field-ai-title">
+                                    <p>AI Copilot</p>
+                                    <strong>周报模板</strong>
+                                  </div>
+                                  <button type="button" class="field-ai-close" aria-label="关闭优化" title="关闭" @click="closeWeeklyReportTemplateAi">
+                                    <GIcon name="close" :size="13" />
+                                  </button>
+                                </div>
+
+                                <textarea
+                                  class="field-ai-input"
+                                  :value="weeklyReportTemplateAiState.instruction"
+                                  placeholder="例如：更紧凑、保留项目层级、强调风险和下周动作"
+                                  :disabled="weeklyReportTemplateAiState.isGenerating"
+                                  @input="setWeeklyReportTemplateAiInstruction($event.target.value)"
+                                ></textarea>
+
+                                <textarea
+                                  v-if="weeklyReportTemplateAiState.output || weeklyReportTemplateAiState.isGenerating"
+                                  class="field-ai-output"
+                                  :value="weeklyReportTemplateAiState.output"
+                                  placeholder="优化后的模板会出现在这里"
+                                  :disabled="weeklyReportTemplateAiState.isGenerating"
+                                  @input="setWeeklyReportTemplateAiOutput($event.target.value)"
+                                ></textarea>
+
+                                <p
+                                  v-if="weeklyReportTemplateAiState.feedback"
+                                  class="field-ai-feedback"
+                                  :class="getWeeklyReportTemplateAiFeedbackClass()"
+                                  role="status"
+                                >
+                                  {{ weeklyReportTemplateAiState.feedback }}
+                                </p>
+
+                                <div class="field-ai-action-row">
+                                  <div class="field-ai-action-left">
+                                    <button
+                                      type="button"
+                                      class="field-ai-run"
+                                      :disabled="weeklyReportTemplateAiState.isGenerating"
+                                      @click="generateWeeklyReportTemplateAiOutput"
+                                    >
+                                      <GIcon
+                                        :name="weeklyReportTemplateAiState.isGenerating ? 'loading' : 'sparkles'"
+                                        :spin="weeklyReportTemplateAiState.isGenerating"
+                                        :size="13"
+                                      />
+                                      {{ weeklyReportTemplateAiState.isGenerating ? "生成中" : "生成" }}
+                                    </button>
+                                    <button
+                                      v-if="weeklyReportTemplateAiState.isGenerating"
+                                      type="button"
+                                      class="field-ai-ghost"
+                                      @click="cancelWeeklyReportTemplateAiRun"
+                                    >
+                                      停止
+                                    </button>
+                                  </div>
+
+                                  <div class="field-ai-action-right">
+                                    <button
+                                      type="button"
+                                      class="field-ai-ghost"
+                                      :disabled="weeklyReportTemplateAiState.isGenerating || !weeklyReportTemplateAiState.output"
+                                      @click="applyWeeklyReportTemplateAiOutput('append')"
+                                    >
+                                      追加
+                                    </button>
+                                    <button
+                                      type="button"
+                                      class="field-ai-primary"
+                                      :disabled="weeklyReportTemplateAiState.isGenerating || !weeklyReportTemplateAiState.output"
+                                      @click="applyWeeklyReportTemplateAiOutput('replace')"
+                                    >
+                                      替换
+                                    </button>
+                                  </div>
+                                </div>
+                              </section>
+                            </Transition>
+                          </div>
+                        </div>
+                      </div>
+
+                      <Transition name="weekly-template-editor-body">
+                        <div
+                          v-if="!state.isReportTemplateCollapsed"
+                          id="weekly-report-template-editor"
+                          class="weekly-template-editor-body"
+                        >
+                          <textarea
+                            v-model="weeklyReportGuideContent"
+                            class="field-textarea weekly-textarea weekly-textarea-secondary weekly-template-editor-textarea"
+                            :class="{ 'is-readonly': weeklyReportGuideReadonly }"
+                            :readonly="weeklyReportGuideReadonly"
+                            :placeholder="weeklyReportGuidePlaceholder"
+                          ></textarea>
+                        </div>
+                      </Transition>
+                    </section>
 
                     <div class="weekly-report-output-head">
                       <span class="field-label">{{ weeklyReportOutputLabel }}</span>
@@ -394,94 +525,76 @@
                     </label>
                   </section>
 
-                  <div class="weekly-report-support-grid">
-                    <section class="weekly-rail-card">
-                      <div class="weekly-rail-head">
-                        <div>
-                          <p class="feature-kicker">Quality Gate</p>
-                          <p class="model-section-title">汇报质量</p>
-                        </div>
+                  <section class="weekly-rail-card weekly-report-summary-card">
+                    <div class="weekly-report-summary-head">
+                      <div>
+                        <p class="feature-kicker">Report Digest</p>
+                        <p class="model-section-title">汇报摘要</p>
                       </div>
+                      <span class="weekly-report-summary-score">
+                        {{ weeklyInsightDoneCount }}/{{ weeklyDraftInsights.qualityChecks.length }} 项已就绪
+                      </span>
+                    </div>
 
-                      <div class="weekly-quality-list">
+                    <div class="weekly-report-summary-tabs" role="tablist" aria-label="汇报摘要分类">
+                      <button
+                        v-for="tab in weeklyInsightTabs"
+                        :id="`weekly-report-summary-tab-${tab.id}`"
+                        :key="tab.id"
+                        type="button"
+                        class="weekly-report-summary-tab"
+                        :class="{ 'is-active': weeklyInsightActiveTab === tab.id }"
+                        role="tab"
+                        :aria-selected="weeklyInsightActiveTab === tab.id ? 'true' : 'false'"
+                        :aria-controls="`weekly-report-summary-panel-${tab.id}`"
+                        @click="weeklyInsightActiveTab = tab.id"
+                      >
+                        <span class="weekly-report-summary-tab-label">{{ tab.label }}</span>
+                        <span class="weekly-report-summary-tab-meta">{{ tab.meta }}</span>
+                      </button>
+                    </div>
+
+                    <div
+                      :id="`weekly-report-summary-panel-${weeklyInsightActiveTab}`"
+                      class="weekly-report-summary-body"
+                      role="tabpanel"
+                      :aria-labelledby="`weekly-report-summary-tab-${weeklyInsightActiveTab}`"
+                    >
+                      <div v-if="weeklyInsightActiveTab === 'quality'" class="weekly-quality-compact-list">
                         <article
                           v-for="check in weeklyDraftInsights.qualityChecks"
                           :key="check.id"
-                          class="weekly-quality-item"
+                          class="weekly-quality-compact-item"
                           :class="{ 'is-done': check.done }"
                         >
-                          <span class="weekly-quality-mark">{{ check.done ? "OK" : "待补" }}</span>
+                          <span class="weekly-quality-compact-mark">
+                            <GIcon :name="check.done ? 'check' : 'circleAlert'" />
+                          </span>
                           <div class="weekly-quality-copy">
                             <p class="weekly-quality-title">{{ check.label }}</p>
                             <p class="weekly-quality-hint">{{ check.hint }}</p>
                           </div>
                         </article>
                       </div>
-                    </section>
 
-                    <section class="weekly-rail-card">
-                      <div class="weekly-rail-head">
-                        <div>
-                          <p class="feature-kicker">Highlights</p>
-                          <p class="model-section-title">本周可直接汇报</p>
-                        </div>
-                      </div>
-
-                      <div v-if="weeklyDraftInsights.achievements.length" class="weekly-insight-list">
-                        <article v-for="item in weeklyDraftInsights.achievements" :key="item.id" class="weekly-insight-item">
-                          <p class="weekly-insight-title">{{ item.title }}</p>
-                          <p class="weekly-insight-meta">{{ item.meta }}</p>
-                          <p v-if="item.detail" class="weekly-insight-detail">{{ item.detail }}</p>
+                      <div v-else-if="weeklyActiveInsightItems.length" class="weekly-insight-compact-list">
+                        <article v-for="(item, index) in weeklyActiveInsightItems" :key="item.id" class="weekly-insight-compact-item">
+                          <span class="weekly-insight-compact-index">{{ index + 1 }}</span>
+                          <div class="weekly-insight-compact-copy">
+                            <p class="weekly-insight-title weekly-insight-compact-title">{{ item.title }}</p>
+                            <div class="weekly-insight-compact-meta-row">
+                              <span class="weekly-insight-meta">{{ item.meta }}</span>
+                            </div>
+                            <p v-if="item.detail" class="weekly-insight-detail weekly-insight-compact-detail">{{ item.detail }}</p>
+                          </div>
                         </article>
                       </div>
 
-                      <div v-else class="weekly-rail-empty">
-                        <p class="weekly-rail-empty-copy">还没识别到明确结果，建议先补“完成了什么 / 影响了什么”。</p>
+                      <div v-else class="weekly-rail-empty weekly-report-summary-empty">
+                        <p class="weekly-rail-empty-copy">{{ weeklyActiveInsightEmptyCopy }}</p>
                       </div>
-                    </section>
-
-                    <section class="weekly-rail-card">
-                      <div class="weekly-rail-head">
-                        <div>
-                          <p class="feature-kicker">Risks</p>
-                          <p class="model-section-title">风险与待协调</p>
-                        </div>
-                      </div>
-
-                      <div v-if="weeklyDraftInsights.risks.length" class="weekly-insight-list">
-                        <article v-for="item in weeklyDraftInsights.risks" :key="item.id" class="weekly-insight-item">
-                          <p class="weekly-insight-title">{{ item.title }}</p>
-                          <p class="weekly-insight-meta">{{ item.meta }}</p>
-                          <p v-if="item.detail" class="weekly-insight-detail">{{ item.detail }}</p>
-                        </article>
-                      </div>
-
-                      <div v-else class="weekly-rail-empty">
-                        <p class="weekly-rail-empty-copy">还没有识别到风险项。如果当前无阻塞，建议明确写一句“当前暂无阻塞”。</p>
-                      </div>
-                    </section>
-
-                    <section class="weekly-rail-card">
-                      <div class="weekly-rail-head">
-                        <div>
-                          <p class="feature-kicker">Next Steps</p>
-                          <p class="model-section-title">下周继续推进</p>
-                        </div>
-                      </div>
-
-                      <div v-if="weeklyDraftInsights.nextSteps.length" class="weekly-insight-list">
-                        <article v-for="item in weeklyDraftInsights.nextSteps" :key="item.id" class="weekly-insight-item">
-                          <p class="weekly-insight-title">{{ item.title }}</p>
-                          <p class="weekly-insight-meta">{{ item.meta }}</p>
-                          <p v-if="item.detail" class="weekly-insight-detail">{{ item.detail }}</p>
-                        </article>
-                      </div>
-
-                      <div v-else class="weekly-rail-empty">
-                        <p class="weekly-rail-empty-copy">还没有识别到下周动作，建议给进行中的项目补 1 条下一步计划。</p>
-                      </div>
-                    </section>
-                  </div>
+                    </div>
+                  </section>
 
                   <div v-if="state.isGeneratingReport" class="weekly-report-lock-layer" aria-hidden="true"></div>
                 </div>
@@ -495,8 +608,9 @@
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { computed, ref } from "vue";
 
+import GCompactSelect from "../../components/GCompactSelect.vue";
 import WeeklyTaskTree from "../../components/WeeklyTaskTree.vue";
 import GIcon from "../../components/GIcon.vue";
 import {
@@ -525,7 +639,12 @@ const props = defineProps({
   addWeeklyProject: { type: Function, required: true },
   addWeeklyReportTemplate: { type: Function, required: true },
   addWeeklyTask: { type: Function, required: true },
+  applyWeeklyReportTemplateAiOutput: { type: Function, required: true },
+  cancelWeeklyReportTemplateAiRun: { type: Function, required: true },
   closeWeeklyEditor: { type: Function, required: true },
+  closeWeeklyReportTemplateAi: { type: Function, required: true },
+  generateWeeklyReportTemplateAiOutput: { type: Function, required: true },
+  getWeeklyReportTemplateAiFeedbackClass: { type: Function, required: true },
   handleRichTextClick: { type: Function, required: true },
   handleWeeklyActiveReportGeneration: { type: Function, required: true },
   handleWeeklyDelete: { type: Function, required: true },
@@ -539,9 +658,12 @@ const props = defineProps({
   removeWeeklySelectedReportTemplate: { type: Function, required: true },
   removeWeeklyTask: { type: Function, required: true },
   resetWeeklyReportCopyState: { type: Function, required: true },
+  setWeeklyReportTemplateAiInstruction: { type: Function, required: true },
+  setWeeklyReportTemplateAiOutput: { type: Function, required: true },
   setWeeklyReportingMode: { type: Function, required: true },
   setWeeklyReportOutputMode: { type: Function, required: true },
   setWeeklyTaskStatus: { type: Function, required: true },
+  toggleWeeklyReportTemplateCollapsed: { type: Function, required: true },
   toggleWeeklyProjectCollapsed: { type: Function, required: true },
   touchWeeklyTaskById: { type: Function, required: true }
 });
@@ -576,7 +698,7 @@ const weeklyListOverviewCards = computed(() => {
     },
     {
       id: "report-status",
-      label: "领导周报",
+      label: "周报结果",
       value: hasGeneratedReport ? "已生成" : "待生成",
       meta: reportMeta,
       metaTone: reportMeta ? "success" : "neutral"
@@ -584,9 +706,40 @@ const weeklyListOverviewCards = computed(() => {
   ];
 });
 const weeklyReportTemplates = computed(() => (Array.isArray(props.state.draft?.reportTemplates) ? props.state.draft.reportTemplates : []));
+const weeklyReportTemplateOptions = computed(() =>
+  weeklyReportTemplates.value.map((template) => ({
+    label: getWeeklyReportTemplateOptionLabel(template),
+    value: template.id
+  }))
+);
 const weeklyIsWeeklyReportMode = computed(() => props.state.reportingMode !== "daily");
 const weeklyReportModeLabel = computed(() => (weeklyIsWeeklyReportMode.value ? "周报" : "日报"));
 const weeklySelectedReportTemplate = computed(() => getWeeklySelectedReportTemplate(props.state.draft));
+const weeklyReportTemplateAiState = computed(
+  () =>
+    props.state.reportTemplateAi ?? {
+      isOpen: false,
+      isGenerating: false,
+      requestId: "",
+      instruction: "",
+      output: "",
+      feedback: "",
+      feedbackTone: "neutral"
+    }
+);
+const weeklyReportTemplateMetaLabel = computed(() => {
+  const template = weeklySelectedReportTemplate.value;
+  const name = String(template?.name ?? "").trim() || "未命名模板";
+  const typeLabel = template?.builtin ? "内置模板" : "自定义模板";
+
+  return `${name} · ${typeLabel}`;
+});
+const weeklyReportTemplateAiButtonLabel = computed(() =>
+  weeklyReportTemplateAiState.value.isOpen ? "关闭周报模板优化" : "优化周报模板"
+);
+const weeklyReportTemplateAiButtonTitle = computed(() =>
+  weeklyReportTemplateAiState.value.isOpen ? "关闭优化" : "AI 优化"
+);
 const weeklySelectedReportTemplateContent = computed({
   get: () => weeklySelectedReportTemplate.value?.content ?? "",
   set: (value) => {
@@ -607,7 +760,6 @@ const weeklySelectedReportTemplateContent = computed({
 const weeklyCanDeleteSelectedReportTemplate = computed(
   () => Boolean(weeklySelectedReportTemplate.value && !weeklySelectedReportTemplate.value.builtin && weeklyReportTemplates.value.length > 1)
 );
-const weeklyReportSelectorLabel = computed(() => (weeklyIsWeeklyReportMode.value ? "模板列表" : "内容范围"));
 const weeklyReportGuideLabel = computed(() => (weeklyIsWeeklyReportMode.value ? "周报模板" : "日报规则"));
 const weeklyReportGuidePlaceholder = computed(() =>
   weeklyIsWeeklyReportMode.value ? "在这里维护固定模板，生成周报时会严格按模板输出" : DAILY_REPORT_GUIDE_COPY
@@ -625,7 +777,7 @@ const weeklyReportGuideContent = computed({
     weeklySelectedReportTemplateContent.value = value;
   }
 });
-const weeklyReportOutputLabel = computed(() => (weeklyIsWeeklyReportMode.value ? "发送给领导的周报" : getDailyReportHeadingTitle()));
+const weeklyReportOutputLabel = computed(() => (weeklyIsWeeklyReportMode.value ? "周报结果" : getDailyReportHeadingTitle()));
 const weeklyReportOutputMode = computed(() => props.state.reportOutputMode === "edit" ? "edit" : "preview");
 const weeklyReportOutputPlaceholder = computed(() =>
   weeklyIsWeeklyReportMode.value
@@ -684,6 +836,67 @@ const weeklyReportCopyButtonLabel = computed(() =>
       : `当前没有可复制的${weeklyReportModeLabel.value}内容`
 );
 const weeklyDraftInsights = computed(() => buildWeeklyDraftInsights(props.state.draft));
+const weeklyInsightActiveTab = ref("quality");
+const weeklyInsightDoneCount = computed(() => weeklyDraftInsights.value.qualityChecks.filter((check) => check.done).length);
+const weeklyInsightTabs = computed(() => {
+  const insights = weeklyDraftInsights.value;
+  const qualityTotal = insights.qualityChecks.length;
+
+  return [
+    {
+      id: "quality",
+      label: "质量",
+      meta: `${weeklyInsightDoneCount.value}/${qualityTotal}`
+    },
+    {
+      id: "achievements",
+      label: "结果",
+      meta: `${insights.achievements.length} 条`
+    },
+    {
+      id: "risks",
+      label: "风险",
+      meta: `${insights.risks.length} 条`
+    },
+    {
+      id: "nextSteps",
+      label: "下周",
+      meta: `${insights.nextSteps.length} 条`
+    }
+  ];
+});
+const weeklyActiveInsightItems = computed(() => {
+  const insights = weeklyDraftInsights.value;
+
+  if (weeklyInsightActiveTab.value === "achievements") {
+    return insights.achievements;
+  }
+
+  if (weeklyInsightActiveTab.value === "risks") {
+    return insights.risks;
+  }
+
+  if (weeklyInsightActiveTab.value === "nextSteps") {
+    return insights.nextSteps;
+  }
+
+  return [];
+});
+const weeklyActiveInsightEmptyCopy = computed(() => {
+  if (weeklyInsightActiveTab.value === "achievements") {
+    return "还没识别到明确结果，建议先补“完成了什么 / 影响了什么”。";
+  }
+
+  if (weeklyInsightActiveTab.value === "risks") {
+    return "还没有识别到风险项。如果当前无阻塞，建议明确写一句“当前暂无阻塞”。";
+  }
+
+  if (weeklyInsightActiveTab.value === "nextSteps") {
+    return "还没有识别到下周动作，建议给进行中的项目补 1 条下一步计划。";
+  }
+
+  return "";
+});
 
 function getWeeklyRecordHasContent(record) {
   const metrics = getWeeklyProgressMetrics(record);

@@ -29,7 +29,7 @@ import type {
 } from "../../shared/src/index.js";
 import { callToolOnMcpServer, listToolsFromMcpServer } from "./mcp.js";
 
-const MAX_AUTO_MCP_ROUNDS = 3;
+const MAX_AUTO_MCP_ROUNDS = 6;
 const MAX_CONSECUTIVE_AUTO_MCP_FAILURES = 2;
 const MAX_MCP_TOOL_ATTEMPTS = 3;
 const MCP_RETRY_BASE_DELAY_MS = 400;
@@ -43,6 +43,7 @@ const MAX_CONVERSATION_CONTEXT_MESSAGES = 8;
 const BUILTIN_WORKSPACE_MCP_ID = "builtin:mcp:workspace";
 const BUILTIN_COMPUTER_USE_MCP_ID = "builtin:mcp:computer-use";
 const BUILTIN_GORDON_TOOLS_MCP_ID = "builtin:mcp:gordon-tools";
+const BUILTIN_APPLICATION_TOOLS_MCP_ID = "builtin:mcp:application-tools";
 const WORKSPACE_PERMISSION_REQUIRED_PREFIX = "GORDON_PERMISSION_REQUIRED";
 const COMPUTER_USE_PERMISSION_REQUIRED_PREFIX = "GORDON_COMPUTER_USE_PERMISSION_REQUIRED";
 const BASE_URL_REQUIRED_PROVIDERS = new Set([
@@ -111,9 +112,11 @@ interface ExecuteMcpToolCallOptions {
   reportProgress?: () => void;
   workspacePermission?: WorkspacePermissionRuntime;
   computerUsePermission?: ComputerUsePermissionRuntime;
+  signal?: AbortSignal;
 }
 
 interface RunAgentOptions {
+  signal?: AbortSignal;
   onProgress?: (payload: AgentRunProgressEvent) => void;
   onWorkspacePermissionRequest?: (request: WorkspacePermissionRequest) => Promise<boolean>;
   onComputerUsePermissionRequest?: (request: ComputerUsePermissionRequest) => Promise<boolean>;
@@ -143,6 +146,18 @@ interface ComputerUsePermissionRequest {
 interface ComputerUsePermissionRuntime {
   granted: boolean;
   requestAccess?: (request: ComputerUsePermissionRequest) => Promise<boolean>;
+}
+
+function createAgentAbortError(): Error {
+  const error = new Error("命令工坊运行已停止");
+  error.name = "AbortError";
+  return error;
+}
+
+function throwIfAgentAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw createAgentAbortError();
+  }
 }
 
 function createRunStep(type: AgentRunStep["type"], title: string, detail: string): AgentRunStep {
@@ -209,8 +224,17 @@ function isBuiltinGordonToolsServer(server: McpServerConfig | null | undefined):
   return server?.id === BUILTIN_GORDON_TOOLS_MCP_ID;
 }
 
+function isBuiltinApplicationToolsServer(server: McpServerConfig | null | undefined): boolean {
+  return server?.id === BUILTIN_APPLICATION_TOOLS_MCP_ID;
+}
+
 function isBuiltinLocalToolsServer(server: McpServerConfig | null | undefined): boolean {
-  return isBuiltinWorkspaceToolsServer(server) || isBuiltinComputerUseServer(server) || isBuiltinGordonToolsServer(server);
+  return (
+    isBuiltinWorkspaceToolsServer(server) ||
+    isBuiltinComputerUseServer(server) ||
+    isBuiltinGordonToolsServer(server) ||
+    isBuiltinApplicationToolsServer(server)
+  );
 }
 
 function describeToolServer(server: McpServerConfig): string {
@@ -224,6 +248,10 @@ function describeToolServer(server: McpServerConfig): string {
 
   if (isBuiltinGordonToolsServer(server)) {
     return `${server.name}（本地能力工具）`;
+  }
+
+  if (isBuiltinApplicationToolsServer(server)) {
+    return `${server.name}（本地应用资产工具）`;
   }
 
   return `${server.name}（外部 MCP）`;
@@ -240,7 +268,7 @@ function buildToolScopeText(authorizedServers: McpServerConfig[]): string {
 
   if (localTools.length) {
     sections.push(
-      `本地工具：${localTools.map((server) => server.name).join("、")}。这是 Gordon 内置能力通道，不代表用户已连接外部 MCP。Gordon Tools 会按能力拓展 TOOL 配置暴露 image_gen 等内置工具；Computer Use 会在首次读取或控制桌面前申请本轮授权。`
+      `本地工具：${localTools.map((server) => server.name).join("、")}。这是 Gordon 内置能力通道，不代表用户已连接外部 MCP。Application Tools 用于按应用语义读取、检索、预览和写回应用广场资产；Gordon Tools 会按能力拓展 TOOL 配置暴露 image_gen 等内置工具；Computer Use 会在首次读取或控制桌面前申请本轮授权。`
     );
   }
 
@@ -987,7 +1015,8 @@ async function planMcpToolSelection(
   userInput: string,
   candidateTools: McpToolDefinition[],
   mcpCalls: AgentMcpCallRecord[],
-  iteration: number
+  iteration: number,
+  signal?: AbortSignal
 ): Promise<McpToolSelectionPlan> {
   if (!candidateTools.length) {
     return {
@@ -999,13 +1028,15 @@ async function planMcpToolSelection(
     };
   }
 
-  const planningResponse = await invokeModelText(modelProfile, {
-    temperature: 0,
-    maxOutputTokens: 800,
-    messages: [
-      {
-        role: "system",
-        content: `你是 Gordon 的工具规划器。
+  const planningResponse = await invokeModelText(
+    modelProfile,
+    {
+      temperature: 0,
+      maxOutputTokens: 800,
+      messages: [
+        {
+          role: "system",
+          content: `你是 Gordon 的工具规划器。
 你的唯一任务是判断当前是否需要调用工具，以及如果需要，应该调用哪一个工具。
 
 请严格输出 JSON，不要输出解释、标题、Markdown 或代码块之外的任何文字。
@@ -1020,14 +1051,16 @@ JSON 结构必须为：
 
 约束：
 - 只有当调用工具能明显提升结果质量时才调用
+- 用户明确要求新增、创建、保存、写入、修改或删除本地资产时，必须优先选择合适工具执行，不能只用文字承诺已经完成
+- 对应用广场资产的读写优先使用 Application Tools；没有工具返回成功前，不要判断资产已经变更
 - serverId 和 toolName 必须来自提供给你的候选列表
 - arguments 必须是一个 JSON 对象
 - 如果不需要调用工具，shouldCall 设为 false，其余字段可设为 null 或 {}
 - 不要编造不存在的 serverId 或 toolName`
-      },
-      {
-        role: "user",
-        content: `当前 Agent：
+        },
+        {
+          role: "user",
+          content: `当前 Agent：
 ${agent.name}
 
 用户任务：
@@ -1045,9 +1078,11 @@ ${JSON.stringify(
   null,
   2
 ) }`
-      }
-    ]
-  });
+        }
+      ]
+    },
+    { signal }
+  );
 
   const parsed = JSON.parse(extractJsonBlock(planningResponse.text)) as {
     shouldCall?: boolean;
@@ -1102,7 +1137,8 @@ async function repairMcpArgumentsWithSchema(
   currentArguments: Record<string, unknown> | undefined,
   failureReason: string,
   mcpCalls: AgentMcpCallRecord[],
-  round: number
+  round: number,
+  signal?: AbortSignal
 ): Promise<McpArgumentsRepairPlan> {
   if (!tool.inputSchema) {
     return {
@@ -1112,13 +1148,15 @@ async function repairMcpArgumentsWithSchema(
     };
   }
 
-  const repairResponse = await invokeModelText(modelProfile, {
-    temperature: 0,
-    maxOutputTokens: 900,
-    messages: [
-      {
-        role: "system",
-        content: `你是 Gordon 的工具参数修复器。
+  const repairResponse = await invokeModelText(
+    modelProfile,
+    {
+      temperature: 0,
+      maxOutputTokens: 900,
+      messages: [
+        {
+          role: "system",
+          content: `你是 Gordon 的工具参数修复器。
 你的任务是根据工具 inputSchema、用户任务和失败原因，修复一次工具参数。
 
 请严格输出 JSON，不要输出解释、标题、Markdown 或 JSON 之外的任何文字。
@@ -1135,10 +1173,10 @@ JSON 结构必须为：
 - 优先补齐 required 字段，删除明显不兼容字段
 - 不要编造用户没有提供、历史结果也没有提供的关键事实
 - 如果无法安全修复，shouldRepair 必须为 false`
-      },
-      {
-        role: "user",
-        content: `当前 Agent：
+        },
+        {
+          role: "user",
+          content: `当前 Agent：
 ${agent.name}
 
 当前轮次：
@@ -1166,9 +1204,11 @@ ${failureReason}
 
 已有工具调用历史：
 ${buildMcpHistoryText(mcpCalls)}`
-      }
-    ]
-  });
+        }
+      ]
+    },
+    { signal }
+  );
 
   const parsed = JSON.parse(extractJsonBlock(repairResponse.text)) as {
     shouldRepair?: boolean;
@@ -1258,7 +1298,8 @@ async function planFallbackMcpToolSelection(
   candidateTools: McpToolDefinition[],
   mcpCalls: AgentMcpCallRecord[],
   failedCall: AgentMcpCallRecord,
-  round: number
+  round: number,
+  signal?: AbortSignal
 ): Promise<McpFallbackPlan> {
   if (!candidateTools.length) {
     return {
@@ -1270,13 +1311,15 @@ async function planFallbackMcpToolSelection(
     };
   }
 
-  const planningResponse = await invokeModelText(modelProfile, {
-    temperature: 0,
-    maxOutputTokens: 900,
-    messages: [
-      {
-        role: "system",
-        content: `你是 Gordon 的工具 fallback 规划器。
+  const planningResponse = await invokeModelText(
+    modelProfile,
+    {
+      temperature: 0,
+      maxOutputTokens: 900,
+      messages: [
+        {
+          role: "system",
+          content: `你是 Gordon 的工具 fallback 规划器。
 当前工具调用失败后，你需要判断是否应该切换到其他工具继续完成任务。
 
 请严格输出 JSON，不要输出解释、标题、Markdown 或代码块之外的任何文字。
@@ -1294,10 +1337,10 @@ JSON 结构必须为：
 - 不要继续选择刚失败的同一个 tool
 - 优先选择 schema 更贴合当前任务、且能绕开失败原因的工具
 - 如果没有更好的替代方案，shouldFallback 必须为 false`
-      },
-      {
-        role: "user",
-        content: `当前 Agent：
+        },
+        {
+          role: "user",
+          content: `当前 Agent：
 ${agent.name}
 
 当前轮次：
@@ -1318,9 +1361,11 @@ ${buildMcpHistoryText(mcpCalls)}
 
 可用 fallback 工具列表：
 ${JSON.stringify(buildPlannerToolPayload(candidateTools), null, 2)}`
-      }
-    ]
-  });
+        }
+      ]
+    },
+    { signal }
+  );
 
   const parsed = JSON.parse(extractJsonBlock(planningResponse.text)) as {
     shouldFallback?: boolean;
@@ -1369,7 +1414,9 @@ function buildSystemPrompt(agent: AgentProfile, skill: SkillDefinition | null, a
 
   sections.push(`工具上下文：\n${buildToolScopeText(authorizedMcpServers)}`);
 
-  sections.push("输出只返回最终结果，不要解释内部推理过程；不要把内置本地工具描述成用户已经接入外部 MCP。");
+  sections.push(
+    "输出只返回最终结果，不要解释内部隐藏推理过程；可以简要说明已经执行的可见步骤和工具结果。不要把内置本地工具描述成用户已经接入外部 MCP。用户要求新增、创建、保存、写入、修改或删除本地资产时，必须通过工具完成；没有成功的工具结果前，不要声称已经完成。"
+  );
 
   return sections.filter(Boolean).join("\n\n");
 }
@@ -1432,8 +1479,11 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
     fallbackFrom,
     reportProgress,
     workspacePermission,
-    computerUsePermission
+    computerUsePermission,
+    signal
   } = options;
+
+  throwIfAgentAborted(signal);
 
   let currentArguments = toolArguments ?? {};
 
@@ -1635,7 +1685,8 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
         currentArguments,
         failureReason,
         [...repairContext.mcpCalls],
-        round
+        round,
+        signal
       );
 
       if (!repaired.shouldRepair || isSameArguments(currentArguments, repaired.arguments)) {
@@ -1661,8 +1712,13 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
   };
 
   for (let attempt = 1; attempt <= MAX_MCP_TOOL_ATTEMPTS; attempt += 1) {
+    throwIfAgentAborted(signal);
+
     try {
       const toolResult = await callToolOnMcpServer(buildToolCallRequest());
+
+      throwIfAgentAborted(signal);
+
       const generatedArtifacts = extractGeneratedArtifacts(toolResult.structuredContent);
 
       if (toolResult.isError) {
@@ -1754,6 +1810,7 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
         createdAt: new Date().toISOString()
       };
     } catch (error) {
+      throwIfAgentAborted(signal);
       const classified = classifyMcpError(error);
       const permissionDecision = await requestToolPermissionIfNeeded(classified.message);
 
@@ -1905,6 +1962,8 @@ function sanitizeForIpc<T>(value: T): T {
 }
 
 export async function runAgent(request: AgentRunRequest, options: RunAgentOptions = {}): Promise<AgentRunLog> {
+  throwIfAgentAborted(options.signal);
+
   const userInput = request.userInput.trim();
 
   if (!userInput) {
@@ -1920,6 +1979,8 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
     listMcpServers(),
     listModelSettings()
   ]);
+
+  throwIfAgentAborted(options.signal);
 
   const agent = agentProfiles.find((entry) => entry.id === request.agentProfileId);
 
@@ -1948,6 +2009,8 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
   let stopReason: string | null = null;
   const steps: AgentRunStep[] = [];
   const progressCreatedAt = new Date().toISOString();
+  let streamedFinalText = "";
+  let lastStreamProgressAt = 0;
   const workspacePermission: WorkspacePermissionRuntime = {
     allowedRoots: new Set<string>(),
     requestAccess: options.onWorkspacePermissionRequest
@@ -1998,6 +2061,21 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
     return step;
   };
 
+  const emitFinalTextProgress = (text: string, force = false): void => {
+    streamedFinalText = text;
+    const now = Date.now();
+
+    if (!force && now - lastStreamProgressAt < 60) {
+      return;
+    }
+
+    lastStreamProgressAt = now;
+    emitProgress({
+      statusText: text ? "正在生成最终回复..." : "正在等待模型输出...",
+      text
+    });
+  };
+
   pushStep("agent_selected", "已加载 Agent", `${agent.name} / ${agent.mode}`);
   pushStep("model_selected", "已绑定模型", `${modelProfile.displayName} / ${modelProfile.model}`);
 
@@ -2046,7 +2124,8 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
           mcpCalls
         },
         workspacePermission,
-        computerUsePermission
+        computerUsePermission,
+        signal: options.signal
       })
     );
     actualMcpToolName = mcpCalls[mcpCalls.length - 1]?.toolName ?? toolName;
@@ -2063,6 +2142,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
     try {
       candidateTools = await collectCandidateMcpTools(candidateServers);
     } catch (error) {
+      throwIfAgentAborted(options.signal);
       stopReason = `工具发现失败：${error instanceof Error ? error.message : "未知错误"}`;
       pushStep("mcp_auto_stopped", "工具编排停止", stopReason);
     }
@@ -2084,9 +2164,11 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
           contextualUserInput,
           candidateTools,
           mcpCalls,
-          round
+          round,
+          options.signal
         );
       } catch (error) {
+        throwIfAgentAborted(options.signal);
         stopReason = `工具规划失败：${error instanceof Error ? error.message : "未知错误"}`;
         pushStep("mcp_auto_stopped", `工具编排停止（第 ${round} 轮）`, stopReason);
         break;
@@ -2145,7 +2227,8 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
           mcpCalls
         },
         workspacePermission,
-        computerUsePermission
+        computerUsePermission,
+        signal: options.signal
       });
       mcpCalls.push(callRecord);
       actualMcpArguments = callRecord.arguments;
@@ -2169,7 +2252,8 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
               fallbackCandidateTools,
               mcpCalls,
               callRecord,
-              round
+              round,
+              options.signal
             );
 
             pushStep("mcp_fallback_planned", `fallback 规划结果（第 ${round} 轮）`, fallbackPlan.reason);
@@ -2214,6 +2298,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
                   },
                   workspacePermission,
                   computerUsePermission,
+                  signal: options.signal,
                   fallbackFrom: {
                     serverName: callRecord.serverName,
                     toolName: callRecord.toolName
@@ -2236,6 +2321,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
               consecutiveFailures += 1;
             }
           } catch (error) {
+            throwIfAgentAborted(options.signal);
             consecutiveFailures += 1;
             pushStep(
               "mcp_fallback_planned",
@@ -2304,6 +2390,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
   }
 
   emitProgress({ statusText: skillFinalOutput ? "Skill 已直接产出结果，正在整理输出..." : "正在生成最终回复..." });
+  throwIfAgentAborted(options.signal);
 
   const response = skillFinalOutput
     ? {
@@ -2313,27 +2400,38 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
         profileLabel: `${modelProfile.displayName}（Skill 直出）`,
         provider: modelProfile.provider
       }
-    : await invokeModelText(modelProfile, {
-        temperature: selectedSkill ? 0.3 : 0.5,
-        maxOutputTokens: 1400,
-        messages: [
-          {
-            role: "system",
-            content: buildSystemPrompt(agent, selectedSkill, authorizedMcpServers)
-          },
-          ...conversationMessages,
-          ...buildUserMessages(
-            mcpResultText
-              ? `${userInput}
+    : await invokeModelText(
+        modelProfile,
+        {
+          temperature: selectedSkill ? 0.3 : 0.5,
+          maxOutputTokens: 1400,
+          messages: [
+            {
+              role: "system",
+              content: buildSystemPrompt(agent, selectedSkill, authorizedMcpServers)
+            },
+            ...conversationMessages,
+            ...buildUserMessages(
+              mcpResultText
+                ? `${userInput}
 
 以下是本轮工具返回结果，请结合结果继续完成任务：
 ${mcpResultText}`
-              : userInput,
-            selectedSkill,
-            skillResultText
-          )
-        ]
-      });
+                : userInput,
+              selectedSkill,
+              skillResultText
+            )
+          ]
+        },
+        {
+          signal: options.signal,
+          onTextDelta: (_delta, text) => emitFinalTextProgress(text)
+        }
+      );
+
+  if (!skillFinalOutput && streamedFinalText) {
+    emitFinalTextProgress(response.text, true);
+  }
 
   if (!skillFinalOutput) {
     pushStep("model_invoked", "模型调用完成", `${response.profileLabel} / ${response.model}`);

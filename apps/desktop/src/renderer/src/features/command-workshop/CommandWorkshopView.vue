@@ -66,9 +66,14 @@
                   <span class="command-message-time">{{ formatLocalDateTime(message.createdAt) }}</span>
                 </div>
 
-                <div class="command-message-body command-rich-text" v-html="renderRichText(message.content)" @click="handleRichTextClick"></div>
+                <div
+                  v-if="message.role !== 'assistant' && message.content"
+                  class="command-message-body command-rich-text"
+                  v-html="renderRichText(message.content)"
+                  @click="handleRichTextClick"
+                ></div>
 
-                <div v-if="message.attachments?.length" class="command-message-attachments">
+                <div v-if="message.role !== 'assistant' && message.attachments?.length" class="command-message-attachments">
                   <span
                     v-for="attachment in message.attachments"
                     :key="attachment.id"
@@ -79,6 +84,41 @@
                     {{ attachment.name }}
                   </span>
                 </div>
+
+                <div v-if="message.role === 'assistant' && getCommandResponseProcessItems(message.artifact).length" class="command-response-process">
+                  <article
+                    v-for="item in getCommandResponseProcessItems(message.artifact)"
+                    :key="item.id"
+                    class="command-response-process-item"
+                    :class="item.className"
+                  >
+                    <span class="command-response-process-rail" aria-hidden="true">
+                      <span class="command-response-process-mark">{{ item.marker }}</span>
+                    </span>
+                    <div class="command-response-process-main">
+                      <div class="command-response-process-head">
+                        <span class="command-response-process-label">{{ item.label }}</span>
+                        <span v-if="item.createdAt" class="command-response-process-time">{{ formatLocalDateTime(item.createdAt) }}</span>
+                      </div>
+                      <p class="command-response-process-title" :title="item.title">{{ item.title }}</p>
+                      <p v-if="item.detail" class="command-response-process-detail" :title="item.detail">{{ item.detail }}</p>
+                      <ol v-if="item.items?.length" class="command-response-plan-list">
+                        <li v-for="planItem in item.items" :key="planItem">{{ planItem }}</li>
+                      </ol>
+                      <div v-if="item.output" class="command-response-output">
+                        <span class="command-response-output-label">{{ item.outputLabel || "中间输出" }}</span>
+                        <pre>{{ item.output }}</pre>
+                      </div>
+                    </div>
+                  </article>
+                </div>
+
+                <div
+                  v-if="message.role === 'assistant' && message.content"
+                  class="command-message-body command-rich-text command-final-reply"
+                  v-html="renderRichText(message.content)"
+                  @click="handleRichTextClick"
+                ></div>
 
                 <div v-if="getCommandArtifactProducts(message.artifact).length" class="command-generated-products">
                   <article
@@ -102,125 +142,6 @@
                     </div>
                   </article>
                 </div>
-
-                <details v-if="message.role === 'assistant' && message.artifact" class="command-artifact-panel">
-                  <summary>{{ getCommandArtifactSummary(message.artifact) }}</summary>
-
-                  <div class="command-artifact-body">
-                    <div class="extension-tag-row command-artifact-tag-row">
-                      <span class="pill pill-neutral">{{ message.artifact.profileLabel }}</span>
-                      <span class="pill pill-neutral">{{ message.artifact.model }}</span>
-                      <span v-if="message.artifact.skillName" class="pill">{{ message.artifact.skillName }}</span>
-                      <span v-if="message.artifact.autoSelectedMcp" class="pill">自动选工具</span>
-                      <span v-if="message.artifact.mcpServerName" class="pill pill-neutral">{{ message.artifact.mcpServerName }}</span>
-                      <span v-if="message.artifact.mcpToolName" class="pill pill-neutral">{{ message.artifact.mcpToolName }}</span>
-                    </div>
-
-                    <div v-if="message.artifact.mcpResultText || message.artifact.stopReason" class="command-artifact-inline-list">
-                      <div v-if="message.artifact.mcpResultText" class="command-artifact-inline-row">
-                        <span class="command-artifact-inline-label">工具结果</span>
-                        <p
-                          class="command-artifact-inline-copy"
-                          :title="getCommandArtifactInlineText(message.artifact.mcpResultText)"
-                        >
-                          {{ getCommandArtifactInlineText(message.artifact.mcpResultText) }}
-                        </p>
-                      </div>
-
-                      <div v-if="message.artifact.stopReason" class="command-artifact-inline-row">
-                        <span class="command-artifact-inline-label">停止原因</span>
-                        <p
-                          class="command-artifact-inline-copy"
-                          :title="getCommandArtifactInlineText(message.artifact.stopReason)"
-                        >
-                          {{ getCommandArtifactInlineText(message.artifact.stopReason) }}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div class="command-artifact-section">
-                      <div class="command-artifact-section-head">
-                        <span class="command-artifact-section-title">执行步骤</span>
-                        <span class="pill pill-neutral command-artifact-section-count">
-                          {{ message.artifact.steps?.length ?? 0 }}
-                        </span>
-                      </div>
-
-                      <div v-if="message.artifact.steps?.length" class="command-artifact-chain">
-                        <article v-for="step in message.artifact.steps" :key="step.id" class="command-artifact-chain-item">
-                          <span class="command-artifact-chain-rail" aria-hidden="true">
-                            <span class="command-artifact-chain-bead"></span>
-                          </span>
-
-                          <div class="command-artifact-chain-main">
-                            <p class="command-artifact-chain-title" :title="step.title">{{ step.title }}</p>
-                            <p
-                              v-if="getCommandArtifactStepSecondary(step)"
-                              class="command-artifact-chain-secondary"
-                              :title="getCommandArtifactStepSecondary(step)"
-                            >
-                              {{ getCommandArtifactStepSecondary(step) }}
-                            </p>
-                          </div>
-
-                          <span class="command-artifact-chain-time">{{ formatLocalDateTime(step.createdAt) }}</span>
-                        </article>
-                      </div>
-                      <p v-else class="model-empty-copy">本次运行还没有步骤记录。</p>
-                    </div>
-
-                    <div v-if="message.artifact.mcpCalls?.length" class="command-artifact-section">
-                      <div class="command-artifact-section-head">
-                        <span class="command-artifact-section-title">工具调用</span>
-                        <span class="pill pill-neutral command-artifact-section-count">
-                          {{ message.artifact.mcpCalls.length }}
-                        </span>
-                      </div>
-
-                      <div class="command-artifact-chain">
-                        <article
-                          v-for="call in message.artifact.mcpCalls"
-                          :key="`${call.createdAt}-${call.serverName}-${call.toolName}-${call.round}`"
-                          class="command-artifact-chain-item is-mcp"
-                        >
-                          <span class="command-artifact-chain-rail" aria-hidden="true">
-                            <span class="command-artifact-chain-bead"></span>
-                          </span>
-
-                          <div class="command-artifact-chain-main">
-                            <div class="command-artifact-chain-line">
-                              <p
-                                class="command-artifact-chain-title"
-                                :title="getCommandArtifactCallTitle(call)"
-                              >
-                                {{ getCommandArtifactCallTitle(call) }}
-                              </p>
-                              <p
-                                v-if="getCommandArtifactCallSecondary(call)"
-                                class="command-artifact-chain-secondary"
-                                :title="getCommandArtifactCallSecondary(call)"
-                              >
-                                {{ getCommandArtifactCallSecondary(call) }}
-                              </p>
-                            </div>
-
-                            <div v-if="getCommandArtifactCallArgumentsText(call)" class="command-artifact-call-params">
-                              <span class="command-artifact-call-params-label">调用参数</span>
-                              <pre class="command-artifact-call-params-code">{{ getCommandArtifactCallArgumentsText(call) }}</pre>
-                            </div>
-
-                            <div v-if="getCommandArtifactCallRepairedArgumentsText(call)" class="command-artifact-call-params is-muted">
-                              <span class="command-artifact-call-params-label">修复前参数</span>
-                              <pre class="command-artifact-call-params-code">{{ getCommandArtifactCallRepairedArgumentsText(call) }}</pre>
-                            </div>
-                          </div>
-
-                          <span class="command-artifact-chain-time">{{ formatLocalDateTime(call.createdAt) }}</span>
-                        </article>
-                      </div>
-                    </div>
-                  </div>
-                </details>
               </article>
 
               <article v-if="ui.command.isRunning" class="command-message is-assistant is-pending">
@@ -229,9 +150,44 @@
                   <span class="command-message-time">{{ ui.command.liveProgress?.updatedAt ? formatLocalDateTime(ui.command.liveProgress.updatedAt) : "处理中" }}</span>
                 </div>
 
+                <div v-if="getCommandResponseProcessItems(ui.command.liveProgress?.artifact).length" class="command-response-process is-live">
+                  <article
+                    v-for="item in getCommandResponseProcessItems(ui.command.liveProgress?.artifact)"
+                    :key="item.id"
+                    class="command-response-process-item"
+                    :class="item.className"
+                  >
+                    <span class="command-response-process-rail" aria-hidden="true">
+                      <span class="command-response-process-mark">{{ item.marker }}</span>
+                    </span>
+                    <div class="command-response-process-main">
+                      <div class="command-response-process-head">
+                        <span class="command-response-process-label">{{ item.label }}</span>
+                        <span v-if="item.createdAt" class="command-response-process-time">{{ formatLocalDateTime(item.createdAt) }}</span>
+                      </div>
+                      <p class="command-response-process-title" :title="item.title">{{ item.title }}</p>
+                      <p v-if="item.detail" class="command-response-process-detail" :title="item.detail">{{ item.detail }}</p>
+                      <ol v-if="item.items?.length" class="command-response-plan-list">
+                        <li v-for="planItem in item.items" :key="planItem">{{ planItem }}</li>
+                      </ol>
+                      <div v-if="item.output" class="command-response-output">
+                        <span class="command-response-output-label">{{ item.outputLabel || "中间输出" }}</span>
+                        <pre>{{ item.output }}</pre>
+                      </div>
+                    </div>
+                  </article>
+                </div>
+
                 <div
+                  v-if="ui.command.liveProgress?.text"
+                  class="command-message-body command-rich-text command-final-reply"
+                  v-html="renderRichText(ui.command.liveProgress.text)"
+                ></div>
+
+                <div
+                  v-else-if="!getCommandResponseProcessItems(ui.command.liveProgress?.artifact).length"
                   class="command-message-body command-rich-text"
-                  v-html="renderRichText(ui.command.liveProgress?.statusText || '正在读取上下文并规划执行步骤，请稍等片刻。')"
+                  v-html="renderRichText(getCommandLiveStatusText(ui.command.liveProgress))"
                 ></div>
 
                 <div v-if="getCommandArtifactProducts(ui.command.liveProgress?.artifact).length" class="command-generated-products">
@@ -256,122 +212,6 @@
                     </div>
                   </article>
                 </div>
-
-                <details v-if="ui.command.liveProgress?.artifact" class="command-artifact-panel" open>
-                  <summary>{{ getCommandArtifactSummary(ui.command.liveProgress.artifact) }}</summary>
-
-                  <div class="command-artifact-body">
-                    <div class="extension-tag-row command-artifact-tag-row">
-                      <span v-if="ui.command.liveProgress.artifact.profileLabel" class="pill pill-neutral">{{ ui.command.liveProgress.artifact.profileLabel }}</span>
-                      <span v-if="ui.command.liveProgress.artifact.model" class="pill pill-neutral">{{ ui.command.liveProgress.artifact.model }}</span>
-                      <span v-if="ui.command.liveProgress.artifact.skillName" class="pill">{{ ui.command.liveProgress.artifact.skillName }}</span>
-                      <span v-if="ui.command.liveProgress.artifact.autoSelectedMcp" class="pill">自动选工具</span>
-                      <span v-if="ui.command.liveProgress.artifact.mcpServerName" class="pill pill-neutral">{{ ui.command.liveProgress.artifact.mcpServerName }}</span>
-                      <span v-if="ui.command.liveProgress.artifact.mcpToolName" class="pill pill-neutral">{{ ui.command.liveProgress.artifact.mcpToolName }}</span>
-                    </div>
-
-                    <div v-if="ui.command.liveProgress.artifact.mcpResultText || ui.command.liveProgress.artifact.stopReason" class="command-artifact-inline-list">
-                      <div v-if="ui.command.liveProgress.artifact.mcpResultText" class="command-artifact-inline-row">
-                        <span class="command-artifact-inline-label">工具结果</span>
-                        <p
-                          class="command-artifact-inline-copy"
-                          :title="getCommandArtifactInlineText(ui.command.liveProgress.artifact.mcpResultText)"
-                        >
-                          {{ getCommandArtifactInlineText(ui.command.liveProgress.artifact.mcpResultText) }}
-                        </p>
-                      </div>
-
-                      <div v-if="ui.command.liveProgress.artifact.stopReason" class="command-artifact-inline-row">
-                        <span class="command-artifact-inline-label">停止原因</span>
-                        <p
-                          class="command-artifact-inline-copy"
-                          :title="getCommandArtifactInlineText(ui.command.liveProgress.artifact.stopReason)"
-                        >
-                          {{ getCommandArtifactInlineText(ui.command.liveProgress.artifact.stopReason) }}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div class="command-artifact-section">
-                      <div class="command-artifact-section-head">
-                        <span class="command-artifact-section-title">执行步骤</span>
-                        <span class="pill pill-neutral command-artifact-section-count">
-                          {{ ui.command.liveProgress.artifact.steps?.length ?? 0 }}
-                        </span>
-                      </div>
-
-                      <div v-if="ui.command.liveProgress.artifact.steps?.length" class="command-artifact-chain">
-                        <article v-for="step in ui.command.liveProgress.artifact.steps" :key="step.id" class="command-artifact-chain-item">
-                          <span class="command-artifact-chain-rail" aria-hidden="true">
-                            <span class="command-artifact-chain-bead"></span>
-                          </span>
-
-                          <div class="command-artifact-chain-main">
-                            <p class="command-artifact-chain-title" :title="step.title">{{ step.title }}</p>
-                            <p
-                              v-if="getCommandArtifactStepSecondary(step)"
-                              class="command-artifact-chain-secondary"
-                              :title="getCommandArtifactStepSecondary(step)"
-                            >
-                              {{ getCommandArtifactStepSecondary(step) }}
-                            </p>
-                          </div>
-
-                          <span class="command-artifact-chain-time">{{ formatLocalDateTime(step.createdAt) }}</span>
-                        </article>
-                      </div>
-                      <p v-else class="model-empty-copy">本次运行还没有步骤记录。</p>
-                    </div>
-
-                    <div v-if="ui.command.liveProgress.artifact.mcpCalls?.length" class="command-artifact-section">
-                      <div class="command-artifact-section-head">
-                        <span class="command-artifact-section-title">工具调用</span>
-                        <span class="pill pill-neutral command-artifact-section-count">
-                          {{ ui.command.liveProgress.artifact.mcpCalls.length }}
-                        </span>
-                      </div>
-
-                      <div class="command-artifact-chain">
-                        <article
-                          v-for="call in ui.command.liveProgress.artifact.mcpCalls"
-                          :key="`${call.createdAt}-${call.serverName}-${call.toolName}-${call.round}`"
-                          class="command-artifact-chain-item is-mcp"
-                        >
-                          <span class="command-artifact-chain-rail" aria-hidden="true">
-                            <span class="command-artifact-chain-bead"></span>
-                          </span>
-
-                          <div class="command-artifact-chain-main">
-                            <div class="command-artifact-chain-line">
-                              <p class="command-artifact-chain-title" :title="getCommandArtifactCallTitle(call)">
-                                {{ getCommandArtifactCallTitle(call) }}
-                              </p>
-                              <p
-                                v-if="getCommandArtifactCallSecondary(call)"
-                                class="command-artifact-chain-secondary"
-                                :title="getCommandArtifactCallSecondary(call)"
-                              >
-                                {{ getCommandArtifactCallSecondary(call) }}
-                              </p>
-                            </div>
-
-                            <div v-if="getCommandArtifactCallArgumentsText(call)" class="command-artifact-call-params">
-                              <span class="command-artifact-call-params-label">调用参数</span>
-                              <pre class="command-artifact-call-params-code">{{ getCommandArtifactCallArgumentsText(call) }}</pre>
-                            </div>
-
-                            <div v-if="getCommandArtifactCallRepairedArgumentsText(call)" class="command-artifact-call-params is-muted">
-                              <span class="command-artifact-call-params-label">修复前参数</span>
-                              <pre class="command-artifact-call-params-code">{{ getCommandArtifactCallRepairedArgumentsText(call) }}</pre>
-                            </div>
-                          </div>
-
-                          <span class="command-artifact-chain-time">{{ formatLocalDateTime(call.createdAt) }}</span>
-                        </article>
-                      </div>
-                    </div>
-                  </div>
-                </details>
               </article>
             </div>
           </div>
@@ -494,8 +334,8 @@
                   ref="commandInputRef"
                   v-model="ui.command.draftInput"
                   class="field-textarea command-input"
-                  :placeholder="commandSelectedAgent ? '直接告诉 Gordon 你要完成什么工作，Enter 发送，Shift + Enter 换行。' : '先在能力拓展里启用一个 Agent，Gordon 才能开始工作。'"
-                  :disabled="!commandSelectedAgent || ui.command.isRunning"
+                  :placeholder="commandSelectedAgent ? (ui.command.isRunning ? '输入新的引导，Enter 会停止当前轮并继续执行。' : '直接告诉 Gordon 你要完成什么工作，Enter 发送，Shift + Enter 换行。') : '先在能力拓展里启用一个 Agent，Gordon 才能开始工作。'"
+                  :disabled="!commandSelectedAgent"
                   autofocus
                   @compositionstart="handleCommandInputCompositionStart"
                   @compositionend="handleCommandInputCompositionEnd"
@@ -514,15 +354,28 @@
                 </button>
 
                 <button
+                  v-if="ui.command.isRunning"
+                  type="button"
+                  class="model-icon-button command-input-submit is-running"
+                  :class="{ 'is-cancelling': ui.command.cancelRequested }"
+                  :disabled="ui.command.cancelRequested"
+                  aria-label="停止运行"
+                  :title="ui.command.cancelRequested ? '正在停止' : '停止运行'"
+                  @click="handleCommandRunCancel"
+                >
+                  <GIcon v-if="ui.command.cancelRequested" name="loading" spin />
+                  <GIcon v-else name="stop" />
+                </button>
+
+                <button
+                  v-else
                   type="submit"
                   class="model-icon-button command-input-submit"
-                  :class="{ 'is-running': ui.command.isRunning }"
-                  :disabled="!commandSelectedAgent || ui.command.isRunning"
-                  :aria-label="ui.command.isRunning ? '处理中' : '发送消息'"
-                  :title="ui.command.isRunning ? '处理中' : '发送消息'"
+                  :disabled="!commandSelectedAgent"
+                  aria-label="发送消息"
+                  title="发送消息"
                 >
-                  <GIcon v-if="ui.command.isRunning" name="loading" spin />
-                  <GIcon v-else name="enter" />
+                  <GIcon name="enter" />
                 </button>
               </div>
             </div>
@@ -609,14 +462,9 @@ defineProps({
   commandToolOptions: { type: Array, default: () => [] },
   backToCommandList: { type: Function, required: true },
   beginNewCommandSession: { type: Function, required: true },
-  getCommandArtifactCallArgumentsText: { type: Function, required: true },
-  getCommandArtifactCallRepairedArgumentsText: { type: Function, required: true },
-  getCommandArtifactCallSecondary: { type: Function, required: true },
-  getCommandArtifactCallTitle: { type: Function, required: true },
-  getCommandArtifactInlineText: { type: Function, required: true },
   getCommandArtifactProducts: { type: Function, required: true },
-  getCommandArtifactStepSecondary: { type: Function, required: true },
-  getCommandArtifactSummary: { type: Function, required: true },
+  getCommandResponseProcessItems: { type: Function, required: true },
+  getCommandLiveStatusText: { type: Function, required: true },
   getSkillOptionLabel: { type: Function, required: true },
   handleCommandAgentChange: { type: Function, required: true },
   handleCommandAttachmentSelect: { type: Function, required: true },
@@ -624,6 +472,7 @@ defineProps({
   handleCommandInputCompositionStart: { type: Function, required: true },
   handleCommandInputEnterKeydown: { type: Function, required: true },
   handleCommandLoadMcpTools: { type: Function, required: true },
+  handleCommandRunCancel: { type: Function, required: true },
   handleCommandServerChange: { type: Function, required: true },
   handleCommandSessionDelete: { type: Function, required: true },
   handleCommandSubmit: { type: Function, required: true },

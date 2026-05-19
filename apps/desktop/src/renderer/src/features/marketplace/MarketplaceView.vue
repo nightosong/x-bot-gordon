@@ -3054,8 +3054,7 @@ function buildWritingBookFieldAiContext(fieldLabel) {
     `类型：${activeWritingBook.value?.genre ?? ""}`,
     `篇幅：${getWritingLengthLabel(activeWritingBook.value?.length)}`,
     fieldLabel === "简短介绍" ? "" : `简短介绍：${getWritingIntroFieldValue(activeWritingBook.value, "intro")}`,
-    fieldLabel === "大纲指导" ? "" : `大纲指导：${getWritingIntroFieldValue(activeWritingBook.value, "outlineGuide")}`,
-    fieldLabel === "详细大纲指导" ? "" : `详细大纲指导：${getWritingIntroFieldValue(activeWritingBook.value, "seriesPlan")}`
+    fieldLabel === "大纲指导" ? "" : `大纲指导：${getWritingIntroFieldValue(activeWritingBook.value, "outlineGuide")}`
   ]);
 }
 

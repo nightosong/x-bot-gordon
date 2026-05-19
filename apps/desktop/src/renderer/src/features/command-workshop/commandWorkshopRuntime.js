@@ -64,17 +64,118 @@ ${attachment.extractedText.trim()}`;
     .join("\n\n");
 }
 
-export function buildCommandUserInputForAgent(content, attachments) {
-  const attachmentContext = buildCommandAttachmentContext(attachments);
+function findMarketplaceResource(items, id) {
+  const normalizedId = String(id ?? "").trim();
 
-  if (!attachmentContext) {
-    return content;
+  if (!normalizedId || !Array.isArray(items)) {
+    return null;
   }
 
-  return `${content || "请阅读并处理我上传的附件。"}
+  return items.find((item) => item?.id === normalizedId) ?? null;
+}
 
-以下是本轮上传附件的后台读取结果：
-${attachmentContext}`;
+export function buildCommandApplicationContext(ui, workbench) {
+  const marketplace = ui?.marketplace;
+
+  if (!marketplace || marketplace.view === "apps") {
+    return "";
+  }
+
+  if (["writingShelf", "writingDetail"].includes(marketplace.view)) {
+    const writingState = marketplace.writing ?? {};
+    const books = Array.isArray(writingState.books) && writingState.books.length ? writingState.books : workbench?.writingBooks ?? [];
+    const book = findMarketplaceResource(books, writingState.activeBookId) ?? books[0] ?? null;
+    const chapter = findMarketplaceResource(book?.chapters ?? [], writingState.activeChapterId);
+    const lines = [
+      "当前应用广场上下文：",
+      "应用：墨笔生花（writing）",
+      `视图：${marketplace.view}`,
+      book ? `当前小说：${book.title}（id=${book.id}）` : "当前小说：未选中",
+      `当前 tab：${writingState.activeTab || "intro"}`,
+      chapter ? `当前章节：第 ${chapter.index} 章 ${chapter.title}（id=${chapter.id}）` : "当前章节：未选中"
+    ];
+
+    lines.push("当用户提到“这个小说”“当前章节”“这里”等指代时，优先按以上上下文理解。需要读写应用资产时使用 Application Tools。");
+    return lines.join("\n");
+  }
+
+  if (["comicShelf", "comicDetail"].includes(marketplace.view)) {
+    const comicState = marketplace.comic ?? {};
+    const projects = Array.isArray(comicState.projects) && comicState.projects.length ? comicState.projects : workbench?.comicProjects ?? [];
+    const project = findMarketplaceResource(projects, comicState.activeProjectId) ?? projects[0] ?? null;
+    const chapter = findMarketplaceResource(project?.chapters ?? [], comicState.activeChapterId);
+
+    return [
+      "当前应用广场上下文：",
+      "应用：丹青溢彩（comic）",
+      `视图：${marketplace.view}`,
+      project ? `当前项目：${project.title}（id=${project.id}）` : "当前项目：未选中",
+      `当前 tab：${comicState.activeTab || "intro"}`,
+      chapter ? `当前章节：第 ${chapter.index} 章 ${chapter.title}（id=${chapter.id}）` : "当前章节：未选中",
+      "当前 Application Tools 首版优先支持墨笔生花；其它应用可先基于上下文给出方案。"
+    ].join("\n");
+  }
+
+  if (["videoShelf", "videoDetail"].includes(marketplace.view)) {
+    const videoState = marketplace.video ?? {};
+    const projects = Array.isArray(videoState.projects) && videoState.projects.length ? videoState.projects : workbench?.videoProjects ?? [];
+    const project = findMarketplaceResource(projects, videoState.activeProjectId) ?? projects[0] ?? null;
+    const shot = findMarketplaceResource(project?.shots ?? [], videoState.activeShotId);
+
+    return [
+      "当前应用广场上下文：",
+      "应用：流光绘影（video）",
+      `视图：${marketplace.view}`,
+      project ? `当前项目：${project.title}（id=${project.id}）` : "当前项目：未选中",
+      `当前 tab：${videoState.activeTab || "concept"}`,
+      shot ? `当前镜头：${shot.index}. ${shot.title}（id=${shot.id}）` : "当前镜头：未选中",
+      "当前 Application Tools 首版优先支持墨笔生花；其它应用可先基于上下文给出方案。"
+    ].join("\n");
+  }
+
+  if (marketplace.view === "music") {
+    const musicState = marketplace.music ?? {};
+
+    return [
+      "当前应用广场上下文：",
+      "应用：瑶琴映月（music）",
+      `当前模式：${musicState.activeMode || "song"}`,
+      `主题 / 需求：${musicState.theme || "未填写"}`,
+      `曲风 / 情绪：${musicState.style || "未填写"}`,
+      "当前 Application Tools 首版优先支持墨笔生花；其它应用可先基于上下文给出方案。"
+    ].join("\n");
+  }
+
+  if (marketplace.view === "fortune") {
+    const fortuneState = marketplace.fortune ?? {};
+
+    return [
+      "当前应用广场上下文：",
+      "应用：灵犀照命（fortune）",
+      `当前模式：${fortuneState.activeMode || "daily"}`,
+      `关注问题：${fortuneState.question || "未填写"}`,
+      `补充背景：${fortuneState.context || "未填写"}`,
+      "当前 Application Tools 首版优先支持墨笔生花；其它应用可先基于上下文给出方案。"
+    ].join("\n");
+  }
+
+  return "";
+}
+
+export function buildCommandUserInputForAgent(content, attachments, applicationContext = "") {
+  const attachmentContext = buildCommandAttachmentContext(attachments);
+  const sections = [content || "请阅读并处理我上传的附件。"];
+
+  if (applicationContext) {
+    sections.push(applicationContext);
+  }
+
+  if (attachmentContext) {
+    sections.push(`以下是本轮上传附件的后台读取结果：
+${attachmentContext}`);
+  }
+
+  return sections.join("\n\n");
 }
 
 export function buildConversationMessagesForAgentRun(messages) {

@@ -7,6 +7,11 @@ import type {
   McpToolCallResult,
   McpToolDefinition
 } from "../../shared/src/index.js";
+import {
+  BUILTIN_APPLICATION_TOOLS_MCP_ID,
+  callApplicationTool,
+  listApplicationToolDefinitions
+} from "./application-tools.js";
 
 const MCP_PROTOCOL_VERSION = "2025-11-25";
 const MCP_CLIENT_NAME = "Gordon";
@@ -509,6 +514,10 @@ export async function listToolsFromMcpServer(serverId: string): Promise<McpToolD
   const servers = await listMcpServers();
   const server = assertEnabledServer(servers.find((entry) => entry.id === serverId));
 
+  if (server.id === BUILTIN_APPLICATION_TOOLS_MCP_ID) {
+    return listApplicationToolDefinitions(server);
+  }
+
   return withMcpClient(server, async (client) => {
     const result = await client.request("tools/list");
     return normalizeToolDefinitions(server, result);
@@ -522,6 +531,12 @@ export async function callToolOnMcpServer(request: McpToolCallRequest): Promise<
 
   if (allowlist.size && !allowlist.has(request.toolName)) {
     throw new Error("当前工具不在 MCP Server 白名单中");
+  }
+
+  if (server.id === BUILTIN_APPLICATION_TOOLS_MCP_ID) {
+    return callApplicationTool(server, request).catch((error) => {
+      throw new Error(`应用工具调用失败：${toErrorMessage(error)}`);
+    });
   }
 
   const workspaceAllowedRoots = Array.isArray(request.workspaceAllowedRoots)

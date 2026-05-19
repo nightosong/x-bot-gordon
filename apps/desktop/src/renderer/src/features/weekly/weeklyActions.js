@@ -32,6 +32,27 @@ function writeRef(target, value) {
   }
 }
 
+const WEEKLY_REPORT_TEMPLATE_AI_SYSTEM_PROMPT = `你是 Gordon 任务笔记的周报模板优化助手。
+你只负责优化“周报生成模板”，不是生成本周周报正文。
+输出必须是可以直接保存为模板的最终内容，不要输出解释、寒暄、代码块包裹或“以下是”等前后缀。
+保留模板中已有的关键格式约束、Markdown 层级约束和事实边界；可以优化结构、措辞、检查规则和输出要求，让模板更清晰、更稳定、更适合生成正式周报。
+不要把当前项目进展改写进模板正文；当前周记录只作为理解用户工作场景的参考。`;
+
+function normalizeWeeklyAiText(value) {
+  return String(value ?? "").trim();
+}
+
+function buildWeeklyAppendText(currentText, outputText) {
+  const current = String(currentText ?? "").trimEnd();
+  const output = normalizeWeeklyAiText(outputText);
+
+  if (!current) {
+    return output;
+  }
+
+  return `${current}\n\n${output}`;
+}
+
 export function createWeeklyActions({
   activeFeature,
   activeWeeklyRecord,
@@ -137,9 +158,261 @@ export function createWeeklyActions({
     ui.weekly.reportFeedbackTone = tone;
   }
 
+  function getWeeklyReportTemplateAiState() {
+    if (!ui.weekly.reportTemplateAi) {
+      ui.weekly.reportTemplateAi = {
+        isOpen: false,
+        isGenerating: false,
+        requestId: "",
+        instruction: "",
+        output: "",
+        feedback: "",
+        feedbackTone: "neutral"
+      };
+    }
+
+    return ui.weekly.reportTemplateAi;
+  }
+
+  function setWeeklyReportTemplateAiFeedback(text, tone = "neutral") {
+    const state = getWeeklyReportTemplateAiState();
+    state.feedback = normalizeWeeklyAiText(text);
+    state.feedbackTone = tone;
+  }
+
+  function resetWeeklyReportTemplateAi(options = {}) {
+    const state = getWeeklyReportTemplateAiState();
+    state.isOpen = false;
+    state.isGenerating = false;
+    state.requestId = "";
+    state.output = "";
+    state.feedback = "";
+    state.feedbackTone = "neutral";
+
+    if (!options.keepInstruction) {
+      state.instruction = "";
+    }
+  }
+
+  function getWeeklyReportTemplateAiFeedbackClass() {
+    const tone = getWeeklyReportTemplateAiState().feedbackTone;
+    return tone ? `is-${tone}` : "";
+  }
+
+  function toggleWeeklyReportTemplateCollapsed() {
+    ui.weekly.isReportTemplateCollapsed = !ui.weekly.isReportTemplateCollapsed;
+
+    if (ui.weekly.isReportTemplateCollapsed) {
+      closeWeeklyReportTemplateAi();
+    }
+  }
+
+  function openWeeklyReportTemplateAi() {
+    const state = getWeeklyReportTemplateAiState();
+
+    if (!ui.weekly.draft) {
+      setStatus("当前周报模板尚未就绪，暂无法优化。", "danger");
+      return;
+    }
+
+    ui.weekly.isReportTemplateCollapsed = false;
+    state.isOpen = true;
+
+    if (!state.output) {
+      setWeeklyReportTemplateAiFeedback("输入优化要求后生成，可替换或追加到当前模板。", "neutral");
+    }
+  }
+
+  function closeWeeklyReportTemplateAi() {
+    const state = getWeeklyReportTemplateAiState();
+
+    if (state.isGenerating && state.requestId && desktopApi?.cancelModelText) {
+      void desktopApi.cancelModelText(state.requestId);
+    }
+
+    resetWeeklyReportTemplateAi({ keepInstruction: true });
+  }
+
+  function setWeeklyReportTemplateAiInstruction(value) {
+    getWeeklyReportTemplateAiState().instruction = String(value ?? "");
+  }
+
+  function setWeeklyReportTemplateAiOutput(value) {
+    getWeeklyReportTemplateAiState().output = String(value ?? "");
+  }
+
+  function buildWeeklyReportTemplateAiPrompt() {
+    const state = getWeeklyReportTemplateAiState();
+    const selectedTemplate = getWeeklySelectedReportTemplate(ui.weekly.draft);
+    const currentTemplate = normalizeWeeklyAiText(selectedTemplate?.content ?? ui.weekly.draft?.reportTemplate);
+    const instruction = normalizeWeeklyAiText(state.instruction) || "优化模板结构和表达，让生成的周报更紧凑、正式、稳定，保留现有输出边界。";
+    const sanitizedDraft = sanitizeWeeklyProgressRecord(ui.weekly.draft);
+
+    return [
+      `模板名称：${normalizeWeeklyAiText(selectedTemplate?.name) || "未命名模板"}`,
+      `模板类型：${selectedTemplate?.builtin ? "内置模板" : "自定义模板"}`,
+      "",
+      "当前模板内容：",
+      currentTemplate || "当前模板为空，请生成一份适合项目周报的模板。",
+      "",
+      "当前周记录摘要（仅用于理解业务场景，不要写进模板正文）：",
+      normalizeWeeklyAiText(sanitizedDraft?.content) || "暂无项目进展摘要。",
+      "",
+      "用户优化要求：",
+      instruction,
+      "",
+      "请只输出优化后的完整周报模板。"
+    ].join("\n");
+  }
+
+  async function generateWeeklyReportTemplateAiOutput() {
+    const state = getWeeklyReportTemplateAiState();
+
+    if (state.isGenerating) {
+      return;
+    }
+
+    if (!ui.weekly.draft) {
+      setWeeklyReportTemplateAiFeedback("当前周报模板尚未就绪。", "danger");
+      return;
+    }
+
+    if (!desktopApi?.invokeModelText) {
+      setWeeklyReportTemplateAiFeedback("AI 桥接未就绪。", "danger");
+      return;
+    }
+
+    const requestId = createWeeklyDraftId("weekly_report_template_ai_request");
+
+    try {
+      state.isGenerating = true;
+      state.requestId = requestId;
+      state.output = "";
+      setWeeklyReportTemplateAiFeedback("正在优化模板...", "neutral");
+      setStatus("正在优化周报模板...", "neutral");
+
+      const result = await desktopApi.invokeModelText({
+        requestId,
+        temperature: 0.56,
+        maxOutputTokens: 2600,
+        messages: [
+          {
+            role: "system",
+            content: WEEKLY_REPORT_TEMPLATE_AI_SYSTEM_PROMPT
+          },
+          {
+            role: "user",
+            content: buildWeeklyReportTemplateAiPrompt()
+          }
+        ]
+      });
+
+      if (state.requestId !== requestId) {
+        return;
+      }
+
+      const output = normalizeWeeklyAiText(result?.text);
+
+      if (!output) {
+        setWeeklyReportTemplateAiFeedback("模型没有返回可写入模板。", "warning");
+        return;
+      }
+
+      state.output = output;
+      setWeeklyReportTemplateAiFeedback(result?.profileLabel ? `已由 ${result.profileLabel} 生成。` : "优化结果已生成。", "success");
+      setStatus("周报模板优化结果已生成。", "success");
+    } catch (error) {
+      if (state.requestId !== requestId) {
+        return;
+      }
+
+      console.error("Failed to optimize weekly report template", error);
+      const message = error instanceof Error ? error.message : "未知错误";
+      setWeeklyReportTemplateAiFeedback(`优化失败：${message}`, "danger");
+      setStatus(`周报模板优化失败：${message}`, "danger");
+    } finally {
+      if (state.requestId === requestId) {
+        state.isGenerating = false;
+        state.requestId = "";
+      }
+    }
+  }
+
+  async function cancelWeeklyReportTemplateAiRun() {
+    const state = getWeeklyReportTemplateAiState();
+    const requestId = state.requestId;
+
+    if (!state.isGenerating || !requestId) {
+      return;
+    }
+
+    try {
+      if (desktopApi?.cancelModelText) {
+        await desktopApi.cancelModelText(requestId);
+      }
+
+      setWeeklyReportTemplateAiFeedback("已停止优化。", "neutral");
+      setStatus("周报模板优化已停止。", "neutral");
+    } catch (error) {
+      console.error("Failed to cancel weekly report template AI run", error);
+      setWeeklyReportTemplateAiFeedback(`停止失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+    } finally {
+      if (state.requestId === requestId) {
+        state.isGenerating = false;
+        state.requestId = "";
+      }
+    }
+  }
+
+  function applyWeeklyReportTemplateAiOutput(mode = "replace") {
+    const state = getWeeklyReportTemplateAiState();
+    const output = normalizeWeeklyAiText(state.output);
+
+    if (!ui.weekly.draft) {
+      setWeeklyReportTemplateAiFeedback("当前周报模板尚未就绪。", "danger");
+      return;
+    }
+
+    if (!output) {
+      setWeeklyReportTemplateAiFeedback("还没有可写入的优化结果。", "warning");
+      return;
+    }
+
+    const templates = Array.isArray(ui.weekly.draft.reportTemplates) ? ui.weekly.draft.reportTemplates : [];
+    const selectedTemplate = getWeeklySelectedReportTemplate(ui.weekly.draft);
+    const currentContent = String(selectedTemplate?.content ?? ui.weekly.draft.reportTemplate ?? "");
+    const nextContent = mode === "append" ? buildWeeklyAppendText(currentContent, output) : output;
+
+    if (!selectedTemplate || selectedTemplate.builtin) {
+      const baseName = normalizeWeeklyAiText(selectedTemplate?.name) || "默认模板";
+      const nextTemplate = {
+        id: createWeeklyDraftId("weekly_report_template"),
+        name: `${baseName}优化版`,
+        content: nextContent,
+        builtin: false
+      };
+
+      ui.weekly.draft.reportTemplates = [...templates, nextTemplate];
+      ui.weekly.draft.selectedReportTemplateId = nextTemplate.id;
+      ui.weekly.draft.reportTemplate = nextContent;
+      setStatus("已基于内置模板创建优化版。", "success");
+      closeWeeklyReportTemplateAi();
+      return;
+    }
+
+    selectedTemplate.content = nextContent;
+    ui.weekly.draft.reportTemplate = nextContent;
+    setStatus("周报模板已写入优化结果。", "success");
+    closeWeeklyReportTemplateAi();
+  }
+
   function setWeeklyReportingMode(mode) {
     if (ui.weekly.reportingMode === mode) {
       return;
+    }
+
+    if (mode === "daily") {
+      closeWeeklyReportTemplateAi();
     }
 
     ui.weekly.reportingMode = mode;
@@ -223,6 +496,9 @@ export function createWeeklyActions({
       resetWeeklyReportCopyState();
       ui.weekly.isGeneratingReport = false;
       ui.weekly.generatingReportKind = null;
+      ui.weekly.isReportTemplateCollapsed = true;
+      closeWeeklyReportTemplateAi();
+      resetWeeklyReportTemplateAi();
       markWeeklyDraftSaved(null);
       return;
     }
@@ -238,6 +514,9 @@ export function createWeeklyActions({
     resetWeeklyReportCopyState();
     ui.weekly.isGeneratingReport = false;
     ui.weekly.generatingReportKind = null;
+    ui.weekly.isReportTemplateCollapsed = true;
+    closeWeeklyReportTemplateAi();
+    resetWeeklyReportTemplateAi();
     markWeeklyDraftSaved(ui.weekly.draft);
   }
 
@@ -275,6 +554,9 @@ export function createWeeklyActions({
     weeklyTaskRewriteIds.value = [];
     ui.weekly.isGeneratingReport = false;
     ui.weekly.generatingReportKind = null;
+    ui.weekly.isReportTemplateCollapsed = true;
+    closeWeeklyReportTemplateAi();
+    resetWeeklyReportTemplateAi();
     markWeeklyDraftSaved(null);
   }
 
@@ -495,6 +777,8 @@ export function createWeeklyActions({
 
   function handleWeeklyReportTemplateSelectionChange() {
     syncWeeklySelectedReportTemplate(ui.weekly.draft);
+    closeWeeklyReportTemplateAi();
+    resetWeeklyReportTemplateAi();
   }
 
   async function addWeeklyReportTemplate() {
@@ -819,8 +1103,13 @@ export function createWeeklyActions({
     addWeeklyProject,
     addWeeklyReportTemplate,
     addWeeklyTask,
+    applyWeeklyReportTemplateAiOutput,
+    cancelWeeklyReportTemplateAiRun,
     closeWeeklyEditor,
+    closeWeeklyReportTemplateAi,
     disposeWeeklyRuntime,
+    generateWeeklyReportTemplateAiOutput,
+    getWeeklyReportTemplateAiFeedbackClass,
     handleWeeklyActiveReportGeneration,
     handleWeeklyDelete,
     handleWeeklyDraftSnapshotChange,
@@ -837,11 +1126,14 @@ export function createWeeklyActions({
     removeWeeklySelectedReportTemplate,
     removeWeeklyTask,
     resetWeeklyReportCopyState,
+    setWeeklyReportTemplateAiInstruction,
+    setWeeklyReportTemplateAiOutput,
     setWeeklyTaskRewriting,
     setWeeklyTaskStatus,
     setWeeklyReportingMode,
     setWeeklyReportOutputMode,
     syncWeeklyEditorState,
+    toggleWeeklyReportTemplateCollapsed,
     toggleWeeklyProjectCollapsed,
     touchWeeklyTaskById
   };

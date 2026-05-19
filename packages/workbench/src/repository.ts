@@ -2297,6 +2297,7 @@ function normalizeWritingBookConfig(input: Partial<WritingBook> | null | undefin
   const title = String(input?.title ?? directoryName ?? "").trim() || "未命名故事";
   const id = String(input?.id ?? `writing_book_${randomUUID()}`);
   const outlinePlannerJob = normalizeWritingOutlinePlannerJob(input?.outlinePlannerJob);
+  const legacyDetailedOutline = String(input?.seriesPlan ?? "").trim();
 
   return {
     id,
@@ -2308,8 +2309,8 @@ function normalizeWritingBookConfig(input: Partial<WritingBook> | null | undefin
     updatedAt: timestamp,
     coverTone: String(input?.coverTone ?? "teal"),
     intro: String(input?.intro ?? ""),
-    outlineGuide: String(input?.outlineGuide ?? ""),
-    seriesPlan: String(input?.seriesPlan ?? ""),
+    outlineGuide: legacyDetailedOutline || String(input?.outlineGuide ?? ""),
+    seriesPlan: "",
     extraIntroSections: normalizeWritingBookIntroSections(input?.extraIntroSections, id),
     parts: normalizeWritingBookParts(input?.parts, id),
     storyAssets: normalizeWritingStoryAssets(input?.storyAssets, id),

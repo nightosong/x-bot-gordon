@@ -185,7 +185,7 @@ const activeWritingTaskTarget = computed(() => getWritingTaskTarget(props.active
 
 function getWritingTaskTarget(task) {
   if (task?.id === "storySetup") {
-    return props.activeWritingBook?.length === "long" ? "写入：详细大纲指导" : "写入：大纲指导";
+    return "写入：大纲指导";
   }
 
   return String(task?.target ?? "");
