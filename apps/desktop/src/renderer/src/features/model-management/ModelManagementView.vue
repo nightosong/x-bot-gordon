@@ -233,7 +233,17 @@
                   <p class="feature-kicker">Daily Usage</p>
                   <p class="model-section-title">近 30 天每日用量</p>
                 </div>
-                <span class="pill pill-neutral">{{ modelUsageSummary.sampleCount }} 次采样</span>
+                <button
+                  type="button"
+                  class="model-icon-button model-usage-refresh-button"
+                  :class="{ 'is-loading': isModelBalanceRefreshing(activeModelUsageProfile.id) }"
+                  :disabled="isModelBalanceRefreshing(activeModelUsageProfile.id)"
+                  :aria-label="`刷新 ${activeModelUsageProfile.displayName} 的余额`"
+                  title="刷新余额"
+                  @click="handleModelBalanceRefresh(activeModelUsageProfile)"
+                >
+                  <GIcon name="refresh" />
+                </button>
               </div>
 
               <div v-if="isActiveModelUsageLoading" class="model-empty">

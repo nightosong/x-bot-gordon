@@ -4,41 +4,121 @@ export const MUSIC_APP_NAME = "瑶琴映月";
 export const VIDEO_APP_NAME = "流光绘影";
 export const MARKETPLACE_APP_COUNT = 5;
 
+export const FORTUNE_ANALYSIS_METHODS = {
+  bazi: {
+    label: "八字",
+    prompt: "四柱、五行旺衰、十神、喜忌、大运和流年；仅在用户提供完整出生信息或已有排盘时做结构化判断，缺失时说明不能精确排盘。"
+  },
+  ziwei: {
+    label: "紫微",
+    prompt: "十二宫位、主星、辅星、四化、宫位互动与人生主题；没有命盘数据时只提出补充项，不虚构星曜落宫。"
+  },
+  iching: {
+    label: "易占",
+    prompt: "梅花易数、时间起卦、数字起卦或塔罗式象意拆解；围绕问题把本象、变化和现实验证点分开。"
+  },
+  facePalm: {
+    label: "相学",
+    prompt: "面相与手相只基于用户主动描述的五官、气色、掌纹和手型线索做传统象意比喻，不评价身份、道德、寿命、疾病或颜值。"
+  },
+  fengshui: {
+    label: "风水",
+    prompt: "阳宅风水聚焦户型、朝向、门窗、动线、光照、床桌灶厕、杂物和五行色材，只给可逆、低成本、低风险的空间调整。"
+  },
+  numerology: {
+    label: "姓名数理",
+    prompt: "姓名、数字、日期、颜色和偏好只作为辅助象意，不把笔画或数字结果当成确定命运。"
+  },
+  astrology: {
+    label: "星象",
+    prompt: "西方星座、行运与个人周期只能作为辅助框架，避免和东方命盘混为确定结论。"
+  },
+  reality: {
+    label: "现实校准",
+    prompt: "把用户近况、约束、资源、情绪和可复盘事件作为校准线，所有趋势都要落到可执行动作和复盘指标。"
+  }
+};
+
 export const FORTUNE_READING_MODES = [
   {
     id: "daily",
     label: "今日运势",
     kicker: "Daily",
     focus: "当天状态、机会窗口、提醒和可执行的小动作。",
-    placeholder: "今天需要重点留意什么？"
+    placeholder: "今天需要重点留意什么？",
+    methods: ["iching", "astrology", "reality"]
+  },
+  {
+    id: "destiny",
+    label: "综合看命",
+    kicker: "Destiny",
+    focus: "把出生信息、现实处境和多个命理框架合并成长期主题。",
+    placeholder: "我想看自己近几年事业、感情和财运的整体走向。",
+    methods: ["bazi", "ziwei", "numerology", "reality"]
+  },
+  {
+    id: "bazi",
+    label: "八字命盘",
+    kicker: "BaZi",
+    focus: "四柱、五行、十神、喜忌、大运流年与现实校准。",
+    placeholder: "请结合我的八字看接下来一年的事业和财运节奏。",
+    methods: ["bazi", "reality"]
+  },
+  {
+    id: "ziwei",
+    label: "紫微斗数",
+    kicker: "Ziwei",
+    focus: "十二宫位、星曜关系、四化流转和人生主题拆解。",
+    placeholder: "请按紫微斗数帮我看事业宫、财帛宫和感情关系。",
+    methods: ["ziwei", "reality"]
+  },
+  {
+    id: "facePalm",
+    label: "面相手相",
+    kicker: "Mian Xiang",
+    focus: "面部气质、五官线索、掌纹手型与性格倾向的娱乐解读。",
+    placeholder: "请根据我描述的面相/手相，给一个温和的性格和趋势参考。",
+    methods: ["facePalm", "reality"]
+  },
+  {
+    id: "fengshui",
+    label: "阳宅风水",
+    kicker: "Feng Shui",
+    focus: "家居办公布局、动线、光照、收纳和五行平衡建议。",
+    placeholder: "请帮我看这个房间/工位的风水布局怎么调整更顺。",
+    methods: ["fengshui", "bazi", "reality"]
   },
   {
     id: "career",
     label: "事业财运",
     kicker: "Career",
     focus: "工作推进、合作节奏、资源流动和财务倾向。",
-    placeholder: "最近事业或财务上怎么取舍更稳？"
+    placeholder: "最近事业或财务上怎么取舍更稳？",
+    methods: ["bazi", "ziwei", "iching", "reality"]
   },
   {
     id: "relationship",
     label: "感情关系",
     kicker: "Relation",
     focus: "关系温度、沟通阻力、互动机会和边界感。",
-    placeholder: "这段关系接下来该主动还是观察？"
+    placeholder: "这段关系接下来该主动还是观察？",
+    methods: ["ziwei", "iching", "numerology", "reality"]
   },
   {
     id: "choice",
     label: "抉择占卜",
     kicker: "Choice",
     focus: "多个选项的得失、隐性风险和下一步试探。",
-    placeholder: "我应该选择 A 方案还是 B 方案？"
+    placeholder: "我应该选择 A 方案还是 B 方案？",
+    methods: ["iching", "reality"]
   },
   {
     id: "cycle",
     label: "年月趋势",
     kicker: "Cycle",
     focus: "一段周期内的主题、节奏变化、关键节点和复盘指标。",
-    placeholder: "接下来一段时间的整体趋势如何？"
+    placeholder: "接下来一段时间的整体趋势如何？",
+    methods: ["bazi", "ziwei", "astrology", "reality"]
   }
 ];
 
@@ -78,6 +158,12 @@ export const MUSIC_CREATION_MODES = [
     focus: "面向音乐生成工具的风格、结构、乐器、速度、情绪和限制词。",
     placeholder: "帮我整理成可以给 music_gen 使用的音乐生成提示词。"
   }
+];
+
+export const MUSIC_APP_TABS = [
+  { id: "all", label: "全部曲目", kicker: "All", filter: "all" },
+  { id: "draft", label: "草稿", kicker: "Draft", filter: "draft" },
+  { id: "finished", label: "成品", kicker: "Master", filter: "finished" }
 ];
 
 export const COMIC_PROJECT_FORMAT_META = {
@@ -146,6 +232,25 @@ export const VIDEO_PROJECT_ASPECT_RATIO_META = {
 };
 
 export const VIDEO_PROJECT_COVER_TONES = ["lumen", "violet", "teal", "coral"];
+export const MUSIC_PROJECT_COVER_TONES = ["lunar", "jade", "amber", "rose"];
+
+export const MUSIC_TRACK_KIND_META = {
+  song: { label: "完整歌曲", operation: "generate_song" },
+  instrumental: { label: "纯音乐", operation: "generate_instrumental" },
+  jingle: { label: "短曲动机", operation: "generate_instrumental" },
+  soundtrack: { label: "场景配乐", operation: "generate_instrumental" }
+};
+
+export const MUSIC_TRACK_STATUS_META = {
+  draft: { label: "草稿", className: "is-warning" },
+  finished: { label: "成品", className: "is-success" }
+};
+
+export const MUSIC_PROVIDER_META = {
+  mureka: { label: "Mureka" },
+  suno: { label: "Suno" },
+  manual: { label: "手动" }
+};
 
 export const COMIC_APP_TABS = [
   { id: "intro", label: "总介绍", kicker: "Overview", fieldLabel: "漫画总介绍" },
@@ -238,7 +343,11 @@ export function createMarketplaceState() {
     fortune: {
       activeMode: "daily",
       question: "",
+      profileInfo: "",
       birthInfo: "",
+      appearanceInfo: "",
+      spaceInfo: "",
+      nameInfo: "",
       context: "",
       output: "",
       feedback: "",
@@ -247,12 +356,28 @@ export function createMarketplaceState() {
     },
     music: {
       activeMode: "song",
+      activeTab: "all",
+      projects: [],
+      activeProjectId: null,
+      activeTrackId: "",
+      trackFilter: "all",
+      generationProvider: "",
+      callbackUrl: "",
+      isProfileCollapsed: false,
+      isAiDrawerOpen: false,
+      isAiTaskPickerOpen: false,
+      isCallingTool: false,
       theme: "",
       style: "",
       reference: "",
       output: "",
       feedback: "",
       feedbackTone: "neutral",
+      isExportDialogOpen: false,
+      exportDirectory: "",
+      exportFeedback: "",
+      exportFeedbackTone: "neutral",
+      isExporting: false,
       isGenerating: false
     },
     writing: {

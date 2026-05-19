@@ -5,6 +5,7 @@ export function setupRootWatchers({
   activeFeature,
   bootstrapWorkbench,
   clearComicAutosaveTimer,
+  clearMusicAutosaveTimer,
   clearVideoAutosaveTimer,
   clearWritingAutosaveTimer,
   desktopApi,
@@ -127,6 +128,7 @@ export function setupRootWatchers({
 
     disposeWeeklyRuntime();
     clearComicAutosaveTimer();
+    clearMusicAutosaveTimer();
     clearVideoAutosaveTimer();
     clearWritingAutosaveTimer();
     document.body.classList.remove("load-error");

@@ -126,7 +126,17 @@
                     :key="product.id"
                     class="command-generated-product"
                   >
-                    <img :src="product.src" :alt="product.title" class="command-generated-product-image" loading="lazy" />
+                    <img
+                      v-if="product.kind === 'image'"
+                      :src="product.src"
+                      :alt="product.title"
+                      class="command-generated-product-image"
+                      loading="lazy"
+                    />
+                    <div v-else-if="product.kind === 'audio'" class="command-generated-product-audio">
+                      <GIcon name="music" :size="20" />
+                      <audio :src="product.src" controls></audio>
+                    </div>
                     <div class="command-generated-product-meta">
                       <p class="command-generated-product-title">{{ product.title }}</p>
                       <p v-if="product.meta" class="command-generated-product-copy" :title="product.meta">{{ product.meta }}</p>
@@ -137,7 +147,7 @@
                         target="_blank"
                         rel="noreferrer"
                       >
-                        打开原图
+                        {{ product.kind === "audio" ? "打开音频" : "打开原图" }}
                       </a>
                     </div>
                   </article>
@@ -196,7 +206,17 @@
                     :key="product.id"
                     class="command-generated-product"
                   >
-                    <img :src="product.src" :alt="product.title" class="command-generated-product-image" loading="lazy" />
+                    <img
+                      v-if="product.kind === 'image'"
+                      :src="product.src"
+                      :alt="product.title"
+                      class="command-generated-product-image"
+                      loading="lazy"
+                    />
+                    <div v-else-if="product.kind === 'audio'" class="command-generated-product-audio">
+                      <GIcon name="music" :size="20" />
+                      <audio :src="product.src" controls></audio>
+                    </div>
                     <div class="command-generated-product-meta">
                       <p class="command-generated-product-title">{{ product.title }}</p>
                       <p v-if="product.meta" class="command-generated-product-copy" :title="product.meta">{{ product.meta }}</p>
@@ -207,7 +227,7 @@
                         target="_blank"
                         rel="noreferrer"
                       >
-                        打开原图
+                        {{ product.kind === "audio" ? "打开音频" : "打开原图" }}
                       </a>
                     </div>
                   </article>

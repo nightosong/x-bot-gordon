@@ -194,6 +194,26 @@ export interface WeeklyProgressRecord {
   archivedAt?: string;
 }
 
+export interface WeeklyFeishuSettings {
+  webhookUrl: string;
+  secret: string;
+  titlePrefix: string;
+  updatedAt: string;
+}
+
+export interface WeeklyDailyReportFeishuSendRequest {
+  title: string;
+  weekTitle: string;
+  content: string;
+}
+
+export interface WeeklyDailyReportFeishuSendResult {
+  ok: boolean;
+  sentAt: string;
+  statusCode: number;
+  responseMessage: string;
+}
+
 export interface DatabaseConnectionItem {
   id: string;
   label: string;
@@ -883,6 +903,63 @@ export interface VideoProjectExportResult {
   writtenBytes: number;
 }
 
+export type MusicTrackKind = "song" | "instrumental" | "jingle" | "soundtrack";
+export type MusicTrackStatus = "draft" | "finished";
+export type MusicTrackProvider = "mureka" | "suno" | "manual";
+
+export interface MusicTrack {
+  id: string;
+  index: number;
+  title: string;
+  kind: MusicTrackKind;
+  status: MusicTrackStatus;
+  prompt: string;
+  lyrics: string;
+  style: string;
+  negativePrompt: string;
+  provider: MusicTrackProvider;
+  model: string;
+  taskId: string;
+  audioUrl: string;
+  streamUrl: string;
+  coverUrl: string;
+  durationSeconds: number;
+  notes: string;
+  rawResult?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MusicProject {
+  id: string;
+  title: string;
+  artist: string;
+  genre: string;
+  mood: string;
+  status: string;
+  summary: string;
+  coverTone: string;
+  tracks: MusicTrack[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type MusicProjectExportFormat = "md";
+
+export interface MusicProjectExportRequest {
+  directoryPath: string;
+  fileName: string;
+  format: MusicProjectExportFormat;
+  content: string;
+}
+
+export interface MusicProjectExportResult {
+  filePath: string;
+  fileName: string;
+  format: MusicProjectExportFormat;
+  writtenBytes: number;
+}
+
 export interface AgentMcpCallRecord {
   round: number;
   serverId: string;
@@ -978,6 +1055,7 @@ export interface WorkbenchSnapshot {
   writingBooks: WritingBook[];
   comicProjects: ComicProject[];
   videoProjects: VideoProject[];
+  musicProjects: MusicProject[];
   skillDefinitions: SkillDefinition[];
   mcpServers: McpServerConfig[];
   toolConfigs: ToolConfig[];

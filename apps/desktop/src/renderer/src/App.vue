@@ -64,11 +64,13 @@
               :apply-weekly-report-template-ai-output="applyWeeklyReportTemplateAiOutput"
               :cancel-weekly-report-template-ai-run="cancelWeeklyReportTemplateAiRun"
               :close-weekly-editor="closeWeeklyEditor"
+              :close-weekly-feishu-settings-dialog="closeWeeklyFeishuSettingsDialog"
               :close-weekly-report-template-ai="closeWeeklyReportTemplateAi"
               :generate-weekly-report-template-ai-output="generateWeeklyReportTemplateAiOutput"
               :get-weekly-report-template-ai-feedback-class="getWeeklyReportTemplateAiFeedbackClass"
               :handle-rich-text-click="handleRichTextClick"
               :handle-weekly-active-report-generation="handleWeeklyActiveReportGeneration"
+              :handle-weekly-daily-report-share="handleWeeklyDailyReportShare"
               :handle-weekly-delete="handleWeeklyDelete"
               :handle-weekly-report-output-copy="handleWeeklyReportOutputCopy"
               :handle-weekly-report-template-selection-change="handleWeeklyReportTemplateSelectionChange"
@@ -79,7 +81,11 @@
               :remove-weekly-project="removeWeeklyProject"
               :remove-weekly-selected-report-template="removeWeeklySelectedReportTemplate"
               :remove-weekly-task="removeWeeklyTask"
+              :open-weekly-feishu-settings-dialog="openWeeklyFeishuSettingsDialog"
               :reset-weekly-report-copy-state="resetWeeklyReportCopyState"
+              :reset-weekly-report-share-state="resetWeeklyReportShareState"
+              :save-weekly-feishu-settings-from-dialog="saveWeeklyFeishuSettingsFromDialog"
+              :set-weekly-feishu-settings-draft-field="setWeeklyFeishuSettingsDraftField"
               :set-weekly-report-template-ai-instruction="setWeeklyReportTemplateAiInstruction"
               :set-weekly-report-template-ai-output="setWeeklyReportTemplateAiOutput"
               :set-weekly-reporting-mode="setWeeklyReportingMode"
@@ -341,6 +347,7 @@ const workbench = reactive({
   writingBooks: [],
   comicProjects: [],
   videoProjects: [],
+  musicProjects: [],
   skillDefinitions: [],
   mcpServers: [],
   toolConfigs: [],
@@ -507,8 +514,15 @@ const musicActions = createMusicActions({
   desktopApi,
   featureMarketplaceId: FEATURE_MARKETPLACE,
   setStatus,
-  ui
+  showConfirmDialog,
+  ui,
+  workbench
 });
+
+const {
+  applyMusicProjectsFromStorage,
+  clearMusicAutosaveTimer
+} = musicActions;
 
 const writingActions = createWritingActions({
   activeFeature,
@@ -900,11 +914,13 @@ const {
   applyWeeklyReportTemplateAiOutput,
   cancelWeeklyReportTemplateAiRun,
   closeWeeklyEditor,
+  closeWeeklyFeishuSettingsDialog,
   closeWeeklyReportTemplateAi,
   disposeWeeklyRuntime,
   generateWeeklyReportTemplateAiOutput,
   getWeeklyReportTemplateAiFeedbackClass,
   handleWeeklyActiveReportGeneration,
+  handleWeeklyDailyReportShare,
   handleWeeklyDelete,
   handleWeeklyDraftSnapshotChange,
   handleWeeklyReportOutputCopy,
@@ -913,6 +929,7 @@ const {
   handleWeeklySelectedReportTemplateIdChange,
   isWeeklyProjectCollapsed,
   isWeeklyTaskRewriting,
+  openWeeklyFeishuSettingsDialog,
   openLatestWeeklyRecord,
   openWeeklyRecord,
   optimizeWeeklyTaskTitle,
@@ -920,6 +937,9 @@ const {
   removeWeeklySelectedReportTemplate,
   removeWeeklyTask,
   resetWeeklyReportCopyState,
+  resetWeeklyReportShareState,
+  saveWeeklyFeishuSettingsFromDialog,
+  setWeeklyFeishuSettingsDraftField,
   setWeeklyReportTemplateAiInstruction,
   setWeeklyReportTemplateAiOutput,
   setWeeklyReportingMode,
@@ -948,6 +968,7 @@ const {
 workbenchRuntime = createWorkbenchRuntime({
   activeFeature,
   applyComicProjectsFromStorage,
+  applyMusicProjectsFromStorage,
   applyVideoProjectsFromStorage,
   applyWritingBooksFromStorage,
   desktopApi,
@@ -971,6 +992,7 @@ setupRootWatchers({
   activeFeature,
   bootstrapWorkbench,
   clearComicAutosaveTimer,
+  clearMusicAutosaveTimer,
   clearVideoAutosaveTimer,
   clearWritingAutosaveTimer,
   desktopApi,

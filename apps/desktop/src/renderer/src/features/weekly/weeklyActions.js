@@ -38,8 +38,24 @@ const WEEKLY_REPORT_TEMPLATE_AI_SYSTEM_PROMPT = `你是 Gordon 任务笔记的�
 保留模板中已有的关键格式约束、Markdown 层级约束和事实边界；可以优化结构、措辞、检查规则和输出要求，让模板更清晰、更稳定、更适合生成正式周报。
 不要把当前项目进展改写进模板正文；当前周记录只作为理解用户工作场景的参考。`;
 
+const DEFAULT_WEEKLY_FEISHU_SETTINGS = {
+  webhookUrl: "",
+  secret: "",
+  titlePrefix: "Gordon 日报",
+  updatedAt: ""
+};
+
 function normalizeWeeklyAiText(value) {
   return String(value ?? "").trim();
+}
+
+function normalizeWeeklyFeishuSettings(settings = {}) {
+  return {
+    webhookUrl: String(settings?.webhookUrl ?? "").trim(),
+    secret: String(settings?.secret ?? "").trim(),
+    titlePrefix: String(settings?.titlePrefix ?? DEFAULT_WEEKLY_FEISHU_SETTINGS.titlePrefix).trim() || DEFAULT_WEEKLY_FEISHU_SETTINGS.titlePrefix,
+    updatedAt: String(settings?.updatedAt ?? "").trim()
+  };
 }
 
 function buildWeeklyAppendText(currentText, outputText) {
@@ -73,6 +89,7 @@ export function createWeeklyActions({
   let weeklySavedSnapshot = "";
   let weeklyAutosaveInFlight = false;
   let weeklyReportCopyTimer = null;
+  let weeklyReportShareTimer = null;
 
   function runOnNextTick(callback) {
     if (typeof nextTick === "function") {
@@ -139,9 +156,21 @@ export function createWeeklyActions({
     }
   }
 
+  function clearWeeklyReportShareTimer() {
+    if (weeklyReportShareTimer) {
+      clearTimeout(weeklyReportShareTimer);
+      weeklyReportShareTimer = null;
+    }
+  }
+
   function resetWeeklyReportCopyState() {
     clearWeeklyReportCopyTimer();
     ui.weekly.reportCopyState = "idle";
+  }
+
+  function resetWeeklyReportShareState() {
+    clearWeeklyReportShareTimer();
+    ui.weekly.dailyReportShareState = "idle";
   }
 
   function markWeeklyReportCopied() {
@@ -153,9 +182,117 @@ export function createWeeklyActions({
     }, 1600);
   }
 
+  function markWeeklyDailyReportShared() {
+    clearWeeklyReportShareTimer();
+    ui.weekly.dailyReportShareState = "sent";
+    weeklyReportShareTimer = setTimeout(() => {
+      ui.weekly.dailyReportShareState = "idle";
+      weeklyReportShareTimer = null;
+    }, 1800);
+  }
+
   function setWeeklyReportFeedback(text, tone = "neutral") {
     ui.weekly.reportFeedbackText = String(text ?? "").trim();
     ui.weekly.reportFeedbackTone = tone;
+  }
+
+  function setWeeklyFeishuSettingsFeedback(text, tone = "neutral") {
+    ui.weekly.feishuSettingsFeedback = String(text ?? "").trim();
+    ui.weekly.feishuSettingsFeedbackTone = tone;
+  }
+
+  function syncWeeklyFeishuSettingsDraft(settings = ui.weekly.feishuSettings) {
+    ui.weekly.feishuSettingsDraft = normalizeWeeklyFeishuSettings(settings);
+  }
+
+  async function loadWeeklyFeishuSettings(options = {}) {
+    const { force = false, keepDraft = false } = options;
+
+    if (ui.weekly.isFeishuSettingsLoaded && !force) {
+      if (!keepDraft) {
+        syncWeeklyFeishuSettingsDraft();
+      }
+
+      return ui.weekly.feishuSettings;
+    }
+
+    if (!desktopApi?.getWeeklyFeishuSettings) {
+      const fallbackSettings = normalizeWeeklyFeishuSettings(ui.weekly.feishuSettings);
+      ui.weekly.feishuSettings = fallbackSettings;
+      ui.weekly.isFeishuSettingsLoaded = true;
+      setWeeklyFeishuSettingsFeedback("飞书配置桥接未就绪。", "danger");
+      return fallbackSettings;
+    }
+
+    try {
+      ui.weekly.isFeishuSettingsLoading = true;
+      const settings = normalizeWeeklyFeishuSettings(await desktopApi.getWeeklyFeishuSettings());
+      ui.weekly.feishuSettings = settings;
+      ui.weekly.isFeishuSettingsLoaded = true;
+
+      if (!keepDraft) {
+        syncWeeklyFeishuSettingsDraft(settings);
+      }
+
+      return settings;
+    } catch (error) {
+      console.error("Failed to load weekly Feishu settings", error);
+      setWeeklyFeishuSettingsFeedback(`配置读取失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+      return normalizeWeeklyFeishuSettings(ui.weekly.feishuSettings);
+    } finally {
+      ui.weekly.isFeishuSettingsLoading = false;
+    }
+  }
+
+  async function openWeeklyFeishuSettingsDialog() {
+    ui.weekly.isFeishuSettingsDialogOpen = true;
+    setWeeklyFeishuSettingsFeedback("", "neutral");
+    syncWeeklyFeishuSettingsDraft();
+    await loadWeeklyFeishuSettings({ force: !ui.weekly.isFeishuSettingsLoaded });
+  }
+
+  function closeWeeklyFeishuSettingsDialog() {
+    if (ui.weekly.isFeishuSettingsSaving) {
+      return;
+    }
+
+    ui.weekly.isFeishuSettingsDialogOpen = false;
+    setWeeklyFeishuSettingsFeedback("", "neutral");
+    syncWeeklyFeishuSettingsDraft();
+  }
+
+  function setWeeklyFeishuSettingsDraftField(field, value) {
+    const draft = normalizeWeeklyFeishuSettings(ui.weekly.feishuSettingsDraft);
+    ui.weekly.feishuSettingsDraft = {
+      ...draft,
+      [field]: String(value ?? "")
+    };
+    setWeeklyFeishuSettingsFeedback("", "neutral");
+  }
+
+  async function saveWeeklyFeishuSettingsFromDialog() {
+    if (!desktopApi?.saveWeeklyFeishuSettings) {
+      setWeeklyFeishuSettingsFeedback("飞书配置桥接未就绪。", "danger");
+      return;
+    }
+
+    try {
+      ui.weekly.isFeishuSettingsSaving = true;
+      setWeeklyFeishuSettingsFeedback("正在保存...", "neutral");
+      const nextSettings = normalizeWeeklyFeishuSettings(
+        await desktopApi.saveWeeklyFeishuSettings(normalizeWeeklyFeishuSettings(ui.weekly.feishuSettingsDraft))
+      );
+      ui.weekly.feishuSettings = nextSettings;
+      ui.weekly.feishuSettingsDraft = nextSettings;
+      ui.weekly.isFeishuSettingsLoaded = true;
+      ui.weekly.isFeishuSettingsDialogOpen = false;
+      setStatus("飞书群配置已保存。", "success");
+    } catch (error) {
+      console.error("Failed to save weekly Feishu settings", error);
+      setWeeklyFeishuSettingsFeedback(`保存失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+    } finally {
+      ui.weekly.isFeishuSettingsSaving = false;
+    }
   }
 
   function getWeeklyReportTemplateAiState() {
@@ -418,6 +555,7 @@ export function createWeeklyActions({
     ui.weekly.reportingMode = mode;
     clearWeeklyReportFeedback();
     resetWeeklyReportCopyState();
+    resetWeeklyReportShareState();
   }
 
   function setWeeklyReportOutputMode(mode) {
@@ -494,9 +632,11 @@ export function createWeeklyActions({
       weeklyTaskRewriteIds.value = [];
       clearWeeklyReportFeedback();
       resetWeeklyReportCopyState();
+      resetWeeklyReportShareState();
       ui.weekly.isGeneratingReport = false;
       ui.weekly.generatingReportKind = null;
       ui.weekly.isReportTemplateCollapsed = true;
+      ui.weekly.isFeishuSettingsDialogOpen = false;
       closeWeeklyReportTemplateAi();
       resetWeeklyReportTemplateAi();
       markWeeklyDraftSaved(null);
@@ -512,17 +652,24 @@ export function createWeeklyActions({
     weeklyTaskRewriteIds.value = [];
     clearWeeklyReportFeedback();
     resetWeeklyReportCopyState();
+    resetWeeklyReportShareState();
     ui.weekly.isGeneratingReport = false;
     ui.weekly.generatingReportKind = null;
     ui.weekly.isReportTemplateCollapsed = true;
+    ui.weekly.isFeishuSettingsDialogOpen = false;
     closeWeeklyReportTemplateAi();
     resetWeeklyReportTemplateAi();
     markWeeklyDraftSaved(ui.weekly.draft);
+
+    if (!ui.weekly.isFeishuSettingsLoaded) {
+      void loadWeeklyFeishuSettings({ keepDraft: true });
+    }
   }
 
   function disposeWeeklyRuntime() {
     clearWeeklyAutosaveTimer();
     clearWeeklyReportCopyTimer();
+    clearWeeklyReportShareTimer();
   }
 
   function openWeeklyRecord(recordId) {
@@ -551,10 +698,12 @@ export function createWeeklyActions({
     ui.weekly.reportOutputMode = "preview";
     clearWeeklyReportFeedback();
     resetWeeklyReportCopyState();
+    resetWeeklyReportShareState();
     weeklyTaskRewriteIds.value = [];
     ui.weekly.isGeneratingReport = false;
     ui.weekly.generatingReportKind = null;
     ui.weekly.isReportTemplateCollapsed = true;
+    ui.weekly.isFeishuSettingsDialogOpen = false;
     closeWeeklyReportTemplateAi();
     resetWeeklyReportTemplateAi();
     markWeeklyDraftSaved(null);
@@ -1012,6 +1161,7 @@ export function createWeeklyActions({
 
       ui.weekly.draft.generatedDailyReport = finalMarkdown;
       resetWeeklyReportCopyState();
+      resetWeeklyReportShareState();
       setWeeklyReportFeedback(feedbackText, feedbackTone);
       setStatus(feedbackText, feedbackTone);
     } catch (error) {
@@ -1065,6 +1215,7 @@ export function createWeeklyActions({
       });
       ui.weekly.draft.generatedReport = normalizeMarkdownForClipboard(result.text);
       resetWeeklyReportCopyState();
+      resetWeeklyReportShareState();
       setWeeklyReportFeedback(`周报已生成（${result.profileLabel}）。`, "success");
       setStatus(`周报已生成（${result.profileLabel}）。`, "success");
     } catch (error) {
@@ -1099,6 +1250,79 @@ export function createWeeklyActions({
     }
   }
 
+  async function handleWeeklyDailyReportShare() {
+    if (ui.weekly.isGeneratingReport || ui.weekly.isSendingDailyReport) {
+      return;
+    }
+
+    if (isWeeklyReportMode()) {
+      setWeeklyReportFeedback("当前分享按钮只发送日报，请先切换到日报模式。", "warning");
+      setStatus("当前分享按钮只发送日报。", "warning");
+      return;
+    }
+
+    const weeklyRecord = getActiveWeeklyRecord();
+    const currentOutput = ui.weekly.draft?.generatedDailyReport ?? "";
+    const normalizedText = normalizeMarkdownForClipboard(currentOutput);
+
+    if (!ui.weekly.draft || !weeklyRecord) {
+      setWeeklyReportFeedback("当前周报表单尚未就绪，暂无法发送日报。", "danger");
+      setStatus("当前周报表单尚未就绪，暂无法发送日报。", "danger");
+      return;
+    }
+
+    if (!normalizedText) {
+      setWeeklyReportFeedback("当前没有可发送的日报内容，先生成日报。", "warning");
+      setStatus("当前没有可发送的日报内容，先生成日报。", "warning");
+      return;
+    }
+
+    const settings = await loadWeeklyFeishuSettings({ keepDraft: true });
+
+    if (!String(settings?.webhookUrl ?? "").trim()) {
+      await openWeeklyFeishuSettingsDialog();
+      setWeeklyFeishuSettingsFeedback("请先填写飞书群机器人 Webhook。", "warning");
+      setWeeklyReportFeedback("请先完成飞书群配置，再发送日报。", "warning");
+      return;
+    }
+
+    if (!desktopApi?.sendWeeklyDailyReportToFeishu) {
+      setWeeklyReportFeedback("飞书发送桥接未就绪。", "danger");
+      setStatus("飞书发送桥接未就绪。", "danger");
+      return;
+    }
+
+    try {
+      ui.weekly.isSendingDailyReport = true;
+      resetWeeklyReportShareState();
+      blurWeeklyActiveElement();
+
+      if (normalizedText !== currentOutput) {
+        ui.weekly.draft.generatedDailyReport = normalizedText;
+      }
+
+      setWeeklyReportFeedback("正在发送日报到飞书群...", "neutral");
+      setStatus("正在发送日报到飞书群...", "neutral");
+
+      await desktopApi.sendWeeklyDailyReportToFeishu({
+        title: `${getDailyReportDateTitle()} 日报`,
+        weekTitle: weeklyRecord.title,
+        content: normalizedText
+      });
+
+      markWeeklyDailyReportShared();
+      setWeeklyReportFeedback("日报已发送到飞书群。", "success");
+      setStatus("日报已发送到飞书群。", "success");
+    } catch (error) {
+      console.error("Failed to send daily report to Feishu", error);
+      resetWeeklyReportShareState();
+      setWeeklyReportFeedback(`日报发送失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+      setStatus(`日报发送失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+    } finally {
+      ui.weekly.isSendingDailyReport = false;
+    }
+  }
+
   return {
     addWeeklyProject,
     addWeeklyReportTemplate,
@@ -1106,11 +1330,13 @@ export function createWeeklyActions({
     applyWeeklyReportTemplateAiOutput,
     cancelWeeklyReportTemplateAiRun,
     closeWeeklyEditor,
+    closeWeeklyFeishuSettingsDialog,
     closeWeeklyReportTemplateAi,
     disposeWeeklyRuntime,
     generateWeeklyReportTemplateAiOutput,
     getWeeklyReportTemplateAiFeedbackClass,
     handleWeeklyActiveReportGeneration,
+    handleWeeklyDailyReportShare,
     handleWeeklyDelete,
     handleWeeklyDraftSnapshotChange,
     handleWeeklyReportOutputCopy,
@@ -1119,6 +1345,7 @@ export function createWeeklyActions({
     handleWeeklySelectedReportTemplateIdChange,
     isWeeklyProjectCollapsed,
     isWeeklyTaskRewriting,
+    openWeeklyFeishuSettingsDialog,
     openLatestWeeklyRecord,
     openWeeklyRecord,
     optimizeWeeklyTaskTitle,
@@ -1126,6 +1353,9 @@ export function createWeeklyActions({
     removeWeeklySelectedReportTemplate,
     removeWeeklyTask,
     resetWeeklyReportCopyState,
+    resetWeeklyReportShareState,
+    saveWeeklyFeishuSettingsFromDialog,
+    setWeeklyFeishuSettingsDraftField,
     setWeeklyReportTemplateAiInstruction,
     setWeeklyReportTemplateAiOutput,
     setWeeklyTaskRewriting,

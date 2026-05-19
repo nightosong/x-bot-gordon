@@ -133,16 +133,23 @@ export function buildCommandApplicationContext(ui, workbench) {
     ].join("\n");
   }
 
-  if (marketplace.view === "music") {
+  if (["musicShelf", "musicDetail"].includes(marketplace.view)) {
     const musicState = marketplace.music ?? {};
+    const projects = Array.isArray(musicState.projects) && musicState.projects.length ? musicState.projects : workbench?.musicProjects ?? [];
+    const project = findMarketplaceResource(projects, musicState.activeProjectId) ?? projects[0] ?? null;
+    const track = findMarketplaceResource(project?.tracks ?? [], musicState.activeTrackId);
 
     return [
       "当前应用广场上下文：",
       "应用：瑶琴映月（music）",
-      `当前模式：${musicState.activeMode || "song"}`,
-      `主题 / 需求：${musicState.theme || "未填写"}`,
-      `曲风 / 情绪：${musicState.style || "未填写"}`,
-      "当前 Application Tools 首版优先支持墨笔生花；其它应用可先基于上下文给出方案。"
+      `视图：${marketplace.view}`,
+      project ? `当前专辑：${project.title}（id=${project.id}）` : "当前专辑：未选中",
+      track ? `当前曲目：${track.index}. ${track.title}（id=${track.id}，状态=${track.status || "draft"}）` : "当前曲目：未选中",
+      `当前模式：${musicState.activeMode || track?.kind || "song"}`,
+      `曲目提示词：${track?.prompt || musicState.theme || "未填写"}`,
+      `曲风 / 情绪：${track?.style || musicState.style || "未填写"}`,
+      `任务 ID：${track?.taskId || "暂无"}`,
+      "需要生成真实音频时优先使用 Gordon Tools 的 music_gen；需要读写本地音乐专辑时可基于当前上下文给出操作建议。"
     ].join("\n");
   }
 

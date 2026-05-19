@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell } from "electron";
 import type { IpcMainEvent } from "electron";
 import { spawn } from "node:child_process";
+import { createHmac } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,16 +14,19 @@ import {
   deleteComicProject,
   deleteCommandWorkshopSession,
   deleteMcpServer,
+  deleteMusicProject,
   deleteVideoProject,
   activateModelProfile,
   deleteModelProfile,
   deleteSkillDefinition,
   deleteWeeklyProgress,
   deleteWritingBook,
+  getWeeklyFeishuSettings,
   importSkillDefinitionFromGithub,
   listAgentProfiles,
   listCommandWorkshopSessions,
   listComicProjects,
+  listMusicProjects,
   listModelBalanceHistory,
   listMcpServers,
   listSkillDefinitions,
@@ -31,6 +35,7 @@ import {
   listVideoProjects,
   listWritingBooks,
   listModelSettings,
+  saveWeeklyFeishuSettings,
   saveWritingBook,
   saveWeeklyProgress,
   toggleAgentProfileStatus,
@@ -41,6 +46,7 @@ import {
   upsertAgentProfile,
   upsertCommandWorkshopSession,
   upsertComicProject,
+  upsertMusicProject,
   upsertVideoProject,
   upsertWorkflowLibraryItem,
   upsertMcpServer,
@@ -52,6 +58,12 @@ import type {
   AgentRunProgressEvent,
   ComicProjectExportFormat,
   ComicProjectExportRequest,
+  MusicProjectExportFormat,
+  MusicProjectExportRequest,
+  MusicProject,
+  WeeklyDailyReportFeishuSendRequest,
+  WeeklyDailyReportFeishuSendResult,
+  WeeklyFeishuSettings,
   VideoProjectExportFormat,
   VideoProjectExportRequest,
   WritingBookExportFormat,
@@ -74,6 +86,8 @@ const MODEL_BALANCE_POLL_INTERVAL_MS = 60 * 60 * 1000;
 const MODEL_BALANCE_INITIAL_POLL_DELAY_MS = 60 * 1000;
 let modelBalancePollingTimer: NodeJS.Timeout | null = null;
 let modelBalancePollingInFlight = false;
+const FEISHU_DAILY_REPORT_CONTENT_LIMIT = 15000;
+const FEISHU_DAILY_REPORT_MARKDOWN_TEXT_SIZE = "normal_v2";
 
 type GordonConfirmWindowTone = "neutral" | "warning" | "danger";
 
@@ -172,6 +186,7 @@ const activeWorkflowRuns = new Map<string, WorkflowActiveRunContext>();
 const WRITING_BOOK_EXPORT_EXTENSIONS = new Set<WritingBookExportFormat>(["txt", "md"]);
 const COMIC_PROJECT_EXPORT_EXTENSIONS = new Set<ComicProjectExportFormat>(["md"]);
 const VIDEO_PROJECT_EXPORT_EXTENSIONS = new Set<VideoProjectExportFormat>(["md"]);
+const MUSIC_PROJECT_EXPORT_EXTENSIONS = new Set<MusicProjectExportFormat>(["md"]);
 
 class WorkflowRunCancelledError extends Error {
   constructor() {
@@ -249,6 +264,256 @@ function toCloneableIpcValue<T>(value: T): T {
   }
 
   return normalize(value) as T;
+}
+
+function normalizeFeishuWebhookUrl(value: string): string {
+  const webhookUrl = String(value ?? "").trim();
+
+  if (!webhookUrl) {
+    throw new Error("请先设置飞书群机器人 Webhook。");
+  }
+
+  const url = new URL(webhookUrl);
+
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new Error("飞书 Webhook 必须是 HTTP 或 HTTPS 地址。");
+  }
+
+  return url.toString();
+}
+
+function buildFeishuSignature(secret: string): { timestamp: string; sign: string } | null {
+  const normalizedSecret = String(secret ?? "").trim();
+
+  if (!normalizedSecret) {
+    return null;
+  }
+
+  const timestamp = `${Math.floor(Date.now() / 1000)}`;
+  const stringToSign = `${timestamp}\n${normalizedSecret}`;
+  const sign = createHmac("sha256", stringToSign).digest("base64");
+
+  return { timestamp, sign };
+}
+
+function truncateFeishuDailyReportContent(content: string): string {
+  if (content.length <= FEISHU_DAILY_REPORT_CONTENT_LIMIT) {
+    return content;
+  }
+
+  return `${content.slice(0, FEISHU_DAILY_REPORT_CONTENT_LIMIT)}\n\n... 内容较长，已自动截断后发送。`;
+}
+
+function getFeishuDailyReportListLineMeta(line: string): { depth: number; text: string } | null {
+  const bulletMatch = line.match(/^([ \t]*)(?:[-*+]|\d+[.)])\s+(.+)$/);
+
+  if (bulletMatch) {
+    return {
+      depth: Math.max(0, Math.round(bulletMatch[1].replace(/\t/g, "    ").length / 4)),
+      text: bulletMatch[2].trim()
+    };
+  }
+
+  const indentedMatch = line.match(/^([ \t]{2,})(\S.*)$/);
+
+  if (!indentedMatch) {
+    return null;
+  }
+
+  return {
+    depth: Math.max(1, Math.round(indentedMatch[1].replace(/\t/g, "    ").length / 4)),
+    text: indentedMatch[2].trim()
+  };
+}
+
+function normalizeFeishuDailyReportMarkdown(content: string): string {
+  const oddSpacePattern = /[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g;
+  const zeroWidthPattern = /[\u200B-\u200D\u2060\uFEFF]/g;
+  const bulletLikePattern = /^[•●▪◦‣・·]\s+/;
+  const statusSuffixPattern = /(?:（|\()(已完成|进行中|待开始|受阻)(?:）|\))\s*$/;
+  const normalizedLines = String(content ?? "")
+    .replace(/\r\n?/g, "\n")
+    .replace(zeroWidthPattern, "")
+    .replace(oddSpacePattern, " ")
+    .replace(/\t/g, "    ")
+    .split("\n")
+    .map((line) => line.replace(/[ ]+$/g, ""))
+    .filter((line) => line.trim());
+  const repairedLines: string[] = [];
+  let hasProjectHeading = false;
+
+  for (const line of normalizedLines) {
+    const unescapedLine = line.replace(/^([ ]*)\\([*+-])\s+/, "$1$2 ");
+    const normalizedBulletLine = bulletLikePattern.test(unescapedLine.trim())
+      ? `${unescapedLine.match(/^[ ]*/)?.[0] ?? ""}- ${unescapedLine.trim().replace(bulletLikePattern, "")}`
+      : unescapedLine;
+    const listMeta = getFeishuDailyReportListLineMeta(normalizedBulletLine);
+
+    if (!listMeta) {
+      const text = normalizedBulletLine.trim();
+
+      if (/^#{1,6}\s+/.test(text)) {
+        repairedLines.push(text);
+        hasProjectHeading = true;
+        continue;
+      }
+
+      if (statusSuffixPattern.test(text) && hasProjectHeading) {
+        repairedLines.push(`- ${text}`);
+        continue;
+      }
+
+      if (repairedLines.length && repairedLines[repairedLines.length - 1]) {
+        repairedLines.push("");
+      }
+
+      repairedLines.push(`**${text.replace(/^\*+|\*+$/g, "")}**`);
+      hasProjectHeading = true;
+      continue;
+    }
+
+    const text = listMeta.text.replace(/^\*+|\*+$/g, "").trim();
+
+    if (!listMeta.depth && !statusSuffixPattern.test(text)) {
+      if (repairedLines.length && repairedLines[repairedLines.length - 1]) {
+        repairedLines.push("");
+      }
+
+      repairedLines.push(`**${text}**`);
+      hasProjectHeading = true;
+      continue;
+    }
+
+    const depth = !listMeta.depth && statusSuffixPattern.test(text) && hasProjectHeading ? 1 : Math.max(1, listMeta.depth);
+    repairedLines.push(`${"  ".repeat(depth - 1)}- ${text}`);
+  }
+
+  return repairedLines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function normalizeFeishuDailyReportTitle(value: string): string {
+  return String(value ?? "")
+    .replace(/\s*日报\s*$/g, "")
+    .replace(/周[一二三四五六日天]\s*/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildFeishuDailyReportPayload(
+  settings: WeeklyFeishuSettings,
+  request: WeeklyDailyReportFeishuSendRequest
+): Record<string, unknown> {
+  const titlePrefix = String(settings.titlePrefix ?? "").trim();
+  const titleDate = normalizeFeishuDailyReportTitle(request.title);
+  const title = [titlePrefix, titleDate].filter(Boolean).join(" ") || "Gordon 日报";
+  const content = truncateFeishuDailyReportContent(normalizeFeishuDailyReportMarkdown(String(request.content ?? "").trim()));
+  const signature = buildFeishuSignature(settings.secret);
+  const payload: Record<string, unknown> = {
+    msg_type: "interactive",
+    card: {
+      schema: "2.0",
+      config: {
+        update_multi: true,
+        style: {
+          text_size: {
+            [FEISHU_DAILY_REPORT_MARKDOWN_TEXT_SIZE]: {
+              default: "normal",
+              pc: "normal",
+              mobile: "normal"
+            }
+          }
+        }
+      },
+      body: {
+        direction: "vertical",
+        padding: "12px 12px 12px 12px",
+        elements: [
+          {
+            tag: "markdown",
+            content,
+            text_align: "left",
+            text_size: FEISHU_DAILY_REPORT_MARKDOWN_TEXT_SIZE,
+            margin: "0px 0px 0px 0px"
+          }
+        ]
+      },
+      header: {
+        title: {
+          tag: "plain_text",
+          content: title
+        },
+        template: "turquoise",
+        padding: "12px 12px 12px 12px"
+      }
+    }
+  };
+
+  if (signature) {
+    payload.timestamp = signature.timestamp;
+    payload.sign = signature.sign;
+  }
+
+  return payload;
+}
+
+async function parseFeishuWebhookResponse(response: Response): Promise<Record<string, unknown>> {
+  const responseText = await response.text();
+
+  if (!responseText.trim()) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(responseText) as Record<string, unknown>;
+  } catch {
+    return { message: responseText };
+  }
+}
+
+function getFeishuResponseCode(payload: Record<string, unknown>): number | null {
+  const rawCode = payload.code ?? payload.Code ?? payload.StatusCode ?? payload.statusCode;
+  const code = Number(rawCode);
+
+  return Number.isFinite(code) ? code : null;
+}
+
+function getFeishuResponseMessage(payload: Record<string, unknown>): string {
+  return String(payload.msg ?? payload.message ?? payload.StatusMessage ?? payload.statusMessage ?? "").trim();
+}
+
+async function sendWeeklyDailyReportToFeishu(
+  request: WeeklyDailyReportFeishuSendRequest
+): Promise<WeeklyDailyReportFeishuSendResult> {
+  const settings = await getWeeklyFeishuSettings();
+  const webhookUrl = normalizeFeishuWebhookUrl(settings.webhookUrl);
+  const content = String(request.content ?? "").trim();
+
+  if (!content) {
+    throw new Error("当前没有可发送的日报内容。");
+  }
+
+  const response = await fetch(webhookUrl, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify(buildFeishuDailyReportPayload(settings, { ...request, content }))
+  });
+  const responsePayload = await parseFeishuWebhookResponse(response);
+  const responseCode = getFeishuResponseCode(responsePayload);
+  const responseMessage = getFeishuResponseMessage(responsePayload) || (response.ok ? "success" : response.statusText);
+  const isBusinessOk = responseCode === null || responseCode === 0;
+
+  if (!response.ok || !isBusinessOk) {
+    throw new Error(`飞书返回异常：${responseMessage || `HTTP ${response.status}`}`);
+  }
+
+  return {
+    ok: true,
+    sentAt: new Date().toISOString(),
+    statusCode: responseCode ?? response.status,
+    responseMessage
+  };
 }
 
 function normalizeWritingBookExportFormat(value: unknown): WritingBookExportFormat {
@@ -391,6 +656,58 @@ function resolveVideoProjectExportPath(request: VideoProjectExportRequest): {
   const format = normalizeVideoProjectExportFormat(request?.format);
   const resolvedDirectoryPath = path.resolve(directoryPath);
   const fileName = sanitizeVideoProjectExportFileName(request?.fileName, format);
+  const filePath = path.join(resolvedDirectoryPath, fileName);
+  const relativePath = path.relative(resolvedDirectoryPath, filePath);
+
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    throw new Error("导出路径不合法");
+  }
+
+  return {
+    directoryPath: resolvedDirectoryPath,
+    fileName,
+    filePath,
+    format,
+    content: content.endsWith("\n") ? content : `${content}\n`
+  };
+}
+
+function normalizeMusicProjectExportFormat(value: unknown): MusicProjectExportFormat {
+  const format = String(value ?? "").trim().toLowerCase();
+  return MUSIC_PROJECT_EXPORT_EXTENSIONS.has(format as MusicProjectExportFormat) ? (format as MusicProjectExportFormat) : "md";
+}
+
+function sanitizeMusicProjectExportFileName(value: unknown, format: MusicProjectExportFormat): string {
+  const baseName = String(value ?? "")
+    .replace(/\.[^.]+$/, "")
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
+    .replace(/\s+/g, " ")
+    .replace(/[. ]+$/g, "")
+    .trim();
+  return `${baseName || "未命名音乐专辑"}.${format}`;
+}
+
+function resolveMusicProjectExportPath(request: MusicProjectExportRequest): {
+  directoryPath: string;
+  fileName: string;
+  filePath: string;
+  format: MusicProjectExportFormat;
+  content: string;
+} {
+  const directoryPath = String(request?.directoryPath ?? "").trim();
+  const content = String(request?.content ?? "");
+
+  if (!directoryPath) {
+    throw new Error("请选择输出目录");
+  }
+
+  if (!content.trim()) {
+    throw new Error("没有可导出的音乐专辑内容");
+  }
+
+  const format = normalizeMusicProjectExportFormat(request?.format);
+  const resolvedDirectoryPath = path.resolve(directoryPath);
+  const fileName = sanitizeMusicProjectExportFileName(request?.fileName, format);
   const filePath = path.join(resolvedDirectoryPath, fileName);
   const relativePath = path.relative(resolvedDirectoryPath, filePath);
 
@@ -1778,6 +2095,40 @@ app.whenReady().then(async () => {
       writtenBytes: Buffer.byteLength(exportTarget.content, "utf8")
     };
   });
+  ipcMain.handle("gordon:music-projects:list", async () => listMusicProjects());
+  ipcMain.handle("gordon:music-projects:upsert", async (_event, project: MusicProject) => upsertMusicProject(project));
+  ipcMain.handle("gordon:music-projects:delete", async (_event, projectId: string) =>
+    deleteMusicProject(projectId, (targetPath) => shell.trashItem(targetPath))
+  );
+  ipcMain.handle("gordon:music-projects:select-export-directory", async (event) => {
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+    const openDialogOptions = {
+      title: "选择瑶琴映月导出目录",
+      properties: ["openDirectory", "createDirectory"]
+    } satisfies Electron.OpenDialogOptions;
+    const result = ownerWindow
+      ? await dialog.showOpenDialog(ownerWindow, openDialogOptions)
+      : await dialog.showOpenDialog(openDialogOptions);
+
+    if (result.canceled || !result.filePaths.length) {
+      return null;
+    }
+
+    return result.filePaths[0];
+  });
+  ipcMain.handle("gordon:music-projects:export", async (_event, request: MusicProjectExportRequest) => {
+    const exportTarget = resolveMusicProjectExportPath(request);
+
+    await mkdir(exportTarget.directoryPath, { recursive: true });
+    await writeFile(exportTarget.filePath, exportTarget.content, "utf8");
+
+    return {
+      filePath: exportTarget.filePath,
+      fileName: exportTarget.fileName,
+      format: exportTarget.format,
+      writtenBytes: Buffer.byteLength(exportTarget.content, "utf8")
+    };
+  });
   ipcMain.handle("gordon:writing-books:list", async () => listWritingBooks());
   ipcMain.handle("gordon:writing-books:save", async (_event, book, options) => saveWritingBook(book, options));
   ipcMain.handle("gordon:writing-books:delete", async (_event, bookId: string) =>
@@ -1821,6 +2172,14 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("gordon:weekly-progress:generate-report", async (_event, request) =>
     generateWeeklyProgressReport(request)
+  );
+  ipcMain.handle("gordon:weekly-progress:feishu-settings:get", async () => getWeeklyFeishuSettings());
+  ipcMain.handle("gordon:weekly-progress:feishu-settings:save", async (_event, settings: WeeklyFeishuSettings) =>
+    saveWeeklyFeishuSettings(settings)
+  );
+  ipcMain.handle(
+    "gordon:weekly-progress:send-daily-report-to-feishu",
+    async (_event, request: WeeklyDailyReportFeishuSendRequest) => sendWeeklyDailyReportToFeishu(request)
   );
 
   await createMainWindow();

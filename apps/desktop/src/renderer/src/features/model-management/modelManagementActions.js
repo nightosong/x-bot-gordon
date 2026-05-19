@@ -352,8 +352,7 @@ export function createModelManagementActions({
         used,
         remaining: latestPoint?.remaining ?? null,
         total: latestPoint?.total ?? null,
-        unit: latestPoint?.unit ?? "USD",
-        sampleCount: pointsInDay.length
+        unit: latestPoint?.unit ?? "USD"
       };
     });
   }
@@ -372,7 +371,6 @@ export function createModelManagementActions({
       averageUsed: normalizedDays.length ? totalUsed / normalizedDays.length : 0,
       maxUsed,
       unit,
-      sampleCount: normalizedEntries.length,
       latestUsageText: latestSnapshot
         ? `${formatBalanceNumber(latestSnapshot.used)} / ${formatBalanceNumber(latestSnapshot.remaining)}`
         : "-- / --"

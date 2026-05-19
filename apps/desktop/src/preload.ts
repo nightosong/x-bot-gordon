@@ -16,6 +16,9 @@ import type {
   McpToolCallRequest,
   McpServerConfig,
   McpToolDefinition,
+  MusicProjectExportRequest,
+  MusicProjectExportResult,
+  MusicProject,
   ModelProfile,
   ModelTextRequest,
   VideoProject,
@@ -27,6 +30,9 @@ import type {
   WritingBookSaveOptions,
   SkillDefinition,
   WorkflowLibraryItem,
+  WeeklyDailyReportFeishuSendRequest,
+  WeeklyDailyReportFeishuSendResult,
+  WeeklyFeishuSettings,
   WritingBook,
   WeeklyProgressRecord,
   WeeklyProgressRewriteRequest,
@@ -198,6 +204,15 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
     ipcRenderer.invoke("gordon:video-projects:upsert", toPlainIpcData(project)),
   deleteVideoProject: (projectId: string): Promise<VideoProject[]> =>
     ipcRenderer.invoke("gordon:video-projects:delete", projectId),
+  listMusicProjects: (): Promise<MusicProject[]> => ipcRenderer.invoke("gordon:music-projects:list"),
+  upsertMusicProject: (project: MusicProject): Promise<MusicProject[]> =>
+    ipcRenderer.invoke("gordon:music-projects:upsert", toPlainIpcData(project)),
+  deleteMusicProject: (projectId: string): Promise<MusicProject[]> =>
+    ipcRenderer.invoke("gordon:music-projects:delete", projectId),
+  selectMusicProjectExportDirectory: (): Promise<string | null> =>
+    ipcRenderer.invoke("gordon:music-projects:select-export-directory"),
+  exportMusicProject: (request: MusicProjectExportRequest): Promise<MusicProjectExportResult> =>
+    ipcRenderer.invoke("gordon:music-projects:export", toPlainIpcData(request)),
   selectVideoProjectExportDirectory: (): Promise<string | null> =>
     ipcRenderer.invoke("gordon:video-projects:select-export-directory"),
   exportVideoProject: (request: VideoProjectExportRequest): Promise<VideoProjectExportResult> =>
@@ -219,5 +234,13 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
   generateDailyProgressReport: (request: DailyReportGenerateRequest) =>
     ipcRenderer.invoke("gordon:weekly-progress:generate-daily-report", request),
   generateWeeklyProgressReport: (request: WeeklyReportGenerateRequest) =>
-    ipcRenderer.invoke("gordon:weekly-progress:generate-report", request)
+    ipcRenderer.invoke("gordon:weekly-progress:generate-report", request),
+  getWeeklyFeishuSettings: (): Promise<WeeklyFeishuSettings> =>
+    ipcRenderer.invoke("gordon:weekly-progress:feishu-settings:get"),
+  saveWeeklyFeishuSettings: (settings: WeeklyFeishuSettings): Promise<WeeklyFeishuSettings> =>
+    ipcRenderer.invoke("gordon:weekly-progress:feishu-settings:save", toPlainIpcData(settings)),
+  sendWeeklyDailyReportToFeishu: (
+    request: WeeklyDailyReportFeishuSendRequest
+  ): Promise<WeeklyDailyReportFeishuSendResult> =>
+    ipcRenderer.invoke("gordon:weekly-progress:send-daily-report-to-feishu", toPlainIpcData(request))
 });

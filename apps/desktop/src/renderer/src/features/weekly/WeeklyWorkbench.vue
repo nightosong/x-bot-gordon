@@ -35,11 +35,19 @@
               <p class="model-section-title">周报列表</p>
             </div>
 
-            <div class="model-section-actions">
-              <span v-if="weeklyFocusRecord" class="status-pill">{{ weeklyFocusRecord.title }}</span>
-              <span class="pill pill-neutral">
-                共 {{ weeklyProgress.length }} 周，展示 {{ Math.min(weeklyProgress.length, 5) }} 条
-              </span>
+            <div v-if="weeklyYearOptions.length" class="model-section-actions weekly-year-filter" role="group" aria-label="按年份筛选周报">
+              <button
+                v-for="yearOption in weeklyYearOptions"
+                :key="yearOption.year"
+                type="button"
+                class="weekly-year-chip"
+                :class="{ 'is-active': weeklyActiveYear === yearOption.year }"
+                :aria-pressed="weeklyActiveYear === yearOption.year ? 'true' : 'false'"
+                @click="setWeeklyYearFilter(yearOption.year)"
+              >
+                <span>{{ yearOption.year }}</span>
+                <small>{{ yearOption.count }}</small>
+              </button>
             </div>
           </div>
 
@@ -49,7 +57,7 @@
             </div>
 
             <article
-              v-for="record in weeklyProgress.slice(0, 5)"
+              v-for="record in weeklyVisibleRecords"
               :key="record.id"
               class="weekly-record-card"
               :class="{ 'is-active': state.activeRecordId === record.id }"
@@ -141,12 +149,12 @@
                         汇报视图
                       </button>
                     </div>
-
-                    <div class="weekly-panel-title-slot">
-                      <p class="weekly-panel-title weekly-panel-title-centered">{{ weeklyDraft.title }}</p>
-                      <span class="weekly-autosave-hint">自动保存</span>
-                    </div>
                   </div>
+                </div>
+
+                <div class="weekly-panel-title-slot">
+                  <p class="weekly-panel-title weekly-panel-title-centered">{{ weeklyDraft.title }}</p>
+                  <span class="weekly-autosave-hint">自动保存</span>
                 </div>
 
                 <div class="weekly-panel-side weekly-panel-side-end">
@@ -158,6 +166,17 @@
                     @click="addWeeklyProject"
                   >
                     新增项目
+                  </button>
+                  <button
+                    v-else
+                    type="button"
+                    class="weekly-panel-settings-button"
+                    :class="{ 'is-configured': weeklyHasFeishuWebhook }"
+                    aria-label="飞书群设置"
+                    title="飞书群设置"
+                    @click="openWeeklyFeishuSettingsDialog"
+                  >
+                    <GIcon name="settings" :size="13" />
                   </button>
                 </div>
               </div>
@@ -484,6 +503,19 @@
                           <span v-if="weeklyActiveReportIsGenerating" class="weekly-task-spinner" aria-hidden="true"></span>
                           <span v-else class="weekly-report-run-icon"><GIcon name="play" /></span>
                         </button>
+                        <button
+                          v-if="!weeklyIsWeeklyReportMode"
+                          type="button"
+                          class="model-icon-button weekly-report-share-button"
+                          :class="{ 'is-sent': state.dailyReportShareState === 'sent', 'is-loading': state.isSendingDailyReport }"
+                          :disabled="state.isGeneratingReport || state.isSendingDailyReport || !weeklyCanShareDailyReport"
+                          :title="weeklyReportShareButtonLabel"
+                          :aria-label="weeklyReportShareButtonLabel"
+                          @click="handleWeeklyDailyReportShare"
+                        >
+                          <span v-if="state.isSendingDailyReport" class="weekly-task-spinner" aria-hidden="true"></span>
+                          <span v-else class="weekly-report-run-icon"><GIcon :name="weeklyReportShareIconKind" /></span>
+                        </button>
                       </div>
                     </div>
                     <p class="weekly-report-feedback" :class="`is-${weeklyReportFeedbackTone}`">{{ weeklyReportFeedbackText }}</p>
@@ -604,6 +636,100 @@
         </section>
       </div>
     </div>
+
+    <Transition name="gordon-dialog-fade">
+      <div
+        v-if="state.isFeishuSettingsDialogOpen"
+        class="gordon-dialog-backdrop weekly-feishu-backdrop"
+        @click.self="closeWeeklyFeishuSettingsDialog"
+      >
+        <section class="gordon-dialog weekly-feishu-dialog" role="dialog" aria-modal="true" aria-label="飞书群设置">
+          <div class="gordon-dialog-head">
+            <div class="gordon-dialog-mark weekly-feishu-mark" aria-hidden="true">
+              <GIcon name="share" :size="15" />
+            </div>
+
+            <div>
+              <p class="gordon-dialog-kicker">Feishu</p>
+              <h2 class="gordon-dialog-title">飞书群设置</h2>
+            </div>
+          </div>
+
+          <p class="gordon-dialog-message">配置群机器人后，日报可以从汇报视图直接发送到飞书群。</p>
+
+          <div class="weekly-feishu-panel">
+            <label class="gordon-dialog-field weekly-feishu-field">
+              <span class="gordon-dialog-field-label">Webhook</span>
+              <input
+                class="gordon-dialog-input"
+                type="text"
+                :value="state.feishuSettingsDraft.webhookUrl"
+                :disabled="state.isFeishuSettingsLoading || state.isFeishuSettingsSaving"
+                placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
+                @input="setWeeklyFeishuSettingsDraftField('webhookUrl', $event.target.value)"
+              />
+            </label>
+
+            <label class="gordon-dialog-field weekly-feishu-field">
+              <span class="gordon-dialog-field-label">签名密钥</span>
+              <input
+                class="gordon-dialog-input"
+                type="password"
+                :value="state.feishuSettingsDraft.secret"
+                :disabled="state.isFeishuSettingsLoading || state.isFeishuSettingsSaving"
+                placeholder="可选"
+                @input="setWeeklyFeishuSettingsDraftField('secret', $event.target.value)"
+              />
+            </label>
+
+            <label class="gordon-dialog-field weekly-feishu-field">
+              <span class="gordon-dialog-field-label">标题前缀</span>
+              <input
+                class="gordon-dialog-input"
+                type="text"
+                :value="state.feishuSettingsDraft.titlePrefix"
+                :disabled="state.isFeishuSettingsLoading || state.isFeishuSettingsSaving"
+                placeholder="Gordon 日报"
+                @input="setWeeklyFeishuSettingsDraftField('titlePrefix', $event.target.value)"
+              />
+            </label>
+
+            <div class="writing-export-summary weekly-feishu-summary">
+              <span>{{ weeklyFeishuSettingsStatusText }}</span>
+              <span>{{ weeklyFeishuSecretStatusText }}</span>
+            </div>
+          </div>
+
+          <p
+            v-if="state.feishuSettingsFeedback"
+            class="writing-export-feedback"
+            :class="`is-${state.feishuSettingsFeedbackTone}`"
+          >
+            {{ state.feishuSettingsFeedback }}
+          </p>
+
+          <div class="gordon-dialog-actions">
+            <button
+              type="button"
+              class="gordon-dialog-button gordon-dialog-button-secondary"
+              :disabled="state.isFeishuSettingsSaving"
+              @click="closeWeeklyFeishuSettingsDialog"
+            >
+              取消
+            </button>
+
+            <button
+              type="button"
+              class="gordon-dialog-button gordon-dialog-button-primary"
+              :disabled="state.isFeishuSettingsLoading || state.isFeishuSettingsSaving"
+              @click="saveWeeklyFeishuSettingsFromDialog"
+            >
+              {{ state.isFeishuSettingsSaving ? "保存中" : "保存" }}
+            </button>
+          </div>
+        </section>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -642,22 +768,28 @@ const props = defineProps({
   applyWeeklyReportTemplateAiOutput: { type: Function, required: true },
   cancelWeeklyReportTemplateAiRun: { type: Function, required: true },
   closeWeeklyEditor: { type: Function, required: true },
+  closeWeeklyFeishuSettingsDialog: { type: Function, required: true },
   closeWeeklyReportTemplateAi: { type: Function, required: true },
   generateWeeklyReportTemplateAiOutput: { type: Function, required: true },
   getWeeklyReportTemplateAiFeedbackClass: { type: Function, required: true },
   handleRichTextClick: { type: Function, required: true },
   handleWeeklyActiveReportGeneration: { type: Function, required: true },
+  handleWeeklyDailyReportShare: { type: Function, required: true },
   handleWeeklyDelete: { type: Function, required: true },
   handleWeeklyReportOutputCopy: { type: Function, required: true },
   handleWeeklyReportTemplateSelectionChange: { type: Function, required: true },
   handleWeeklySave: { type: Function, required: true },
   isWeeklyProjectCollapsed: { type: Function, required: true },
+  openWeeklyFeishuSettingsDialog: { type: Function, required: true },
   openWeeklyRecord: { type: Function, required: true },
   optimizeWeeklyTaskTitle: { type: Function, required: true },
   removeWeeklyProject: { type: Function, required: true },
   removeWeeklySelectedReportTemplate: { type: Function, required: true },
   removeWeeklyTask: { type: Function, required: true },
   resetWeeklyReportCopyState: { type: Function, required: true },
+  resetWeeklyReportShareState: { type: Function, required: true },
+  saveWeeklyFeishuSettingsFromDialog: { type: Function, required: true },
+  setWeeklyFeishuSettingsDraftField: { type: Function, required: true },
   setWeeklyReportTemplateAiInstruction: { type: Function, required: true },
   setWeeklyReportTemplateAiOutput: { type: Function, required: true },
   setWeeklyReportingMode: { type: Function, required: true },
@@ -669,9 +801,61 @@ const props = defineProps({
 });
 
 const weeklyDraft = computed(() => props.state.draft);
+const weeklySelectedYear = ref("");
+
+function getWeeklyRecordYear(record) {
+  const rawDate = String(record?.weekKey ?? record?.startDate ?? record?.createdAt ?? "").trim();
+  const directYear = rawDate.match(/^\d{4}/)?.[0];
+
+  if (directYear) {
+    return directYear;
+  }
+
+  const date = new Date(rawDate);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return String(date.getFullYear());
+}
+
 const weeklyFocusRecord = computed(
   () => props.weeklyProgress.find((record) => record.status === "active") ?? props.weeklyProgress[0] ?? null
 );
+const weeklyYearOptions = computed(() => {
+  const yearCounts = new Map();
+
+  props.weeklyProgress.forEach((record) => {
+    const year = getWeeklyRecordYear(record);
+
+    if (!year) {
+      return;
+    }
+
+    yearCounts.set(year, (yearCounts.get(year) ?? 0) + 1);
+  });
+
+  return Array.from(yearCounts.entries())
+    .sort(([leftYear], [rightYear]) => rightYear.localeCompare(leftYear))
+    .map(([year, count]) => ({ year, count }));
+});
+const weeklyActiveYear = computed(() => {
+  const availableYears = weeklyYearOptions.value.map((option) => option.year);
+
+  if (weeklySelectedYear.value && availableYears.includes(weeklySelectedYear.value)) {
+    return weeklySelectedYear.value;
+  }
+
+  return availableYears[0] ?? "";
+});
+const weeklyVisibleRecords = computed(() => {
+  if (!weeklyActiveYear.value) {
+    return props.weeklyProgress;
+  }
+
+  return props.weeklyProgress.filter((record) => getWeeklyRecordYear(record) === weeklyActiveYear.value);
+});
 const weeklyFocusMetrics = computed(() => getWeeklyProgressMetrics(weeklyFocusRecord.value ?? { projects: [] }));
 const weeklyFocusCompletionRate = computed(() => getWeeklyProgressCompletionRate(weeklyFocusRecord.value ?? { projects: [] }));
 const weeklyListOverviewCards = computed(() => {
@@ -740,6 +924,11 @@ const weeklyReportTemplateAiButtonLabel = computed(() =>
 const weeklyReportTemplateAiButtonTitle = computed(() =>
   weeklyReportTemplateAiState.value.isOpen ? "关闭优化" : "AI 优化"
 );
+
+function setWeeklyYearFilter(year) {
+  weeklySelectedYear.value = String(year ?? "");
+}
+
 const weeklySelectedReportTemplateContent = computed({
   get: () => weeklySelectedReportTemplate.value?.content ?? "",
   set: (value) => {
@@ -794,11 +983,13 @@ const weeklyReportOutputContent = computed({
     if (weeklyIsWeeklyReportMode.value) {
       props.state.draft.generatedReport = String(value ?? "");
       props.resetWeeklyReportCopyState();
+      props.resetWeeklyReportShareState();
       return;
     }
 
     props.state.draft.generatedDailyReport = String(value ?? "");
     props.resetWeeklyReportCopyState();
+    props.resetWeeklyReportShareState();
   }
 });
 const weeklyActiveReportIsGenerating = computed(
@@ -825,6 +1016,9 @@ const weeklyReportFeedbackTone = computed(() => {
   return tone || "neutral";
 });
 const weeklyCanCopyReportOutput = computed(() => Boolean(String(weeklyReportOutputContent.value ?? "").trim()));
+const weeklyCanShareDailyReport = computed(
+  () => !weeklyIsWeeklyReportMode.value && Boolean(String(props.state.draft?.generatedDailyReport ?? "").trim())
+);
 const weeklyNormalizedReportOutputContent = computed(() => normalizeMarkdownForClipboard(weeklyReportOutputContent.value));
 const weeklyRenderedReportOutputHtml = computed(() => renderRichText(weeklyNormalizedReportOutputContent.value));
 const weeklyReportCopyIconKind = computed(() => (props.state.reportCopyState === "copied" ? "check" : "copy"));
@@ -834,6 +1028,24 @@ const weeklyReportCopyButtonLabel = computed(() =>
     : weeklyCanCopyReportOutput.value
       ? `复制${weeklyReportModeLabel.value}`
       : `当前没有可复制的${weeklyReportModeLabel.value}内容`
+);
+const weeklyReportShareIconKind = computed(() => (props.state.dailyReportShareState === "sent" ? "check" : "share"));
+const weeklyReportShareButtonLabel = computed(() => {
+  if (props.state.isSendingDailyReport) {
+    return "正在发送日报到飞书群";
+  }
+
+  if (props.state.dailyReportShareState === "sent") {
+    return "日报已发送到飞书群";
+  }
+
+  return weeklyCanShareDailyReport.value ? "发送日报到飞书群" : "当前没有可发送的日报内容";
+});
+const weeklyHasFeishuWebhook = computed(() => Boolean(String(props.state.feishuSettings?.webhookUrl ?? "").trim()));
+const weeklyFeishuDraftHasWebhook = computed(() => Boolean(String(props.state.feishuSettingsDraft?.webhookUrl ?? "").trim()));
+const weeklyFeishuSettingsStatusText = computed(() => (weeklyFeishuDraftHasWebhook.value ? "Webhook 已填写" : "Webhook 未配置"));
+const weeklyFeishuSecretStatusText = computed(() =>
+  String(props.state.feishuSettingsDraft?.secret ?? "").trim() ? "签名校验已启用" : "未启用签名校验"
 );
 const weeklyDraftInsights = computed(() => buildWeeklyDraftInsights(props.state.draft));
 const weeklyInsightActiveTab = ref("quality");
