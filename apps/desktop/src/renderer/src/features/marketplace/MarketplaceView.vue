@@ -777,6 +777,11 @@
                 <strong>{{ mode.label }}</strong>
               </button>
             </div>
+
+            <div class="fortune-rail-note">
+              <strong>娱乐参考</strong>
+              <span>不填写证件号、手机号或私密账号。</span>
+            </div>
           </aside>
 
           <main class="fortune-main-stage">
@@ -799,6 +804,10 @@
                   />
                   {{ ui.marketplace.fortune.isGenerating ? "解读中" : "生成解读" }}
                 </button>
+              </div>
+
+              <div class="fortune-method-strip" aria-label="当前解读框架">
+                <span v-for="method in activeFortuneMethodLabels" :key="method" class="fortune-method-chip">{{ method }}</span>
               </div>
 
               <div class="fortune-form-grid">
@@ -826,17 +835,85 @@
                 </div>
 
                 <label class="field">
+                  <span class="field-label">基础资料</span>
+                  <input
+                    :value="ui.marketplace.fortune.profileInfo"
+                    class="field-input"
+                    placeholder="可选，例如性别、当前城市、职业阶段"
+                    :disabled="ui.marketplace.fortune.isGenerating"
+                    @input="setFortuneProfileInfo($event.target.value)"
+                  />
+                </label>
+
+                <label class="field">
                   <span class="field-label">出生 / 时间信息</span>
                   <input
                     :value="ui.marketplace.fortune.birthInfo"
                     class="field-input"
-                    placeholder="可选，例如生日、时辰、当前时间或抽牌时间"
+                    placeholder="生日、时辰、出生地、起卦/抽牌时间"
                     :disabled="ui.marketplace.fortune.isGenerating"
                     @input="setFortuneBirthInfo($event.target.value)"
                   />
                 </label>
 
                 <div class="field">
+                  <span class="field-label">面相 / 手相线索</span>
+                  <FieldAiOptimizer
+                    :actions="fieldAiActions"
+                    :state="ui.marketplace.fieldAi"
+                    :field-id="`fortune-appearance-${ui.marketplace.fortune.activeMode}`"
+                    :app-name="FORTUNE_APP_NAME"
+                    label="面相 / 手相线索"
+                    :value="ui.marketplace.fortune.appearanceInfo"
+                    :context="buildFortuneFieldAiContext('面相 / 手相线索')"
+                    :disabled="ui.marketplace.fortune.isGenerating"
+                    :set-value="setFortuneAppearanceInfo"
+                  >
+                    <textarea
+                      :value="ui.marketplace.fortune.appearanceInfo"
+                      class="field-textarea fortune-small-textarea"
+                      placeholder="可选，描述气色、五官、掌纹、手型或本人感受。"
+                      :disabled="ui.marketplace.fortune.isGenerating"
+                      @input="setFortuneAppearanceInfo($event.target.value)"
+                    ></textarea>
+                  </FieldAiOptimizer>
+                </div>
+
+                <div class="field">
+                  <span class="field-label">空间 / 风水线索</span>
+                  <FieldAiOptimizer
+                    :actions="fieldAiActions"
+                    :state="ui.marketplace.fieldAi"
+                    :field-id="`fortune-space-${ui.marketplace.fortune.activeMode}`"
+                    :app-name="FORTUNE_APP_NAME"
+                    label="空间 / 风水线索"
+                    :value="ui.marketplace.fortune.spaceInfo"
+                    :context="buildFortuneFieldAiContext('空间 / 风水线索')"
+                    :disabled="ui.marketplace.fortune.isGenerating"
+                    :set-value="setFortuneSpaceInfo"
+                  >
+                    <textarea
+                      :value="ui.marketplace.fortune.spaceInfo"
+                      class="field-textarea fortune-small-textarea"
+                      placeholder="可选，写户型、朝向、门窗、床桌、工位、杂物和光照。"
+                      :disabled="ui.marketplace.fortune.isGenerating"
+                      @input="setFortuneSpaceInfo($event.target.value)"
+                    ></textarea>
+                  </FieldAiOptimizer>
+                </div>
+
+                <label class="field">
+                  <span class="field-label">姓名 / 数字线索</span>
+                  <input
+                    :value="ui.marketplace.fortune.nameInfo"
+                    class="field-input"
+                    placeholder="可选，例如姓名、常用数字、日期或颜色偏好"
+                    :disabled="ui.marketplace.fortune.isGenerating"
+                    @input="setFortuneNameInfo($event.target.value)"
+                  />
+                </label>
+
+                <div class="field field-full">
                   <span class="field-label">补充背景</span>
                   <FieldAiOptimizer
                     :actions="fieldAiActions"
@@ -3363,15 +3440,20 @@ const {
 } = videoActions;
 
 const {
+  activeFortuneMethodLabels,
   activeFortuneModeMeta,
   backFortuneMarketplace,
   clearFortuneReading,
   generateFortuneReading,
   getFortuneFeedbackClass,
   openFortuneApp,
+  setFortuneAppearanceInfo,
   setFortuneBirthInfo,
   setFortuneContext,
   setFortuneMode,
+  setFortuneNameInfo,
+  setFortuneProfileInfo,
+  setFortuneSpaceInfo,
   setFortuneQuestion
 } = fortuneActions;
 
@@ -3581,7 +3663,13 @@ function buildFortuneFieldAiContext(fieldLabel) {
   return compactFieldAiContext([
     `解读类型：${activeFortuneModeMeta.value?.label ?? ""}`,
     `解读重点：${activeFortuneModeMeta.value?.focus ?? ""}`,
-    fieldLabel === "关注问题" ? `出生 / 时间信息：${ui.marketplace.fortune.birthInfo}` : `关注问题：${ui.marketplace.fortune.question}`,
+    `采用框架：${activeFortuneMethodLabels.value?.join(" / ") ?? ""}`,
+    fieldLabel === "关注问题" ? "" : `关注问题：${ui.marketplace.fortune.question}`,
+    fieldLabel === "面相 / 手相线索" ? "" : `面相 / 手相线索：${ui.marketplace.fortune.appearanceInfo}`,
+    fieldLabel === "空间 / 风水线索" ? "" : `空间 / 风水线索：${ui.marketplace.fortune.spaceInfo}`,
+    `基础资料：${ui.marketplace.fortune.profileInfo}`,
+    `出生 / 时间信息：${ui.marketplace.fortune.birthInfo}`,
+    `姓名 / 数字线索：${ui.marketplace.fortune.nameInfo}`,
     `补充背景：${ui.marketplace.fortune.context}`
   ]);
 }
