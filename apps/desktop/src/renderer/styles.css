@@ -13,10 +13,53 @@
   --radius-xl: 34px;
   --radius-lg: 26px;
   --radius-md: 20px;
+  --g-scrollbar-size: 5px;
+  --g-scrollbar-thumb: rgba(247, 243, 235, 0.2);
+  --g-scrollbar-thumb-hover: rgba(92, 225, 194, 0.34);
+  --g-scrollbar-track: transparent;
 }
 
 * {
   box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--g-scrollbar-thumb) var(--g-scrollbar-track);
+}
+
+*::-webkit-scrollbar {
+  width: var(--g-scrollbar-size) !important;
+  height: var(--g-scrollbar-size) !important;
+  background: transparent !important;
+}
+
+*::-webkit-scrollbar-button {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-track-piece,
+*::-webkit-scrollbar-corner {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+*::-webkit-scrollbar-thumb {
+  min-width: 24px;
+  min-height: 24px;
+  border: 0 !important;
+  border-radius: 999px;
+  background-color: var(--g-scrollbar-thumb);
+  background-image: none;
+  background-clip: border-box !important;
+  box-shadow: none !important;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--g-scrollbar-thumb-hover);
 }
 
 html,
@@ -2784,8 +2827,7 @@ canvas {
   align-content: start;
   gap: 10px;
   padding: 11px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(247, 243, 235, 0.18) transparent;
+  --g-scrollbar-thumb: rgba(247, 243, 235, 0.18);
 }
 
 .comic-asset-list-panel {
@@ -2799,30 +2841,7 @@ canvas {
 
 .comic-asset-list,
 .comic-asset-detail-panel {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(247, 243, 235, 0.18) transparent;
-}
-
-.comic-asset-list::-webkit-scrollbar,
-.comic-asset-detail-panel::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
-}
-
-.comic-asset-list::-webkit-scrollbar-track,
-.comic-asset-list::-webkit-scrollbar-corner,
-.comic-asset-detail-panel::-webkit-scrollbar-track,
-.comic-asset-detail-panel::-webkit-scrollbar-corner {
-  border: 0;
-  background: transparent;
-}
-
-.comic-asset-list::-webkit-scrollbar-thumb,
-.comic-asset-detail-panel::-webkit-scrollbar-thumb {
-  min-height: 28px;
-  border: 0;
-  border-radius: 999px;
-  background: rgba(247, 243, 235, 0.2);
+  --g-scrollbar-thumb: rgba(247, 243, 235, 0.18);
 }
 
 .comic-asset-list-panel.is-collapsed {
@@ -3164,30 +3183,7 @@ canvas {
   min-height: 0;
   padding: 14px 16px 18px;
   overflow: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(247, 243, 235, 0.18) transparent;
-}
-
-.comic-chapter-image-list::-webkit-scrollbar,
-.comic-chapter-inspector::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
-}
-
-.comic-chapter-image-list::-webkit-scrollbar-track,
-.comic-chapter-image-list::-webkit-scrollbar-corner,
-.comic-chapter-inspector::-webkit-scrollbar-track,
-.comic-chapter-inspector::-webkit-scrollbar-corner {
-  border: 0;
-  background: transparent;
-}
-
-.comic-chapter-image-list::-webkit-scrollbar-thumb,
-.comic-chapter-inspector::-webkit-scrollbar-thumb {
-  min-height: 28px;
-  border: 0;
-  border-radius: 999px;
-  background: rgba(247, 243, 235, 0.2);
+  --g-scrollbar-thumb: rgba(247, 243, 235, 0.18);
 }
 
 .comic-chapter-image-item {
@@ -4767,48 +4763,8 @@ canvas {
 .field-textarea,
 .field-ai-input,
 .field-ai-output {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(247, 243, 235, 0.18) transparent;
-}
-
-.field-textarea::-webkit-scrollbar,
-.field-ai-input::-webkit-scrollbar,
-.field-ai-output::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-
-.field-textarea::-webkit-scrollbar-track,
-.field-ai-input::-webkit-scrollbar-track,
-.field-ai-output::-webkit-scrollbar-track {
-  border: 0;
-  background: transparent;
-}
-
-.field-textarea::-webkit-scrollbar-thumb,
-.field-ai-input::-webkit-scrollbar-thumb,
-.field-ai-output::-webkit-scrollbar-thumb {
-  min-height: 28px;
-  border: 0;
-  border-radius: 999px;
-  background: rgba(247, 243, 235, 0.2);
-}
-
-.field-textarea:hover::-webkit-scrollbar-thumb,
-.field-textarea:focus::-webkit-scrollbar-thumb,
-.field-ai-input:hover::-webkit-scrollbar-thumb,
-.field-ai-input:focus::-webkit-scrollbar-thumb,
-.field-ai-output:hover::-webkit-scrollbar-thumb,
-.field-ai-output:focus::-webkit-scrollbar-thumb {
-  background: rgba(92, 225, 194, 0.32);
-}
-
-.field-textarea::-webkit-scrollbar-corner,
-.field-ai-input::-webkit-scrollbar-corner,
-.field-ai-output::-webkit-scrollbar-corner {
-  width: 0;
-  height: 0;
-  background: transparent;
+  --g-scrollbar-thumb: rgba(247, 243, 235, 0.18);
+  --g-scrollbar-thumb-hover: rgba(92, 225, 194, 0.32);
 }
 
 .field-textarea::-webkit-resizer,
@@ -6111,26 +6067,7 @@ canvas {
     linear-gradient(135deg, rgba(92, 225, 194, 0.07), rgba(245, 200, 107, 0.04)),
     #08101a;
   box-shadow: 0 18px 38px rgba(0, 0, 0, 0.32);
-  scrollbar-width: thin;
-  scrollbar-color: rgba(247, 243, 235, 0.18) transparent;
-}
-
-.comic-ai-control-menu::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-
-.comic-ai-control-menu::-webkit-scrollbar-track,
-.comic-ai-control-menu::-webkit-scrollbar-corner {
-  border: 0;
-  background: transparent;
-}
-
-.comic-ai-control-menu::-webkit-scrollbar-thumb {
-  min-height: 24px;
-  border: 0;
-  border-radius: 999px;
-  background: rgba(247, 243, 235, 0.2);
+  --g-scrollbar-thumb: rgba(247, 243, 235, 0.18);
 }
 
 .comic-ai-control-item {
@@ -6182,26 +6119,7 @@ canvas {
   max-height: 254px;
   padding-right: 2px;
   overflow: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(247, 243, 235, 0.18) transparent;
-}
-
-.comic-ai-image-grid::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-
-.comic-ai-image-grid::-webkit-scrollbar-track,
-.comic-ai-image-grid::-webkit-scrollbar-corner {
-  border: 0;
-  background: transparent;
-}
-
-.comic-ai-image-grid::-webkit-scrollbar-thumb {
-  min-height: 28px;
-  border: 0;
-  border-radius: 999px;
-  background: rgba(247, 243, 235, 0.2);
+  --g-scrollbar-thumb: rgba(247, 243, 235, 0.18);
 }
 
 .comic-ai-image-card {
@@ -6630,33 +6548,8 @@ canvas {
   max-height: 138px;
   overflow: auto;
   padding-right: 4px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(247, 243, 235, 0.2) transparent;
-}
-
-.model-usage-daily-list::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-.model-usage-daily-list::-webkit-scrollbar-track,
-.model-usage-daily-list::-webkit-scrollbar-corner {
-  border: 0;
-  background: transparent;
-}
-
-.model-usage-daily-list::-webkit-scrollbar-thumb {
-  min-height: 28px;
-  border: 2px solid transparent;
-  border-radius: 999px;
-  background: rgba(247, 243, 235, 0.22);
-  background-clip: content-box;
-}
-
-.model-usage-daily-list:hover::-webkit-scrollbar-thumb,
-.model-usage-daily-list:focus-within::-webkit-scrollbar-thumb {
-  background: rgba(92, 225, 194, 0.36);
-  background-clip: content-box;
+  --g-scrollbar-thumb: rgba(247, 243, 235, 0.2);
+  --g-scrollbar-thumb-hover: rgba(92, 225, 194, 0.36);
 }
 
 .model-usage-row {
@@ -7655,8 +7548,7 @@ canvas {
 }
 
 .extensions-shell .model-section-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(247, 243, 235, 0.18) transparent;
+  --g-scrollbar-thumb: rgba(247, 243, 235, 0.18);
 }
 
 .extensions-shell .model-section-head {
@@ -7917,8 +7809,7 @@ canvas {
   width: 100%;
   overflow-x: auto;
   padding: 4px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(247, 243, 235, 0.16) transparent;
+  --g-scrollbar-thumb: rgba(247, 243, 235, 0.16);
 }
 
 .extensions-shell .tool-provider-tab {
@@ -8464,35 +8355,15 @@ canvas {
   min-height: 0;
   margin: 0;
   overflow: auto;
-  scrollbar-gutter: stable both-edges;
+  scrollbar-gutter: stable;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
+  --g-scrollbar-thumb: rgba(247, 243, 235, 0.18);
+  --g-scrollbar-thumb-hover: rgba(247, 243, 235, 0.28);
 }
 
 .weekly-form-shell-immersive:hover,
 .weekly-form-shell-immersive:focus-within {
-  scrollbar-color: rgba(247, 243, 235, 0.26) transparent;
-}
-
-.weekly-form-shell-immersive::-webkit-scrollbar {
-  width: 10px;
-}
-
-.weekly-form-shell-immersive::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.weekly-form-shell-immersive::-webkit-scrollbar-thumb {
-  border: 3px solid transparent;
-  border-radius: 999px;
-  background: transparent;
-  background-clip: content-box;
-}
-
-.weekly-form-shell-immersive:hover::-webkit-scrollbar-thumb,
-.weekly-form-shell-immersive:focus-within::-webkit-scrollbar-thumb {
-  background: rgba(247, 243, 235, 0.26);
+  --g-scrollbar-thumb: rgba(247, 243, 235, 0.26);
 }
 
 .weekly-form-immersive {
