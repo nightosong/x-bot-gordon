@@ -35,11 +35,19 @@
               <p class="model-section-title">周报列表</p>
             </div>
 
-            <div class="model-section-actions">
-              <span v-if="weeklyFocusRecord" class="status-pill">{{ weeklyFocusRecord.title }}</span>
-              <span class="pill pill-neutral">
-                共 {{ weeklyProgress.length }} 周，展示 {{ Math.min(weeklyProgress.length, 5) }} 条
-              </span>
+            <div v-if="weeklyYearOptions.length" class="model-section-actions weekly-year-filter" role="group" aria-label="按年份筛选周报">
+              <button
+                v-for="yearOption in weeklyYearOptions"
+                :key="yearOption.year"
+                type="button"
+                class="weekly-year-chip"
+                :class="{ 'is-active': weeklyActiveYear === yearOption.year }"
+                :aria-pressed="weeklyActiveYear === yearOption.year ? 'true' : 'false'"
+                @click="setWeeklyYearFilter(yearOption.year)"
+              >
+                <span>{{ yearOption.year }}</span>
+                <small>{{ yearOption.count }}</small>
+              </button>
             </div>
           </div>
 
@@ -49,7 +57,7 @@
             </div>
 
             <article
-              v-for="record in weeklyProgress.slice(0, 5)"
+              v-for="record in weeklyVisibleRecords"
               :key="record.id"
               class="weekly-record-card"
               :class="{ 'is-active': state.activeRecordId === record.id }"
@@ -669,9 +677,61 @@ const props = defineProps({
 });
 
 const weeklyDraft = computed(() => props.state.draft);
+const weeklySelectedYear = ref("");
+
+function getWeeklyRecordYear(record) {
+  const rawDate = String(record?.weekKey ?? record?.startDate ?? record?.createdAt ?? "").trim();
+  const directYear = rawDate.match(/^\d{4}/)?.[0];
+
+  if (directYear) {
+    return directYear;
+  }
+
+  const date = new Date(rawDate);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return String(date.getFullYear());
+}
+
 const weeklyFocusRecord = computed(
   () => props.weeklyProgress.find((record) => record.status === "active") ?? props.weeklyProgress[0] ?? null
 );
+const weeklyYearOptions = computed(() => {
+  const yearCounts = new Map();
+
+  props.weeklyProgress.forEach((record) => {
+    const year = getWeeklyRecordYear(record);
+
+    if (!year) {
+      return;
+    }
+
+    yearCounts.set(year, (yearCounts.get(year) ?? 0) + 1);
+  });
+
+  return Array.from(yearCounts.entries())
+    .sort(([leftYear], [rightYear]) => rightYear.localeCompare(leftYear))
+    .map(([year, count]) => ({ year, count }));
+});
+const weeklyActiveYear = computed(() => {
+  const availableYears = weeklyYearOptions.value.map((option) => option.year);
+
+  if (weeklySelectedYear.value && availableYears.includes(weeklySelectedYear.value)) {
+    return weeklySelectedYear.value;
+  }
+
+  return availableYears[0] ?? "";
+});
+const weeklyVisibleRecords = computed(() => {
+  if (!weeklyActiveYear.value) {
+    return props.weeklyProgress;
+  }
+
+  return props.weeklyProgress.filter((record) => getWeeklyRecordYear(record) === weeklyActiveYear.value);
+});
 const weeklyFocusMetrics = computed(() => getWeeklyProgressMetrics(weeklyFocusRecord.value ?? { projects: [] }));
 const weeklyFocusCompletionRate = computed(() => getWeeklyProgressCompletionRate(weeklyFocusRecord.value ?? { projects: [] }));
 const weeklyListOverviewCards = computed(() => {
@@ -740,6 +800,11 @@ const weeklyReportTemplateAiButtonLabel = computed(() =>
 const weeklyReportTemplateAiButtonTitle = computed(() =>
   weeklyReportTemplateAiState.value.isOpen ? "关闭优化" : "AI 优化"
 );
+
+function setWeeklyYearFilter(year) {
+  weeklySelectedYear.value = String(year ?? "");
+}
+
 const weeklySelectedReportTemplateContent = computed({
   get: () => weeklySelectedReportTemplate.value?.content ?? "",
   set: (value) => {
