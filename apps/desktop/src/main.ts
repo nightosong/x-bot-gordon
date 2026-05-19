@@ -87,6 +87,7 @@ const MODEL_BALANCE_INITIAL_POLL_DELAY_MS = 60 * 1000;
 let modelBalancePollingTimer: NodeJS.Timeout | null = null;
 let modelBalancePollingInFlight = false;
 const FEISHU_DAILY_REPORT_CONTENT_LIMIT = 15000;
+const FEISHU_DAILY_REPORT_MARKDOWN_TEXT_SIZE = "normal_v2";
 
 type GordonConfirmWindowTone = "neutral" | "warning" | "danger";
 
@@ -303,48 +304,147 @@ function truncateFeishuDailyReportContent(content: string): string {
   return `${content.slice(0, FEISHU_DAILY_REPORT_CONTENT_LIMIT)}\n\n... 内容较长，已自动截断后发送。`;
 }
 
+function getFeishuDailyReportListLineMeta(line: string): { depth: number; text: string } | null {
+  const bulletMatch = line.match(/^([ \t]*)(?:[-*+]|\d+[.)])\s+(.+)$/);
+
+  if (bulletMatch) {
+    return {
+      depth: Math.max(0, Math.round(bulletMatch[1].replace(/\t/g, "    ").length / 4)),
+      text: bulletMatch[2].trim()
+    };
+  }
+
+  const indentedMatch = line.match(/^([ \t]{2,})(\S.*)$/);
+
+  if (!indentedMatch) {
+    return null;
+  }
+
+  return {
+    depth: Math.max(1, Math.round(indentedMatch[1].replace(/\t/g, "    ").length / 4)),
+    text: indentedMatch[2].trim()
+  };
+}
+
+function normalizeFeishuDailyReportMarkdown(content: string): string {
+  const oddSpacePattern = /[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g;
+  const zeroWidthPattern = /[\u200B-\u200D\u2060\uFEFF]/g;
+  const bulletLikePattern = /^[•●▪◦‣・·]\s+/;
+  const statusSuffixPattern = /(?:（|\()(已完成|进行中|待开始|受阻)(?:）|\))\s*$/;
+  const normalizedLines = String(content ?? "")
+    .replace(/\r\n?/g, "\n")
+    .replace(zeroWidthPattern, "")
+    .replace(oddSpacePattern, " ")
+    .replace(/\t/g, "    ")
+    .split("\n")
+    .map((line) => line.replace(/[ ]+$/g, ""))
+    .filter((line) => line.trim());
+  const repairedLines: string[] = [];
+  let hasProjectHeading = false;
+
+  for (const line of normalizedLines) {
+    const unescapedLine = line.replace(/^([ ]*)\\([*+-])\s+/, "$1$2 ");
+    const normalizedBulletLine = bulletLikePattern.test(unescapedLine.trim())
+      ? `${unescapedLine.match(/^[ ]*/)?.[0] ?? ""}- ${unescapedLine.trim().replace(bulletLikePattern, "")}`
+      : unescapedLine;
+    const listMeta = getFeishuDailyReportListLineMeta(normalizedBulletLine);
+
+    if (!listMeta) {
+      const text = normalizedBulletLine.trim();
+
+      if (/^#{1,6}\s+/.test(text)) {
+        repairedLines.push(text);
+        hasProjectHeading = true;
+        continue;
+      }
+
+      if (statusSuffixPattern.test(text) && hasProjectHeading) {
+        repairedLines.push(`- ${text}`);
+        continue;
+      }
+
+      if (repairedLines.length && repairedLines[repairedLines.length - 1]) {
+        repairedLines.push("");
+      }
+
+      repairedLines.push(`**${text.replace(/^\*+|\*+$/g, "")}**`);
+      hasProjectHeading = true;
+      continue;
+    }
+
+    const text = listMeta.text.replace(/^\*+|\*+$/g, "").trim();
+
+    if (!listMeta.depth && !statusSuffixPattern.test(text)) {
+      if (repairedLines.length && repairedLines[repairedLines.length - 1]) {
+        repairedLines.push("");
+      }
+
+      repairedLines.push(`**${text}**`);
+      hasProjectHeading = true;
+      continue;
+    }
+
+    const depth = !listMeta.depth && statusSuffixPattern.test(text) && hasProjectHeading ? 1 : Math.max(1, listMeta.depth);
+    repairedLines.push(`${"  ".repeat(depth - 1)}- ${text}`);
+  }
+
+  return repairedLines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function normalizeFeishuDailyReportTitle(value: string): string {
+  return String(value ?? "")
+    .replace(/\s*日报\s*$/g, "")
+    .replace(/周[一二三四五六日天]\s*/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function buildFeishuDailyReportPayload(
   settings: WeeklyFeishuSettings,
   request: WeeklyDailyReportFeishuSendRequest
 ): Record<string, unknown> {
   const titlePrefix = String(settings.titlePrefix ?? "").trim();
-  const title = [titlePrefix, String(request.title ?? "").trim()].filter(Boolean).join(" · ") || "Gordon 日报";
-  const content = truncateFeishuDailyReportContent(String(request.content ?? "").trim());
+  const titleDate = normalizeFeishuDailyReportTitle(request.title);
+  const title = [titlePrefix, titleDate].filter(Boolean).join(" ") || "Gordon 日报";
+  const content = truncateFeishuDailyReportContent(normalizeFeishuDailyReportMarkdown(String(request.content ?? "").trim()));
   const signature = buildFeishuSignature(settings.secret);
   const payload: Record<string, unknown> = {
     msg_type: "interactive",
     card: {
+      schema: "2.0",
       config: {
-        wide_screen_mode: true
+        update_multi: true,
+        style: {
+          text_size: {
+            [FEISHU_DAILY_REPORT_MARKDOWN_TEXT_SIZE]: {
+              default: "normal",
+              pc: "normal",
+              mobile: "normal"
+            }
+          }
+        }
+      },
+      body: {
+        direction: "vertical",
+        padding: "12px 12px 12px 12px",
+        elements: [
+          {
+            tag: "markdown",
+            content,
+            text_align: "left",
+            text_size: FEISHU_DAILY_REPORT_MARKDOWN_TEXT_SIZE,
+            margin: "0px 0px 0px 0px"
+          }
+        ]
       },
       header: {
-        template: "turquoise",
         title: {
           tag: "plain_text",
           content: title
-        }
-      },
-      elements: [
-        {
-          tag: "div",
-          text: {
-            tag: "lark_md",
-            content
-          }
         },
-        {
-          tag: "hr"
-        },
-        {
-          tag: "note",
-          elements: [
-            {
-              tag: "plain_text",
-              content: `来自 Gordon · ${new Date().toLocaleString("zh-CN", { hour12: false })}`
-            }
-          ]
-        }
-      ]
+        template: "turquoise",
+        padding: "12px 12px 12px 12px"
+      }
     }
   };
 
