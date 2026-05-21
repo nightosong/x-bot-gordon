@@ -28,6 +28,38 @@ export async function copyTextToClipboard(value) {
   }
 }
 
+export async function copyRichTextToClipboard({ html, text }) {
+  const normalizedHtml = String(html ?? "").trim();
+  const normalizedText = String(text ?? "").trim();
+
+  if (!normalizedHtml && !normalizedText) {
+    throw new Error("没有可复制的内容");
+  }
+
+  const ClipboardItemCtor = globalThis.ClipboardItem;
+
+  if (navigator.clipboard?.write && ClipboardItemCtor && normalizedHtml) {
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItemCtor({
+          "text/html": new Blob([`<!doctype html><html><head><meta charset="utf-8"></head><body>${normalizedHtml}</body></html>`], {
+            type: "text/html"
+          }),
+          "text/plain": new Blob([normalizedText || normalizedHtml], { type: "text/plain" })
+        })
+      ]);
+      return "html";
+    } catch (error) {
+      if (!normalizedText) {
+        throw error;
+      }
+    }
+  }
+
+  await copyTextToClipboard(normalizedText || normalizedHtml);
+  return "text";
+}
+
 export function createRichTextClickHandler({ setStatus }) {
   return async function handleRichTextClick(event) {
     const target = event.target instanceof Element ? event.target.closest("[data-command-copy-code]") : null;

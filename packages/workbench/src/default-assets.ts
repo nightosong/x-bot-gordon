@@ -5,6 +5,7 @@ import { readPromptAsset } from "./prompt-assets.js";
 export const BUILTIN_WORKBENCH_ID_PREFIX = "builtin:";
 export const BUILTIN_GORDON_AGENT_ID = "builtin:agent:gordon";
 export const BUILTIN_WORKSPACE_MCP_ID = "builtin:mcp:workspace";
+export const BUILTIN_SEARCH_TOOLS_MCP_ID = "builtin:mcp:search-tools";
 export const BUILTIN_COMPUTER_USE_MCP_ID = "builtin:mcp:computer-use";
 export const BUILTIN_GORDON_TOOLS_MCP_ID = "builtin:mcp:gordon-tools";
 export const BUILTIN_APPLICATION_TOOLS_MCP_ID = "builtin:mcp:application-tools";
@@ -167,6 +168,7 @@ export function getBuiltinSkillDefinitions(): SkillDefinition[] {
 
 export function getBuiltinMcpServers(): McpServerConfig[] {
   const workspaceScriptPath = resolveFromRoot("scripts", "workspace-mcp.mjs");
+  const searchToolsScriptPath = resolveFromRoot("scripts", "search-tools-mcp.mjs");
   const computerUseScriptPath = resolveFromRoot("scripts", "computer-use-mcp.mjs");
   const gordonToolsScriptPath = resolveFromRoot("scripts", "gordon-tools-mcp.mjs");
 
@@ -180,6 +182,18 @@ export function getBuiltinMcpServers(): McpServerConfig[] {
       env: {
         GORDON_WORKSPACE_ROOT: resolveFromRoot(".")
       },
+      toolAllowlist: [],
+      enabled: true,
+      updatedAt: BUILTIN_UPDATED_AT
+    },
+    {
+      id: BUILTIN_SEARCH_TOOLS_MCP_ID,
+      name: "Search Tools",
+      description:
+        "内置高质量联网搜索与研究工具，支持 web_search_v2、web_research 和 github_search_repositories；优先使用 Tavily / Brave / Serper / SearXNG API，缺少配置时回退到 Bing / Baidu / Google。",
+      transport: "stdio",
+      command: `/usr/bin/env node ${shellEscape(searchToolsScriptPath)}`,
+      env: {},
       toolAllowlist: [],
       enabled: true,
       updatedAt: BUILTIN_UPDATED_AT

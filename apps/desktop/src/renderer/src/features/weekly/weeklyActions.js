@@ -3,6 +3,7 @@ import {
   createWeeklyDraftId,
   createWeeklyProjectDraft,
   createWeeklyTaskDraft,
+  renderRichText,
   sanitizeWeeklyProgressRecord
 } from "../../lib/presenter.js";
 import { WEEKLY_AUTOSAVE_DELAY } from "./weeklyConfig.js";
@@ -72,6 +73,7 @@ function buildWeeklyAppendText(currentText, outputText) {
 export function createWeeklyActions({
   activeFeature,
   activeWeeklyRecord,
+  copyRichTextToClipboard,
   copyTextToClipboard,
   documentRef = globalThis.document,
   desktopApi,
@@ -1237,13 +1239,25 @@ export function createWeeklyActions({
       const currentOutput = getWeeklyReportOutputContent();
       const normalizedText = normalizeMarkdownForClipboard(currentOutput);
 
+      if (!normalizedText) {
+        throw new Error("没有可复制的内容");
+      }
+
       if (normalizedText !== currentOutput) {
         setWeeklyReportOutputContent(normalizedText);
       }
 
-      await copyTextToClipboard(normalizedText);
+      const renderedHtml = renderRichText(normalizedText);
+      const copiedFormat =
+        typeof copyRichTextToClipboard === "function"
+          ? await copyRichTextToClipboard({ html: renderedHtml, text: normalizedText })
+          : await copyTextToClipboard(normalizedText);
       markWeeklyReportCopied();
-      setStatus(`${getWeeklyReportModeLabel()}已清洗并复制，可直接粘贴到飞书。`, "success");
+      if (copiedFormat === "html") {
+        setStatus(`${getWeeklyReportModeLabel()}已复制为富文本，可直接粘贴到飞书聊天窗口。`, "success");
+      } else {
+        setStatus(`${getWeeklyReportModeLabel()}已清洗并复制；当前环境只支持纯文本剪贴板。`, "warning");
+      }
     } catch (error) {
       resetWeeklyReportCopyState();
       setStatus(`复制失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");

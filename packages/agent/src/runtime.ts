@@ -41,6 +41,7 @@ const MAX_SKILL_HANDLER_DURATION_MS = 20_000;
 const SKILL_HANDLER_PROTOCOL_VERSION = "gordon-skill/v1";
 const MAX_CONVERSATION_CONTEXT_MESSAGES = 8;
 const BUILTIN_WORKSPACE_MCP_ID = "builtin:mcp:workspace";
+const BUILTIN_SEARCH_TOOLS_MCP_ID = "builtin:mcp:search-tools";
 const BUILTIN_COMPUTER_USE_MCP_ID = "builtin:mcp:computer-use";
 const BUILTIN_GORDON_TOOLS_MCP_ID = "builtin:mcp:gordon-tools";
 const BUILTIN_APPLICATION_TOOLS_MCP_ID = "builtin:mcp:application-tools";
@@ -216,6 +217,10 @@ function isBuiltinWorkspaceToolsServer(server: McpServerConfig | null | undefine
   return server?.id === BUILTIN_WORKSPACE_MCP_ID;
 }
 
+function isBuiltinSearchToolsServer(server: McpServerConfig | null | undefined): boolean {
+  return server?.id === BUILTIN_SEARCH_TOOLS_MCP_ID;
+}
+
 function isBuiltinComputerUseServer(server: McpServerConfig | null | undefined): boolean {
   return server?.id === BUILTIN_COMPUTER_USE_MCP_ID;
 }
@@ -231,6 +236,7 @@ function isBuiltinApplicationToolsServer(server: McpServerConfig | null | undefi
 function isBuiltinLocalToolsServer(server: McpServerConfig | null | undefined): boolean {
   return (
     isBuiltinWorkspaceToolsServer(server) ||
+    isBuiltinSearchToolsServer(server) ||
     isBuiltinComputerUseServer(server) ||
     isBuiltinGordonToolsServer(server) ||
     isBuiltinApplicationToolsServer(server)
@@ -240,6 +246,10 @@ function isBuiltinLocalToolsServer(server: McpServerConfig | null | undefined): 
 function describeToolServer(server: McpServerConfig): string {
   if (isBuiltinWorkspaceToolsServer(server)) {
     return `${server.name}（本地工作区工具）`;
+  }
+
+  if (isBuiltinSearchToolsServer(server)) {
+    return `${server.name}（本地联网搜索与研究工具）`;
   }
 
   if (isBuiltinComputerUseServer(server)) {
@@ -268,7 +278,7 @@ function buildToolScopeText(authorizedServers: McpServerConfig[]): string {
 
   if (localTools.length) {
     sections.push(
-      `本地工具：${localTools.map((server) => server.name).join("、")}。这是 Gordon 内置能力通道，不代表用户已连接外部 MCP。Application Tools 用于按应用语义读取、检索、预览和写回应用广场资产；Gordon Tools 会按能力拓展 TOOL 配置暴露 image_gen 等内置工具；Computer Use 会在首次读取或控制桌面前申请本轮授权。`
+      `本地工具：${localTools.map((server) => server.name).join("、")}。这是 Gordon 内置能力通道，不代表用户已连接外部 MCP。Search Tools 用于高质量联网搜索、自动读取来源、GitHub 仓库搜索和证据包研究，遇到最新事实、资料调研、产品/技术对比或需要引用来源的问题应优先使用 Search Tools 的 web_research，遇到开源项目查找应优先使用 github_search_repositories；Application Tools 用于按应用语义读取、检索、预览和写回应用广场资产；Gordon Tools 会按能力拓展 TOOL 配置暴露 image_gen 等内置工具；Computer Use 会在首次读取或控制桌面前申请本轮授权。`
     );
   }
 
@@ -1051,6 +1061,7 @@ JSON 结构必须为：
 
 约束：
 - 只有当调用工具能明显提升结果质量时才调用
+- 用户询问最新事实、联网资料、新闻、产品/技术调研、资料对比、官方文档或需要引用来源时，优先选择 Search Tools / web_research；如果用户提到官方站、产品名或文档域名，尽量把官方域名放入 preferredDomains 或 includeDomains；用户要找 GitHub 项目、开源库、参考实现时优先选择 github_search_repositories；只需要少量搜索结果列表时可选择 web_search_v2；Workspace Tools 的 web_search 仅作为基础兜底
 - 用户明确要求新增、创建、保存、写入、修改或删除本地资产时，必须优先选择合适工具执行，不能只用文字承诺已经完成
 - 对应用广场资产的读写优先使用 Application Tools；没有工具返回成功前，不要判断资产已经变更
 - serverId 和 toolName 必须来自提供给你的候选列表

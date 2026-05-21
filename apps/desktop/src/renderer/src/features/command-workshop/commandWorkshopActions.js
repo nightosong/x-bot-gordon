@@ -1289,6 +1289,36 @@ export function createCommandWorkshopActions({
     return null;
   }
 
+  function hasCommandProcessRunningClass(item) {
+    return String(item?.className ?? "")
+      .split(/\s+/u)
+      .filter(Boolean)
+      .includes("is-running");
+  }
+
+  function removeCommandProcessRunningClass(className) {
+    return String(className ?? "")
+      .split(/\s+/u)
+      .filter((token) => token && token !== "is-running")
+      .join(" ");
+  }
+
+  function normalizeCommandProcessRunningState(items) {
+    const processItems = Array.isArray(items) ? items : [];
+    const latestIndex = processItems.length - 1;
+
+    return processItems.map((item, index) => {
+      if (index === latestIndex || !hasCommandProcessRunningClass(item)) {
+        return item;
+      }
+
+      return {
+        ...item,
+        className: removeCommandProcessRunningClass(item.className)
+      };
+    });
+  }
+
   function getCommandResponseThoughtDetail(artifact) {
     const steps = Array.isArray(artifact?.steps) ? artifact.steps : [];
     const calls = Array.isArray(artifact?.mcpCalls) ? artifact.mcpCalls : [];
@@ -1389,7 +1419,7 @@ export function createCommandWorkshopActions({
       });
     }
 
-    return [
+    return normalizeCommandProcessRunningState([
       {
         id: `process_thought_${(artifact.createdAt ?? firstCreatedAt) || "now"}`,
         kind: "thought",
@@ -1411,7 +1441,7 @@ export function createCommandWorkshopActions({
         createdAt: firstCreatedAt
       },
       ...timelineItems.sort((left, right) => String(left.createdAt || "").localeCompare(String(right.createdAt || "")))
-    ];
+    ]);
   }
 
   function getCommandArtifactToolNameFromStep(step) {
