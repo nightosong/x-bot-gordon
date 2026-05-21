@@ -1,28 +1,21 @@
-<svg width="1em" height="1em" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-  <title>OpenAI-like</title>
-  <rect x="1.5" y="1.5" width="21" height="21" rx="6.8" fill="#ffffff"></rect>
+<svg width="1em" height="1em" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="openai-like-title">
+  <title id="openai-like-title">OpenAI-like</title>
+  <rect x="2" y="2" width="20" height="20" rx="6" fill="#ffffff" stroke="#111111" stroke-width="1.35" />
   <path
-    fill="#111111"
-    d="M7.9 20.25
-      C7.86 17.78 8.52 15.7 9.8 14.05
-      C8.64 12.72 7.96 11.16 7.84 9.34
-      C7.72 7.42 8.24 5.56 9.42 3.76
-      L11.58 6.34
-      L14.06 3.48
-      C14.5 5.18 14.74 6.56 14.78 7.58
-      C16.22 8.12 17.34 9.06 18.08 10.4
-      C18.72 11.56 19.76 12.36 21 12.9
-      C20.58 14.52 19.5 15.68 18.02 16.18
-      C17.1 16.48 16.08 16.42 15.1 16.06
-      C14.58 17.3 13.76 18.36 12.7 19.08
-      C11.54 19.88 9.98 20.28 7.9 20.25Z"
-  ></path>
-  <circle cx="13.58" cy="9.6" r="0.58" fill="#ffffff"></circle>
-  <path
-    d="M17.18 13.56 C17.76 13.72 18.22 13.7 18.62 13.48"
+    d="M8.5 7.4 5.7 12l2.8 4.6M15.5 7.4l2.8 4.6-2.8 4.6"
     fill="none"
-    stroke="#ffffff"
-    stroke-width="0.72"
+    stroke="#111111"
+    stroke-width="1.65"
     stroke-linecap="round"
-  ></path>
+    stroke-linejoin="round"
+  />
+  <path
+    d="M9.6 12h4.8M12 9.6v4.8"
+    fill="none"
+    stroke="#111111"
+    stroke-width="1.35"
+    stroke-linecap="round"
+  />
+  <circle cx="12" cy="12" r="2.65" fill="none" stroke="#111111" stroke-width="1.35" />
+  <circle cx="12" cy="12" r="0.82" fill="#111111" />
 </svg>
