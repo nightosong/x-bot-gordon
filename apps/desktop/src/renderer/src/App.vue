@@ -319,7 +319,7 @@ import {
   isBuiltinWorkbenchItem,
   truncateText
 } from "./lib/presenter.js";
-import { createRichTextClickHandler, copyTextToClipboard } from "./lib/clipboard.js";
+import { createRichTextClickHandler, copyRichTextToClipboard, copyTextToClipboard } from "./lib/clipboard.js";
 import { createLocalId } from "./lib/ids.js";
 import { toPlainIpcData } from "./lib/ipc.js";
 
@@ -952,6 +952,7 @@ const {
 } = createWeeklyActions({
   activeFeature,
   activeWeeklyRecord,
+  copyRichTextToClipboard,
   copyTextToClipboard,
   desktopApi,
   featureTasksId: FEATURE_TASKS,
