@@ -35,6 +35,22 @@
         </span>
 
         <button
+          v-if="hasTaskChildren(task)"
+          type="button"
+          class="weekly-task-collapse-button"
+          :aria-label="isTaskCollapsed(task.id) ? '展开子任务' : '折叠子任务'"
+          :aria-expanded="String(!isTaskCollapsed(task.id))"
+          :title="isTaskCollapsed(task.id) ? '展开子任务' : '折叠子任务'"
+          :disabled="isTaskRewriting(task.id)"
+          @click="toggleTaskCollapsed(task.id)"
+        >
+          <span class="weekly-task-collapse-glyph">
+            {{ isTaskCollapsed(task.id) ? "▸" : "▾" }}
+          </span>
+        </button>
+        <span v-else class="weekly-task-collapse-spacer" aria-hidden="true"></span>
+
+        <button
           v-if="!isEditingTask(task.id)"
           type="button"
           class="weekly-task-title-display"
@@ -97,7 +113,7 @@
       </div>
 
       <WeeklyTaskTree
-        v-if="getTaskChildren(task).length"
+        v-if="hasTaskChildren(task) && !isTaskCollapsed(task.id)"
         class="weekly-task-children"
         :tasks="getTaskChildren(task)"
         :project-id="projectId"
@@ -155,10 +171,31 @@ const emit = defineEmits(["add-child", "remove-task", "set-status", "touch-task"
 
 const statusEntries = computed(() => Object.entries(props.statusMeta ?? {}));
 const activeEditorId = ref(null);
+const collapsedTaskIds = ref(new Set());
 const taskTitleInputRefs = new Map();
 
 function getTaskChildren(task) {
   return Array.isArray(task?.children) ? task.children : [];
+}
+
+function hasTaskChildren(task) {
+  return getTaskChildren(task).length > 0;
+}
+
+function isTaskCollapsed(taskId) {
+  return collapsedTaskIds.value.has(taskId);
+}
+
+function toggleTaskCollapsed(taskId) {
+  const nextCollapsedTaskIds = new Set(collapsedTaskIds.value);
+
+  if (nextCollapsedTaskIds.has(taskId)) {
+    nextCollapsedTaskIds.delete(taskId);
+  } else {
+    nextCollapsedTaskIds.add(taskId);
+  }
+
+  collapsedTaskIds.value = nextCollapsedTaskIds;
 }
 
 function isTaskRewriting(taskId) {
