@@ -57,22 +57,6 @@ export const FORTUNE_READING_MODES = [
     methods: ["bazi", "ziwei", "numerology", "reality"]
   },
   {
-    id: "bazi",
-    label: "八字命盘",
-    kicker: "BaZi",
-    focus: "四柱、五行、十神、喜忌、大运流年与现实校准。",
-    placeholder: "请结合我的八字看接下来一年的事业和财运节奏。",
-    methods: ["bazi", "reality"]
-  },
-  {
-    id: "ziwei",
-    label: "紫微斗数",
-    kicker: "Ziwei",
-    focus: "十二宫位、星曜关系、四化流转和人生主题拆解。",
-    placeholder: "请按紫微斗数帮我看事业宫、财帛宫和感情关系。",
-    methods: ["ziwei", "reality"]
-  },
-  {
     id: "facePalm",
     label: "面相手相",
     kicker: "Mian Xiang",
@@ -111,14 +95,6 @@ export const FORTUNE_READING_MODES = [
     focus: "多个选项的得失、隐性风险和下一步试探。",
     placeholder: "我应该选择 A 方案还是 B 方案？",
     methods: ["iching", "reality"]
-  },
-  {
-    id: "cycle",
-    label: "年月趋势",
-    kicker: "Cycle",
-    focus: "一段周期内的主题、节奏变化、关键节点和复盘指标。",
-    placeholder: "接下来一段时间的整体趋势如何？",
-    methods: ["bazi", "ziwei", "astrology", "reality"]
   }
 ];
 
@@ -349,6 +325,9 @@ export function createMarketplaceState() {
       spaceInfo: "",
       nameInfo: "",
       context: "",
+      chatInput: "",
+      chatAttachments: [],
+      messages: [],
       output: "",
       feedback: "",
       feedbackTone: "neutral",

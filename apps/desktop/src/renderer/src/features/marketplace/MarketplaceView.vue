@@ -778,187 +778,73 @@
               </button>
             </div>
 
-            <div class="fortune-rail-note">
-              <strong>娱乐参考</strong>
-              <span>不填写证件号、手机号或私密账号。</span>
-            </div>
           </aside>
 
-          <main class="fortune-main-stage">
-            <article class="writing-editor-card fortune-input-card">
-              <div class="writing-editor-head">
+          <main class="fortune-main-stage fortune-chat-stage">
+            <article class="writing-editor-card fortune-chat-card">
+              <div class="fortune-chat-head">
                 <div>
                   <p class="feature-kicker">{{ activeFortuneModeMeta.kicker }}</p>
                   <p class="model-section-title">{{ activeFortuneModeMeta.label }}</p>
                 </div>
-                <button
-                  type="button"
-                  class="model-action fortune-run-button"
-                  :disabled="ui.marketplace.fortune.isGenerating"
-                  @click="generateFortuneReading"
-                >
-                  <GIcon
-                    :name="ui.marketplace.fortune.isGenerating ? 'loading' : 'sparkles'"
-                    :spin="ui.marketplace.fortune.isGenerating"
-                    :size="15"
-                  />
-                  {{ ui.marketplace.fortune.isGenerating ? "解读中" : "生成解读" }}
-                </button>
+                <div class="fortune-chat-tools">
+                  <div class="fortune-method-strip" aria-label="当前解读框架">
+                    <span v-for="method in activeFortuneMethodLabels" :key="method" class="fortune-method-chip">{{ method }}</span>
+                  </div>
+                  <button
+                    type="button"
+                    class="model-icon-button fortune-clear-button"
+                    title="清空对话"
+                    aria-label="清空对话"
+                    :disabled="ui.marketplace.fortune.isGenerating || !ui.marketplace.fortune.messages?.length"
+                    @click="clearFortuneReading"
+                  >
+                    <GIcon name="close" :size="15" />
+                  </button>
+                </div>
               </div>
 
-              <div class="fortune-method-strip" aria-label="当前解读框架">
-                <span v-for="method in activeFortuneMethodLabels" :key="method" class="fortune-method-chip">{{ method }}</span>
-              </div>
+              <div class="fortune-chat-scroll">
+                <div v-if="!ui.marketplace.fortune.messages?.length" class="fortune-chat-empty">
+                  <strong>先说出你想问的事。</strong>
+                  <span>可以直接问今天运势、事业财运、感情关系，也可以上传手相、面相、户型或工位照片。灵犀会先追问必要信息，再给卦名和解读。</span>
+                </div>
 
-              <div class="fortune-form-grid">
-                <div class="field field-full">
-                  <span class="field-label">关注问题</span>
-                  <FieldAiOptimizer
-                    :actions="fieldAiActions"
-                    :state="ui.marketplace.fieldAi"
-                    :field-id="`fortune-question-${ui.marketplace.fortune.activeMode}`"
-                    :app-name="FORTUNE_APP_NAME"
-                    label="关注问题"
-                    :value="ui.marketplace.fortune.question"
-                    :context="buildFortuneFieldAiContext('关注问题')"
-                    :disabled="ui.marketplace.fortune.isGenerating"
-                    :set-value="setFortuneQuestion"
+                <div v-else class="fortune-message-stream">
+                  <article
+                    v-for="message in ui.marketplace.fortune.messages || []"
+                    :key="message.id"
+                    class="fortune-message"
+                    :class="[`is-${message.role}`, message.state ? `is-${message.state}` : '']"
                   >
-                    <textarea
-                      :value="ui.marketplace.fortune.question"
-                      class="field-textarea fortune-question-textarea"
-                      :placeholder="activeFortuneModeMeta.placeholder"
-                      :disabled="ui.marketplace.fortune.isGenerating"
-                      @input="setFortuneQuestion($event.target.value)"
-                    ></textarea>
-                  </FieldAiOptimizer>
-                </div>
+                    <div class="fortune-message-meta">
+                      <span>{{ message.role === "user" ? "你" : FORTUNE_APP_NAME }}</span>
+                      <small>{{ message.modeLabel || activeFortuneModeMeta.label }} · {{ formatFortuneTime(message.createdAt) }}</small>
+                    </div>
+                    <div class="fortune-message-text command-rich-text fortune-rich-text" v-html="renderRichText(message.content)"></div>
+                    <div v-if="message.attachments?.length" class="fortune-message-attachments">
+                      <span
+                        v-for="attachment in message.attachments"
+                        :key="attachment.id"
+                        class="fortune-attachment-chip"
+                        :class="{ 'is-image': attachment.kind === 'image', 'is-error': attachment.readStatus === 'error' }"
+                      >
+                        {{ attachment.kind === "image" ? "图片" : "附件" }} · {{ attachment.name }}
+                      </span>
+                    </div>
+                  </article>
 
-                <label class="field">
-                  <span class="field-label">基础资料</span>
-                  <input
-                    :value="ui.marketplace.fortune.profileInfo"
-                    class="field-input"
-                    placeholder="可选，例如性别、当前城市、职业阶段"
-                    :disabled="ui.marketplace.fortune.isGenerating"
-                    @input="setFortuneProfileInfo($event.target.value)"
-                  />
-                </label>
-
-                <label class="field">
-                  <span class="field-label">出生 / 时间信息</span>
-                  <input
-                    :value="ui.marketplace.fortune.birthInfo"
-                    class="field-input"
-                    placeholder="生日、时辰、出生地、起卦/抽牌时间"
-                    :disabled="ui.marketplace.fortune.isGenerating"
-                    @input="setFortuneBirthInfo($event.target.value)"
-                  />
-                </label>
-
-                <div class="field">
-                  <span class="field-label">面相 / 手相线索</span>
-                  <FieldAiOptimizer
-                    :actions="fieldAiActions"
-                    :state="ui.marketplace.fieldAi"
-                    :field-id="`fortune-appearance-${ui.marketplace.fortune.activeMode}`"
-                    :app-name="FORTUNE_APP_NAME"
-                    label="面相 / 手相线索"
-                    :value="ui.marketplace.fortune.appearanceInfo"
-                    :context="buildFortuneFieldAiContext('面相 / 手相线索')"
-                    :disabled="ui.marketplace.fortune.isGenerating"
-                    :set-value="setFortuneAppearanceInfo"
-                  >
-                    <textarea
-                      :value="ui.marketplace.fortune.appearanceInfo"
-                      class="field-textarea fortune-small-textarea"
-                      placeholder="可选，描述气色、五官、掌纹、手型或本人感受。"
-                      :disabled="ui.marketplace.fortune.isGenerating"
-                      @input="setFortuneAppearanceInfo($event.target.value)"
-                    ></textarea>
-                  </FieldAiOptimizer>
-                </div>
-
-                <div class="field">
-                  <span class="field-label">空间 / 风水线索</span>
-                  <FieldAiOptimizer
-                    :actions="fieldAiActions"
-                    :state="ui.marketplace.fieldAi"
-                    :field-id="`fortune-space-${ui.marketplace.fortune.activeMode}`"
-                    :app-name="FORTUNE_APP_NAME"
-                    label="空间 / 风水线索"
-                    :value="ui.marketplace.fortune.spaceInfo"
-                    :context="buildFortuneFieldAiContext('空间 / 风水线索')"
-                    :disabled="ui.marketplace.fortune.isGenerating"
-                    :set-value="setFortuneSpaceInfo"
-                  >
-                    <textarea
-                      :value="ui.marketplace.fortune.spaceInfo"
-                      class="field-textarea fortune-small-textarea"
-                      placeholder="可选，写户型、朝向、门窗、床桌、工位、杂物和光照。"
-                      :disabled="ui.marketplace.fortune.isGenerating"
-                      @input="setFortuneSpaceInfo($event.target.value)"
-                    ></textarea>
-                  </FieldAiOptimizer>
-                </div>
-
-                <label class="field">
-                  <span class="field-label">姓名 / 数字线索</span>
-                  <input
-                    :value="ui.marketplace.fortune.nameInfo"
-                    class="field-input"
-                    placeholder="可选，例如姓名、常用数字、日期或颜色偏好"
-                    :disabled="ui.marketplace.fortune.isGenerating"
-                    @input="setFortuneNameInfo($event.target.value)"
-                  />
-                </label>
-
-                <div class="field field-full">
-                  <span class="field-label">补充背景</span>
-                  <FieldAiOptimizer
-                    :actions="fieldAiActions"
-                    :state="ui.marketplace.fieldAi"
-                    :field-id="`fortune-context-${ui.marketplace.fortune.activeMode}`"
-                    :app-name="FORTUNE_APP_NAME"
-                    label="补充背景"
-                    :value="ui.marketplace.fortune.context"
-                    :context="buildFortuneFieldAiContext('补充背景')"
-                    :disabled="ui.marketplace.fortune.isGenerating"
-                    :set-value="setFortuneContext"
-                  >
-                    <textarea
-                      :value="ui.marketplace.fortune.context"
-                      class="field-textarea fortune-context-textarea"
-                      placeholder="可选，写下当前处境、选项、对象关系或近期事件。"
-                      :disabled="ui.marketplace.fortune.isGenerating"
-                      @input="setFortuneContext($event.target.value)"
-                    ></textarea>
-                  </FieldAiOptimizer>
-                </div>
-              </div>
-            </article>
-
-            <article class="writing-editor-card fortune-output-card">
-              <div class="writing-editor-head">
-                <div>
-                  <p class="feature-kicker">Reading</p>
-                  <p class="model-section-title">解读结果</p>
-                </div>
-                <button
-                  type="button"
-                  class="model-action-secondary fortune-clear-button"
-                  :disabled="ui.marketplace.fortune.isGenerating || !ui.marketplace.fortune.output"
-                  @click="clearFortuneReading"
-                >
-                  清空
-                </button>
-              </div>
-
-              <div class="fortune-output-body">
-                <pre v-if="ui.marketplace.fortune.output">{{ ui.marketplace.fortune.output }}</pre>
-                <div v-else class="fortune-output-empty">
-                  <strong>{{ activeFortuneModeMeta.focus }}</strong>
-                  <span>填写问题后生成解读，结果会落在这里。</span>
+                  <article v-if="ui.marketplace.fortune.isGenerating" class="fortune-message is-assistant is-pending">
+                    <div class="fortune-message-meta">
+                      <span>{{ FORTUNE_APP_NAME }}</span>
+                      <small>正在推演</small>
+                    </div>
+                    <p class="fortune-thinking">
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </p>
+                  </article>
                 </div>
               </div>
 
@@ -970,6 +856,55 @@
               >
                 {{ ui.marketplace.fortune.feedback }}
               </p>
+
+              <div class="fortune-composer">
+                <div v-if="ui.marketplace.fortune.chatAttachments?.length" class="fortune-attachment-tray">
+                  <span
+                    v-for="attachment in ui.marketplace.fortune.chatAttachments || []"
+                    :key="attachment.id"
+                    class="fortune-attachment-chip"
+                    :class="{ 'is-image': attachment.kind === 'image', 'is-error': attachment.readStatus === 'error' }"
+                  >
+                    <span class="fortune-attachment-name">{{ attachment.kind === "image" ? "图片" : "附件" }} · {{ attachment.name }}</span>
+                    <button type="button" class="fortune-attachment-remove" aria-label="移除附件" @click="removeFortuneAttachment(attachment.id)">
+                      <GIcon name="close" :size="12" />
+                    </button>
+                  </span>
+                </div>
+                <textarea
+                  :value="ui.marketplace.fortune.chatInput"
+                  class="field-textarea fortune-chat-input"
+                  :placeholder="`问${activeFortuneModeMeta.label}，或补充出生时间、数字、手相/面相、户型方位...`"
+                  :disabled="ui.marketplace.fortune.isGenerating"
+                  @input="setFortuneChatInput($event.target.value)"
+                  @keydown.enter.exact.prevent="sendFortuneMessage"
+                ></textarea>
+                <button
+                  type="button"
+                  class="model-icon-button fortune-attach-button"
+                  title="上传图片或资料"
+                  aria-label="上传图片或资料"
+                  :disabled="ui.marketplace.fortune.isGenerating"
+                  @click="selectFortuneAttachments"
+                >
+                  <GIcon name="image" :size="17" />
+                </button>
+                <button
+                  type="button"
+                  class="model-icon-button fortune-send-button"
+                  :title="ui.marketplace.fortune.isGenerating ? '推演中' : '发送'"
+                  :aria-label="ui.marketplace.fortune.isGenerating ? '推演中' : '发送'"
+                  :disabled="ui.marketplace.fortune.isGenerating || (!(ui.marketplace.fortune.chatInput || '').trim() && !(ui.marketplace.fortune.chatAttachments || []).length)"
+                  @click="sendFortuneMessage"
+                >
+                  <GIcon
+                    :name="ui.marketplace.fortune.isGenerating ? 'loading' : 'enter'"
+                    :spin="ui.marketplace.fortune.isGenerating"
+                    :size="18"
+                    :stroke-width="2.2"
+                  />
+                </button>
+              </div>
             </article>
           </main>
         </section>
@@ -1161,7 +1096,7 @@
             <p class="models-copy">{{ truncateText(book.intro, 98) }}</p>
             <div class="writing-book-card-foot">
               <span class="pill">{{ book.status }}</span>
-              <span class="pill pill-neutral">{{ getWritingBookWordCount(book) }} 字</span>
+              <span class="pill pill-neutral writing-word-count-pill">{{ getWritingBookWordCount(book) }} 字</span>
             </div>
           </div>
         </article>
@@ -2387,7 +2322,7 @@
 
           <div class="model-section-actions">
             <span class="pill">{{ activeWritingLengthProfile.label }}</span>
-            <span class="pill pill-neutral">{{ getWritingTabWordCount() }} 字</span>
+            <span class="pill pill-neutral writing-word-count-pill">{{ getWritingTabWordCount() }} 字</span>
             <button
               type="button"
               class="model-icon-button writing-ai-float-trigger"
@@ -2465,7 +2400,7 @@
               </div>
 
               <div class="writing-stat-list">
-                <span class="pill pill-neutral">总字数 {{ getWritingBookWordCount(activeWritingBook) }}</span>
+                <span class="pill pill-neutral writing-word-count-pill">总字数 {{ getWritingBookWordCount(activeWritingBook) }}</span>
               </div>
             </div>
 
@@ -2506,7 +2441,7 @@
                       <div class="writing-intro-card-title">
                         <span class="field-label">{{ section.label }}</span>
                       </div>
-                      <span class="status-pill">{{ getWritingIntroFieldWordCount(activeWritingBook, section.key) }} 字</span>
+                      <span class="status-pill writing-word-count-pill">{{ getWritingIntroFieldWordCount(activeWritingBook, section.key) }} 字</span>
                     </div>
 
                     <div v-if="!isWritingIntroSectionCollapsed(section.key)" class="writing-intro-card-body">
@@ -2556,7 +2491,7 @@
                         @focus="rememberWritingExtraIntroSectionTitleBaseline(section.id)"
                         @input="setWritingExtraIntroSectionTitle(section.id, $event.target.value)"
                       />
-                      <span class="status-pill">{{ getWritingExtraIntroSectionWordCount(section) }} 字</span>
+                      <span class="status-pill writing-word-count-pill">{{ getWritingExtraIntroSectionWordCount(section) }} 字</span>
                       <button
                         type="button"
                         class="model-icon-button model-icon-button-danger writing-intro-delete"
@@ -3216,6 +3151,7 @@ import FieldAiOptimizer from "./FieldAiOptimizer.vue";
 import GCompactSelect from "../../components/GCompactSelect.vue";
 import GIcon from "../../components/GIcon.vue";
 import WritingAiDrawer from "../writing/WritingAiDrawer.vue";
+import { renderRichText } from "../../lib/presenter.js";
 import {
   COMIC_APP_NAME,
   COMIC_APP_TABS,
@@ -3444,11 +3380,16 @@ const {
   activeFortuneModeMeta,
   backFortuneMarketplace,
   clearFortuneReading,
+  formatFortuneTime,
   generateFortuneReading,
   getFortuneFeedbackClass,
   openFortuneApp,
+  removeFortuneAttachment,
+  selectFortuneAttachments,
+  sendFortuneMessage,
   setFortuneAppearanceInfo,
   setFortuneBirthInfo,
+  setFortuneChatInput,
   setFortuneContext,
   setFortuneMode,
   setFortuneNameInfo,

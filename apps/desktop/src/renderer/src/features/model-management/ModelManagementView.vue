@@ -201,8 +201,15 @@
             </div>
 
             <div class="workflow-library-detail-head-side workflow-library-detail-head-side-end">
-              <span v-if="activeModelUsageProfile" class="pill pill-neutral">
-                {{ activeModelUsageProfile.displayName }}
+              <span
+                v-if="activeModelUsageProfile"
+                class="model-usage-profile-badge"
+                :title="`${activeModelUsageProfile.displayName} / ${getProviderMeta(activeModelUsageProfile.provider).label} / ${activeModelUsageProfile.model}`"
+              >
+                <span class="model-usage-profile-copy">
+                  <span>{{ getProviderMeta(activeModelUsageProfile.provider).label }}</span>
+                  <strong>{{ activeModelUsageProfile.displayName }}</strong>
+                </span>
               </span>
             </div>
           </div>
