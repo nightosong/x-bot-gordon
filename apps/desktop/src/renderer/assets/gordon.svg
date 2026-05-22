@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Gordon alien sketch line icon">
+  <rect width="1024" height="1024" rx="224" fill="#fbfaf6"/>
+  <path
+    d="M512 126
+       C338 126 218 268 220 428
+       C222 572 316 682 436 760
+       C478 788 546 788 588 760
+       C708 682 802 572 804 428
+       C806 268 686 126 512 126
+       Z"
+    fill="none"
+    stroke="#111111"
+    stroke-width="28"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M268 466
+       C322 368 420 350 500 438
+       C454 552 360 618 282 574
+       C252 550 246 504 268 466
+       Z"
+    fill="#111111"
+    stroke="#111111"
+    stroke-width="16"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M756 466
+       C702 368 604 350 524 438
+       C570 552 664 618 742 574
+       C772 550 778 504 756 466
+       Z"
+    fill="#111111"
+    stroke="#111111"
+    stroke-width="16"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M462 448
+       C424 474 386 522 356 574"
+    fill="none"
+    stroke="#fbfaf6"
+    stroke-width="14"
+    stroke-linecap="round"
+  />
+  <path
+    d="M410 424
+       C374 468 344 518 322 562"
+    fill="none"
+    stroke="#fbfaf6"
+    stroke-width="14"
+    stroke-linecap="round"
+  />
+  <path
+    d="M356 428
+       C326 466 302 508 288 544"
+    fill="none"
+    stroke="#fbfaf6"
+    stroke-width="12"
+    stroke-linecap="round"
+  />
+  <path
+    d="M562 448
+       C600 474 638 522 668 574"
+    fill="none"
+    stroke="#fbfaf6"
+    stroke-width="14"
+    stroke-linecap="round"
+  />
+  <path
+    d="M614 424
+       C650 468 680 518 702 562"
+    fill="none"
+    stroke="#fbfaf6"
+    stroke-width="14"
+    stroke-linecap="round"
+  />
+  <path
+    d="M668 428
+       C698 466 722 508 736 544"
+    fill="none"
+    stroke="#fbfaf6"
+    stroke-width="12"
+    stroke-linecap="round"
+  />
+</svg>

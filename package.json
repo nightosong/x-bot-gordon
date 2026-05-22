@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "dist/apps/desktop/src/main.js",
   "description": "Gordon (Gord/gord) is a desktop + CLI work assistant harness with an extensible memory and capability system.",
   "scripts": {
     "build": "pnpm run build:main && pnpm run build:renderer && node ./scripts/copy-desktop-assets.mjs",
@@ -10,13 +11,66 @@
     "build:renderer": "vite build --config ./apps/desktop/vite.config.mjs",
     "check": "tsc --noEmit -p tsconfig.json",
     "dev:cli": "node --import tsx ./apps/cli/src/index.ts",
-    "dev:desktop": "pnpm build && electron ./dist/apps/desktop/src/main.js"
+    "dev:desktop": "pnpm build && electron ./dist/apps/desktop/src/main.js",
+    "pack:mac": "pnpm run build && electron-builder --mac dir",
+    "dist:mac": "pnpm run build && electron-builder --mac dmg",
+    "clean:release:aux": "rm -rf release/mac-arm64 release/*.blockmap release/latest-mac.yml release/builder-debug.yml",
+    "dist:mac:clean": "pnpm run dist:mac && pnpm run clean:release:aux"
+  },
+  "build": {
+    "appId": "com.itmaas.gordon",
+    "productName": "Gordon",
+    "asar": true,
+    "npmRebuild": false,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "prompts",
+        "to": "prompts",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "skills",
+        "to": "skills",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "scripts",
+        "to": "scripts",
+        "filter": [
+          "*.mjs"
+        ]
+      }
+    ],
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "apps/desktop/src/renderer/assets/gordon.icns",
+      "category": "public.app-category.productivity",
+      "identity": "-"
+    },
+    "dmg": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    }
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@vitejs/plugin-vue": "^6.0.1",
     "@vue/compiler-sfc": "^3.5.32",
     "electron": "^41.2.1",
+    "electron-builder": "^26.8.1",
     "tsx": "^4.20.0",
     "typescript": "^5.8.3",
     "vite": "^7.1.7"

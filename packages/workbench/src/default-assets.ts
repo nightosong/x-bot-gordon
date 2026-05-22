@@ -216,6 +216,7 @@ export function getBuiltinMcpServers(): McpServerConfig[] {
       transport: "stdio",
       command: `/usr/bin/env node ${shellEscape(gordonToolsScriptPath)}`,
       env: {
+        GORDON_DATA_ROOT: resolveFromRoot("data"),
         GORDON_WORKSPACE_ROOT: resolveFromRoot(".")
       },
       toolAllowlist: [],

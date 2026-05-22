@@ -15,7 +15,7 @@ export default defineConfig({
   plugins: [vue()],
   build: {
     outDir: outputDir,
-    emptyOutDir: false,
+    emptyOutDir: true,
     chunkSizeWarningLimit: 2000,
     rollupOptions: {
       output: {

@@ -14,7 +14,15 @@ async function readJsonFile<T>(filePath: string): Promise<T> {
 }
 
 export async function listMemoryEntries(scope: MemoryScope): Promise<MemoryEntry[]> {
-  return readJsonFile<MemoryEntry[]>(resolveMemoryPath(scope));
+  try {
+    return await readJsonFile<MemoryEntry[]>(resolveMemoryPath(scope));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return [];
+    }
+
+    throw error;
+  }
 }
 
 export async function appendMemoryEntry(
