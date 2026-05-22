@@ -45,6 +45,7 @@
               :open-model-usage-stats="openModelUsageStats"
               :select-model-provider="selectModelProvider"
               :select-popular-model="selectPopularModel"
+              @reorder-model-profiles="handleModelProfileReorder"
             />
           </template>
 
@@ -410,6 +411,7 @@ const {
   handleModelDelete,
   handleModelEditorBalanceQuery,
   handleModelEditorSave,
+  handleModelProfileReorder,
   handleModelStatusToggle,
   hasModelBalanceQuery,
   isActiveModelUsageLoading,

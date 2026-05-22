@@ -965,6 +965,10 @@ canvas {
   padding-right: 4px;
 }
 
+.models-shell .model-configured-list {
+  gap: 8px;
+}
+
 .model-empty {
   padding: 18px;
   border: 1px dashed rgba(247, 243, 235, 0.12);
@@ -981,9 +985,59 @@ canvas {
 }
 
 .model-config-card {
+  position: relative;
   display: grid;
   gap: 12px;
   padding: 14px;
+  transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease, opacity 180ms ease, transform 180ms ease;
+}
+
+.model-config-draggable-card {
+  gap: 8px;
+  padding-block: 10px;
+}
+
+.model-config-draggable-card:hover .model-drag-handle,
+.model-config-draggable-card:focus-within .model-drag-handle {
+  color: rgba(247, 243, 235, 0.64);
+}
+
+.model-config-draggable-card.is-model-dragging {
+  opacity: 0.48;
+  transform: scale(0.992);
+  border-color: rgba(92, 225, 194, 0.28);
+  background: rgba(92, 225, 194, 0.06);
+}
+
+.model-config-draggable-card.is-model-dragging .model-drag-handle {
+  color: #bcf8ea;
+}
+
+.model-config-draggable-card.is-model-drag-over-before,
+.model-config-draggable-card.is-model-drag-over-after {
+  border-color: rgba(92, 225, 194, 0.22);
+  box-shadow: 0 14px 36px rgba(6, 37, 33, 0.16);
+}
+
+.model-config-draggable-card.is-model-drag-over-before::before,
+.model-config-draggable-card.is-model-drag-over-after::after {
+  content: "";
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(92, 225, 194, 0), rgba(92, 225, 194, 0.9), rgba(245, 200, 107, 0.8), rgba(92, 225, 194, 0));
+  box-shadow: 0 0 18px rgba(92, 225, 194, 0.36);
+  pointer-events: none;
+}
+
+.model-config-draggable-card.is-model-drag-over-before::before {
+  top: -7px;
+}
+
+.model-config-draggable-card.is-model-drag-over-after::after {
+  bottom: -7px;
 }
 
 .marketplace-shell,
@@ -6701,6 +6755,42 @@ canvas {
   align-items: center;
 }
 
+.model-drag-handle {
+  flex: 0 0 auto;
+  align-self: stretch;
+  width: 34px;
+  min-height: 56px;
+  margin: -10px 0 -10px -14px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  border-radius: 19px 8px 8px 19px;
+  background: transparent;
+  color: rgba(247, 243, 235, 0.42);
+  cursor: grab;
+  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.model-drag-handle:hover,
+.model-drag-handle:focus-visible {
+  background:
+    linear-gradient(90deg, rgba(92, 225, 194, 0.14), rgba(92, 225, 194, 0.03) 72%, transparent),
+    rgba(255, 255, 255, 0.018);
+  color: #bcf8ea;
+  box-shadow: inset 2px 0 0 rgba(92, 225, 194, 0.4);
+}
+
+.model-drag-handle:active {
+  cursor: grabbing;
+}
+
+.model-drag-handle:disabled {
+  cursor: default;
+  opacity: 0.38;
+  box-shadow: none;
+}
+
 .provider-avatar {
   flex: 0 0 auto;
   width: 40px;
@@ -6779,33 +6869,6 @@ canvas {
   margin: 0;
   color: rgba(247, 243, 235, 0.72);
   font-size: 12px;
-}
-
-.model-card-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.model-stream-tag {
-  display: inline-flex;
-  align-items: center;
-  width: fit-content;
-  min-height: 20px;
-  margin-top: 6px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  border: 1px solid rgba(92, 225, 194, 0.18);
-  background: rgba(92, 225, 194, 0.08);
-  color: rgba(188, 248, 234, 0.9);
-  font-size: 11px;
-  line-height: 1;
-}
-
-.model-stream-tag.is-muted {
-  border-color: rgba(247, 243, 235, 0.12);
-  background: rgba(247, 243, 235, 0.06);
-  color: rgba(247, 243, 235, 0.58);
 }
 
 .model-card-actions {

@@ -1530,6 +1530,29 @@ export async function upsertModelProfile(profile: ModelProfile): Promise<ModelSe
   return nextSettings;
 }
 
+export async function reorderModelProfiles(profileIds: string[]): Promise<ModelSettings> {
+  const current = await listModelSettings();
+  const normalizedProfileIds = profileIds.map((profileId) => String(profileId ?? "").trim()).filter(Boolean);
+  const uniqueProfileIds = new Set(normalizedProfileIds);
+  const profileById = new Map(current.profiles.map((profile) => [profile.id, profile]));
+
+  if (
+    normalizedProfileIds.length !== current.profiles.length ||
+    uniqueProfileIds.size !== current.profiles.length ||
+    normalizedProfileIds.some((profileId) => !profileById.has(profileId))
+  ) {
+    throw new Error("模型配置排序失败：传入的模型列表与当前配置不一致。");
+  }
+
+  const nextSettings: ModelSettings = {
+    profiles: normalizedProfileIds.map((profileId) => profileById.get(profileId)!),
+    activeProfileId: current.activeProfileId && profileById.has(current.activeProfileId) ? current.activeProfileId : null
+  };
+
+  await saveModelSettings(nextSettings);
+  return nextSettings;
+}
+
 export async function saveModelProfileBalanceSnapshot(
   profileId: string,
   balanceSnapshot: ModelBalanceSnapshot | null
