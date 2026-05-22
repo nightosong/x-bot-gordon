@@ -1456,12 +1456,28 @@ async function ensureWeeklyProgressRecords(): Promise<WeeklyProgressRecord[]> {
 
 export async function listTasks(): Promise<WorkTask[]> {
   const filePath = resolveFromRoot("data", "workbench", "tasks.json");
-  return readJsonFile<WorkTask[]>(filePath);
+  try {
+    return await readJsonFile<WorkTask[]>(filePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return [];
+    }
+
+    throw error;
+  }
 }
 
 export async function listDatabaseConnections(): Promise<DatabaseConnectionItem[]> {
   const filePath = resolveFromRoot("data", "workbench", "database-connections.json");
-  return readJsonFile<DatabaseConnectionItem[]>(filePath);
+  try {
+    return await readJsonFile<DatabaseConnectionItem[]>(filePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return [];
+    }
+
+    throw error;
+  }
 }
 
 export async function saveTasks(tasks: WorkTask[]): Promise<void> {

@@ -3,7 +3,8 @@ import path from "node:path";
 import readline from "node:readline";
 
 const workspaceRoot = path.resolve(process.env.GORDON_WORKSPACE_ROOT || process.cwd());
-const toolConfigsPath = path.join(workspaceRoot, "data", "workbench", "tool-configs.json");
+const dataRoot = path.resolve(process.env.GORDON_DATA_ROOT || path.join(workspaceRoot, "data"));
+const toolConfigsPath = path.join(dataRoot, "workbench", "tool-configs.json");
 const DEFAULT_IMAGE_SIZE = "1024x1024";
 const DEFAULT_OPENAI_IMAGE_N = 1;
 const DEFAULT_OPENAI_IMAGE_QUALITY = "medium";

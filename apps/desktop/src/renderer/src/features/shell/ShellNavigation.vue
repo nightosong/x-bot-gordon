@@ -77,7 +77,7 @@
 </template>
 
 <script setup>
-import { ref, watch } from "vue";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import GIcon from "../../components/GIcon.vue";
 import MorphingText from "../../components/MorphingText.vue";
@@ -153,10 +153,32 @@ function closeHomeSettingsMenu() {
   }
 }
 
+function handleDocumentPointerDown(event) {
+  const menu = homeSettingsMenuRef.value;
+
+  if (!menu?.open) {
+    return;
+  }
+
+  if (event.target instanceof Node && menu.contains(event.target)) {
+    return;
+  }
+
+  closeHomeSettingsMenu();
+}
+
 function selectFeature(featureId) {
   closeHomeSettingsMenu();
   emit("select", featureId);
 }
+
+onMounted(() => {
+  document.addEventListener("pointerdown", handleDocumentPointerDown, true);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener("pointerdown", handleDocumentPointerDown, true);
+});
 
 watch(() => props.activeFeature, closeHomeSettingsMenu);
 </script>
