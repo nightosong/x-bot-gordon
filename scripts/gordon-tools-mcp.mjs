@@ -1,9 +1,11 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 
 const workspaceRoot = path.resolve(process.env.GORDON_WORKSPACE_ROOT || process.cwd());
-const dataRoot = path.resolve(process.env.GORDON_DATA_ROOT || path.join(workspaceRoot, "data"));
+const gordonHome = path.resolve(process.env.GORDON_HOME || path.join(os.homedir(), ".gord"));
+const dataRoot = path.resolve(process.env.GORDON_DATA_ROOT || path.join(gordonHome, "data"));
 const toolConfigsPath = path.join(dataRoot, "workbench", "tool-configs.json");
 const DEFAULT_IMAGE_SIZE = "1024x1024";
 const DEFAULT_OPENAI_IMAGE_N = 1;
