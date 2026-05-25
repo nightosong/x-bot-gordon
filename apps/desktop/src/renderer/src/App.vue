@@ -77,6 +77,7 @@
               :handle-weekly-report-template-selection-change="handleWeeklyReportTemplateSelectionChange"
               :handle-weekly-save="handleWeeklySave"
               :is-weekly-project-collapsed="isWeeklyProjectCollapsed"
+              :move-weekly-task="moveWeeklyTask"
               :open-weekly-record="openWeeklyRecord"
               :optimize-weekly-task-title="optimizeWeeklyTaskTitle"
               :remove-weekly-project="removeWeeklyProject"
@@ -931,6 +932,7 @@ const {
   handleWeeklySelectedReportTemplateIdChange,
   isWeeklyProjectCollapsed,
   isWeeklyTaskRewriting,
+  moveWeeklyTask,
   openWeeklyFeishuSettingsDialog,
   openLatestWeeklyRecord,
   openWeeklyRecord,

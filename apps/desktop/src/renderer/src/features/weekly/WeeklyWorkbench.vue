@@ -228,6 +228,18 @@
                         </div>
 
                         <div v-if="!isWeeklyProjectCollapsed(project.id)" class="weekly-project-body">
+                          <div
+                            v-if="project.tasks.length"
+                            class="weekly-project-root-drop-zone"
+                            :class="{ 'is-active': weeklyRootDropProjectId === project.id }"
+                            @dragenter.prevent="setWeeklyRootDropProject(project.id, $event)"
+                            @dragover.prevent="setWeeklyRootDropProject(project.id, $event)"
+                            @dragleave="clearWeeklyRootDropProject(project.id, $event)"
+                            @drop.prevent="handleWeeklyRootDrop(project.id, $event)"
+                          >
+                            拖到这里成为一级任务
+                          </div>
+
                           <WeeklyTaskTree
                             v-if="project.tasks.length"
                             :tasks="project.tasks"
@@ -240,9 +252,19 @@
                             @set-status="setWeeklyTaskStatus($event.projectId, $event.taskId, $event.status, $event.event)"
                             @touch-task="touchWeeklyTaskById($event.projectId, $event.taskId)"
                             @optimize-task="optimizeWeeklyTaskTitle($event.projectId, $event.taskId, $event.event)"
+                            @move-task="moveWeeklyTask($event.projectId, $event.sourceTaskId, $event.targetParentTaskId)"
                           />
 
-                          <p v-else class="weekly-project-empty-copy weekly-project-empty-inline">暂无任务，点击右侧 + 直接新增。</p>
+                          <p
+                            v-else
+                            class="weekly-project-empty-copy weekly-project-empty-inline weekly-project-empty-drop"
+                            @dragenter.prevent="setWeeklyRootDropProject(project.id, $event)"
+                            @dragover.prevent="setWeeklyRootDropProject(project.id, $event)"
+                            @dragleave="clearWeeklyRootDropProject(project.id, $event)"
+                            @drop.prevent="handleWeeklyRootDrop(project.id, $event)"
+                          >
+                            暂无任务，点击右侧 + 直接新增。
+                          </p>
                         </div>
                       </section>
                     </template>
@@ -782,6 +804,7 @@ const props = defineProps({
   handleWeeklyReportTemplateSelectionChange: { type: Function, required: true },
   handleWeeklySave: { type: Function, required: true },
   isWeeklyProjectCollapsed: { type: Function, required: true },
+  moveWeeklyTask: { type: Function, required: true },
   openWeeklyFeishuSettingsDialog: { type: Function, required: true },
   openWeeklyRecord: { type: Function, required: true },
   optimizeWeeklyTaskTitle: { type: Function, required: true },
@@ -804,6 +827,56 @@ const props = defineProps({
 
 const weeklyDraft = computed(() => props.state.draft);
 const weeklySelectedYear = ref("");
+const weeklyRootDropProjectId = ref("");
+
+function getWeeklyDragTaskId(event) {
+  return String(
+    event?.dataTransfer?.getData("text/x-gordon-weekly-task-id") || event?.dataTransfer?.getData("text/plain") || ""
+  ).trim();
+}
+
+function hasWeeklyTaskDragPayload(event) {
+  const dataTransferTypes = Array.from(event?.dataTransfer?.types ?? []);
+
+  return Boolean(getWeeklyDragTaskId(event) || dataTransferTypes.includes("text/x-gordon-weekly-task-id"));
+}
+
+function setWeeklyRootDropProject(projectId, event) {
+  if (!hasWeeklyTaskDragPayload(event)) {
+    return;
+  }
+
+  weeklyRootDropProjectId.value = projectId;
+
+  if (event?.dataTransfer) {
+    event.dataTransfer.dropEffect = "move";
+  }
+}
+
+function clearWeeklyRootDropProject(projectId, event) {
+  const currentTarget = event?.currentTarget;
+  const relatedTarget = event?.relatedTarget;
+
+  if (currentTarget instanceof Node && relatedTarget instanceof Node && currentTarget.contains(relatedTarget)) {
+    return;
+  }
+
+  if (weeklyRootDropProjectId.value === projectId) {
+    weeklyRootDropProjectId.value = "";
+  }
+}
+
+function handleWeeklyRootDrop(projectId, event) {
+  const sourceTaskId = getWeeklyDragTaskId(event);
+
+  weeklyRootDropProjectId.value = "";
+
+  if (!sourceTaskId) {
+    return;
+  }
+
+  props.moveWeeklyTask(projectId, sourceTaskId, null);
+}
 
 function getWeeklyRecordYear(record) {
   const rawDate = String(record?.weekKey ?? record?.startDate ?? record?.createdAt ?? "").trim();

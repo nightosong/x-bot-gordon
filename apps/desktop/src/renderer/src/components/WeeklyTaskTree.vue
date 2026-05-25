@@ -1,17 +1,38 @@
 <template>
-  <div class="weekly-task-list">
+  <div
+    class="weekly-task-list"
+    :class="{ 'is-root-drop-target': isRootDropTarget && isProjectRootTree }"
+    @dragover.prevent="handleRootDragOver"
+    @dragleave="handleRootDragLeave"
+    @drop.prevent="handleRootDrop"
+  >
+    <div v-if="isRootDropTarget && isProjectRootTree" class="weekly-task-root-drop-hint">移动到项目根目录</div>
+
     <article
       v-for="(task, taskIndex) in tasks"
       :key="task.id"
       class="weekly-task-card"
-      :class="{ 'is-busy': isTaskRewriting(task.id), 'is-completed': task.status === 'completed' }"
+      :class="{
+        'is-busy': isTaskRewriting(task.id),
+        'is-completed': task.status === 'completed',
+        'is-dragging': draggingTaskId === task.id,
+        'is-drop-target': dropTargetTaskId === task.id
+      }"
+      @dragover.prevent.stop="handleTaskDragOver(task.id, $event)"
+      @dragleave.stop="handleTaskDragLeave(task.id)"
+      @drop.prevent.stop="handleTaskDrop(task.id, $event)"
     >
       <div class="weekly-task-row" :class="{ 'is-completed': task.status === 'completed' }">
         <details v-if="!isTaskRewriting(task.id)" class="weekly-task-status-menu">
           <summary
             class="weekly-task-index-button"
-            :class="getStatusToneClass(task.status)"
-            :aria-label="`任务 ${getTaskIndexLabel(taskIndex)}，当前状态：${getStatusLabel(task.status)}`"
+            :class="[getStatusToneClass(task.status), { 'is-drag-source': draggingTaskId === task.id }]"
+            :aria-label="`任务 ${getTaskIndexLabel(taskIndex)}，当前状态：${getStatusLabel(task.status)}。点击切换状态，按住拖动任务。`"
+            :draggable="!isTaskRewriting(task.id)"
+            title="点击切换状态，按住拖动任务"
+            @click="handleStatusSummaryClick(task.id, $event)"
+            @dragstart.stop="handleTaskDragStart(task.id, $event)"
+            @dragend.stop="handleTaskDragEnd(task.id)"
           >
             {{ getTaskIndexLabel(taskIndex) }}
           </summary>
@@ -126,13 +147,14 @@
         @set-status="emit('set-status', $event)"
         @touch-task="emit('touch-task', $event)"
         @optimize-task="emit('optimize-task', $event)"
+        @move-task="emit('move-task', $event)"
       />
     </article>
   </div>
 </template>
 
 <script setup>
-import { computed, nextTick, ref } from "vue";
+import { computed, inject, nextTick, provide, ref } from "vue";
 
 import GIcon from "./GIcon.vue";
 
@@ -167,12 +189,36 @@ const props = defineProps({
   }
 });
 
-const emit = defineEmits(["add-child", "remove-task", "set-status", "touch-task", "optimize-task"]);
+const emit = defineEmits(["add-child", "remove-task", "set-status", "touch-task", "optimize-task", "move-task"]);
 
 const statusEntries = computed(() => Object.entries(props.statusMeta ?? {}));
+const isProjectRootTree = computed(() => props.path.length === 0);
 const activeEditorId = ref(null);
 const collapsedTaskIds = ref(new Set());
 const taskTitleInputRefs = new Map();
+const weeklyTaskDragContextKey = Symbol.for("gordon.weeklyTaskTree.dragContext");
+const inheritedDragContext = inject(weeklyTaskDragContextKey, null);
+const localDragContext = {
+  draggingTaskId: ref(""),
+  dropTargetTaskId: ref(""),
+  rootDropProjectId: ref(""),
+  suppressStatusClickTaskId: ref(""),
+  rootTasks: computed(() => props.tasks)
+};
+const dragContext = inheritedDragContext ?? localDragContext;
+
+if (!inheritedDragContext) {
+  provide(weeklyTaskDragContextKey, dragContext);
+}
+
+const draggingTaskId = dragContext.draggingTaskId;
+const dropTargetTaskId = dragContext.dropTargetTaskId;
+const rootDropProjectId = dragContext.rootDropProjectId;
+const suppressStatusClickTaskId = dragContext.suppressStatusClickTaskId;
+const rootTaskList = dragContext.rootTasks;
+const isRootDropTarget = computed(
+  () => isProjectRootTree.value && rootDropProjectId.value === props.projectId && !dropTargetTaskId.value
+);
 
 function getTaskChildren(task) {
   return Array.isArray(task?.children) ? task.children : [];
@@ -200,6 +246,218 @@ function toggleTaskCollapsed(taskId) {
 
 function isTaskRewriting(taskId) {
   return props.rewritingIds.includes(taskId);
+}
+
+function findTaskInTree(tasks = [], taskId) {
+  for (const task of Array.isArray(tasks) ? tasks : []) {
+    if (task?.id === taskId) {
+      return task;
+    }
+
+    const childTask = findTaskInTree(getTaskChildren(task), taskId);
+
+    if (childTask) {
+      return childTask;
+    }
+  }
+
+  return null;
+}
+
+function getDragRootTasks() {
+  return Array.isArray(rootTaskList?.value) ? rootTaskList.value : props.tasks;
+}
+
+function isTaskDescendant(task, descendantTaskId) {
+  if (!task || !descendantTaskId) {
+    return false;
+  }
+
+  return getTaskChildren(task).some((child) => child?.id === descendantTaskId || isTaskDescendant(child, descendantTaskId));
+}
+
+function getDragTaskId(event) {
+  return String(
+    event?.dataTransfer?.getData("text/x-gordon-weekly-task-id") ||
+      event?.dataTransfer?.getData("text/plain") ||
+      draggingTaskId.value ||
+      ""
+  ).trim();
+}
+
+function hasDragTaskPayload(event) {
+  const dataTransferTypes = Array.from(event?.dataTransfer?.types ?? []);
+
+  return Boolean(getDragTaskId(event) || dataTransferTypes.includes("text/x-gordon-weekly-task-id"));
+}
+
+function canDropTask(sourceTaskId, targetTaskId) {
+  if (!sourceTaskId || sourceTaskId === targetTaskId) {
+    return false;
+  }
+
+  const sourceTask = findTaskInTree(getDragRootTasks(), sourceTaskId);
+
+  if (!sourceTask) {
+    return false;
+  }
+
+  return !targetTaskId || !isTaskDescendant(sourceTask, targetTaskId);
+}
+
+function resetDragState() {
+  draggingTaskId.value = "";
+  dropTargetTaskId.value = "";
+  rootDropProjectId.value = "";
+}
+
+function handleStatusSummaryClick(taskId, event) {
+  if (suppressStatusClickTaskId.value !== taskId) {
+    return;
+  }
+
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  suppressStatusClickTaskId.value = "";
+}
+
+function setTaskDragPreview(event) {
+  const rowElement = event?.currentTarget?.closest?.(".weekly-task-row");
+
+  if (!(rowElement instanceof HTMLElement) || !event?.dataTransfer?.setDragImage) {
+    return;
+  }
+
+  const dragPreview = rowElement.cloneNode(true);
+  dragPreview.classList.add("weekly-task-drag-preview");
+  dragPreview.style.position = "fixed";
+  dragPreview.style.top = "-1000px";
+  dragPreview.style.left = "-1000px";
+  dragPreview.style.width = `${Math.max(rowElement.getBoundingClientRect().width, 240)}px`;
+  dragPreview.style.pointerEvents = "none";
+  document.body.appendChild(dragPreview);
+  event.dataTransfer.setDragImage(dragPreview, 18, 16);
+  window.setTimeout(() => dragPreview.remove(), 0);
+}
+
+function handleTaskDragStart(taskId, event) {
+  if (isTaskRewriting(taskId)) {
+    event?.preventDefault?.();
+    return;
+  }
+
+  draggingTaskId.value = taskId;
+  dropTargetTaskId.value = "";
+  rootDropProjectId.value = "";
+  suppressStatusClickTaskId.value = taskId;
+
+  if (event?.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", taskId);
+    event.dataTransfer.setData("text/x-gordon-weekly-task-id", taskId);
+    event.dataTransfer.setData("text/x-gordon-weekly-project-id", props.projectId);
+  }
+
+  setTaskDragPreview(event);
+}
+
+function handleTaskDragEnd(taskId) {
+  resetDragState();
+  window.setTimeout(() => {
+    if (suppressStatusClickTaskId.value === taskId) {
+      suppressStatusClickTaskId.value = "";
+    }
+  }, 240);
+}
+
+function handleTaskDragOver(taskId, event) {
+  const sourceTaskId = getDragTaskId(event);
+
+  if (!canDropTask(sourceTaskId, taskId)) {
+    if (dropTargetTaskId.value === taskId) {
+      dropTargetTaskId.value = "";
+    }
+
+    return;
+  }
+
+  dropTargetTaskId.value = taskId;
+  rootDropProjectId.value = "";
+
+  if (event?.dataTransfer) {
+    event.dataTransfer.dropEffect = "move";
+  }
+}
+
+function handleTaskDragLeave(taskId) {
+  if (dropTargetTaskId.value === taskId) {
+    dropTargetTaskId.value = "";
+  }
+}
+
+function handleTaskDrop(targetTaskId, event) {
+  const sourceTaskId = getDragTaskId(event);
+
+  if (!canDropTask(sourceTaskId, targetTaskId)) {
+    resetDragState();
+    return;
+  }
+
+  emit("move-task", { projectId: props.projectId, sourceTaskId, targetParentTaskId: targetTaskId });
+  collapsedTaskIds.value = new Set([...collapsedTaskIds.value].filter((taskId) => taskId !== targetTaskId));
+  resetDragState();
+}
+
+function handleRootDragOver(event) {
+  if (!isProjectRootTree.value) {
+    return;
+  }
+
+  const sourceTaskId = getDragTaskId(event);
+
+  if (!sourceTaskId && !hasDragTaskPayload(event)) {
+    return;
+  }
+
+  if (event?.dataTransfer) {
+    event.dataTransfer.dropEffect = "move";
+  }
+
+  if (!dropTargetTaskId.value) {
+    rootDropProjectId.value = props.projectId;
+  }
+}
+
+function handleRootDragLeave(event) {
+  if (!isProjectRootTree.value) {
+    return;
+  }
+
+  const currentTarget = event?.currentTarget;
+  const relatedTarget = event?.relatedTarget;
+
+  if (currentTarget instanceof Node && relatedTarget instanceof Node && currentTarget.contains(relatedTarget)) {
+    return;
+  }
+
+  rootDropProjectId.value = "";
+}
+
+function handleRootDrop(event) {
+  if (!isProjectRootTree.value) {
+    resetDragState();
+    return;
+  }
+
+  const sourceTaskId = getDragTaskId(event);
+
+  if (!sourceTaskId || dropTargetTaskId.value) {
+    resetDragState();
+    return;
+  }
+
+  emit("move-task", { projectId: props.projectId, sourceTaskId, targetParentTaskId: null });
+  resetDragState();
 }
 
 function isEditingTask(taskId) {

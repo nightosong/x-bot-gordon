@@ -10076,6 +10076,29 @@ canvas {
 .weekly-task-list {
   display: grid;
   gap: 4px;
+  position: relative;
+}
+
+.weekly-task-list.is-root-drop-target {
+  padding-top: 28px;
+}
+
+.weekly-task-root-drop-hint {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  border: 1px dashed rgba(92, 225, 194, 0.44);
+  border-radius: 8px;
+  background: linear-gradient(90deg, rgba(92, 225, 194, 0.12), rgba(96, 188, 255, 0.1));
+  color: #bcf8ea;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
 }
 
 .weekly-task-card {
@@ -10085,6 +10108,7 @@ canvas {
   border: 0;
   border-radius: 0;
   background: transparent;
+  transition: opacity 160ms ease, transform 160ms ease;
 }
 
 .weekly-task-card.is-completed {
@@ -10103,11 +10127,24 @@ canvas {
   user-select: none;
 }
 
+.weekly-task-card.is-dragging {
+  opacity: 0.5;
+  transform: scale(0.992);
+}
+
+.weekly-task-card.is-drop-target > .weekly-task-row {
+  border-radius: 10px;
+  background: linear-gradient(90deg, rgba(92, 225, 194, 0.14), rgba(96, 188, 255, 0.08));
+  box-shadow: inset 0 0 0 1px rgba(92, 225, 194, 0.28), 0 8px 22px rgba(5, 18, 24, 0.16);
+  transform: translateX(2px);
+}
+
 .weekly-task-row {
   display: grid;
   grid-template-columns: auto 18px minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 6px;
+  transition: background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
 .weekly-task-status-menu {
@@ -10128,9 +10165,10 @@ canvas {
   font-size: 12px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  cursor: pointer;
+  cursor: grab;
   list-style: none;
   transition: transform 180ms ease, border-color 180ms ease, background 180ms ease, color 180ms ease;
+  user-select: none;
 }
 
 .weekly-task-index-button::-webkit-details-marker {
@@ -10139,6 +10177,18 @@ canvas {
 
 .weekly-task-index-button:hover {
   transform: translateY(-1px);
+}
+
+.weekly-task-index-button:active,
+.weekly-task-index-button.is-drag-source {
+  cursor: grabbing;
+}
+
+.weekly-task-index-button.is-drag-source {
+  border-color: rgba(92, 225, 194, 0.48);
+  background: rgba(92, 225, 194, 0.2);
+  color: #f4fffb;
+  box-shadow: 0 0 0 3px rgba(92, 225, 194, 0.1);
 }
 
 .weekly-task-index-button.is-running {
@@ -10450,6 +10500,57 @@ canvas {
   padding: 2px 0 0;
   color: rgba(247, 243, 235, 0.6);
   font-size: 13px;
+}
+
+.weekly-project-empty-drop {
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 1px dashed rgba(151, 182, 216, 0.18);
+  border-radius: 10px;
+}
+
+.weekly-project-empty-drop:hover {
+  border-color: rgba(92, 225, 194, 0.3);
+  color: #bcf8ea;
+}
+
+.weekly-project-root-drop-zone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  height: 8px;
+  margin: 0 0 1px;
+  border: 1px dashed transparent;
+  border-radius: 999px;
+  color: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  opacity: 0.36;
+  transition: height 160ms ease, margin 160ms ease, border-color 160ms ease, background 160ms ease, color 160ms ease, opacity 160ms ease;
+}
+
+.weekly-project-root-drop-zone:hover,
+.weekly-project-root-drop-zone.is-active {
+  height: 28px;
+  margin: 2px 0 4px;
+  border-color: rgba(92, 225, 194, 0.42);
+  background: linear-gradient(90deg, rgba(92, 225, 194, 0.1), rgba(96, 188, 255, 0.08));
+  color: #bcf8ea;
+  opacity: 1;
+}
+
+.weekly-task-drag-preview {
+  display: grid;
+  grid-template-columns: auto 18px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: 1px solid rgba(92, 225, 194, 0.28);
+  border-radius: 12px;
+  background: rgba(10, 18, 27, 0.94);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
 }
 
 .weekly-task-title-input:disabled {

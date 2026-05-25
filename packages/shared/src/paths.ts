@@ -17,6 +17,20 @@ function isPackagedElectronRuntime(): boolean {
   return Boolean(process.versions.electron && !electronProcess.defaultApp && electronProcess.resourcesPath);
 }
 
+function getPackagedUserDataRoot(): string {
+  const appDataName = process.env.GORDON_APP_DATA_NAME?.trim() || "x-bot-gordon";
+
+  if (process.platform === "darwin") {
+    return path.join(os.homedir(), "Library", "Application Support", appDataName);
+  }
+
+  if (process.platform === "win32") {
+    return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), appDataName);
+  }
+
+  return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), appDataName);
+}
+
 export function getProjectRoot(): string {
   const electronProcess = getElectronProcess();
 
@@ -69,7 +83,11 @@ export function getDataRoot(): string {
     return path.resolve(configuredDataRoot);
   }
 
-  return resolveFromGordonHome("data");
+  if (isPackagedElectronRuntime()) {
+    return path.join(getPackagedUserDataRoot(), "data");
+  }
+
+  return path.resolve(process.cwd(), "data");
 }
 
 export function resolveFromRoot(...segments: string[]): string {

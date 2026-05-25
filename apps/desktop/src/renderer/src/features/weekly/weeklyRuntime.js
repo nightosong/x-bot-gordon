@@ -407,6 +407,66 @@ export function removeWeeklyTaskFromCollection(tasks = [], taskId) {
   return true;
 }
 
+export function isWeeklyTaskDescendant(task, descendantTaskId) {
+  if (!task || !descendantTaskId) {
+    return false;
+  }
+
+  return getWeeklyTaskChildren(task).some(
+    (child) => child?.id === descendantTaskId || isWeeklyTaskDescendant(child, descendantTaskId)
+  );
+}
+
+export function moveWeeklyTaskSubtree(tasks = [], sourceTaskId, targetParentTaskId = null) {
+  if (!sourceTaskId || sourceTaskId === targetParentTaskId) {
+    return false;
+  }
+
+  const sourceContext = findWeeklyTaskContext(tasks, sourceTaskId);
+
+  if (!sourceContext) {
+    return false;
+  }
+
+  const currentParentTaskId = sourceContext.parentTask?.id ?? null;
+
+  if ((targetParentTaskId ?? null) === currentParentTaskId) {
+    return false;
+  }
+
+  const sourceTask = sourceContext.task;
+
+  if (targetParentTaskId && isWeeklyTaskDescendant(sourceTask, targetParentTaskId)) {
+    return false;
+  }
+
+  const targetContext = targetParentTaskId ? findWeeklyTaskContext(tasks, targetParentTaskId) : null;
+
+  if (targetParentTaskId && !targetContext) {
+    return false;
+  }
+
+  const [movedTask] = sourceContext.tasks.splice(sourceContext.index, 1);
+
+  if (!movedTask) {
+    return false;
+  }
+
+  if (targetContext) {
+    if (!Array.isArray(targetContext.task.children)) {
+      targetContext.task.children = [];
+    }
+
+    targetContext.task.children.push(movedTask);
+    touchWeeklyTask(targetContext.task);
+  } else {
+    tasks.push(movedTask);
+  }
+
+  touchWeeklyTask(movedTask);
+  return true;
+}
+
 export function deriveWeeklyProjectStatus(tasks = []) {
   const meaningfulTasks = flattenWeeklyTasks(tasks).filter((task) => hasWeeklyTaskContent(task));
 
