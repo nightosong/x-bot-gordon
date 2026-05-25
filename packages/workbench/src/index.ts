@@ -31,6 +31,7 @@ export {
   listToolConfigs,
   listWeeklyProgress,
   listWritingBooks,
+  reorderModelProfiles,
   saveModelProfileBalanceSnapshot,
   saveModelSettings,
   saveTasks,

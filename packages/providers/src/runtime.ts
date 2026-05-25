@@ -11,6 +11,7 @@ const OPENAI_COMPATIBLE_PROVIDERS = new Set([
   "grok"
 ]);
 const NON_STREAM_ONLY_PROFILE_IDS = new Set<string>();
+const DEFAULT_MAX_OUTPUT_TOKENS = 32 * 1024;
 
 interface ModelTextInvokeOptions {
   signal?: AbortSignal;
@@ -22,6 +23,19 @@ interface SseEvent {
   data: string;
 }
 
+type SseTextExtractor = (payload: unknown, event: SseEvent) => string;
+type SseTextSnapshotExtractor = (payload: unknown, event: SseEvent) => string;
+
+type JsonOrSseTextResponse =
+  | {
+      kind: "json";
+      payload: unknown;
+    }
+  | {
+      kind: "sse";
+      text: string;
+    };
+
 class ModelStreamReadError extends Error {
   readonly accumulatedText: string;
 
@@ -32,12 +46,30 @@ class ModelStreamReadError extends Error {
   }
 }
 
+class ModelEmptySseResponseError extends Error {
+  readonly eventSummary: string;
+
+  constructor(label: string, eventSummary: string) {
+    super(`${label} 没有返回可用文本内容（SSE 事件未包含可识别文本：${eventSummary}）`);
+    this.name = "ModelEmptySseResponseError";
+    this.eventSummary = eventSummary;
+  }
+}
+
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, "");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function resolveMaxOutputTokens(request: ModelTextRequest): number {
+  const value = request.maxOutputTokens;
+
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : DEFAULT_MAX_OUTPUT_TOKENS;
 }
 
 function getNestedValue(value: unknown, path: Array<string | number>): unknown {
@@ -222,6 +254,129 @@ function parseSseBlock(block: string): SseEvent | null {
   };
 }
 
+function looksLikeSsePayload(value: string): boolean {
+  const trimmed = value.trimStart();
+
+  return trimmed.startsWith(":") || trimmed.startsWith("data:") || trimmed.startsWith("event:");
+}
+
+function buildRawTextPreview(value: string): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+
+  return normalized.length > 300 ? `${normalized.slice(0, 300)}…[truncated ${normalized.length - 300} chars]` : normalized;
+}
+
+function extractSseTextFromRawText(
+  rawText: string,
+  label: string,
+  extractDelta: SseTextExtractor,
+  extractSnapshot?: SseTextSnapshotExtractor
+): string {
+  const normalizedText = rawText.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  let accumulatedText = "";
+  let snapshotText = "";
+  const eventSummaries: string[] = [];
+
+  for (const block of normalizedText.split(/\n\n+/g)) {
+    const event = parseSseBlock(block);
+
+    if (!event) {
+      continue;
+    }
+
+    const data = event.data.trim();
+
+    if (!data || data === "[DONE]") {
+      continue;
+    }
+
+    let payload: unknown;
+
+    try {
+      payload = JSON.parse(data) as unknown;
+    } catch (error) {
+      throw new Error(`${label} 流式响应解析失败：${error instanceof Error ? error.message : "未知错误"}`);
+    }
+
+    const payloadErrorMessage = extractErrorMessage(payload);
+
+    if (payloadErrorMessage) {
+      throw new Error(`模型服务错误：${payloadErrorMessage}`);
+    }
+
+    const delta = extractDelta(payload, event);
+
+    if (delta) {
+      accumulatedText += delta;
+      continue;
+    }
+
+    const payloadType = readTextValue(getNestedValue(payload, ["type"]));
+    const payloadKeys = isRecord(payload) ? Object.keys(payload).slice(0, 8).join(",") : typeof payload;
+    const eventSummary = [event.event, payloadType, payloadKeys].filter(Boolean).join(" ");
+
+    if (eventSummary) {
+      eventSummaries.push(eventSummary);
+    }
+
+    const snapshot = extractSnapshot?.(payload, event).trim() ?? "";
+
+    if (snapshot && snapshot.length >= snapshotText.length) {
+      snapshotText = snapshot;
+    }
+  }
+
+  const text = accumulatedText.trim() || snapshotText.trim();
+
+  if (!text) {
+    const eventSummary = eventSummaries.length
+      ? eventSummaries.slice(0, 8).join(" / ")
+      : "仅收到 keep-alive 或空事件";
+    throw new ModelEmptySseResponseError(label, eventSummary);
+  }
+
+  return text;
+}
+
+async function parseJsonOrSseTextResponse(
+  response: Response,
+  label: string,
+  extractDelta: SseTextExtractor,
+  extractSnapshot?: SseTextSnapshotExtractor
+): Promise<JsonOrSseTextResponse> {
+  let rawText = "";
+
+  try {
+    rawText = await response.text();
+  } catch (error) {
+    throw new Error(`${label} 响应读取失败：${error instanceof Error ? error.message : "未知错误"}`);
+  }
+
+  const trimmedText = rawText.trim();
+
+  if (!trimmedText) {
+    throw new Error(`${label} 返回空响应`);
+  }
+
+  if (looksLikeSsePayload(trimmedText)) {
+    return {
+      kind: "sse",
+      text: extractSseTextFromRawText(rawText, label, extractDelta, extractSnapshot)
+    };
+  }
+
+  try {
+    return {
+      kind: "json",
+      payload: JSON.parse(trimmedText) as unknown
+    };
+  } catch (error) {
+    throw new Error(
+      `${label} 返回了非 JSON 响应：${buildRawTextPreview(trimmedText)}（${error instanceof Error ? error.message : "未知错误"}）`
+    );
+  }
+}
+
 async function consumeSseEvents(response: Response, onEvent: (event: SseEvent) => void | Promise<void>): Promise<void> {
   const reader = response.body?.getReader();
 
@@ -298,6 +453,14 @@ function shouldFallbackToNonStream(error: unknown, signal?: AbortSignal): boolea
   return error instanceof ModelStreamReadError && !error.accumulatedText.trim();
 }
 
+function shouldFallbackResponsesToChatCompletions(error: unknown, signal?: AbortSignal): boolean {
+  if (signal?.aborted) {
+    return false;
+  }
+
+  return error instanceof ModelEmptySseResponseError;
+}
+
 function shouldDisableStreamForPayload(payload: unknown): boolean {
   return Boolean(extractErrorMessage(payload) || !extractOpenAiCompatibleText(payload).trim());
 }
@@ -322,6 +485,24 @@ function logStreamFallback(
     profileLabel: profile.displayName,
     model: profile.model,
     endpoint: sanitizeUrlForLogging(endpoint),
+    reason
+  });
+}
+
+function logEndpointFallback(
+  label: string,
+  profile: ModelProfile,
+  fromEndpoint: string,
+  toEndpoint: string,
+  reason: string
+): void {
+  console.warn(`[providers] ${label} endpoint returned no text, falling back to Chat Completions`, {
+    provider: profile.provider,
+    profileId: profile.id,
+    profileLabel: profile.displayName,
+    model: profile.model,
+    fromEndpoint: sanitizeUrlForLogging(fromEndpoint),
+    toEndpoint: sanitizeUrlForLogging(toEndpoint),
     reason
   });
 }
@@ -426,6 +607,23 @@ function extractOpenAiResponsesStreamDelta(payload: unknown): string {
     || readTextValue(getNestedValue(payload, ["item", "content", 0, "text"]));
 }
 
+function extractOpenAiResponsesSseDelta(payload: unknown, event: SseEvent): string {
+  const directDelta = extractOpenAiResponsesStreamDelta(payload);
+
+  if (directDelta) {
+    return directDelta;
+  }
+
+  const eventType = event.event || readTextValue(getNestedValue(payload, ["type"]));
+  const choices = getNestedValue(payload, ["choices"]);
+  const canUseCompatibleDelta =
+    eventType === "message" ||
+    eventType.includes("delta") ||
+    Array.isArray(choices);
+
+  return canUseCompatibleDelta ? extractOpenAiCompatibleStreamDelta(payload) : "";
+}
+
 function extractOpenAiCompatibleStreamDelta(payload: unknown): string {
   const choices = getNestedValue(payload, ["choices"]);
   const deltas: string[] = [];
@@ -437,8 +635,12 @@ function extractOpenAiCompatibleStreamDelta(payload: unknown): string {
         getNestedValue(delta, ["content"]),
         getNestedValue(delta, ["text"]),
         getNestedValue(delta, ["output_text"]),
+        getNestedValue(delta, ["reasoning_content"]),
+        getNestedValue(delta, ["reasoning"]),
         getNestedValue(choice, ["text"]),
-        getNestedValue(choice, ["message", "content"])
+        getNestedValue(choice, ["message", "content"]),
+        getNestedValue(choice, ["message", "reasoning_content"]),
+        getNestedValue(choice, ["message", "reasoning"])
       ];
 
       for (const candidate of candidates) {
@@ -776,7 +978,7 @@ async function readOpenAiResponsesStream(
         throw new ModelStreamReadError(`模型服务错误：${payloadErrorMessage}`, accumulatedText);
       }
 
-      const delta = extractOpenAiResponsesStreamDelta(payload);
+      const delta = extractOpenAiResponsesSseDelta(payload, event);
 
       if (delta) {
         accumulatedText += delta;
@@ -808,6 +1010,7 @@ async function invokeOpenAiResponses(
   const endpoint = buildOpenAiStyleEndpoint(profile, "/responses");
   const stream = canAttemptStream(profile, options);
   const instructions = getSystemPrompt(request.messages);
+  const maxOutputTokens = resolveMaxOutputTokens(request);
   const response = await fetch(endpoint, {
     method: "POST",
     signal: options.signal,
@@ -823,7 +1026,7 @@ async function invokeOpenAiResponses(
       prompt_cache_key: buildOpenAiResponsesPromptCacheKey(profile),
       store: false,
       ...(typeof request.temperature === "number" ? { temperature: request.temperature } : {}),
-      ...(typeof request.maxOutputTokens === "number" ? { max_output_tokens: request.maxOutputTokens } : {}),
+      max_output_tokens: maxOutputTokens,
       ...(stream ? { stream: true } : {})
     })
   });
@@ -852,7 +1055,36 @@ async function invokeOpenAiResponses(
     }
   }
 
-  const payload = (await response.json()) as unknown;
+  let parsedResponse: JsonOrSseTextResponse;
+
+  try {
+    parsedResponse = await parseJsonOrSseTextResponse(
+      response,
+      "OpenAI Responses",
+      (payload, event) => extractOpenAiResponsesSseDelta(payload, event),
+      (payload) => extractOpenAiResponsesText(payload)
+    );
+  } catch (error) {
+    if (shouldFallbackResponsesToChatCompletions(error, options.signal)) {
+      const chatEndpoint = buildOpenAiStyleEndpoint(profile, "/chat/completions");
+      logEndpointFallback("OpenAI Responses", profile, endpoint, chatEndpoint, error instanceof Error ? error.message : "unknown");
+      return invokeOpenAiChatCompletions(profile, request, withoutTextDelta(options));
+    }
+
+    throw error;
+  }
+
+  if (parsedResponse.kind === "sse") {
+    return {
+      text: parsedResponse.text,
+      model: profile.model,
+      profileId: profile.id,
+      profileLabel: profile.displayName,
+      provider: profile.provider
+    };
+  }
+
+  const payload = parsedResponse.payload;
   const payloadErrorMessage = extractErrorMessage(payload);
 
   if (payloadErrorMessage) {
@@ -877,17 +1109,14 @@ async function invokeOpenAiResponses(
   };
 }
 
-async function invokeOpenAiCompatible(
+async function invokeOpenAiChatCompletions(
   profile: ModelProfile,
   request: ModelTextRequest,
   options: ModelTextInvokeOptions = {}
 ): Promise<ModelTextResponse> {
-  if (profile.apiFormat === "responses") {
-    return invokeOpenAiResponses(profile, request, options);
-  }
-
   const endpoint = buildOpenAiStyleEndpoint(profile, "/chat/completions");
   const stream = canAttemptStream(profile, options);
+  const maxOutputTokens = resolveMaxOutputTokens(request);
   const response = await fetch(endpoint, {
     method: "POST",
     signal: options.signal,
@@ -903,7 +1132,7 @@ async function invokeOpenAiCompatible(
         content: message.content
       })),
       ...(typeof request.temperature === "number" ? { temperature: request.temperature } : {}),
-      ...(typeof request.maxOutputTokens === "number" ? { max_tokens: request.maxOutputTokens } : {}),
+      max_tokens: maxOutputTokens,
       ...(stream ? { stream: true } : {})
     })
   });
@@ -925,27 +1154,38 @@ async function invokeOpenAiCompatible(
       if (shouldFallbackToNonStream(error, options.signal)) {
         rememberNonStreamOnlyProfile(profile);
         logStreamFallback("OpenAI-style", profile, endpoint, error instanceof Error ? error.message : "unknown");
-        return invokeOpenAiCompatible(profile, request, withoutTextDelta(options));
+        return invokeOpenAiChatCompletions(profile, request, withoutTextDelta(options));
       }
 
       throw error;
     }
   }
 
-  const payload = (await response.json()) as {
-    choices?: Array<{
-      message?: {
-        content?: unknown;
-      };
-    }>;
-  };
+  const parsedResponse = await parseJsonOrSseTextResponse(
+    response,
+    "OpenAI-style",
+    (payload) => extractOpenAiCompatibleStreamDelta(payload),
+    (payload) => extractOpenAiCompatibleText(payload)
+  );
+
+  if (parsedResponse.kind === "sse") {
+    return {
+      text: parsedResponse.text,
+      model: profile.model,
+      profileId: profile.id,
+      profileLabel: profile.displayName,
+      provider: profile.provider
+    };
+  }
+
+  const payload = parsedResponse.payload;
   const payloadErrorMessage = extractErrorMessage(payload);
 
   if (payloadErrorMessage) {
     if (stream && shouldDisableStreamForPayload(payload)) {
       rememberNonStreamOnlyProfile(profile);
       logStreamFallback("OpenAI-style JSON", profile, endpoint, payloadErrorMessage);
-      return invokeOpenAiCompatible(profile, request, withoutTextDelta(options));
+      return invokeOpenAiChatCompletions(profile, request, withoutTextDelta(options));
     }
 
     logMissingOpenAiStyleText(profile, endpoint, payload);
@@ -959,7 +1199,7 @@ async function invokeOpenAiCompatible(
       const reason = buildMissingTextReason(payload);
       rememberNonStreamOnlyProfile(profile);
       logStreamFallback("OpenAI-style JSON", profile, endpoint, reason ?? "模型没有返回可用文本内容");
-      return invokeOpenAiCompatible(profile, request, withoutTextDelta(options));
+      return invokeOpenAiChatCompletions(profile, request, withoutTextDelta(options));
     }
 
     logMissingOpenAiStyleText(profile, endpoint, payload);
@@ -976,6 +1216,18 @@ async function invokeOpenAiCompatible(
   };
 }
 
+async function invokeOpenAiCompatible(
+  profile: ModelProfile,
+  request: ModelTextRequest,
+  options: ModelTextInvokeOptions = {}
+): Promise<ModelTextResponse> {
+  if (profile.apiFormat === "responses") {
+    return invokeOpenAiResponses(profile, request, options);
+  }
+
+  return invokeOpenAiChatCompletions(profile, request, options);
+}
+
 async function invokeAzure(
   profile: ModelProfile,
   request: ModelTextRequest,
@@ -983,6 +1235,7 @@ async function invokeAzure(
 ): Promise<ModelTextResponse> {
   const endpoint = buildAzureEndpoint(profile);
   const stream = canAttemptStream(profile, options);
+  const maxOutputTokens = resolveMaxOutputTokens(request);
   const response = await fetch(endpoint, {
     method: "POST",
     signal: options.signal,
@@ -996,7 +1249,7 @@ async function invokeAzure(
         content: message.content
       })),
       ...(typeof request.temperature === "number" ? { temperature: request.temperature } : {}),
-      ...(typeof request.maxOutputTokens === "number" ? { max_tokens: request.maxOutputTokens } : {}),
+      max_tokens: maxOutputTokens,
       ...(stream ? { stream: true } : {})
     })
   });
@@ -1025,13 +1278,24 @@ async function invokeAzure(
     }
   }
 
-  const payload = (await response.json()) as {
-    choices?: Array<{
-      message?: {
-        content?: unknown;
-      };
-    }>;
-  };
+  const parsedResponse = await parseJsonOrSseTextResponse(
+    response,
+    "Azure",
+    (payload) => extractOpenAiCompatibleStreamDelta(payload),
+    (payload) => extractOpenAiCompatibleText(payload)
+  );
+
+  if (parsedResponse.kind === "sse") {
+    return {
+      text: parsedResponse.text,
+      model: profile.model,
+      profileId: profile.id,
+      profileLabel: profile.displayName,
+      provider: profile.provider
+    };
+  }
+
+  const payload = parsedResponse.payload;
   const payloadErrorMessage = extractErrorMessage(payload);
 
   if (payloadErrorMessage) {
@@ -1077,6 +1341,7 @@ async function invokeAnthropic(
   const endpoint = `${trimTrailingSlash(profile.baseUrl?.trim() || "https://api.anthropic.com")}/v1/messages`;
   const conversation = getConversationMessages(request.messages);
   const stream = canAttemptStream(profile, options);
+  const maxOutputTokens = resolveMaxOutputTokens(request);
   const response = await fetch(endpoint, {
     method: "POST",
     signal: options.signal,
@@ -1087,7 +1352,7 @@ async function invokeAnthropic(
     },
     body: JSON.stringify({
       model: profile.model,
-      max_tokens: request.maxOutputTokens ?? 1200,
+      max_tokens: maxOutputTokens,
       ...(typeof request.temperature === "number" ? { temperature: request.temperature } : {}),
       ...(getSystemPrompt(request.messages) ? { system: getSystemPrompt(request.messages) } : {}),
       ...(stream ? { stream: true } : {}),
@@ -1149,7 +1414,28 @@ async function invokeAnthropic(
     };
   }
 
-  const payload = (await response.json()) as {
+  const parsedResponse = await parseJsonOrSseTextResponse(
+    response,
+    "Anthropic",
+    (payload, event) => event.event === "content_block_delta"
+      ? readTextValue(getNestedValue(payload, ["delta", "text"]))
+      : "",
+    (payload) => (getNestedValue(payload, ["content"]) as Array<{ type?: string; text?: string }> | undefined)
+      ?.map((item) => (item.type === "text" ? item.text ?? "" : ""))
+      .join("\n") ?? ""
+  );
+
+  if (parsedResponse.kind === "sse") {
+    return {
+      text: parsedResponse.text,
+      model: profile.model,
+      profileId: profile.id,
+      profileLabel: profile.displayName,
+      provider: profile.provider
+    };
+  }
+
+  const payload = parsedResponse.payload as {
     content?: Array<{
       type?: string;
       text?: string;
@@ -1206,6 +1492,7 @@ async function invokeGoogle(
   const systemPrompt = getSystemPrompt(request.messages);
   const conversation = getConversationMessages(request.messages);
   const stream = canAttemptStream(profile, options);
+  const maxOutputTokens = resolveMaxOutputTokens(request);
   const response = await fetch(buildGoogleEndpoint(profile, stream), {
     method: "POST",
     signal: options.signal,
@@ -1220,7 +1507,7 @@ async function invokeGoogle(
       })),
       generationConfig: {
         ...(typeof request.temperature === "number" ? { temperature: request.temperature } : {}),
-        ...(typeof request.maxOutputTokens === "number" ? { maxOutputTokens: request.maxOutputTokens } : {})
+        maxOutputTokens
       }
     })
   });
@@ -1276,7 +1563,28 @@ async function invokeGoogle(
     };
   }
 
-  const payload = (await response.json()) as {
+  const parsedResponse = await parseJsonOrSseTextResponse(
+    response,
+    "Google",
+    (payload) => (getNestedValue(payload, ["candidates", 0, "content", "parts"]) as unknown[] | undefined)
+      ?.map((part) => readTextValue(getNestedValue(part, ["text"])))
+      .join("") ?? "",
+    (payload) => (getNestedValue(payload, ["candidates", 0, "content", "parts"]) as unknown[] | undefined)
+      ?.map((part) => readTextValue(getNestedValue(part, ["text"])))
+      .join("\n") ?? ""
+  );
+
+  if (parsedResponse.kind === "sse") {
+    return {
+      text: parsedResponse.text,
+      model: profile.model,
+      profileId: profile.id,
+      profileLabel: profile.displayName,
+      provider: profile.provider
+    };
+  }
+
+  const payload = parsedResponse.payload as {
     candidates?: Array<{
       content?: {
         parts?: Array<{

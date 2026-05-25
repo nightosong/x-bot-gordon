@@ -44,7 +44,7 @@
                 title="新对话"
                 @click="beginNewCommandSession"
               >
-                <GIcon name="jump" />
+                <GIcon name="messagePlus" />
               </button>
             </div>
           </div>

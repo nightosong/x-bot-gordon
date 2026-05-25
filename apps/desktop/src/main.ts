@@ -35,6 +35,7 @@ import {
   listVideoProjects,
   listWritingBooks,
   listModelSettings,
+  reorderModelProfiles,
   saveWeeklyFeishuSettings,
   saveWritingBook,
   saveWeeklyProgress,
@@ -69,6 +70,7 @@ import type {
   WritingBookExportFormat,
   WritingBookExportRequest
 } from "../../../packages/shared/src/index.js";
+import { ensureGordonHomeDirectory } from "../../../packages/shared/src/index.js";
 import { readCommandWorkshopAttachment } from "./attachment-reader.js";
 import { generateDailyProgressReport, generateWeeklyProgressReport, invokeActiveModel, rewriteWeeklyProgressItem } from "./ai.js";
 import { queryModelBalance } from "./model-balance.js";
@@ -1776,6 +1778,8 @@ function startModelBalanceUsagePolling(): void {
 }
 
 app.whenReady().then(async () => {
+  await ensureGordonHomeDirectory();
+
   if (process.platform === "darwin" && app.dock) {
     const dockIcon = nativeImage.createFromPath(appIconPath);
 
@@ -1814,6 +1818,9 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("gordon:model-settings:delete", async (_event, profileId: string) =>
     toCloneableIpcValue(await deleteModelProfile(profileId))
+  );
+  ipcMain.handle("gordon:model-settings:reorder", async (_event, profileIds: string[]) =>
+    toCloneableIpcValue(await reorderModelProfiles(toCloneableIpcValue(profileIds)))
   );
   ipcMain.handle("gordon:model:balance-history", async (_event, profileId?: string) =>
     toCloneableIpcValue(await listModelBalanceHistory(profileId))

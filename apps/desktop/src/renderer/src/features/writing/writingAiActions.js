@@ -4,6 +4,7 @@ import {
   WRITING_AI_TASKS,
   WRITING_APP_NAME,
   WRITING_CHAPTER_MAX_OUTPUT_TOKENS,
+  WRITING_DEFAULT_MAX_OUTPUT_TOKENS,
   WRITING_INTRO_SECTION_DEFINITIONS,
   WRITING_LENGTH_PROFILES,
   WRITING_LONG_OUTLINE_BATCH_MAX_TOKENS,
@@ -23,7 +24,7 @@ import {
 } from "./writingPromptBuilder.js";
 
 const WRITING_REVIEW_ONLY_TASK_IDS = new Set(["openingAudit", "outlineAudit", "openingReview", "review"]);
-const WRITING_INTRO_PLANNING_TASK_IDS = new Set(["storySetup", "world", "character", "storyBible"]);
+const WRITING_INTRO_PLANNING_TASK_IDS = new Set(["storySetup", "storyRefine", "world", "character", "storyBible"]);
 const WRITING_INTRO_SUMMARY_TASK_IDS = new Set(["premise"]);
 const WRITING_CHAPTER_SUMMARY_TASK_IDS = new Set(["chapterPlan"]);
 
@@ -415,27 +416,11 @@ function buildWritingAssistantPrompt({ book, tabId, task, instruction }) {
 }
 
 function getWritingAssistantMaxOutputTokens(tabId, taskId) {
-  if (tabId === "outline" && taskId === "structure") {
-    return 6200;
-  }
-
-  if (tabId === "intro" && taskId === "storySetup") {
-    return 3600;
-  }
-
-  if (tabId === "outline" && taskId === "outlineAudit") {
-    return 3200;
-  }
-
-  if (tabId === "chapter" && taskId === "chapterPlan") {
-    return 2200;
-  }
-
   if (tabId === "chapter") {
     return WRITING_CHAPTER_MAX_OUTPUT_TOKENS;
   }
 
-  return 2600;
+  return WRITING_DEFAULT_MAX_OUTPUT_TOKENS;
 }
 
 function getWritingIntroOutputTargetKey(book, taskId) {

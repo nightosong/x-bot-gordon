@@ -57,9 +57,42 @@
             </p>
           </div>
 
-          <article v-for="profile in workbench.modelSettings.profiles" :key="profile.id" class="model-config-card">
+          <article
+            v-for="profile in workbench.modelSettings.profiles"
+            :key="profile.id"
+            class="model-config-card model-config-draggable-card"
+            :class="{
+              'is-model-dragging': draggingModelProfileId === profile.id,
+              'is-model-drag-over-before':
+                dragOverModelProfileId === profile.id &&
+                dragOverModelProfilePlacement === 'before' &&
+                draggingModelProfileId !== profile.id,
+              'is-model-drag-over-after':
+                dragOverModelProfileId === profile.id &&
+                dragOverModelProfilePlacement === 'after' &&
+                draggingModelProfileId !== profile.id
+            }"
+            @dragenter="handleModelProfileDragOver($event, profile.id)"
+            @dragover="handleModelProfileDragOver($event, profile.id)"
+            @dragleave="handleModelProfileDragLeave($event, profile.id)"
+            @drop="handleModelProfileDrop($event, profile.id)"
+          >
             <div class="model-config-head">
               <div class="model-config-main">
+                <button
+                  type="button"
+                  class="model-drag-handle"
+                  :draggable="workbench.modelSettings.profiles.length > 1"
+                  :disabled="workbench.modelSettings.profiles.length < 2"
+                  :aria-label="`拖动调整 ${profile.displayName} 的排序`"
+                  :title="workbench.modelSettings.profiles.length > 1 ? '拖动调整顺序' : '至少需要两条配置才能排序'"
+                  @click.stop
+                  @dragstart="handleModelProfileDragStart($event, profile.id)"
+                  @dragend="handleModelProfileDragEnd"
+                >
+                  <GIcon name="grip" :size="18" :stroke-width="2.15" />
+                </button>
+
                 <div
                   class="provider-avatar"
                   :class="[
@@ -84,17 +117,6 @@
                   <p class="model-card-meta">
                     {{ getProviderMeta(profile.provider).label }} / {{ profile.model }}
                   </p>
-                  <div class="model-card-tags">
-                    <span class="model-stream-tag">
-                      {{ profile.apiFormat === "responses" ? "Responses" : "Chat" }}
-                    </span>
-                    <span
-                      class="model-stream-tag"
-                      :class="{ 'is-muted': profile.supportsStreaming === false }"
-                    >
-                      {{ profile.supportsStreaming === false ? "非流式" : "流式" }}
-                    </span>
-                  </div>
                 </div>
               </div>
 
@@ -559,6 +581,8 @@
 </template>
 
 <script setup>
+import { ref } from "vue";
+
 import GCompactSelect from "../../components/GCompactSelect.vue";
 import GIcon from "../../components/GIcon.vue";
 
@@ -600,4 +624,93 @@ defineProps({
   selectModelProvider: { type: Function, required: true },
   selectPopularModel: { type: Function, required: true }
 });
+
+const emit = defineEmits(["reorder-model-profiles"]);
+const draggingModelProfileId = ref("");
+const dragOverModelProfileId = ref("");
+const dragOverModelProfilePlacement = ref("before");
+
+function updateModelProfileDragPlacement(event, profileId) {
+  if (!draggingModelProfileId.value || draggingModelProfileId.value === profileId) {
+    return;
+  }
+
+  event.preventDefault();
+
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = "move";
+  }
+
+  const targetElement = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+  const targetRect = targetElement?.getBoundingClientRect();
+  dragOverModelProfileId.value = profileId;
+  dragOverModelProfilePlacement.value =
+    targetRect && event.clientY > targetRect.top + targetRect.height / 2 ? "after" : "before";
+}
+
+function handleModelProfileDragStart(event, profileId) {
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", profileId);
+
+    const dragSource = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+    const dragCard = dragSource?.closest(".model-config-draggable-card");
+    if (dragCard instanceof HTMLElement) {
+      const dragCardRect = dragCard.getBoundingClientRect();
+      const dragImageOffsetX = Math.max(0, Math.min(event.clientX - dragCardRect.left, dragCardRect.width));
+      const dragImageOffsetY = Math.max(0, Math.min(event.clientY - dragCardRect.top, dragCardRect.height));
+      event.dataTransfer.setDragImage(dragCard, dragImageOffsetX, dragImageOffsetY);
+    }
+  }
+
+  draggingModelProfileId.value = profileId;
+  dragOverModelProfileId.value = "";
+  dragOverModelProfilePlacement.value = "before";
+}
+
+function handleModelProfileDragOver(event, profileId) {
+  updateModelProfileDragPlacement(event, profileId);
+}
+
+function handleModelProfileDragLeave(event, profileId) {
+  if (
+    event.currentTarget instanceof Node &&
+    event.relatedTarget instanceof Node &&
+    event.currentTarget.contains(event.relatedTarget)
+  ) {
+    return;
+  }
+
+  if (dragOverModelProfileId.value === profileId) {
+    dragOverModelProfileId.value = "";
+  }
+}
+
+function handleModelProfileDragDropReset() {
+  draggingModelProfileId.value = "";
+  dragOverModelProfileId.value = "";
+  dragOverModelProfilePlacement.value = "before";
+}
+
+function handleModelProfileDrop(event, targetProfileId) {
+  updateModelProfileDragPlacement(event, targetProfileId);
+
+  const sourceProfileId = draggingModelProfileId.value || event.dataTransfer?.getData("text/plain") || "";
+  const placement = dragOverModelProfilePlacement.value;
+  handleModelProfileDragDropReset();
+
+  if (!sourceProfileId || sourceProfileId === targetProfileId) {
+    return;
+  }
+
+  emit("reorder-model-profiles", {
+    sourceProfileId,
+    targetProfileId,
+    placement
+  });
+}
+
+function handleModelProfileDragEnd() {
+  handleModelProfileDragDropReset();
+}
 </script>

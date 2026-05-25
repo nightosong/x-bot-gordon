@@ -73,6 +73,7 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
   activateModelProfile: (profileId) => ipcRenderer.invoke("gordon:model-settings:activate", profileId),
   toggleModelProfileStatus: (profileId) => ipcRenderer.invoke("gordon:model-settings:toggle-status", profileId),
   deleteModelProfile: (profileId) => ipcRenderer.invoke("gordon:model-settings:delete", profileId),
+  reorderModelProfiles: (profileIds) => ipcRenderer.invoke("gordon:model-settings:reorder", profileIds),
   invokeModelText: (request) => ipcRenderer.invoke("gordon:model:invoke-text", request),
   cancelModelText: (requestId) => ipcRenderer.invoke("gordon:model:cancel-text", requestId),
   queryModelBalance: (request) => ipcRenderer.invoke("gordon:model:query-balance", toPlainIpcData(request)),

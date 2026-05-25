@@ -207,7 +207,11 @@ export function filterWeeklyTasksToUpdatedBranches(tasks = [], todayKey = getLoc
     const title = String(task?.title ?? "").trim();
     const isUpdatedLeaf = !children.length && Boolean(title) && getLocalDateKey(task?.updatedAt) === todayKey;
 
-    if (!isUpdatedLeaf && !filteredChildren.length) {
+    if (!children.length && !isUpdatedLeaf) {
+      continue;
+    }
+
+    if (children.length && !filteredChildren.length) {
       continue;
     }
 
@@ -266,12 +270,15 @@ export function serializeDailyReportTaskLines(tasks = [], depth = 1, todayKey = 
 
   for (const task of Array.isArray(tasks) ? tasks : []) {
     const indent = "    ".repeat(depth);
-    const statusLabel = getWeeklyProgressStatusMeta(task?.status).label;
     const title = String(task?.title ?? "").trim() || "未命名任务";
-
-    lines.push(`${indent}* ${title}（${statusLabel}）`);
-
     const children = getWeeklyTaskChildren(task);
+
+    if (children.length) {
+      lines.push(`${indent}* ${title}`);
+    } else {
+      const statusLabel = getWeeklyProgressStatusMeta(task?.status).label;
+      lines.push(`${indent}* ${title}（${statusLabel}）`);
+    }
 
     if (children.length) {
       lines.push(...serializeDailyReportTaskLines(children, depth + 1, todayKey));
@@ -397,6 +404,66 @@ export function removeWeeklyTaskFromCollection(tasks = [], taskId) {
   }
 
   context.tasks.splice(context.index, 1);
+  return true;
+}
+
+export function isWeeklyTaskDescendant(task, descendantTaskId) {
+  if (!task || !descendantTaskId) {
+    return false;
+  }
+
+  return getWeeklyTaskChildren(task).some(
+    (child) => child?.id === descendantTaskId || isWeeklyTaskDescendant(child, descendantTaskId)
+  );
+}
+
+export function moveWeeklyTaskSubtree(tasks = [], sourceTaskId, targetParentTaskId = null) {
+  if (!sourceTaskId || sourceTaskId === targetParentTaskId) {
+    return false;
+  }
+
+  const sourceContext = findWeeklyTaskContext(tasks, sourceTaskId);
+
+  if (!sourceContext) {
+    return false;
+  }
+
+  const currentParentTaskId = sourceContext.parentTask?.id ?? null;
+
+  if ((targetParentTaskId ?? null) === currentParentTaskId) {
+    return false;
+  }
+
+  const sourceTask = sourceContext.task;
+
+  if (targetParentTaskId && isWeeklyTaskDescendant(sourceTask, targetParentTaskId)) {
+    return false;
+  }
+
+  const targetContext = targetParentTaskId ? findWeeklyTaskContext(tasks, targetParentTaskId) : null;
+
+  if (targetParentTaskId && !targetContext) {
+    return false;
+  }
+
+  const [movedTask] = sourceContext.tasks.splice(sourceContext.index, 1);
+
+  if (!movedTask) {
+    return false;
+  }
+
+  if (targetContext) {
+    if (!Array.isArray(targetContext.task.children)) {
+      targetContext.task.children = [];
+    }
+
+    targetContext.task.children.push(movedTask);
+    touchWeeklyTask(targetContext.task);
+  } else {
+    tasks.push(movedTask);
+  }
+
+  touchWeeklyTask(movedTask);
   return true;
 }
 

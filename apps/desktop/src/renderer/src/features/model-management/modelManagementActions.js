@@ -767,6 +767,64 @@ export function createModelManagementActions({
     }
   }
 
+  async function handleModelProfileReorder({ sourceProfileId, targetProfileId, placement = "before" }) {
+    if (!desktopApi?.reorderModelProfiles) {
+      setStatus("桌面桥接未就绪，暂无法保存模型顺序。", "danger");
+      return;
+    }
+
+    const normalizedSourceProfileId = String(sourceProfileId ?? "").trim();
+    const normalizedTargetProfileId = String(targetProfileId ?? "").trim();
+
+    if (!normalizedSourceProfileId || !normalizedTargetProfileId || normalizedSourceProfileId === normalizedTargetProfileId) {
+      return;
+    }
+
+    const currentProfiles = [...workbench.modelSettings.profiles];
+    const sourceIndex = currentProfiles.findIndex((profile) => profile.id === normalizedSourceProfileId);
+    const targetIndex = currentProfiles.findIndex((profile) => profile.id === normalizedTargetProfileId);
+
+    if (sourceIndex < 0 || targetIndex < 0) {
+      return;
+    }
+
+    const nextProfiles = [...currentProfiles];
+    const [movingProfile] = nextProfiles.splice(sourceIndex, 1);
+    const nextTargetIndex = nextProfiles.findIndex((profile) => profile.id === normalizedTargetProfileId);
+
+    if (!movingProfile || nextTargetIndex < 0) {
+      return;
+    }
+
+    const insertIndex = placement === "after" ? nextTargetIndex + 1 : nextTargetIndex;
+    nextProfiles.splice(insertIndex, 0, movingProfile);
+
+    const nextProfileIds = nextProfiles.map((profile) => profile.id);
+    const currentProfileIds = currentProfiles.map((profile) => profile.id);
+
+    if (nextProfileIds.every((profileId, index) => profileId === currentProfileIds[index])) {
+      return;
+    }
+
+    workbench.modelSettings = {
+      ...workbench.modelSettings,
+      profiles: nextProfiles
+    };
+
+    try {
+      workbench.modelSettings = await desktopApi.reorderModelProfiles(toPlainIpcData(nextProfileIds));
+      await refreshWorkbenchSnapshot();
+      setStatus("模型顺序已更新。", "success");
+    } catch (error) {
+      console.error("Failed to reorder model profiles", error);
+      workbench.modelSettings = {
+        ...workbench.modelSettings,
+        profiles: currentProfiles
+      };
+      setStatus(`模型顺序保存失败：${getErrorMessage(error)}`, "danger");
+    }
+  }
+
   return {
     activeModel,
     activeModelUsageError,
@@ -782,6 +840,7 @@ export function createModelManagementActions({
     handleModelDelete,
     handleModelEditorBalanceQuery,
     handleModelEditorSave,
+    handleModelProfileReorder,
     handleModelStatusToggle,
     hasModelBalanceQuery,
     isActiveModelUsageLoading,

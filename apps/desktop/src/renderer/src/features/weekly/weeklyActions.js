@@ -17,6 +17,7 @@ import {
   getWeeklyTaskChildren,
   hasMatchingMarkdownHierarchy,
   normalizeMarkdownForClipboard,
+  moveWeeklyTaskSubtree,
   removeWeeklyTaskFromCollection,
   syncWeeklyProjectStatus,
   syncWeeklySelectedReportTemplate,
@@ -785,6 +786,24 @@ export function createWeeklyActions({
     syncWeeklyProjectStatus(project);
   }
 
+  function moveWeeklyTask(projectId, sourceTaskId, targetParentTaskId = null) {
+    const project = findWeeklyProjectById(projectId);
+
+    if (!project || !sourceTaskId) {
+      return false;
+    }
+
+    const moved = moveWeeklyTaskSubtree(project.tasks, sourceTaskId, targetParentTaskId);
+
+    if (!moved) {
+      return false;
+    }
+
+    syncWeeklyProjectStatus(project);
+    ui.weekly.collapsedProjectIds = ui.weekly.collapsedProjectIds.filter((id) => id !== projectId);
+    return true;
+  }
+
   function touchWeeklyTaskById(projectId, taskId, timestamp = new Date().toISOString()) {
     const project = findWeeklyProjectById(projectId);
 
@@ -1366,6 +1385,7 @@ export function createWeeklyActions({
     removeWeeklyProject,
     removeWeeklySelectedReportTemplate,
     removeWeeklyTask,
+    moveWeeklyTask,
     resetWeeklyReportCopyState,
     resetWeeklyReportShareState,
     saveWeeklyFeishuSettingsFromDialog,

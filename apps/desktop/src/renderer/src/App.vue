@@ -45,6 +45,7 @@
               :open-model-usage-stats="openModelUsageStats"
               :select-model-provider="selectModelProvider"
               :select-popular-model="selectPopularModel"
+              @reorder-model-profiles="handleModelProfileReorder"
             />
           </template>
 
@@ -76,6 +77,7 @@
               :handle-weekly-report-template-selection-change="handleWeeklyReportTemplateSelectionChange"
               :handle-weekly-save="handleWeeklySave"
               :is-weekly-project-collapsed="isWeeklyProjectCollapsed"
+              :move-weekly-task="moveWeeklyTask"
               :open-weekly-record="openWeeklyRecord"
               :optimize-weekly-task-title="optimizeWeeklyTaskTitle"
               :remove-weekly-project="removeWeeklyProject"
@@ -410,6 +412,7 @@ const {
   handleModelDelete,
   handleModelEditorBalanceQuery,
   handleModelEditorSave,
+  handleModelProfileReorder,
   handleModelStatusToggle,
   hasModelBalanceQuery,
   isActiveModelUsageLoading,
@@ -929,6 +932,7 @@ const {
   handleWeeklySelectedReportTemplateIdChange,
   isWeeklyProjectCollapsed,
   isWeeklyTaskRewriting,
+  moveWeeklyTask,
   openWeeklyFeishuSettingsDialog,
   openLatestWeeklyRecord,
   openWeeklyRecord,

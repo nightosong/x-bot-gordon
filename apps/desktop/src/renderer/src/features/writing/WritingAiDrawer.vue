@@ -33,7 +33,10 @@
             :aria-selected="activeWritingTask?.id === task.id ? 'true' : 'false'"
             @click="selectWritingAiTask(task.id)"
           >
-            <span>{{ task.label }}</span>
+            <span class="writing-ai-task-item-head">
+              <strong>{{ task.label }}</strong>
+              <b v-if="task.stage">{{ task.stage }}</b>
+            </span>
             <small>{{ task.goal }}</small>
             <em v-if="getWritingTaskTarget(task)">{{ getWritingTaskTarget(task) }}</em>
           </button>
@@ -120,18 +123,26 @@
       </p>
     </section>
 
-    <div class="writing-ai-run-row">
-      <button type="button" class="model-action-secondary writing-ai-run" :disabled="state.isAiRunning" @click="generateWritingAssistantOutput">
-        {{ getWritingAiRunButtonLabel() }}
-      </button>
-    </div>
-
     <div class="writing-ai-output">
       <div class="writing-ai-output-head">
         <span class="field-label">AI 输出</span>
-        <span v-if="state.aiFeedback" class="status-pill" :class="getWritingAiFeedbackClass()">
-          {{ state.aiFeedback }}
-        </span>
+        <div class="writing-ai-output-tools">
+          <button
+            type="button"
+            class="writing-ai-output-status"
+            :class="writingAiOutputStatusClass"
+            :aria-label="writingAiOutputStatusMessage"
+            aria-describedby="writing-ai-output-status-tooltip"
+          >
+            <GIcon name="circleAlert" :size="16" />
+            <span id="writing-ai-output-status-tooltip" class="writing-ai-output-status-tooltip" role="tooltip">
+              {{ writingAiOutputStatusMessage }}
+            </span>
+          </button>
+          <button type="button" class="model-action-secondary writing-ai-run" :disabled="state.isAiRunning" @click="generateWritingAssistantOutput">
+            {{ getWritingAiRunButtonLabel() }}
+          </button>
+        </div>
       </div>
       <textarea
         v-model="state.aiOutput"
@@ -175,16 +186,47 @@ const props = defineProps({
   resumeWritingOutlinePlanningJob: { type: Function, required: true },
   getWritingAiRunButtonLabel: { type: Function, required: true },
   generateWritingAssistantOutput: { type: Function, required: true },
-  getWritingAiFeedbackClass: { type: Function, required: true },
   applyWritingAssistantOutput: { type: Function, required: true }
 });
 
 const isAiInstructionOpen = ref(Boolean(props.state.aiInstruction?.trim()));
 const hasAiInstruction = computed(() => Boolean(props.state.aiInstruction?.trim()));
 const activeWritingTaskTarget = computed(() => getWritingTaskTarget(props.activeWritingTask));
+const writingAiOutputStatusMessage = computed(() => {
+  const feedback = String(props.state.aiFeedback ?? "").trim();
+
+  if (feedback) {
+    return feedback;
+  }
+
+  if (props.state.isAiRunning) {
+    return "正在执行 AI 任务";
+  }
+
+  return "暂无执行状态";
+});
+const writingAiOutputStatusClass = computed(() => {
+  if (props.state.isAiRunning) {
+    return "is-running";
+  }
+
+  if (props.state.aiFeedbackTone === "success") {
+    return "is-success";
+  }
+
+  if (props.state.aiFeedbackTone === "danger") {
+    return "is-danger";
+  }
+
+  if (props.state.aiFeedbackTone === "warning") {
+    return "is-warning";
+  }
+
+  return "is-neutral";
+});
 
 function getWritingTaskTarget(task) {
-  if (task?.id === "storySetup") {
+  if (task?.id === "storySetup" || task?.id === "storyRefine") {
     return "写入：大纲指导";
   }
 
