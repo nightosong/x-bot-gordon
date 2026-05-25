@@ -10,11 +10,13 @@
         </div>
 
         <div class="weekly-hero-side">
-          <span class="status-pill models-badge">
-            {{ activeModel ? `AI 已连接：${activeModel.displayName}` : "AI 功能待启用" }}
+          <span class="weekly-hero-badge weekly-hero-model-badge">
+            <span class="weekly-hero-badge-dot" aria-hidden="true"></span>
+            <strong>{{ activeModel ? activeModel.displayName : "模型待启用" }}</strong>
           </span>
-          <span class="pill pill-neutral">
-            {{ weeklyProgress.length ? `已归档 ${weeklyProgress.length} 周记录` : "等待创建本周计划" }}
+          <span class="weekly-hero-badge weekly-hero-archive-badge">
+            <span>{{ weeklyProgress.length ? "归档" : "计划" }}</span>
+            <strong>{{ weeklyProgress.length ? `${weeklyProgress.length} 周记录` : "待创建" }}</strong>
           </span>
         </div>
       </section>

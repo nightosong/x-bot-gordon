@@ -2738,7 +2738,6 @@
                 :resume-writing-outline-planning-job="resumeWritingOutlinePlanningJob"
                 :get-writing-ai-run-button-label="getWritingAiRunButtonLabel"
                 :generate-writing-assistant-output="generateWritingAssistantOutput"
-                :get-writing-ai-feedback-class="getWritingAiFeedbackClass"
                 :apply-writing-assistant-output="applyWritingAssistantOutput"
               />
             </section>
@@ -3482,7 +3481,6 @@ const {
   exportActiveWritingBook,
   filteredWritingChapterEntries,
   formatWritingBookUpdatedAt,
-  getWritingAiFeedbackClass,
   getWritingBookWordCount,
   getWritingChapterDisplayTitle,
   getWritingChapterPartLabel,

@@ -4,6 +4,7 @@ import {
   WRITING_AI_TASKS,
   WRITING_APP_NAME,
   WRITING_CHAPTER_MAX_OUTPUT_TOKENS,
+  WRITING_DEFAULT_MAX_OUTPUT_TOKENS,
   WRITING_INTRO_SECTION_DEFINITIONS,
   WRITING_LENGTH_PROFILES,
   WRITING_LONG_OUTLINE_BATCH_MAX_TOKENS,
@@ -415,27 +416,11 @@ function buildWritingAssistantPrompt({ book, tabId, task, instruction }) {
 }
 
 function getWritingAssistantMaxOutputTokens(tabId, taskId) {
-  if (tabId === "outline" && taskId === "structure") {
-    return 6200;
-  }
-
-  if (tabId === "intro" && taskId === "storySetup") {
-    return 3600;
-  }
-
-  if (tabId === "outline" && taskId === "outlineAudit") {
-    return 3200;
-  }
-
-  if (tabId === "chapter" && taskId === "chapterPlan") {
-    return 2200;
-  }
-
   if (tabId === "chapter") {
     return WRITING_CHAPTER_MAX_OUTPUT_TOKENS;
   }
 
-  return 2600;
+  return WRITING_DEFAULT_MAX_OUTPUT_TOKENS;
 }
 
 function getWritingIntroOutputTargetKey(book, taskId) {

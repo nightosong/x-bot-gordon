@@ -1824,26 +1824,6 @@ function setWritingFeedback(text, tone = "neutral") {
   ui.marketplace.writing.aiFeedbackTone = tone;
 }
 
-function getWritingAiFeedbackClass() {
-  if (ui.marketplace.writing.isAiRunning) {
-    return "is-running";
-  }
-
-  if (ui.marketplace.writing.aiFeedbackTone === "success") {
-    return "is-success";
-  }
-
-  if (ui.marketplace.writing.aiFeedbackTone === "warning") {
-    return "is-warning";
-  }
-
-  if (ui.marketplace.writing.aiFeedbackTone === "danger") {
-    return "is-danger";
-  }
-
-  return "";
-}
-
 function toggleWritingProfileRail() {
   if (isActiveWritingBookAiRunning.value) {
     return;
@@ -2098,7 +2078,6 @@ function setWritingTab(tabId) {
     formatWritingBookUpdatedAt,
     getDoneWritingChapters,
     getPreferredWritingChapter,
-    getWritingAiFeedbackClass,
     getWritingBookCompleteness,
     getWritingBookContent,
     getWritingBookParts,

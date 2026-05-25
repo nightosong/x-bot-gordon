@@ -16,12 +16,12 @@ export const WRITING_LENGTH_PROFILES = {
   medium: {
     label: "中篇",
     scope: "多幕式成长与反转",
-    method: "用 3-5 个阶段推进人物关系和真相揭露；每一幕都要让主角付出不可逆代价。"
+    method: "用 3-5 个阶段推进人物关系、行动目标和处境变化；阶段代价要落到资源、路线、关系、身份或能力边界上，不默认写成真相揭露或文明反思。"
   },
   long: {
     label: "长篇",
-    scope: "严密世界观与群像长线",
-    method: "先搭建时代、制度、利益网络和多阵营目标，再用卷级悬念、人物弧光和伏笔回收驱动章节；开篇仍优先聚焦主角，不用群像开局。"
+    scope: "持续扩展的成长长线",
+    method: "先确定主角的长期行动方向、阶段权限、资源压力、能力成长和可持续扩展的卷级区域，再补时代、制度、利益网络与伏笔回收；开篇仍优先聚焦主角，不用群像开局。"
   }
 };
 
@@ -78,10 +78,11 @@ export const WRITING_OUTLINE_REWRITE_PATTERN =
 export const WRITING_OUTLINE_EXPANSION_PATTERN =
   /(扩写|扩充|扩展|拓展|增加到|加到|分为|分成|拆成|每幕|每一幕|每卷|每一卷|几百章|上千章|千章|百章|长篇规划)/;
 
+export const WRITING_DEFAULT_MAX_OUTPUT_TOKENS = 64 * 1024;
 export const WRITING_LONG_OUTLINE_BATCH_SIZE = 20;
-export const WRITING_LONG_OUTLINE_MASTER_MAX_TOKENS = 5200;
-export const WRITING_LONG_OUTLINE_BATCH_MAX_TOKENS = 8200;
-export const WRITING_CHAPTER_MAX_OUTPUT_TOKENS = 7600;
+export const WRITING_LONG_OUTLINE_MASTER_MAX_TOKENS = WRITING_DEFAULT_MAX_OUTPUT_TOKENS;
+export const WRITING_LONG_OUTLINE_BATCH_MAX_TOKENS = WRITING_DEFAULT_MAX_OUTPUT_TOKENS;
+export const WRITING_CHAPTER_MAX_OUTPUT_TOKENS = WRITING_DEFAULT_MAX_OUTPUT_TOKENS;
 export const WRITING_MODEL_MAX_RETRY_ATTEMPTS = 5;
 export const WRITING_MODEL_RETRY_BASE_DELAY_MS = 1200;
 export const WRITING_MODEL_RETRY_MAX_DELAY_MS = 8000;

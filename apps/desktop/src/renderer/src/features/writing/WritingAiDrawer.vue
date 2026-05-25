@@ -120,18 +120,26 @@
       </p>
     </section>
 
-    <div class="writing-ai-run-row">
-      <button type="button" class="model-action-secondary writing-ai-run" :disabled="state.isAiRunning" @click="generateWritingAssistantOutput">
-        {{ getWritingAiRunButtonLabel() }}
-      </button>
-    </div>
-
     <div class="writing-ai-output">
       <div class="writing-ai-output-head">
         <span class="field-label">AI 输出</span>
-        <span v-if="state.aiFeedback" class="status-pill" :class="getWritingAiFeedbackClass()">
-          {{ state.aiFeedback }}
-        </span>
+        <div class="writing-ai-output-tools">
+          <span
+            class="writing-ai-output-status"
+            :class="writingAiOutputStatusClass"
+            :aria-label="writingAiOutputStatusMessage"
+            role="status"
+            tabindex="0"
+          >
+            <span class="writing-ai-output-status-mark" aria-hidden="true">i</span>
+            <span class="writing-ai-output-status-tooltip" role="tooltip">
+              {{ writingAiOutputStatusMessage }}
+            </span>
+          </span>
+          <button type="button" class="model-action-secondary writing-ai-run" :disabled="state.isAiRunning" @click="generateWritingAssistantOutput">
+            {{ getWritingAiRunButtonLabel() }}
+          </button>
+        </div>
       </div>
       <textarea
         v-model="state.aiOutput"
@@ -175,13 +183,40 @@ const props = defineProps({
   resumeWritingOutlinePlanningJob: { type: Function, required: true },
   getWritingAiRunButtonLabel: { type: Function, required: true },
   generateWritingAssistantOutput: { type: Function, required: true },
-  getWritingAiFeedbackClass: { type: Function, required: true },
   applyWritingAssistantOutput: { type: Function, required: true }
 });
 
 const isAiInstructionOpen = ref(Boolean(props.state.aiInstruction?.trim()));
 const hasAiInstruction = computed(() => Boolean(props.state.aiInstruction?.trim()));
 const activeWritingTaskTarget = computed(() => getWritingTaskTarget(props.activeWritingTask));
+const writingAiOutputStatusMessage = computed(() => {
+  const feedback = String(props.state.aiFeedback ?? "").trim();
+
+  if (feedback) {
+    return feedback;
+  }
+
+  if (props.state.isAiRunning) {
+    return "正在执行 AI 任务";
+  }
+
+  return "暂无执行状态";
+});
+const writingAiOutputStatusClass = computed(() => {
+  if (props.state.isAiRunning) {
+    return "is-running";
+  }
+
+  if (props.state.aiFeedbackTone === "success") {
+    return "is-success";
+  }
+
+  if (props.state.aiFeedbackTone === "danger") {
+    return "is-danger";
+  }
+
+  return "is-neutral";
+});
 
 function getWritingTaskTarget(task) {
   if (task?.id === "storySetup") {
