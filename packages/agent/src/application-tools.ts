@@ -7,8 +7,12 @@ import type {
   McpToolCallResult,
   McpToolDefinition,
   WritingBook,
+  WritingBookIntroSection,
   WritingBookLength,
-  WritingChapter
+  WritingChapter,
+  WritingCharacterAsset,
+  WritingForeshadowAsset,
+  WritingStoryAssetEntry
 } from "../../shared/src/index.js";
 
 export const BUILTIN_APPLICATION_TOOLS_MCP_ID = "builtin:mcp:application-tools";
@@ -19,12 +23,122 @@ const MAX_SEARCH_RESULTS = 20;
 
 type JsonObject = Record<string, unknown>;
 
+const STORY_ASSETS_SCHEMA = {
+  type: "object",
+  description:
+    "可选，结构化故事资产。用于写入世界观、人物、关系、时间线、伏笔、规则、风格和连续性备注；适合小说企划、世界观、角色卡、武道体系、势力设定等长期资产。",
+  properties: {
+    premise: { type: "string", description: "故事命题/核心体验" },
+    worldview: {
+      type: "array",
+      description: "世界观、地图、组织、经济、生态、战斗体系等设定条目",
+      items: {
+        type: "object",
+        properties: {
+          title: { type: "string" },
+          detail: { type: "string" },
+          tags: { type: "array", items: { type: "string" } },
+          chapterIndex: { type: "integer", minimum: 1 },
+          status: { type: "string" }
+        },
+        additionalProperties: true
+      }
+    },
+    characters: {
+      type: "array",
+      description: "人物资产。每项可包含 name、role、goal、fear、secret、growthArc、relationships、tags、status",
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          role: { type: "string" },
+          goal: { type: "string" },
+          fear: { type: "string" },
+          secret: { type: "string" },
+          growthArc: { type: "string" },
+          relationships: { type: "array", items: { type: "string" } },
+          tags: { type: "array", items: { type: "string" } },
+          status: { type: "string" }
+        },
+        additionalProperties: true
+      }
+    },
+    relationships: {
+      type: "array",
+      description: "关系、势力关系、人物关系条目",
+      items: { type: "object", additionalProperties: true }
+    },
+    timeline: {
+      type: "array",
+      description: "时间线、卷阶段、关键事件条目",
+      items: { type: "object", additionalProperties: true }
+    },
+    foreshadows: {
+      type: "array",
+      description: "伏笔资产。每项可包含 title、setup、payoff、status、chapterIndex、payoffChapterIndex、tags",
+      items: { type: "object", additionalProperties: true }
+    },
+    rules: {
+      type: "array",
+      description: "必须长期遵守的规则边界，例如战斗体系、禁忌、设定硬约束",
+      items: { type: "object", additionalProperties: true }
+    },
+    styleProfile: {
+      type: "object",
+      description: "风格档案",
+      properties: {
+        voice: { type: "string" },
+        pacing: { type: "string" },
+        genreSignals: { type: "array", items: { type: "string" } },
+        taboos: { type: "array", items: { type: "string" } }
+      },
+      additionalProperties: true
+    },
+    memoryNotes: {
+      type: "array",
+      description: "连续性备注、资源状态、后续必须记住的事实",
+      items: { type: "object", additionalProperties: true }
+    }
+  },
+  additionalProperties: true
+} as const;
+
+const EXTRA_INTRO_SECTIONS_SCHEMA = {
+  type: "array",
+  description: "可选，写入墨笔生花总介绍页的补充设定区块，例如世界观、武道体系、主要人物、势力设定、分卷规划。",
+  items: {
+    type: "object",
+    properties: {
+      title: { type: "string" },
+      content: { type: "string" }
+    },
+    additionalProperties: true
+  }
+} as const;
+
 function isObject(value: unknown): value is JsonObject {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function asString(value: unknown): string {
   return String(value ?? "").trim();
+}
+
+function asStringList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((item) => asString(item)).filter(Boolean);
+  }
+
+  const text = asString(value);
+
+  if (!text) {
+    return [];
+  }
+
+  return text
+    .split(/[,，、\n]/u)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function asBoolean(value: unknown, fallback: boolean): boolean {
@@ -93,6 +207,16 @@ function asWritingChapterStatus(value: unknown): WritingChapter["status"] {
   return "todo";
 }
 
+function asOptionalPositiveInteger(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
 function createLocalId(prefix: string): string {
   return `${prefix}_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
 }
@@ -114,6 +238,378 @@ function createEmptyWritingStoryAssets(bookId: string, premise: string, timestam
     },
     memoryNotes: [],
     updatedAt: timestamp
+  };
+}
+
+function normalizeStoryAssetEntry(
+  value: unknown,
+  index: number,
+  bookId: string,
+  group: string,
+  timestamp: string
+): WritingStoryAssetEntry | null {
+  const source = isObject(value) ? value : { detail: value };
+  const title = asString(source.title ?? source.name ?? source.key);
+  const detail = asString(source.detail ?? source.description ?? source.summary ?? source.value ?? source.content);
+  const chapterIndex = asOptionalPositiveInteger(source.chapterIndex ?? source.chapter);
+
+  if (!title && !detail) {
+    return null;
+  }
+
+  return {
+    id: asString(source.id) || `${bookId}_${group}_${index + 1}`,
+    title: title || `未命名${group} ${index + 1}`,
+    detail,
+    tags: asStringList(source.tags),
+    ...(chapterIndex ? { chapterIndex } : {}),
+    ...(asString(source.status) ? { status: asString(source.status) } : {}),
+    updatedAt: asString(source.updatedAt) || timestamp
+  };
+}
+
+function normalizeStoryAssetEntries(value: unknown, bookId: string, group: string, timestamp: string): WritingStoryAssetEntry[] {
+  return (Array.isArray(value) ? value : [])
+    .map((entry, index) => normalizeStoryAssetEntry(entry, index, bookId, group, timestamp))
+    .filter((entry): entry is WritingStoryAssetEntry => Boolean(entry));
+}
+
+function normalizeCharacterAsset(
+  value: unknown,
+  index: number,
+  bookId: string,
+  timestamp: string
+): WritingCharacterAsset | null {
+  const source = isObject(value) ? value : { name: value };
+  const name = asString(source.name ?? source.title);
+  const relationships = asStringList(source.relationships);
+
+  if (
+    !name &&
+    !asString(source.role) &&
+    !asString(source.goal) &&
+    !asString(source.fear) &&
+    !asString(source.secret) &&
+    !asString(source.growthArc ?? source.growth_arc) &&
+    !relationships.length
+  ) {
+    return null;
+  }
+
+  return {
+    id: asString(source.id) || `${bookId}_character_${index + 1}`,
+    name: name || `未命名人物 ${index + 1}`,
+    role: asString(source.role),
+    goal: asString(source.goal),
+    fear: asString(source.fear),
+    secret: asString(source.secret),
+    growthArc: asString(source.growthArc ?? source.growth_arc),
+    relationships,
+    tags: asStringList(source.tags),
+    status: asString(source.status) || "active",
+    updatedAt: asString(source.updatedAt) || timestamp
+  };
+}
+
+function normalizeCharacterAssets(value: unknown, bookId: string, timestamp: string): WritingCharacterAsset[] {
+  return (Array.isArray(value) ? value : [])
+    .map((entry, index) => normalizeCharacterAsset(entry, index, bookId, timestamp))
+    .filter((entry): entry is WritingCharacterAsset => Boolean(entry));
+}
+
+function normalizeForeshadowAsset(
+  value: unknown,
+  index: number,
+  bookId: string,
+  timestamp: string
+): WritingForeshadowAsset | null {
+  const source = isObject(value) ? value : { setup: value };
+  const title = asString(source.title ?? source.name);
+  const setup = asString(source.setup ?? source.detail ?? source.description);
+  const payoff = asString(source.payoff ?? source.plannedPayoff ?? source.payoffPlan);
+  const chapterIndex = asOptionalPositiveInteger(source.chapterIndex ?? source.setupChapterIndex);
+  const payoffChapterIndex = asOptionalPositiveInteger(source.payoffChapterIndex);
+
+  if (!title && !setup && !payoff) {
+    return null;
+  }
+
+  return {
+    id: asString(source.id) || `${bookId}_foreshadow_${index + 1}`,
+    title: title || setup || `未命名伏笔 ${index + 1}`,
+    setup,
+    payoff,
+    status: asString(source.status) || "open",
+    ...(chapterIndex ? { chapterIndex } : {}),
+    ...(payoffChapterIndex ? { payoffChapterIndex } : {}),
+    tags: asStringList(source.tags),
+    updatedAt: asString(source.updatedAt) || timestamp
+  };
+}
+
+function normalizeForeshadowAssets(value: unknown, bookId: string, timestamp: string): WritingForeshadowAsset[] {
+  return (Array.isArray(value) ? value : [])
+    .map((entry, index) => normalizeForeshadowAsset(entry, index, bookId, timestamp))
+    .filter((entry): entry is WritingForeshadowAsset => Boolean(entry));
+}
+
+function normalizeWritingStoryAssetsInput(value: unknown, bookId: string, timestamp: string): WritingBook["storyAssets"] {
+  const source = isObject(value) ? value : {};
+
+  return {
+    premise: asString(source.premise),
+    worldview: normalizeStoryAssetEntries(source.worldview, bookId, "worldview", timestamp),
+    characters: normalizeCharacterAssets(source.characters, bookId, timestamp),
+    relationships: normalizeStoryAssetEntries(source.relationships, bookId, "relationship", timestamp),
+    timeline: normalizeStoryAssetEntries(source.timeline, bookId, "timeline", timestamp),
+    foreshadows: normalizeForeshadowAssets(source.foreshadows, bookId, timestamp),
+    rules: normalizeStoryAssetEntries(source.rules, bookId, "rule", timestamp),
+    styleProfile: {
+      voice: asString(isObject(source.styleProfile) ? source.styleProfile.voice : ""),
+      pacing: asString(isObject(source.styleProfile) ? source.styleProfile.pacing : ""),
+      genreSignals: asStringList(isObject(source.styleProfile) ? source.styleProfile.genreSignals : []),
+      taboos: asStringList(isObject(source.styleProfile) ? source.styleProfile.taboos : [])
+    },
+    memoryNotes: normalizeStoryAssetEntries(source.memoryNotes, bookId, "memory", timestamp),
+    updatedAt: timestamp
+  };
+}
+
+function normalizeExtraIntroSections(value: unknown, bookId: string, timestamp: string): WritingBookIntroSection[] {
+  return (Array.isArray(value) ? value : [])
+    .map((entry, index) => {
+      const source: JsonObject = isObject(entry) ? entry : { content: entry };
+      const title = asString(source.title);
+      const content = String(source.content ?? source.detail ?? source.description ?? "");
+
+      if (!title && !content.trim()) {
+        return null;
+      }
+
+      return {
+        id: asString(source.id) || `${bookId}_section_${index + 1}`,
+        title: title || `补充设定 ${index + 1}`,
+        content,
+        updatedAt: asString(source.updatedAt) || timestamp
+      };
+    })
+    .filter((entry): entry is WritingBookIntroSection => Boolean(entry));
+}
+
+function normalizeAssetMergeKey(value: unknown): string {
+  return asString(value).replace(/\s+/g, "").toLowerCase();
+}
+
+function mergeStoryAssetEntries(existingEntries: WritingStoryAssetEntry[], incomingEntries: WritingStoryAssetEntry[]): WritingStoryAssetEntry[] {
+  const byKey = new Map<string, WritingStoryAssetEntry>();
+
+  for (const entry of existingEntries) {
+    const key = normalizeAssetMergeKey(entry.title || entry.detail);
+
+    if (key) {
+      byKey.set(key, entry);
+    }
+  }
+
+  for (const entry of incomingEntries) {
+    const key = normalizeAssetMergeKey(entry.title || entry.detail);
+    const current = key ? byKey.get(key) : null;
+
+    if (!key) {
+      continue;
+    }
+
+    byKey.set(
+      key,
+      current
+        ? {
+            ...current,
+            title: entry.title || current.title,
+            detail: entry.detail || current.detail,
+            tags: Array.from(new Set([...current.tags, ...entry.tags])),
+            chapterIndex: entry.chapterIndex ?? current.chapterIndex,
+            status: entry.status || current.status,
+            updatedAt: entry.updatedAt
+          }
+        : entry
+    );
+  }
+
+  return Array.from(byKey.values());
+}
+
+function mergeCharacterAssets(existingEntries: WritingCharacterAsset[], incomingEntries: WritingCharacterAsset[]): WritingCharacterAsset[] {
+  const byKey = new Map<string, WritingCharacterAsset>();
+
+  for (const entry of existingEntries) {
+    const key = normalizeAssetMergeKey(entry.name);
+
+    if (key) {
+      byKey.set(key, entry);
+    }
+  }
+
+  for (const entry of incomingEntries) {
+    const key = normalizeAssetMergeKey(entry.name);
+    const current = key ? byKey.get(key) : null;
+
+    if (!key) {
+      continue;
+    }
+
+    byKey.set(
+      key,
+      current
+        ? {
+            ...current,
+            role: entry.role || current.role,
+            goal: entry.goal || current.goal,
+            fear: entry.fear || current.fear,
+            secret: entry.secret || current.secret,
+            growthArc: entry.growthArc || current.growthArc,
+            relationships: Array.from(new Set([...current.relationships, ...entry.relationships])),
+            tags: Array.from(new Set([...current.tags, ...entry.tags])),
+            status: entry.status || current.status,
+            updatedAt: entry.updatedAt
+          }
+        : entry
+    );
+  }
+
+  return Array.from(byKey.values());
+}
+
+function mergeForeshadowAssets(existingEntries: WritingForeshadowAsset[], incomingEntries: WritingForeshadowAsset[]): WritingForeshadowAsset[] {
+  const byKey = new Map<string, WritingForeshadowAsset>();
+
+  for (const entry of existingEntries) {
+    const key = normalizeAssetMergeKey(entry.title || entry.setup);
+
+    if (key) {
+      byKey.set(key, entry);
+    }
+  }
+
+  for (const entry of incomingEntries) {
+    const key = normalizeAssetMergeKey(entry.title || entry.setup);
+    const current = key ? byKey.get(key) : null;
+
+    if (!key) {
+      continue;
+    }
+
+    byKey.set(
+      key,
+      current
+        ? {
+            ...current,
+            title: entry.title || current.title,
+            setup: entry.setup || current.setup,
+            payoff: entry.payoff || current.payoff,
+            status: entry.status || current.status,
+            chapterIndex: entry.chapterIndex ?? current.chapterIndex,
+            payoffChapterIndex: entry.payoffChapterIndex ?? current.payoffChapterIndex,
+            tags: Array.from(new Set([...current.tags, ...entry.tags])),
+            updatedAt: entry.updatedAt
+          }
+        : entry
+    );
+  }
+
+  return Array.from(byKey.values());
+}
+
+function mergeWritingStoryAssets(
+  currentAssets: WritingBook["storyAssets"],
+  incomingAssets: WritingBook["storyAssets"],
+  mode: string,
+  timestamp: string
+): WritingBook["storyAssets"] {
+  if (mode === "replace") {
+    return {
+      ...incomingAssets,
+      updatedAt: timestamp
+    };
+  }
+
+  return {
+    premise: incomingAssets.premise || currentAssets.premise,
+    worldview: mergeStoryAssetEntries(currentAssets.worldview, incomingAssets.worldview),
+    characters: mergeCharacterAssets(currentAssets.characters, incomingAssets.characters),
+    relationships: mergeStoryAssetEntries(currentAssets.relationships, incomingAssets.relationships),
+    timeline: mergeStoryAssetEntries(currentAssets.timeline, incomingAssets.timeline),
+    foreshadows: mergeForeshadowAssets(currentAssets.foreshadows, incomingAssets.foreshadows),
+    rules: mergeStoryAssetEntries(currentAssets.rules, incomingAssets.rules),
+    styleProfile: {
+      voice: incomingAssets.styleProfile.voice || currentAssets.styleProfile.voice,
+      pacing: incomingAssets.styleProfile.pacing || currentAssets.styleProfile.pacing,
+      genreSignals: Array.from(new Set([...currentAssets.styleProfile.genreSignals, ...incomingAssets.styleProfile.genreSignals])),
+      taboos: Array.from(new Set([...currentAssets.styleProfile.taboos, ...incomingAssets.styleProfile.taboos]))
+    },
+    memoryNotes: mergeStoryAssetEntries(currentAssets.memoryNotes, incomingAssets.memoryNotes),
+    updatedAt: timestamp
+  };
+}
+
+function mergeExtraIntroSections(
+  currentSections: WritingBookIntroSection[],
+  incomingSections: WritingBookIntroSection[],
+  mode: string
+): WritingBookIntroSection[] {
+  if (mode === "replace") {
+    return incomingSections;
+  }
+
+  const byKey = new Map<string, WritingBookIntroSection>();
+
+  for (const section of currentSections) {
+    const key = normalizeAssetMergeKey(section.title);
+
+    if (key) {
+      byKey.set(key, section);
+    }
+  }
+
+  for (const section of incomingSections) {
+    const key = normalizeAssetMergeKey(section.title || section.content);
+    const current = key ? byKey.get(key) : null;
+
+    if (!key) {
+      continue;
+    }
+
+    byKey.set(
+      key,
+      current
+        ? {
+            ...current,
+            title: section.title || current.title,
+            content: section.content || current.content,
+            updatedAt: section.updatedAt
+          }
+        : section
+    );
+  }
+
+  return Array.from(byKey.values());
+}
+
+function summarizeStoryAssets(assets: WritingBook["storyAssets"]): JsonObject {
+  return {
+    premise: Boolean(assets.premise),
+    worldview: assets.worldview.length,
+    characters: assets.characters.length,
+    relationships: assets.relationships.length,
+    timeline: assets.timeline.length,
+    foreshadows: assets.foreshadows.length,
+    rules: assets.rules.length,
+    memoryNotes: assets.memoryNotes.length,
+    styleProfile: Boolean(
+      assets.styleProfile.voice ||
+        assets.styleProfile.pacing ||
+        assets.styleProfile.genreSignals.length ||
+        assets.styleProfile.taboos.length
+    )
   };
 }
 
@@ -264,7 +760,7 @@ function getApplicationToolDefinitions(server: McpServerConfig): McpToolDefiniti
     createToolDefinition(server, {
       name: "writing_create_book",
       description:
-        "在应用广场「墨笔生花」中新建一本小说并写入本地书稿目录。仅当用户明确要求新增、创建、增加一本小说/书稿时使用；普通创意讨论不要调用。默认 dryRun=false 会直接保存。",
+        "在应用广场「墨笔生花」中新建一本小说并写入本地书稿目录。可一次性写入简介、大纲、分卷/章节目录、补充设定区块和结构化故事资产。仅当用户明确要求新增、创建、增加一本小说/书稿或把企划写入墨笔生花时使用；普通创意讨论不要调用。默认 dryRun=false 会直接保存。",
       inputSchema: {
         type: "object",
         required: ["title"],
@@ -305,6 +801,8 @@ function getApplicationToolDefinitions(server: McpServerConfig): McpToolDefiniti
             }
           },
           premise: { type: "string", description: "可选，故事命题，会写入 storyAssets.premise" },
+          extraIntroSections: EXTRA_INTRO_SECTIONS_SCHEMA,
+          storyAssets: STORY_ASSETS_SCHEMA,
           dryRun: { type: "boolean", description: "可选，默认 false。true 只预览，false 直接写入本地书稿" }
         },
         additionalProperties: false
@@ -393,6 +891,24 @@ function getApplicationToolDefinitions(server: McpServerConfig): McpToolDefiniti
           seriesPlan: { type: "string", description: "可选，旧版 seriesPlan 兼容别名；提供后会合并写入大纲指导" },
           genre: { type: "string", description: "可选，新类型" },
           status: { type: "string", description: "可选，新书籍状态" },
+          dryRun: { type: "boolean", description: "可选，默认 true。true 只预览，false 写回本地书稿" },
+          expectedBookUpdatedAt: { type: "string", description: "可选，乐观锁：若书籍更新时间不一致则拒绝写回" }
+        },
+        additionalProperties: false
+      }
+    }),
+    createToolDefinition(server, {
+      name: "writing_update_story_assets",
+      description:
+        "预览或写回「墨笔生花」小说的结构化故事资产和补充设定区块。适合把世界观、人物、关系、武道/能力体系、势力设定、伏笔、时间线、分卷规划等长期资产写入已有小说。默认 dryRun=true；用户明确要求保存/写入/直接修改时设置 dryRun=false。",
+      inputSchema: {
+        type: "object",
+        required: ["bookIdOrTitle"],
+        properties: {
+          bookIdOrTitle: { type: "string", description: "小说 id、完整书名或可唯一匹配的书名片段" },
+          mode: { type: "string", enum: ["merge", "replace"], description: "可选，merge 合并同名资产，replace 替换全部故事资产与补充区块；默认 merge" },
+          storyAssets: STORY_ASSETS_SCHEMA,
+          extraIntroSections: EXTRA_INTRO_SECTIONS_SCHEMA,
           dryRun: { type: "boolean", description: "可选，默认 true。true 只预览，false 写回本地书稿" },
           expectedBookUpdatedAt: { type: "string", description: "可选，乐观锁：若书籍更新时间不一致则拒绝写回" }
         },
@@ -496,6 +1012,9 @@ async function handleWritingCreateBook(args: JsonObject) {
   const timestamp = new Date().toISOString();
   const bookId = createLocalId("writing_book");
   const premise = asString(args.premise) || asString(args.intro);
+  const emptyStoryAssets = createEmptyWritingStoryAssets(bookId, premise, timestamp);
+  const incomingStoryAssets = normalizeWritingStoryAssetsInput(args.storyAssets, bookId, timestamp);
+  const storyAssets = mergeWritingStoryAssets(emptyStoryAssets, incomingStoryAssets, "merge", timestamp);
   const book: WritingBook = {
     id: bookId,
     title,
@@ -508,9 +1027,9 @@ async function handleWritingCreateBook(args: JsonObject) {
     intro: String(args.intro ?? ""),
     outlineGuide: String(args.outlineGuide ?? ""),
     seriesPlan: "",
-    extraIntroSections: [],
+    extraIntroSections: normalizeExtraIntroSections(args.extraIntroSections, bookId, timestamp),
     parts: normalizeInitialBookParts(args, bookId),
-    storyAssets: createEmptyWritingStoryAssets(bookId, premise, timestamp),
+    storyAssets,
     chapters: normalizeInitialBookChapters(args, bookId, timestamp)
   };
 
@@ -520,6 +1039,9 @@ async function handleWritingCreateBook(args: JsonObject) {
 类型：${book.genre}
 篇幅：${book.length}
 初始章节：${book.chapters.length} 章
+故事资产：${Object.entries(summarizeStoryAssets(book.storyAssets))
+        .map(([key, value]) => `${key}=${value}`)
+        .join("，")}
 
 如需保存，请在用户确认后再次调用 writing_create_book 并设置 dryRun=false。`,
       {
@@ -531,6 +1053,7 @@ async function handleWritingCreateBook(args: JsonObject) {
           ...summarizeBook(book, true),
           intro: truncateText(book.intro, MAX_TEXT_CHARS),
           outlineGuide: truncateText(book.outlineGuide, MAX_TEXT_CHARS),
+          extraIntroSections: book.extraIntroSections,
           storyAssets: book.storyAssets
         }
       }
@@ -545,6 +1068,10 @@ async function handleWritingCreateBook(args: JsonObject) {
 id=${savedBook.id}
 类型=${savedBook.genre}
 初始章节=${savedBook.chapters.length} 章
+补充设定区块=${savedBook.extraIntroSections.length} 个
+故事资产=${Object.entries(summarizeStoryAssets(savedBook.storyAssets))
+      .map(([key, value]) => `${key}=${value}`)
+      .join("，")}
 更新时间=${savedBook.updatedAt}`,
     {
       applicationId: "writing",
@@ -556,6 +1083,7 @@ id=${savedBook.id}
         ...summarizeBook(savedBook, true),
         intro: truncateText(savedBook.intro, MAX_TEXT_CHARS),
         outlineGuide: truncateText(getUnifiedWritingOutlineGuide(savedBook), MAX_TEXT_CHARS),
+        extraIntroSections: savedBook.extraIntroSections,
         storyAssets: savedBook.storyAssets
       }
     }
@@ -718,6 +1246,18 @@ function buildFieldPreview(before: unknown, after: unknown): JsonObject {
     after: truncateText(after, MAX_PREVIEW_CHARS),
     beforeLength: String(before ?? "").length,
     afterLength: String(after ?? "").length
+  };
+}
+
+function buildStructuredFieldPreview(before: unknown, after: unknown): JsonObject {
+  const beforeText = JSON.stringify(before ?? null, null, 2);
+  const afterText = JSON.stringify(after ?? null, null, 2);
+
+  return {
+    before: truncateText(beforeText, MAX_PREVIEW_CHARS),
+    after: truncateText(afterText, MAX_PREVIEW_CHARS),
+    beforeLength: beforeText.length,
+    afterLength: afterText.length
   };
 }
 
@@ -900,6 +1440,119 @@ ${formatFieldPreviewText(fields)}
   );
 }
 
+async function handleWritingUpdateStoryAssets(args: JsonObject) {
+  const allBooks = await listWritingBooks();
+  const book = findWritingBook(allBooks, asString(args.bookIdOrTitle));
+  const dryRun = asBoolean(args.dryRun, true);
+  const mode = asString(args.mode) === "replace" ? "replace" : "merge";
+  const timestamp = new Date().toISOString();
+  const incomingStoryAssets = normalizeWritingStoryAssetsInput(args.storyAssets, book.id, timestamp);
+  const incomingExtraIntroSections = normalizeExtraIntroSections(args.extraIntroSections, book.id, timestamp);
+  const hasStoryAssets =
+    incomingStoryAssets.premise ||
+    incomingStoryAssets.worldview.length ||
+    incomingStoryAssets.characters.length ||
+    incomingStoryAssets.relationships.length ||
+    incomingStoryAssets.timeline.length ||
+    incomingStoryAssets.foreshadows.length ||
+    incomingStoryAssets.rules.length ||
+    incomingStoryAssets.memoryNotes.length ||
+    incomingStoryAssets.styleProfile.voice ||
+    incomingStoryAssets.styleProfile.pacing ||
+    incomingStoryAssets.styleProfile.genreSignals.length ||
+    incomingStoryAssets.styleProfile.taboos.length;
+  const hasExtraIntroSections = incomingExtraIntroSections.length > 0;
+
+  if (!hasStoryAssets && !hasExtraIntroSections) {
+    throw new Error("没有提供任何故事资产变更。请至少传入 storyAssets 或 extraIntroSections。");
+  }
+
+  assertExpectedTimestamp("小说", asString(args.expectedBookUpdatedAt), book.updatedAt);
+
+  const nextStoryAssets = hasStoryAssets
+    ? mergeWritingStoryAssets(book.storyAssets, incomingStoryAssets, mode, timestamp)
+    : {
+        ...book.storyAssets,
+        updatedAt: timestamp
+      };
+  const nextExtraIntroSections = hasExtraIntroSections
+    ? mergeExtraIntroSections(book.extraIntroSections ?? [], incomingExtraIntroSections, mode)
+    : book.extraIntroSections ?? [];
+  const nextBook: WritingBook = {
+    ...book,
+    storyAssets: nextStoryAssets,
+    extraIntroSections: nextExtraIntroSections,
+    updatedAt: timestamp
+  };
+  const fields: JsonObject = {};
+
+  if (hasStoryAssets) {
+    fields.storyAssets = buildStructuredFieldPreview(book.storyAssets, nextStoryAssets);
+  }
+
+  if (hasExtraIntroSections) {
+    fields.extraIntroSections = buildStructuredFieldPreview(book.extraIntroSections, nextExtraIntroSections);
+  }
+
+  if (!dryRun) {
+    const savedBooks = await saveWritingBook(nextBook, { mergeChapters: true });
+    const savedBook = savedBooks.find((entry) => entry.id === book.id) ?? nextBook;
+
+    return buildTextResult(
+      `已写回故事资产：${book.title}
+模式：${mode}
+变更字段：${Object.keys(fields).join("、")}
+补充设定区块=${savedBook.extraIntroSections.length} 个
+故事资产=${Object.entries(summarizeStoryAssets(savedBook.storyAssets))
+        .map(([key, value]) => `${key}=${value}`)
+        .join("，")}
+更新时间：${savedBook.updatedAt}`,
+      {
+        applicationId: "writing",
+        resourceType: "storyAssets",
+        applied: true,
+        dryRun: false,
+        mode,
+        bookId: book.id,
+        fields,
+        savedBook: {
+          ...summarizeBook(savedBook),
+          extraIntroSections: savedBook.extraIntroSections,
+          storyAssets: savedBook.storyAssets
+        }
+      }
+    );
+  }
+
+  return buildTextResult(
+    `故事资产修改预览（未写回）：${book.title}
+模式：${mode}
+变更字段：${Object.keys(fields).join("、")}
+补充设定区块：${book.extraIntroSections.length} -> ${nextExtraIntroSections.length}
+故事资产：${Object.entries(summarizeStoryAssets(nextStoryAssets))
+      .map(([key, value]) => `${key}=${value}`)
+      .join("，")}
+
+如需保存，请在用户确认后再次调用 writing_update_story_assets 并设置 dryRun=false。`,
+    {
+      applicationId: "writing",
+      resourceType: "storyAssets",
+      applied: false,
+      dryRun: true,
+      mode,
+      bookId: book.id,
+      fields,
+      proposedBook: {
+        id: nextBook.id,
+        title: nextBook.title,
+        updatedAt: nextBook.updatedAt,
+        extraIntroSections: nextExtraIntroSections,
+        storyAssets: nextStoryAssets
+      }
+    }
+  );
+}
+
 export async function callApplicationTool(server: McpServerConfig, request: McpToolCallRequest): Promise<McpToolCallResult> {
   const args = isObject(request.arguments) ? request.arguments : {};
   let result: Omit<McpToolCallResult, "serverId" | "serverName" | "toolName" | "isError">;
@@ -922,6 +1575,9 @@ export async function callApplicationTool(server: McpServerConfig, request: McpT
       break;
     case "writing_update_book_fields":
       result = await handleWritingUpdateBookFields(args);
+      break;
+    case "writing_update_story_assets":
+      result = await handleWritingUpdateStoryAssets(args);
       break;
     default:
       throw new Error(`未知应用工具：${request.toolName}`);

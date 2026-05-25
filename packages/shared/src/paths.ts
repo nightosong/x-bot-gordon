@@ -1,3 +1,4 @@
+import { mkdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -16,20 +17,6 @@ function isPackagedElectronRuntime(): boolean {
   return Boolean(process.versions.electron && !electronProcess.defaultApp && electronProcess.resourcesPath);
 }
 
-function getPackagedUserDataRoot(): string {
-  const appDataName = process.env.GORDON_APP_DATA_NAME?.trim() || "x-bot-gordon";
-
-  if (process.platform === "darwin") {
-    return path.join(os.homedir(), "Library", "Application Support", appDataName);
-  }
-
-  if (process.platform === "win32") {
-    return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), appDataName);
-  }
-
-  return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), appDataName);
-}
-
 export function getProjectRoot(): string {
   const electronProcess = getElectronProcess();
 
@@ -40,6 +27,41 @@ export function getProjectRoot(): string {
   return process.cwd();
 }
 
+export function getGordonHomeDirectoryPath(): string {
+  const configuredHome = process.env.GORDON_HOME?.trim();
+
+  if (configuredHome) {
+    return path.resolve(configuredHome);
+  }
+
+  return path.join(os.homedir(), ".gord");
+}
+
+export function resolveFromGordonHome(...segments: string[]): string {
+  return path.resolve(getGordonHomeDirectoryPath(), ...segments);
+}
+
+export async function ensureGordonHomeDirectory(): Promise<string> {
+  const homeDirectory = getGordonHomeDirectoryPath();
+  const directories = [
+    homeDirectory,
+    resolveFromGordonHome("config"),
+    resolveFromGordonHome("data"),
+    resolveFromGordonHome("data", "memory"),
+    resolveFromGordonHome("data", "workbench"),
+    resolveFromGordonHome("skills"),
+    resolveFromGordonHome("prompts"),
+    resolveFromGordonHome("logs"),
+    resolveFromGordonHome("cache")
+  ];
+
+  for (const directory of directories) {
+    await mkdir(directory, { recursive: true });
+  }
+
+  return homeDirectory;
+}
+
 export function getDataRoot(): string {
   const configuredDataRoot = process.env.GORDON_DATA_ROOT?.trim();
 
@@ -47,11 +69,7 @@ export function getDataRoot(): string {
     return path.resolve(configuredDataRoot);
   }
 
-  if (isPackagedElectronRuntime()) {
-    return path.join(getPackagedUserDataRoot(), "data");
-  }
-
-  return path.resolve(process.cwd(), "data");
+  return resolveFromGordonHome("data");
 }
 
 export function resolveFromRoot(...segments: string[]): string {

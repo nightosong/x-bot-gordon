@@ -138,7 +138,7 @@ export function getBuiltinSkillDefinitions(): SkillDefinition[] {
     {
       id: BUILTIN_SKILL_CREATOR_SKILL_ID,
       name: "skill-creator",
-      description: "创建、更新和校验 Gordon 本地 Skill 资产，并把稳定工作流沉淀到 skills/ 目录。",
+      description: "创建、更新和校验 Gordon 本地 Skill 资产，并把稳定工作流沉淀到 ~/.gord/skills 目录。",
       tags: [],
       kind: "prompt",
       promptTemplate: BUILTIN_SKILL_CREATOR_SKILL_PROMPT,

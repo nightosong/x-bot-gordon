@@ -207,7 +207,11 @@ export function filterWeeklyTasksToUpdatedBranches(tasks = [], todayKey = getLoc
     const title = String(task?.title ?? "").trim();
     const isUpdatedLeaf = !children.length && Boolean(title) && getLocalDateKey(task?.updatedAt) === todayKey;
 
-    if (!isUpdatedLeaf && !filteredChildren.length) {
+    if (!children.length && !isUpdatedLeaf) {
+      continue;
+    }
+
+    if (children.length && !filteredChildren.length) {
       continue;
     }
 
@@ -266,12 +270,15 @@ export function serializeDailyReportTaskLines(tasks = [], depth = 1, todayKey = 
 
   for (const task of Array.isArray(tasks) ? tasks : []) {
     const indent = "    ".repeat(depth);
-    const statusLabel = getWeeklyProgressStatusMeta(task?.status).label;
     const title = String(task?.title ?? "").trim() || "未命名任务";
-
-    lines.push(`${indent}* ${title}（${statusLabel}）`);
-
     const children = getWeeklyTaskChildren(task);
+
+    if (children.length) {
+      lines.push(`${indent}* ${title}`);
+    } else {
+      const statusLabel = getWeeklyProgressStatusMeta(task?.status).label;
+      lines.push(`${indent}* ${title}（${statusLabel}）`);
+    }
 
     if (children.length) {
       lines.push(...serializeDailyReportTaskLines(children, depth + 1, todayKey));

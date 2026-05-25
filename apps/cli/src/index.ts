@@ -1,5 +1,6 @@
 import { appendMemoryEntry } from "../../../packages/memory/src/index.js";
 import { buildWorkbenchSnapshot } from "../../../packages/core/src/index.js";
+import { ensureGordonHomeDirectory } from "../../../packages/shared/src/index.js";
 import type { MemoryEntry, MemoryScope } from "../../../packages/shared/src/index.js";
 
 function printHelp(): void {
@@ -49,6 +50,8 @@ function printMemoryEntries(entries: MemoryEntry[]): void {
 }
 
 async function run(): Promise<void> {
+  await ensureGordonHomeDirectory();
+
   const rawArgs = process.argv.slice(2).filter((arg) => arg !== "--");
   const [command = "help", subcommand, ...restArgs] = rawArgs;
 

@@ -11,7 +11,7 @@ const OPENAI_COMPATIBLE_PROVIDERS = new Set([
   "grok"
 ]);
 const NON_STREAM_ONLY_PROFILE_IDS = new Set<string>();
-const DEFAULT_MAX_OUTPUT_TOKENS = 64 * 1024;
+const DEFAULT_MAX_OUTPUT_TOKENS = 32 * 1024;
 
 interface ModelTextInvokeOptions {
   signal?: AbortSignal;

@@ -145,6 +145,98 @@ function getCommandArtifactResolvedCallArguments(call) {
   return requestBody ?? call?.arguments;
 }
 
+function shouldForceCommandApplicationTools(input, applicationContext) {
+  const text = `${input ?? ""}\n${applicationContext ?? ""}`;
+  const mentionsApplication = /墨笔生花|writing|小说|书稿|书籍|当前小说|当前章节|应用广场/u.test(text);
+  const wantsMutation = /创建|新建|新增|保存|写入|写回|导入|生成并写入|修改|更新|补充|整理到|落到|添加到|建立/u.test(text);
+
+  return mentionsApplication && wantsMutation;
+}
+
+function shouldAutoEnableCommandTools(input, attachments = []) {
+  const text = String(input ?? "");
+
+  if (Array.isArray(attachments) && attachments.length) {
+    return true;
+  }
+
+  return (
+    /(https?:\/\/[^\s)\]}>"'，。；、]+)|\bwww\.[^\s)\]}>"'，。；、]+/iu.test(text) ||
+    /搜索|上网|联网|查一下|查找|调研|资料|来源|引用|官方文档|最新|现在|今天|新闻|价格|版本|GitHub|开源|仓库|repo|repository/iu.test(text) ||
+    /文件|目录|仓库|代码|README|package\.json|tsconfig|\.ts\b|\.js\b|\.vue\b|\.json\b|检查|读取|打开|搜索|替换|修改|更新|新增|创建|删除|移动|重命名|diff|对比|运行|测试|build|lint|打包/iu.test(text) ||
+    /图片|图像|海报|图标|logo|生成图|生图|音乐|歌曲|配乐|视频|生成视频|生成音乐/iu.test(text) ||
+    /点击|输入|截图|窗口|浏览器|桌面|打开应用|菜单|按钮|复制|粘贴|飞书|Chrome|Safari|Electron/iu.test(text)
+  );
+}
+
+function collapseRepeatedCommandText(text) {
+  const source = String(text ?? "");
+
+  if (!source.trim()) {
+    return source;
+  }
+
+  const paragraphs = source.split(/\n{2,}/u);
+  const collapsedParagraphs = [];
+
+  for (const paragraph of paragraphs) {
+    const normalizedParagraph = paragraph.replace(/\s+/gu, " ").trim();
+    const previous = collapsedParagraphs[collapsedParagraphs.length - 1] ?? "";
+
+    if (normalizedParagraph.length >= 80 && previous.replace(/\s+/gu, " ").trim() === normalizedParagraph) {
+      continue;
+    }
+
+    collapsedParagraphs.push(paragraph);
+  }
+
+  const paragraphCollapsed = collapsedParagraphs.join("\n\n");
+  const trimmed = paragraphCollapsed.trim();
+  const collapsedLines = paragraphCollapsed.split(/\n/u);
+
+  for (let size = Math.floor(collapsedLines.length / 2); size >= 2; size -= 1) {
+    const output = [];
+    let index = 0;
+
+    while (index < collapsedLines.length) {
+      const block = collapsedLines.slice(index, index + size).join("\n").trim();
+      const nextBlock = collapsedLines.slice(index + size, index + size * 2).join("\n").trim();
+
+      if (block.length >= 120 && block === nextBlock) {
+        output.push(...collapsedLines.slice(index, index + size));
+        index += size * 2;
+
+        while (collapsedLines.slice(index, index + size).join("\n").trim() === block) {
+          index += size;
+        }
+
+        continue;
+      }
+
+      output.push(collapsedLines[index]);
+      index += 1;
+    }
+
+    if (output.length < collapsedLines.length) {
+      return output.join("\n").trim();
+    }
+  }
+
+  for (let repeat = 2; repeat <= 4; repeat += 1) {
+    if (trimmed.length < repeat * 120 || trimmed.length % repeat !== 0) {
+      continue;
+    }
+
+    const unit = trimmed.slice(0, trimmed.length / repeat);
+
+    if (unit.trim().length >= 120 && unit.repeat(repeat) === trimmed) {
+      return unit.trim();
+    }
+  }
+
+  return paragraphCollapsed;
+}
+
 export function createCommandWorkshopActions({
   activeFeature,
   commandWorkshopViewRef,
@@ -553,6 +645,11 @@ export function createCommandWorkshopActions({
 
     const applicationContext = buildCommandApplicationContext(ui, workbench);
     const agentUserInput = buildCommandUserInputForAgent(userInput, attachments, applicationContext);
+    const forceApplicationTools = shouldForceCommandApplicationTools(userInput, applicationContext);
+    const autoEnableTools = shouldAutoEnableCommandTools(userInput, attachments);
+    const effectiveAutoSelectMcp = ui.command.form.autoSelectMcp || forceApplicationTools || autoEnableTools;
+    const effectiveMcpServerId = forceApplicationTools && !ui.command.form.mcpToolName ? "" : ui.command.form.mcpServerId;
+    const effectiveMcpToolName = forceApplicationTools && !ui.command.form.mcpToolName ? "" : ui.command.form.mcpToolName;
     let mcpArguments = undefined;
 
     if (!agent) {
@@ -565,17 +662,17 @@ export function createCommandWorkshopActions({
       return;
     }
 
-    if (ui.command.form.mcpToolName && !ui.command.form.mcpServerId) {
+    if (effectiveMcpToolName && !effectiveMcpServerId) {
       setStatus("如果要指定工具，请先选择工具服务。", "warning");
       return;
     }
 
-    if (ui.command.form.mcpServerId && !ui.command.form.mcpToolName && !ui.command.form.autoSelectMcp) {
+    if (effectiveMcpServerId && !effectiveMcpToolName && !effectiveAutoSelectMcp) {
       setStatus("已选择工具服务，请再选择具体工具，或开启自动工具。", "warning");
       return;
     }
 
-    if (ui.command.form.mcpServerId && ui.command.form.mcpToolName) {
+    if (effectiveMcpServerId && effectiveMcpToolName) {
       try {
         mcpArguments = JSON.parse(ui.command.form.mcpArgumentsText);
       } catch (error) {
@@ -608,9 +705,9 @@ export function createCommandWorkshopActions({
       summary: summarizeCommandWorkshopContent(titleSource),
       agentProfileId: ui.command.form.agentProfileId,
       skillId: ui.command.form.skillId || null,
-      autoSelectMcp: ui.command.form.autoSelectMcp,
-      mcpServerId: ui.command.form.mcpServerId || null,
-      mcpToolName: ui.command.form.mcpToolName || null,
+      autoSelectMcp: effectiveAutoSelectMcp,
+      mcpServerId: effectiveMcpServerId || null,
+      mcpToolName: effectiveMcpToolName || null,
       mcpArgumentsText: ui.command.form.mcpArgumentsText,
       messages: [...baseMessages, userMessage],
       createdAt: activeSession?.createdAt ?? startedAt,
@@ -628,13 +725,13 @@ export function createCommandWorkshopActions({
       statusText: `命令工坊正在运行 Agent「${agent.name}」...`,
       text: "",
       updatedAt: startedAt,
-      artifact: buildCommandWorkshopLiveArtifact({
-        profileLabel: "",
-        model: "",
-        skillName: ui.command.form.skillId ? getSkillById(ui.command.form.skillId)?.name ?? null : null,
-        autoSelectedMcp: false,
-        mcpServerName: ui.command.form.mcpServerId ? getMcpServerById(ui.command.form.mcpServerId)?.name ?? null : null,
-        mcpToolName: ui.command.form.mcpToolName || null,
+        artifact: buildCommandWorkshopLiveArtifact({
+          profileLabel: "",
+          model: "",
+          skillName: ui.command.form.skillId ? getSkillById(ui.command.form.skillId)?.name ?? null : null,
+          autoSelectedMcp: false,
+          mcpServerName: effectiveMcpServerId ? getMcpServerById(effectiveMcpServerId)?.name ?? null : null,
+          mcpToolName: effectiveMcpToolName || null,
         mcpResultText: "",
         mcpCalls: [],
         stopReason: "",
@@ -648,35 +745,49 @@ export function createCommandWorkshopActions({
     scrollCommandToBottom();
 
     try {
-      setStatus(`命令工坊正在运行 Agent「${agent.name}」...`, "neutral");
+      const runStatusText = forceApplicationTools
+        ? "检测到墨笔生花写入任务，已自动启用应用工具。"
+        : autoEnableTools && !ui.command.form.autoSelectMcp
+          ? "检测到需要工具处理的任务，已自动启用工具编排。"
+          : `命令工坊正在运行 Agent「${agent.name}」...`;
+
+      setStatus(
+        runStatusText,
+        "neutral"
+      );
       const runRequest = toPlainIpcData({
         agentProfileId: agent.id,
         userInput: agentUserInput,
         conversationMessages: buildConversationMessagesForAgentRun(baseMessages),
         progressEventId,
         ...(ui.command.form.skillId ? { skillId: ui.command.form.skillId } : {}),
-        ...(ui.command.form.autoSelectMcp ? { autoSelectMcp: true } : {}),
-        ...(ui.command.form.mcpServerId ? { mcpServerId: ui.command.form.mcpServerId } : {}),
-        ...(ui.command.form.mcpServerId && ui.command.form.mcpToolName
+        ...(effectiveAutoSelectMcp ? { autoSelectMcp: true } : {}),
+        ...(effectiveMcpServerId ? { mcpServerId: effectiveMcpServerId } : {}),
+        ...(effectiveMcpServerId && effectiveMcpToolName
           ? {
-              mcpToolName: ui.command.form.mcpToolName,
+              mcpToolName: effectiveMcpToolName,
               mcpArguments
             }
           : {})
       });
       const result = await desktopApi.runAgent(runRequest);
+      const assistantContent = collapseRepeatedCommandText(result.text);
+      const normalizedResult = {
+        ...result,
+        text: assistantContent
+      };
 
       const assistantMessage = {
         id: `command_message_${Date.now()}_assistant`,
         role: "assistant",
-        content: result.text,
+        content: assistantContent,
         state: "completed",
         createdAt: result.createdAt,
-        artifact: buildCommandWorkshopArtifact(result)
+        artifact: buildCommandWorkshopArtifact(normalizedResult)
       };
       const completedSession = {
         ...pendingSession,
-        summary: summarizeCommandWorkshopContent(result.text),
+        summary: summarizeCommandWorkshopContent(assistantContent),
         messages: [...pendingSession.messages, assistantMessage],
         updatedAt: result.updatedAt
       };
@@ -684,7 +795,7 @@ export function createCommandWorkshopActions({
 
       workbench.commandSessions = sortCommandWorkshopSessions(sessions.map((entry) => normalizeCommandWorkshopSession(entry)));
       ui.command.activeSessionId = completedSession.id;
-      workbench.agentRunLogs = [result, ...workbench.agentRunLogs.filter((log) => log.id !== result.id)];
+      workbench.agentRunLogs = [normalizedResult, ...workbench.agentRunLogs.filter((log) => log.id !== result.id)];
       if (
         typeof refreshWorkbenchSnapshot === "function" &&
         result.mcpCalls?.some(
@@ -709,7 +820,7 @@ export function createCommandWorkshopActions({
       console.error("Failed to run command workshop session", error);
       const failedAt = new Date().toISOString();
       const wasCancelled = ui.command.cancelRequested || isAbortError(error);
-      const streamedText = String(ui.command.liveProgress?.text ?? "").trim();
+      const streamedText = collapseRepeatedCommandText(ui.command.liveProgress?.text ?? "").trim();
       const stoppedContent = streamedText ? `${streamedText}\n\n（已停止）` : "本轮运行已停止。";
       const assistantMessage = {
         id: `command_message_${Date.now()}_${wasCancelled ? "stopped" : "error"}`,

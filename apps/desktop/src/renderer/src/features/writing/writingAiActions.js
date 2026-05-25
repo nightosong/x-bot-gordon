@@ -24,7 +24,7 @@ import {
 } from "./writingPromptBuilder.js";
 
 const WRITING_REVIEW_ONLY_TASK_IDS = new Set(["openingAudit", "outlineAudit", "openingReview", "review"]);
-const WRITING_INTRO_PLANNING_TASK_IDS = new Set(["storySetup", "world", "character", "storyBible"]);
+const WRITING_INTRO_PLANNING_TASK_IDS = new Set(["storySetup", "storyRefine", "world", "character", "storyBible"]);
 const WRITING_INTRO_SUMMARY_TASK_IDS = new Set(["premise"]);
 const WRITING_CHAPTER_SUMMARY_TASK_IDS = new Set(["chapterPlan"]);
 

@@ -3,7 +3,7 @@ import { access, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/p
 import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 
-import { resolveFromRoot } from "../../shared/src/index.js";
+import { resolveFromGordonHome, resolveFromRoot } from "../../shared/src/index.js";
 import type {
   AgentRunLog,
   AgentProfile,
@@ -147,8 +147,8 @@ function getSkillDefinitionsFilePath(): string {
   return resolveFromRoot("data", "workbench", "skills.json");
 }
 
-function getSkillsRootDirectoryPath(): string {
-  return resolveFromRoot("skills");
+function getUserSkillsRootDirectoryPath(): string {
+  return resolveFromGordonHome("skills");
 }
 
 const SKILL_MARKDOWN_FILE_NAME = "SKILL.md";
@@ -238,7 +238,7 @@ async function pathExists(targetPath: string): Promise<boolean> {
 }
 
 function buildSkillLocalDirectory(folderName: string): string {
-  return path.join(getSkillsRootDirectoryPath(), folderName);
+  return path.join(getUserSkillsRootDirectoryPath(), folderName);
 }
 
 function escapeFrontmatterValue(value: string): string {
@@ -388,7 +388,7 @@ function normalizeSkillLocalPathKey(localPath: string | null | undefined): strin
 }
 
 function getSkillRelativeRootPath(localDirectory: string): string {
-  const relativePath = path.relative(getSkillsRootDirectoryPath(), localDirectory).replace(/\\/g, "/");
+  const relativePath = path.relative(getUserSkillsRootDirectoryPath(), localDirectory).replace(/\\/g, "/");
 
   if (!relativePath || relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
     throw new Error("检测到非法 Skill 本地目录");
@@ -454,7 +454,7 @@ async function buildDiscoveredLocalSkillDefinition(localDirectory: string, skill
 }
 
 async function discoverLocalSkillDefinitions(): Promise<SkillDefinition[]> {
-  const skillsRootDirectory = getSkillsRootDirectoryPath();
+  const skillsRootDirectory = getUserSkillsRootDirectoryPath();
   const discoveredSkills: SkillDefinition[] = [];
 
   const walkDirectory = async (directoryPath: string): Promise<void> => {
@@ -3859,7 +3859,7 @@ export async function deleteSkillDefinition(skillId: string): Promise<SkillDefin
 
   const localPath = target?.source?.localPath?.trim();
 
-  if (localPath && isPathInsideDirectory(getSkillsRootDirectoryPath(), localPath) && !isBuiltinSkillLocalPath(localPath)) {
+  if (localPath && isPathInsideDirectory(getUserSkillsRootDirectoryPath(), localPath) && !isBuiltinSkillLocalPath(localPath)) {
     await rm(localPath, { recursive: true, force: true });
   }
 

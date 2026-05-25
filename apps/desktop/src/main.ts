@@ -70,6 +70,7 @@ import type {
   WritingBookExportFormat,
   WritingBookExportRequest
 } from "../../../packages/shared/src/index.js";
+import { ensureGordonHomeDirectory } from "../../../packages/shared/src/index.js";
 import { readCommandWorkshopAttachment } from "./attachment-reader.js";
 import { generateDailyProgressReport, generateWeeklyProgressReport, invokeActiveModel, rewriteWeeklyProgressItem } from "./ai.js";
 import { queryModelBalance } from "./model-balance.js";
@@ -1777,6 +1778,8 @@ function startModelBalanceUsagePolling(): void {
 }
 
 app.whenReady().then(async () => {
+  await ensureGordonHomeDirectory();
+
   if (process.platform === "darwin" && app.dock) {
     const dockIcon = nativeImage.createFromPath(appIconPath);
 

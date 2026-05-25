@@ -28,20 +28,30 @@ export const WRITING_LENGTH_PROFILES = {
 export const WRITING_AI_TASKS = {
   intro: [
     {
-      id: "premise",
-      label: "生成书籍介绍",
-      goal: "把核心命题、主角处境、主要矛盾和读者钩子写成可直接使用的简介。",
-      target: "写入：简短介绍"
+      id: "storySetup",
+      label: "搭建故事设定",
+      stage: "起草",
+      goal: "从一句想法或零散要求搭建世界、主角、主线阶段、伏笔和风格边界。",
+      target: "写入：大纲指导"
     },
     {
-      id: "storySetup",
-      label: "完善故事设定",
-      goal: "把世界规则、人物关系、主线阶段、伏笔和风格边界整理成目录可用的创作规划。",
+      id: "storyRefine",
+      label: "打磨故事设定",
+      stage: "迭代",
+      goal: "基于已有设定做补强、纠偏、重排和取舍，适合多轮微调。",
       target: "写入：大纲指导"
+    },
+    {
+      id: "premise",
+      label: "生成书籍介绍",
+      stage: "成稿",
+      goal: "在设定稳定后，把核心命题、主角处境、主要矛盾和读者钩子包装成简介。",
+      target: "写入：简短介绍"
     },
     {
       id: "openingAudit",
       label: "开篇体检",
+      stage: "审阅",
       goal: "按黄金一章/三章检查主角聚焦、人物数量、群像开局、设定倾倒和追读期待。",
       target: "仅审阅，不自动写入"
     }
@@ -78,7 +88,7 @@ export const WRITING_OUTLINE_REWRITE_PATTERN =
 export const WRITING_OUTLINE_EXPANSION_PATTERN =
   /(扩写|扩充|扩展|拓展|增加到|加到|分为|分成|拆成|每幕|每一幕|每卷|每一卷|几百章|上千章|千章|百章|长篇规划)/;
 
-export const WRITING_DEFAULT_MAX_OUTPUT_TOKENS = 64 * 1024;
+export const WRITING_DEFAULT_MAX_OUTPUT_TOKENS = 32 * 1024;
 export const WRITING_LONG_OUTLINE_BATCH_SIZE = 20;
 export const WRITING_LONG_OUTLINE_MASTER_MAX_TOKENS = WRITING_DEFAULT_MAX_OUTPUT_TOKENS;
 export const WRITING_LONG_OUTLINE_BATCH_MAX_TOKENS = WRITING_DEFAULT_MAX_OUTPUT_TOKENS;

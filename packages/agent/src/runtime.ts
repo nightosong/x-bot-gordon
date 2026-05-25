@@ -32,6 +32,7 @@ import { callToolOnMcpServer, listToolsFromMcpServer } from "./mcp.js";
 const MAX_AUTO_MCP_ROUNDS = 6;
 const MAX_CONSECUTIVE_AUTO_MCP_FAILURES = 2;
 const MAX_MCP_TOOL_ATTEMPTS = 3;
+const AGENT_FINAL_MAX_OUTPUT_TOKENS = 4096;
 const MCP_RETRY_BASE_DELAY_MS = 400;
 const MAX_MCP_ARGUMENT_REPAIRS = 1;
 const MAX_MCP_DISPLAY_ARGUMENT_STRING_LENGTH = 320;
@@ -76,6 +77,12 @@ interface McpToolSelectionPlan {
   toolName: string | null;
   arguments: Record<string, unknown>;
   reason: string;
+}
+
+interface ToolRequirementHint {
+  required: boolean;
+  reason: string;
+  preferredServerId: string | null;
 }
 
 interface McpArgumentsRepairPlan {
@@ -278,7 +285,7 @@ function buildToolScopeText(authorizedServers: McpServerConfig[]): string {
 
   if (localTools.length) {
     sections.push(
-      `本地工具：${localTools.map((server) => server.name).join("、")}。这是 Gordon 内置能力通道，不代表用户已连接外部 MCP。Search Tools 用于高质量联网搜索、自动读取来源、GitHub 仓库搜索和证据包研究，遇到最新事实、资料调研、产品/技术对比或需要引用来源的问题应优先使用 Search Tools 的 web_research，遇到开源项目查找应优先使用 github_search_repositories；Application Tools 用于按应用语义读取、检索、预览和写回应用广场资产；Gordon Tools 会按能力拓展 TOOL 配置暴露 image_gen 等内置工具；Computer Use 会在首次读取或控制桌面前申请本轮授权。`
+      `本地工具：${localTools.map((server) => server.name).join("、")}。这是 Gordon 内置能力通道，不代表用户已连接外部 MCP。Workspace Tools 用于文件读写、路径检查、工作区搜索、网页读取、文件对比和受限命令诊断；Search Tools 用于高质量联网搜索、自动读取来源、GitHub 仓库搜索和证据包研究，遇到最新事实、资料调研、产品/技术对比或需要引用来源的问题应优先使用 Search Tools 的 web_research，遇到开源项目查找应优先使用 github_search_repositories；Application Tools 用于按应用语义读取、检索、预览和写回应用广场资产；Gordon Tools 会按能力拓展 TOOL 配置暴露 image_gen 等内置生成工具；Computer Use 会在首次读取或控制桌面前申请本轮授权。`
     );
   }
 
@@ -288,9 +295,105 @@ function buildToolScopeText(authorizedServers: McpServerConfig[]): string {
     sections.push("当前没有启用外部 MCP Server。");
   }
 
-  sections.push("是否调用工具由任务需要决定；能直接回答时直接回答。");
+  sections.push(
+    "工具选择原则：纯解释或闲聊可直接回答；用户要求读取/检查/搜索/调研/引用来源/打开页面/处理 URL/修改文件/创建资产/写入应用/生成媒体/操作桌面时，应调用合适工具并基于工具结果继续。没有工具成功结果前，不要声称本地文件、应用资产、外部消息或生成产物已经完成。"
+  );
 
   return sections.join("\n");
+}
+
+function isApplicationAssetMutationTask(input: string): boolean {
+  return /墨笔生花|writing|小说|书稿|书籍|当前小说|当前章节|应用广场/u.test(input) &&
+    /创建|新建|新增|保存|写入|写回|导入|生成并写入|修改|更新|补充|整理到|落到|添加到|建立/u.test(input);
+}
+
+function inferToolRequirementHint(input: string, authorizedServers: McpServerConfig[]): ToolRequirementHint {
+  const text = String(input ?? "");
+  const hasServer = (serverId: string): boolean => authorizedServers.some((server) => server.id === serverId);
+
+  if (isApplicationAssetMutationTask(text) && hasServer(BUILTIN_APPLICATION_TOOLS_MCP_ID)) {
+    return {
+      required: true,
+      preferredServerId: BUILTIN_APPLICATION_TOOLS_MCP_ID,
+      reason: "用户要求创建、保存、写入或更新应用广场资产，必须通过 Application Tools 完成"
+    };
+  }
+
+  if (
+    /(https?:\/\/[^\s)\]}>"'，。；、]+)|\bwww\.[^\s)\]}>"'，。；、]+/iu.test(text) &&
+    (hasServer(BUILTIN_SEARCH_TOOLS_MCP_ID) || hasServer(BUILTIN_WORKSPACE_MCP_ID))
+  ) {
+    return {
+      required: true,
+      preferredServerId: hasServer(BUILTIN_SEARCH_TOOLS_MCP_ID) ? BUILTIN_SEARCH_TOOLS_MCP_ID : BUILTIN_WORKSPACE_MCP_ID,
+      reason: "用户提供了 URL 或具体网页，需要先读取页面或执行联网研究"
+    };
+  }
+
+  if (
+    /搜索|上网|联网|查一下|查找|调研|资料|来源|引用|官方文档|最新|现在|今天|新闻|价格|版本|GitHub|开源|仓库|repo|repository/iu.test(text) &&
+    hasServer(BUILTIN_SEARCH_TOOLS_MCP_ID)
+  ) {
+    return {
+      required: true,
+      preferredServerId: BUILTIN_SEARCH_TOOLS_MCP_ID,
+      reason: "用户要求搜索、调研、最新事实、官方文档、来源证据或开源仓库信息"
+    };
+  }
+
+  if (
+    /文件|目录|仓库|代码|README|package\.json|tsconfig|\.ts\b|\.js\b|\.vue\b|\.json\b|检查|读取|打开|搜索|替换|修改|更新|新增|创建|删除|移动|重命名|diff|对比|运行|测试|build|lint|打包/iu.test(text) &&
+    hasServer(BUILTIN_WORKSPACE_MCP_ID)
+  ) {
+    return {
+      required: true,
+      preferredServerId: BUILTIN_WORKSPACE_MCP_ID,
+      reason: "用户任务涉及本地仓库、文件、代码、检查或命令诊断"
+    };
+  }
+
+  if (
+    /图片|图像|海报|图标|logo|生成图|生图|音乐|歌曲|配乐|视频|生成视频|生成音乐/iu.test(text) &&
+    hasServer(BUILTIN_GORDON_TOOLS_MCP_ID)
+  ) {
+    return {
+      required: true,
+      preferredServerId: BUILTIN_GORDON_TOOLS_MCP_ID,
+      reason: "用户任务涉及内置媒体生成能力"
+    };
+  }
+
+  if (
+    /点击|输入|截图|窗口|浏览器|桌面|打开应用|菜单|按钮|复制|粘贴|飞书|Chrome|Safari|Electron/iu.test(text) &&
+    hasServer(BUILTIN_COMPUTER_USE_MCP_ID)
+  ) {
+    return {
+      required: true,
+      preferredServerId: BUILTIN_COMPUTER_USE_MCP_ID,
+      reason: "用户任务涉及桌面界面读取或操作"
+    };
+  }
+
+  return {
+    required: false,
+    preferredServerId: null,
+    reason: "未检测到必须调用工具的强信号"
+  };
+}
+
+function getApplicationToolServer(authorizedServers: McpServerConfig[]): McpServerConfig | null {
+  return authorizedServers.find((server) => server.id === BUILTIN_APPLICATION_TOOLS_MCP_ID) ?? null;
+}
+
+function getPreferredToolServer(
+  authorizedServers: McpServerConfig[],
+  preferredServerId: string | null
+): McpServerConfig | null {
+  if (!preferredServerId) {
+    return null;
+  }
+
+  return authorizedServers.find((server) => server.id === preferredServerId) ?? null;
 }
 
 function resolveMcpSelection(
@@ -1026,6 +1129,7 @@ async function planMcpToolSelection(
   candidateTools: McpToolDefinition[],
   mcpCalls: AgentMcpCallRecord[],
   iteration: number,
+  toolRequirement: ToolRequirementHint,
   signal?: AbortSignal
 ): Promise<McpToolSelectionPlan> {
   if (!candidateTools.length) {
@@ -1060,10 +1164,16 @@ JSON 结构必须为：
 }
 
 约束：
-- 只有当调用工具能明显提升结果质量时才调用
+- 纯解释、闲聊、无需当前上下文的常识问题可以不调用工具
+- 如果“工具必要性判断”显示 required=true，除非候选列表确实没有合适工具，否则 shouldCall 必须为 true
+- 用户给出 URL、网页、文章、官方文档或指定站点时，必须选择能读取网页或研究来源的工具，不能只基于 URL 文本猜测
 - 用户询问最新事实、联网资料、新闻、产品/技术调研、资料对比、官方文档或需要引用来源时，优先选择 Search Tools / web_research；如果用户提到官方站、产品名或文档域名，尽量把官方域名放入 preferredDomains 或 includeDomains；用户要找 GitHub 项目、开源库、参考实现时优先选择 github_search_repositories；只需要少量搜索结果列表时可选择 web_search_v2；Workspace Tools 的 web_search 仅作为基础兜底
 - 用户明确要求新增、创建、保存、写入、修改或删除本地资产时，必须优先选择合适工具执行，不能只用文字承诺已经完成
 - 对应用广场资产的读写优先使用 Application Tools；没有工具返回成功前，不要判断资产已经变更
+- 用户要求把小说企划、世界观、角色、武道体系、势力设定、章节大纲等写入「墨笔生花」时，优先选择 Application Tools：新建小说用 writing_create_book，写入已有小说资产用 writing_update_story_assets；用户明确说“写入/保存/创建”时应设置 dryRun=false
+- writing_create_book 支持一次性写入 intro、outlineGuide、parts、chapters、extraIntroSections 和 storyAssets，不要因为资产较复杂就改成“整理成可粘贴格式”
+- 文件/代码/仓库读取、搜索、差异和受限命令诊断优先选择 Workspace Tools；生成图片/音乐/视频优先选择 Gordon Tools；桌面界面读取或操作优先选择 Computer Use
+- 如果已有工具调用结果显示任务尚未完成，继续选择下一步工具；如果工具结果已足够完成任务，再停止调用
 - serverId 和 toolName 必须来自提供给你的候选列表
 - arguments 必须是一个 JSON 对象
 - 如果不需要调用工具，shouldCall 设为 false，其余字段可设为 null 或 {}
@@ -1079,6 +1189,11 @@ ${userInput}
 
 当前规划轮次：
 第 ${iteration} 轮
+
+工具必要性判断：
+required=${toolRequirement.required ? "true" : "false"}
+reason=${toolRequirement.reason}
+preferredServerId=${toolRequirement.preferredServerId ?? "无"}
 
 已有工具调用历史：
 ${buildMcpHistoryText(mcpCalls)}
@@ -1426,7 +1541,7 @@ function buildSystemPrompt(agent: AgentProfile, skill: SkillDefinition | null, a
   sections.push(`工具上下文：\n${buildToolScopeText(authorizedMcpServers)}`);
 
   sections.push(
-    "输出只返回最终结果，不要解释内部隐藏推理过程；可以简要说明已经执行的可见步骤和工具结果。不要把内置本地工具描述成用户已经接入外部 MCP。用户要求新增、创建、保存、写入、修改或删除本地资产时，必须通过工具完成；没有成功的工具结果前，不要声称已经完成。"
+    "输出只返回最终结果，不要解释内部隐藏推理过程；可以简要说明已经执行的可见步骤和工具结果。不要把内置本地工具描述成用户已经接入外部 MCP。用户要求新增、创建、保存、写入、修改或删除本地资产时，必须通过工具完成；没有成功的工具结果前，不要声称已经完成。若用户要求把小说企划、世界观、角色、武道体系、势力设定或章节大纲写入「墨笔生花」，应使用 Application Tools 完成写入或明确报告工具失败原因，不要降级成让用户手动粘贴。"
   );
 
   return sections.filter(Boolean).join("\n\n");
@@ -2013,6 +2128,9 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
   const selectedSkill = resolveSkillForRun(agent, skillDefinitions, request.skillId);
   const authorizedMcpServers = resolveAuthorizedMcpServers(agent, mcpServers);
   let selectedMcpServer = resolveMcpSelection(agent, authorizedMcpServers, request);
+  const applicationToolServer = getApplicationToolServer(authorizedMcpServers);
+  const shouldPreferApplicationTools = isApplicationAssetMutationTask(contextualUserInput) && Boolean(applicationToolServer);
+  const toolRequirement = inferToolRequirementHint(contextualUserInput, authorizedMcpServers);
   const mcpCalls: AgentMcpCallRecord[] = [];
   let actualMcpToolName: string | null = request.mcpToolName?.trim() || null;
   let actualMcpArguments: Record<string, unknown> | undefined = request.mcpArguments;
@@ -2094,6 +2212,10 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
     pushStep("skill_selected", "已附加 Skill", selectedSkill.name);
   }
 
+  if (toolRequirement.required) {
+    pushStep("mcp_auto_planning", "已识别为工具任务", toolRequirement.reason);
+  }
+
   if (authorizedMcpServers.length) {
     const externalMcpServers = authorizedMcpServers.filter((server) => !isBuiltinLocalToolsServer(server));
     pushStep(
@@ -2148,7 +2270,18 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
   }
 
   if (!actualMcpToolName && request.autoSelectMcp && authorizedMcpServers.length) {
-    const candidateServers = selectedMcpServer ? [selectedMcpServer] : authorizedMcpServers;
+    const preferredRequirementServer =
+      toolRequirement.preferredServerId && !selectedMcpServer
+        ? authorizedMcpServers.find((server) => server.id === toolRequirement.preferredServerId) ?? null
+        : null;
+    const candidateServers =
+      shouldPreferApplicationTools && applicationToolServer && !selectedMcpServer
+        ? [applicationToolServer]
+        : preferredRequirementServer
+          ? [preferredRequirementServer]
+          : selectedMcpServer
+            ? [selectedMcpServer]
+            : authorizedMcpServers;
     let candidateTools: McpToolDefinition[] = [];
     try {
       candidateTools = await collectCandidateMcpTools(candidateServers);
@@ -2176,6 +2309,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
           candidateTools,
           mcpCalls,
           round,
+          toolRequirement,
           options.signal
         );
       } catch (error) {
@@ -2188,12 +2322,87 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
       pushStep("mcp_auto_planning", `工具规划结果（第 ${round} 轮）`, plannedSelection.reason);
 
       if (!plannedSelection.shouldCall || !plannedSelection.serverId || !plannedSelection.toolName) {
-        pushStep(
-          "mcp_auto_stopped",
-          `工具规划完成（第 ${round} 轮）`,
-          plannedSelection.reason || "模型判断无需继续调用工具"
-        );
-        break;
+        if (shouldPreferApplicationTools && applicationToolServer && candidateServers.length !== 1) {
+          try {
+            const applicationTools = await collectCandidateMcpTools([applicationToolServer]);
+            const applicationPlan = await planMcpToolSelection(
+              modelProfile,
+              agent,
+              contextualUserInput,
+              applicationTools,
+              mcpCalls,
+              round,
+              {
+                required: true,
+                preferredServerId: BUILTIN_APPLICATION_TOOLS_MCP_ID,
+                reason: "当前任务需要应用资产工具兜底规划"
+              },
+              options.signal
+            );
+
+            if (applicationPlan.shouldCall && applicationPlan.serverId && applicationPlan.toolName) {
+              plannedSelection = applicationPlan;
+              pushStep("mcp_auto_planning", `应用工具兜底规划（第 ${round} 轮）`, applicationPlan.reason);
+            }
+          } catch (error) {
+            throwIfAgentAborted(options.signal);
+            pushStep(
+              "mcp_auto_planning",
+              `应用工具兜底规划失败（第 ${round} 轮）`,
+              error instanceof Error ? error.message : "未知错误"
+            );
+          }
+        }
+
+        const preferredServer = getPreferredToolServer(authorizedMcpServers, toolRequirement.preferredServerId);
+
+        if (
+          (!plannedSelection.shouldCall || !plannedSelection.serverId || !plannedSelection.toolName) &&
+          toolRequirement.required &&
+          preferredServer &&
+          !candidateServers.some((server) => server.id === preferredServer.id)
+        ) {
+          try {
+            const preferredTools = await collectCandidateMcpTools([preferredServer]);
+            const preferredPlan = await planMcpToolSelection(
+              modelProfile,
+              agent,
+              contextualUserInput,
+              preferredTools,
+              mcpCalls,
+              round,
+              toolRequirement,
+              options.signal
+            );
+
+            if (preferredPlan.shouldCall && preferredPlan.serverId && preferredPlan.toolName) {
+              plannedSelection = preferredPlan;
+              pushStep("mcp_auto_planning", `必要工具兜底规划（第 ${round} 轮）`, preferredPlan.reason);
+            }
+          } catch (error) {
+            throwIfAgentAborted(options.signal);
+            pushStep(
+              "mcp_auto_planning",
+              `必要工具兜底规划失败（第 ${round} 轮）`,
+              error instanceof Error ? error.message : "未知错误"
+            );
+          }
+        }
+
+        if (!plannedSelection.shouldCall || !plannedSelection.serverId || !plannedSelection.toolName) {
+          if (shouldPreferApplicationTools && applicationToolServer) {
+            stopReason = "当前任务需要写入应用资产，但工具规划未选择可执行工具";
+          } else if (toolRequirement.required) {
+            stopReason = `当前任务需要工具执行，但工具规划未选择可执行工具：${toolRequirement.reason}`;
+          }
+
+          pushStep(
+            "mcp_auto_stopped",
+            `工具规划完成（第 ${round} 轮）`,
+            plannedSelection.reason || stopReason || "模型判断无需继续调用工具"
+          );
+          break;
+        }
       }
 
       const duplicateCall = hasDuplicateToolCall(
@@ -2415,7 +2624,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
         modelProfile,
         {
           temperature: selectedSkill ? 0.3 : 0.5,
-          maxOutputTokens: 1400,
+          maxOutputTokens: AGENT_FINAL_MAX_OUTPUT_TOKENS,
           messages: [
             {
               role: "system",

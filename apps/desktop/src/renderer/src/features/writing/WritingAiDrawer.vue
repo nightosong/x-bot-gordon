@@ -33,7 +33,10 @@
             :aria-selected="activeWritingTask?.id === task.id ? 'true' : 'false'"
             @click="selectWritingAiTask(task.id)"
           >
-            <span>{{ task.label }}</span>
+            <span class="writing-ai-task-item-head">
+              <strong>{{ task.label }}</strong>
+              <b v-if="task.stage">{{ task.stage }}</b>
+            </span>
             <small>{{ task.goal }}</small>
             <em v-if="getWritingTaskTarget(task)">{{ getWritingTaskTarget(task) }}</em>
           </button>
@@ -124,18 +127,18 @@
       <div class="writing-ai-output-head">
         <span class="field-label">AI 输出</span>
         <div class="writing-ai-output-tools">
-          <span
+          <button
+            type="button"
             class="writing-ai-output-status"
             :class="writingAiOutputStatusClass"
             :aria-label="writingAiOutputStatusMessage"
-            role="status"
-            tabindex="0"
+            aria-describedby="writing-ai-output-status-tooltip"
           >
-            <span class="writing-ai-output-status-mark" aria-hidden="true">i</span>
-            <span class="writing-ai-output-status-tooltip" role="tooltip">
+            <GIcon name="circleAlert" :size="16" />
+            <span id="writing-ai-output-status-tooltip" class="writing-ai-output-status-tooltip" role="tooltip">
               {{ writingAiOutputStatusMessage }}
             </span>
-          </span>
+          </button>
           <button type="button" class="model-action-secondary writing-ai-run" :disabled="state.isAiRunning" @click="generateWritingAssistantOutput">
             {{ getWritingAiRunButtonLabel() }}
           </button>
@@ -215,11 +218,15 @@ const writingAiOutputStatusClass = computed(() => {
     return "is-danger";
   }
 
+  if (props.state.aiFeedbackTone === "warning") {
+    return "is-warning";
+  }
+
   return "is-neutral";
 });
 
 function getWritingTaskTarget(task) {
-  if (task?.id === "storySetup") {
+  if (task?.id === "storySetup" || task?.id === "storyRefine") {
     return "写入：大纲指导";
   }
 
