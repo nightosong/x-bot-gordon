@@ -61,7 +61,7 @@ const normalizedOptions = computed(() =>
       label: String(option?.label ?? option?.value ?? ""),
       value: String(option?.value ?? "")
     }))
-    .filter((option) => option.value)
+    .filter((option) => option.label || option.value)
 );
 
 const selectedOption = computed(() => normalizedOptions.value.find((option) => isSelected(option.value)) ?? null);

@@ -72,7 +72,7 @@ import type {
   WorkTask
 } from "../../shared/src/index.js";
 import {
-  getBuiltinAgentProfile,
+  getBuiltinAgentProfiles,
   getBuiltinMcpServers,
   getBuiltinSkillDefinitions,
   isBuiltinWorkbenchEntry,
@@ -3974,7 +3974,7 @@ export async function listAgentProfiles(): Promise<AgentProfile[]> {
     listMcpServers()
   ]);
 
-  return mergeBuiltinEntries([getBuiltinAgentProfile(modelSettings, skills, servers)], userProfiles);
+  return mergeBuiltinEntries(getBuiltinAgentProfiles(modelSettings, skills, servers), userProfiles);
 }
 
 export async function upsertAgentProfile(profile: AgentProfile): Promise<AgentProfile[]> {

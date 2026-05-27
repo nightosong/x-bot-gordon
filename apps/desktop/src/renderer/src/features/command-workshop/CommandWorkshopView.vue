@@ -63,7 +63,20 @@
               >
                 <div class="command-message-head">
                   <span class="command-message-role">{{ message.role === "user" ? "你" : resolveAgentName(ui.command.form.agentProfileId) }}</span>
-                  <span class="command-message-time">{{ formatLocalDateTime(message.createdAt) }}</span>
+                  <span class="command-message-meta">
+                    <span class="command-message-time">{{ formatLocalDateTime(message.createdAt) }}</span>
+                    <button
+                      v-if="message.role === 'assistant' && message.content"
+                      type="button"
+                      class="model-icon-button command-message-copy-button"
+                      :class="{ 'is-copied': ui.command.copiedMessageId === message.id }"
+                      :aria-label="ui.command.copiedMessageId === message.id ? 'AI 回复已复制' : '复制 AI 回复'"
+                      :title="ui.command.copiedMessageId === message.id ? '已复制' : '复制 AI 回复'"
+                      @click="handleCommandMessageCopy(message)"
+                    >
+                      <GIcon :name="ui.command.copiedMessageId === message.id ? 'check' : 'copy'" :size="14" />
+                    </button>
+                  </span>
                 </div>
 
                 <div
@@ -250,48 +263,57 @@
               </div>
 
               <div class="command-settings-grid">
-                <label class="field command-settings-cell">
+                <div class="field command-settings-cell">
                   <span class="field-label">Agent</span>
-                  <select v-model="ui.command.form.agentProfileId" class="field-input" :disabled="!enabledAgentProfiles.length" @change="handleCommandAgentChange">
-                    <option v-for="agent in enabledAgentProfiles" :key="agent.id" :value="agent.id">{{ agent.name }}</option>
-                    <option v-if="!enabledAgentProfiles.length" value="">暂无可用 Agent</option>
-                  </select>
-                </label>
+                  <GCompactSelect
+                    v-model="ui.command.form.agentProfileId"
+                    class="command-settings-select"
+                    aria-label="Agent"
+                    :disabled="!enabledAgentProfiles.length"
+                    :options="commandAgentSelectOptions"
+                    placeholder="暂无可用 Agent"
+                    @change="handleCommandAgentChange"
+                  />
+                </div>
 
-                <label class="field command-settings-cell">
+                <div class="field command-settings-cell">
                   <span class="field-label">Skill</span>
-                  <select v-model="ui.command.form.skillId" class="field-input" :disabled="!commandSelectedAgent">
-                    <option value="">通用模式</option>
-                    <option v-for="skill in commandRunnableSkills" :key="skill.id" :value="skill.id">
-                      {{ getSkillOptionLabel(skill) }}
-                    </option>
-                  </select>
-                </label>
+                  <GCompactSelect
+                    v-model="ui.command.form.skillId"
+                    class="command-settings-select"
+                    aria-label="Skill"
+                    :disabled="!commandSelectedAgent"
+                    :options="commandSkillSelectOptions"
+                  />
+                </div>
 
                 <label class="command-inline-toggle command-settings-toggle">
                   <span class="command-inline-toggle-label">允许自动工具</span>
                   <input v-model="ui.command.form.autoSelectMcp" type="checkbox" />
                 </label>
 
-                <label class="field command-settings-cell">
+                <div class="field command-settings-cell">
                   <span class="field-label">工具服务</span>
-                  <select v-model="ui.command.form.mcpServerId" class="field-input" :disabled="!commandSelectedAgent" @change="handleCommandServerChange">
-                    <option value="">不指定工具服务</option>
-                    <option v-for="server in commandAuthorizedServers" :key="server.id" :value="server.id">
-                      {{ server.name }} / {{ server.transport.toUpperCase() }}
-                    </option>
-                  </select>
-                </label>
+                  <GCompactSelect
+                    v-model="ui.command.form.mcpServerId"
+                    class="command-settings-select"
+                    aria-label="工具服务"
+                    :disabled="!commandSelectedAgent"
+                    :options="commandServerSelectOptions"
+                    @change="handleCommandServerChange"
+                  />
+                </div>
 
                 <div class="field command-settings-tool-field">
                   <span class="field-label">工具</span>
                   <div class="command-settings-tool-row">
-                    <select v-model="ui.command.form.mcpToolName" class="field-input" :disabled="!ui.command.form.mcpServerId">
-                      <option value="">不指定工具</option>
-                      <option v-for="tool in commandToolOptions" :key="`${tool.serverId ?? 'server'}-${tool.name}`" :value="tool.name">
-                        {{ tool.name }}{{ tool.description ? ` / ${tool.description}` : "" }}
-                      </option>
-                    </select>
+                    <GCompactSelect
+                      v-model="ui.command.form.mcpToolName"
+                      class="command-settings-select command-settings-tool-select"
+                      aria-label="工具"
+                      :disabled="!ui.command.form.mcpServerId"
+                      :options="commandToolSelectOptions"
+                    />
 
                     <button type="button" class="weekly-mini-action command-load-tools-button" @click="handleCommandLoadMcpTools">读取工具</button>
                   </div>
@@ -462,13 +484,14 @@
 </template>
 
 <script setup>
-import { ref } from "vue";
+import { computed, ref } from "vue";
 
+import GCompactSelect from "../../components/GCompactSelect.vue";
 import GIcon from "../../components/GIcon.vue";
 import { getCommandAttachmentTitle } from "./commandWorkshopRuntime.js";
 import { formatLocalDateTime, renderRichText } from "../../lib/presenter.js";
 
-defineProps({
+const props = defineProps({
   ui: { type: Object, required: true },
   workbench: { type: Object, required: true },
   activeCommandSession: { type: Object, default: null },
@@ -492,6 +515,7 @@ defineProps({
   handleCommandInputCompositionStart: { type: Function, required: true },
   handleCommandInputEnterKeydown: { type: Function, required: true },
   handleCommandLoadMcpTools: { type: Function, required: true },
+  handleCommandMessageCopy: { type: Function, required: true },
   handleCommandRunCancel: { type: Function, required: true },
   handleCommandServerChange: { type: Function, required: true },
   handleCommandSessionDelete: { type: Function, required: true },
@@ -504,6 +528,37 @@ defineProps({
 
 const commandInputRef = ref(null);
 const commandMessagesRef = ref(null);
+
+const commandAgentSelectOptions = computed(() =>
+  props.enabledAgentProfiles.map((agent) => ({
+    label: agent.name,
+    value: agent.id
+  }))
+);
+
+const commandSkillSelectOptions = computed(() => [
+  { label: "通用模式", value: "" },
+  ...props.commandRunnableSkills.map((skill) => ({
+    label: props.getSkillOptionLabel(skill),
+    value: skill.id
+  }))
+]);
+
+const commandServerSelectOptions = computed(() => [
+  { label: "不指定工具服务", value: "" },
+  ...props.commandAuthorizedServers.map((server) => ({
+    label: `${server.name} / ${String(server.transport ?? "").toUpperCase()}`,
+    value: server.id
+  }))
+]);
+
+const commandToolSelectOptions = computed(() => [
+  { label: "不指定工具", value: "" },
+  ...props.commandToolOptions.map((tool) => ({
+    label: tool.description ? `${tool.name} / ${tool.description}` : tool.name,
+    value: tool.name
+  }))
+]);
 
 function focusCommandInput() {
   commandInputRef.value?.focus?.();

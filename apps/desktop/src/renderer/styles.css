@@ -12416,6 +12416,32 @@ canvas {
   color: rgba(247, 243, 235, 0.48);
 }
 
+.command-message-meta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.command-message-copy-button {
+  width: 26px;
+  height: 26px;
+  opacity: 0.72;
+  border-color: rgba(151, 182, 216, 0.12);
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(247, 243, 235, 0.66);
+}
+
+.command-message-copy-button:hover,
+.command-message-copy-button:focus-visible,
+.command-message-copy-button.is-copied {
+  opacity: 1;
+  border-color: rgba(92, 225, 194, 0.26);
+  background: rgba(92, 225, 194, 0.1);
+  color: #bcf8ea;
+}
+
 .command-message-body {
   color: var(--text);
   font-size: 13px;
@@ -12528,8 +12554,10 @@ canvas {
 
 .command-rich-text {
   display: grid;
-  gap: 10px;
-  line-height: 1.58;
+  gap: 11px;
+  max-width: 100%;
+  line-height: 1.68;
+  overflow-wrap: anywhere;
 }
 
 .command-rich-text > * {
@@ -12757,31 +12785,267 @@ canvas {
 }
 
 .command-rich-heading {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin-top: 2px;
+  padding-left: 12px;
   color: var(--text);
-  font-size: 15px;
-  font-weight: 700;
+  font-weight: 800;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.command-rich-heading::before {
+  content: "";
+  position: absolute;
+  top: 0.18em;
+  bottom: 0.18em;
+  left: 0;
+  width: 3px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(92, 225, 194, 0.92), rgba(245, 200, 107, 0.66));
+  box-shadow: 0 0 14px rgba(92, 225, 194, 0.16);
+}
+
+.command-rich-heading-depth-1 {
+  font-size: 16px;
+}
+
+.command-rich-heading-depth-2 {
+  font-size: 14.5px;
+}
+
+.command-rich-heading-depth-3 {
+  color: rgba(247, 243, 235, 0.88);
+  font-size: 13.5px;
 }
 
 .command-rich-paragraph {
-  color: var(--text);
+  max-width: 78ch;
+  color: rgba(247, 243, 235, 0.86);
+}
+
+.command-rich-text strong {
+  color: rgba(188, 248, 234, 0.96);
+  font-weight: 800;
+}
+
+.command-rich-text em {
+  color: rgba(245, 200, 107, 0.88);
+  font-style: normal;
 }
 
 .command-rich-list {
   display: grid;
-  gap: 6px;
+  gap: 5px;
+  padding-left: 20px;
+  color: rgba(247, 243, 235, 0.86);
+}
+
+.command-rich-list .command-rich-list {
+  margin-top: 5px;
   padding-left: 18px;
-  color: var(--text);
+}
+
+.command-rich-list-item {
+  min-width: 0;
+  padding-left: 1px;
+  line-height: 1.62;
+}
+
+.command-rich-list-item-content {
+  min-width: 0;
+}
+
+.command-rich-list-marker {
+  display: inline-block;
+  min-width: 1.6em;
+  margin-left: -1.8em;
+  color: rgba(92, 225, 194, 0.88);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
 
 .command-rich-list li::marker {
   color: rgba(92, 225, 194, 0.88);
+  font-weight: 800;
 }
 
 .command-rich-quote {
   margin: 0;
-  padding-left: 14px;
+  padding: 10px 12px 10px 14px;
   border-left: 3px solid rgba(92, 225, 194, 0.3);
-  color: rgba(247, 243, 235, 0.76);
+  border-radius: 10px;
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.08), rgba(245, 200, 107, 0.04)),
+    rgba(5, 14, 23, 0.24);
+  color: rgba(247, 243, 235, 0.78);
+}
+
+.command-rich-divider {
+  width: 100%;
+  height: 1px;
+  border: 0;
+  background: linear-gradient(90deg, transparent, rgba(151, 182, 216, 0.22), transparent);
+}
+
+.command-rich-table-wrap {
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid rgba(151, 182, 216, 0.14);
+  border-radius: 10px;
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.06), transparent 40%),
+    rgba(5, 11, 18, 0.48);
+}
+
+.command-rich-table {
+  width: 100%;
+  min-width: 420px;
+  border-collapse: collapse;
+  color: rgba(247, 243, 235, 0.84);
+  font-size: 12px;
+  line-height: 1.48;
+}
+
+.command-rich-table thead {
+  background: rgba(92, 225, 194, 0.09);
+}
+
+.command-rich-table th,
+.command-rich-table td {
+  min-width: 0;
+  padding: 8px 10px;
+  border-right: 1px solid rgba(151, 182, 216, 0.1);
+  border-bottom: 1px solid rgba(151, 182, 216, 0.1);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.command-rich-table th:last-child,
+.command-rich-table td:last-child {
+  border-right: 0;
+}
+
+.command-rich-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.command-rich-table th {
+  color: rgba(188, 248, 234, 0.94);
+  font-weight: 800;
+}
+
+.command-rich-table td {
+  color: rgba(247, 243, 235, 0.78);
+}
+
+.command-rich-table-cell.is-center {
+  text-align: center;
+}
+
+.command-rich-table-cell.is-right {
+  text-align: right;
+}
+
+.command-math-inline,
+.command-math-block {
+  font-family: "Times New Roman", "Songti SC", "STSong", serif;
+  font-variant-numeric: lining-nums;
+}
+
+.command-math-inline {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  margin: 0 2px;
+  padding: 1px 5px;
+  border: 1px solid rgba(92, 225, 194, 0.18);
+  border-radius: 7px;
+  background: rgba(92, 225, 194, 0.07);
+  color: rgba(232, 255, 250, 0.96);
+  line-height: 1.45;
+  vertical-align: baseline;
+}
+
+.command-math-block {
+  display: block;
+  max-width: 100%;
+  overflow: auto;
+  padding: 12px 14px;
+  border: 1px solid rgba(92, 225, 194, 0.18);
+  border-radius: 10px;
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.08), rgba(151, 182, 216, 0.05)),
+    rgba(3, 10, 18, 0.46);
+  color: rgba(232, 255, 250, 0.96);
+  text-align: center;
+}
+
+.command-math-block-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.18em;
+  min-width: max-content;
+  font-size: 15px;
+  line-height: 1.7;
+  white-space: nowrap;
+}
+
+.command-math-text {
+  font-family: inherit;
+  font-style: normal;
+}
+
+.command-math-fraction {
+  display: inline-grid;
+  grid-template-rows: auto auto;
+  align-items: center;
+  min-width: 1.5em;
+  margin: 0 0.16em;
+  vertical-align: middle;
+  text-align: center;
+  line-height: 1.15;
+}
+
+.command-math-fraction > span {
+  display: block;
+  padding: 0 0.22em;
+}
+
+.command-math-fraction > span:first-child {
+  border-bottom: 1px solid currentColor;
+}
+
+.command-math-root {
+  display: inline-flex;
+  align-items: stretch;
+  margin: 0 0.1em;
+  vertical-align: middle;
+}
+
+.command-math-root-mark {
+  padding-right: 0.08em;
+  font-size: 1.12em;
+  line-height: 1;
+}
+
+.command-math-root-body {
+  display: inline-block;
+  padding: 0 0.18em 0 0.16em;
+  border-top: 1px solid currentColor;
+  line-height: 1.32;
+}
+
+.command-math-inline sup,
+.command-math-inline sub,
+.command-math-block sup,
+.command-math-block sub {
+  font-size: 0.7em;
+  line-height: 0;
 }
 
 .command-inline-code {
@@ -13328,6 +13592,64 @@ canvas {
   border-radius: 12px;
   padding: 8px 10px;
   font-size: 12px;
+}
+
+.command-settings-grid .compact-select.command-settings-select {
+  position: relative;
+  display: grid;
+  width: 100%;
+  min-height: 38px;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  font-size: 12px;
+}
+
+.command-settings-grid .command-settings-select .compact-select-trigger {
+  min-height: 38px;
+  padding: 0 10px;
+  border-color: rgba(151, 182, 216, 0.18);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.065), rgba(92, 225, 194, 0.035)),
+    rgba(8, 15, 24, 0.7);
+  color: rgba(247, 243, 235, 0.9);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.command-settings-grid .command-settings-select:hover .compact-select-trigger,
+.command-settings-grid .command-settings-select.is-open .compact-select-trigger,
+.command-settings-grid .command-settings-select .compact-select-trigger:focus-visible {
+  border-color: rgba(92, 225, 194, 0.34);
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.13), rgba(245, 200, 107, 0.045)),
+    rgba(8, 15, 24, 0.82);
+}
+
+.command-settings-grid .command-settings-select .compact-select-menu {
+  z-index: 75;
+  width: max(100%, 220px);
+  max-height: 210px;
+  border-color: rgba(151, 182, 216, 0.22);
+  background:
+    linear-gradient(145deg, rgba(92, 225, 194, 0.08), rgba(245, 200, 107, 0.04)),
+    rgba(8, 15, 24, 0.98);
+  box-shadow: 0 22px 50px rgba(0, 0, 0, 0.42);
+}
+
+.command-settings-grid .command-settings-select .compact-select-option {
+  min-height: 30px;
+  padding: 0 10px;
+  color: rgba(247, 243, 235, 0.76);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 28px;
+}
+
+.command-settings-grid .command-settings-tool-select .compact-select-menu {
+  width: max(100%, min(520px, 68vw));
 }
 
 .command-settings-grid .field-textarea {

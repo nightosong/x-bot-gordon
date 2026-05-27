@@ -184,6 +184,7 @@
               :handle-command-input-composition-start="handleCommandInputCompositionStart"
               :handle-command-input-enter-keydown="handleCommandInputEnterKeydown"
               :handle-command-load-mcp-tools="handleCommandLoadMcpTools"
+              :handle-command-message-copy="handleCommandMessageCopy"
               :handle-command-run-cancel="handleCommandRunCancel"
               :handle-command-server-change="handleCommandServerChange"
               :handle-command-session-delete="handleCommandSessionDelete"
@@ -753,6 +754,7 @@ const {
   handleCommandInputCompositionStart,
   handleCommandInputEnterKeydown,
   handleCommandLoadMcpTools,
+  handleCommandMessageCopy,
   handleCommandRunCancel,
   handleCommandServerChange,
   handleCommandSessionDelete,
@@ -765,6 +767,8 @@ const {
 } = createCommandWorkshopActions({
   activeFeature,
   commandWorkshopViewRef,
+  copyRichTextToClipboard,
+  copyTextToClipboard,
   desktopApi,
   enabledAgentProfiles,
   featureCommandWorkshopId: FEATURE_COMMAND_WORKSHOP,

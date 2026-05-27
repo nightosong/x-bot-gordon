@@ -646,11 +646,435 @@ export function sanitizeWeeklyProgressRecord(record) {
   };
 }
 
+const MATH_SYMBOL_MAP = {
+  alpha: "α",
+  beta: "β",
+  gamma: "γ",
+  Gamma: "Γ",
+  delta: "δ",
+  Delta: "Δ",
+  epsilon: "ε",
+  varepsilon: "ε",
+  zeta: "ζ",
+  eta: "η",
+  theta: "θ",
+  Theta: "Θ",
+  vartheta: "ϑ",
+  iota: "ι",
+  kappa: "κ",
+  lambda: "λ",
+  Lambda: "Λ",
+  mu: "μ",
+  nu: "ν",
+  xi: "ξ",
+  Xi: "Ξ",
+  pi: "π",
+  Pi: "Π",
+  rho: "ρ",
+  sigma: "σ",
+  Sigma: "Σ",
+  tau: "τ",
+  upsilon: "υ",
+  phi: "φ",
+  varphi: "φ",
+  Phi: "Φ",
+  chi: "χ",
+  psi: "ψ",
+  Psi: "Ψ",
+  omega: "ω",
+  Omega: "Ω",
+  partial: "∂",
+  nabla: "∇",
+  infty: "∞",
+  infinity: "∞",
+  sum: "∑",
+  prod: "∏",
+  int: "∫",
+  oint: "∮",
+  lim: "lim",
+  cdot: "·",
+  times: "×",
+  div: "÷",
+  pm: "±",
+  mp: "∓",
+  le: "≤",
+  leq: "≤",
+  ge: "≥",
+  geq: "≥",
+  neq: "≠",
+  ne: "≠",
+  approx: "≈",
+  sim: "∼",
+  propto: "∝",
+  equiv: "≡",
+  to: "→",
+  rightarrow: "→",
+  leftarrow: "←",
+  leftrightarrow: "↔",
+  Rightarrow: "⇒",
+  Leftarrow: "⇐",
+  Leftrightarrow: "⇔",
+  forall: "∀",
+  exists: "∃",
+  neg: "¬",
+  land: "∧",
+  lor: "∨",
+  cap: "∩",
+  cup: "∪",
+  subset: "⊂",
+  subseteq: "⊆",
+  supset: "⊃",
+  supseteq: "⊇",
+  in: "∈",
+  notin: "∉",
+  emptyset: "∅",
+  degree: "°",
+  circ: "∘",
+  bullet: "•",
+  ldots: "…",
+  cdots: "⋯"
+};
+
+const MATH_SPACING_COMMANDS = new Set(["quad", "qquad", "thinspace", "medspace", "space"]);
+const MATH_IGNORED_COMMANDS = new Set(["left", "right", "middle", "!", ",", ";", ":"]);
+const MATH_TEXT_COMMANDS = new Set(["text", "mathrm", "mathbf", "mathit", "operatorname"]);
+
+function findClosingBraceIndex(value, openingIndex) {
+  if (value[openingIndex] !== "{") {
+    return -1;
+  }
+
+  let depth = 0;
+
+  for (let index = openingIndex; index < value.length; index += 1) {
+    const char = value[index];
+
+    if (char === "\\" && index + 1 < value.length) {
+      index += 1;
+      continue;
+    }
+
+    if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+
+      if (depth === 0) {
+        return index;
+      }
+    }
+  }
+
+  return -1;
+}
+
+function readMathGroup(value, startIndex) {
+  if (value[startIndex] === "{") {
+    const endIndex = findClosingBraceIndex(value, startIndex);
+
+    if (endIndex === -1) {
+      return null;
+    }
+
+    return {
+      content: value.slice(startIndex + 1, endIndex),
+      endIndex
+    };
+  }
+
+  if (value[startIndex] === "\\") {
+    const commandMatch = value.slice(startIndex).match(/^\\[A-Za-z]+/);
+
+    if (commandMatch) {
+      return {
+        content: commandMatch[0],
+        endIndex: startIndex + commandMatch[0].length - 1
+      };
+    }
+  }
+
+  if (startIndex < value.length) {
+    return {
+      content: value[startIndex],
+      endIndex: startIndex
+    };
+  }
+
+  return null;
+}
+
+function renderMathText(expression) {
+  const source = String(expression ?? "").trim();
+  let index = 0;
+  let html = "";
+
+  while (index < source.length) {
+    const rest = source.slice(index);
+
+    if (rest.startsWith("\\frac")) {
+      let cursor = index + "\\frac".length;
+
+      while (source[cursor] === " ") {
+        cursor += 1;
+      }
+
+      const numerator = readMathGroup(source, cursor);
+
+      if (numerator) {
+        cursor = numerator.endIndex + 1;
+
+        while (source[cursor] === " ") {
+          cursor += 1;
+        }
+
+        const denominator = readMathGroup(source, cursor);
+
+        if (denominator) {
+          html += `<span class="command-math-fraction"><span>${renderMathText(numerator.content)}</span><span>${renderMathText(
+            denominator.content
+          )}</span></span>`;
+          index = denominator.endIndex + 1;
+          continue;
+        }
+      }
+    }
+
+    if (rest.startsWith("\\sqrt")) {
+      let cursor = index + "\\sqrt".length;
+
+      while (source[cursor] === " ") {
+        cursor += 1;
+      }
+
+      const radicand = readMathGroup(source, cursor);
+
+      if (radicand) {
+        html += `<span class="command-math-root"><span class="command-math-root-mark">√</span><span class="command-math-root-body">${renderMathText(
+          radicand.content
+        )}</span></span>`;
+        index = radicand.endIndex + 1;
+        continue;
+      }
+    }
+
+    if (source[index] === "^" || source[index] === "_") {
+      const tagName = source[index] === "^" ? "sup" : "sub";
+      const group = readMathGroup(source, index + 1);
+
+      if (group) {
+        html += `<${tagName}>${renderMathText(group.content)}</${tagName}>`;
+        index = group.endIndex + 1;
+        continue;
+      }
+    }
+
+    if (source[index] === "\\") {
+      const commandMatch = source.slice(index).match(/^\\([A-Za-z]+)/);
+
+      if (commandMatch) {
+        const command = commandMatch[1];
+
+        if (MATH_IGNORED_COMMANDS.has(command)) {
+          html += "";
+        } else if (MATH_TEXT_COMMANDS.has(command)) {
+          const group = readMathGroup(source, index + commandMatch[0].length);
+
+          if (group) {
+            html += `<span class="command-math-text">${renderMathText(group.content)}</span>`;
+            index = group.endIndex + 1;
+            continue;
+          }
+
+          html += escapeHtml(command);
+        } else if (MATH_SPACING_COMMANDS.has(command)) {
+          html += " ";
+        } else {
+          html += escapeHtml(MATH_SYMBOL_MAP[command] ?? command);
+        }
+
+        index += commandMatch[0].length;
+        continue;
+      }
+
+      if (MATH_IGNORED_COMMANDS.has(source[index + 1])) {
+        index += 2;
+        continue;
+      }
+
+      if (index + 1 < source.length) {
+        html += escapeHtml(source[index + 1]);
+        index += 2;
+        continue;
+      }
+    }
+
+    if (source[index] === "{") {
+      const groupEndIndex = findClosingBraceIndex(source, index);
+
+      if (groupEndIndex !== -1) {
+        html += renderMathText(source.slice(index + 1, groupEndIndex));
+        index = groupEndIndex + 1;
+        continue;
+      }
+    }
+
+    html += escapeHtml(source[index]);
+    index += 1;
+  }
+
+  return html.replace(/\s{2,}/g, " ");
+}
+
+function normalizeMathExpression(expression) {
+  return String(expression ?? "")
+    .trim()
+    .replace(/^\\begin\{equation\*?\}/, "")
+    .replace(/\\end\{equation\*?\}$/, "")
+    .trim();
+}
+
+function renderMathInline(expression) {
+  const normalized = normalizeMathExpression(expression);
+
+  if (!normalized) {
+    return "";
+  }
+
+  return `<span class="command-math-inline" title="${escapeHtml(normalized)}">${renderMathText(normalized)}</span>`;
+}
+
+function renderMathBlock(expression) {
+  const normalized = normalizeMathExpression(expression);
+
+  if (!normalized) {
+    return "";
+  }
+
+  return `<div class="command-math-block" title="${escapeHtml(normalized)}"><span class="command-math-block-content">${renderMathText(
+    normalized
+  )}</span></div>`;
+}
+
+function findInlineMathEnd(value, startIndex, delimiter) {
+  for (let index = startIndex; index < value.length; index += 1) {
+    if (delimiter === "$") {
+      if (value[index] === "$") {
+        return index;
+      }
+    } else if (value.startsWith(delimiter, index)) {
+      return index;
+    }
+
+    if (value[index] === "\\" && index + 1 < value.length) {
+      index += 1;
+      continue;
+    }
+  }
+
+  return -1;
+}
+
+function renderPlainInlineText(text) {
+  const source = String(text ?? "");
+  let index = 0;
+  let html = "";
+
+  while (index < source.length) {
+    if (source.startsWith("**", index)) {
+      const endIndex = source.indexOf("**", index + 2);
+
+      if (endIndex !== -1) {
+        const inner = source.slice(index + 2, endIndex);
+
+        if (inner.trim()) {
+          html += `<strong>${renderPlainInlineText(inner)}</strong>`;
+          index = endIndex + 2;
+          continue;
+        }
+      }
+    }
+
+    if (source[index] === "*" && source[index + 1] !== "*") {
+      const endIndex = source.indexOf("*", index + 1);
+
+      if (endIndex !== -1) {
+        const inner = source.slice(index + 1, endIndex);
+
+        if (inner.trim() && !inner.includes("\n")) {
+          html += `<em>${renderPlainInlineText(inner)}</em>`;
+          index = endIndex + 1;
+          continue;
+        }
+      }
+    }
+
+    html += escapeHtml(source[index]);
+    index += 1;
+  }
+
+  return html;
+}
+
 function formatInlineText(text) {
-  return escapeHtml(text)
-    .replace(/`([^`]+)`/g, '<code class="command-inline-code">$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*([^*\n]+)\*/g, "<em>$1</em>");
+  const source = String(text ?? "");
+  let index = 0;
+  let buffer = "";
+  let html = "";
+
+  const flushBuffer = () => {
+    if (!buffer) {
+      return;
+    }
+
+    html += renderPlainInlineText(buffer);
+    buffer = "";
+  };
+
+  while (index < source.length) {
+    if (source[index] === "`") {
+      const endIndex = source.indexOf("`", index + 1);
+
+      if (endIndex !== -1) {
+        flushBuffer();
+        html += `<code class="command-inline-code">${escapeHtml(source.slice(index + 1, endIndex))}</code>`;
+        index = endIndex + 1;
+        continue;
+      }
+    }
+
+    if (source.startsWith("\\(", index)) {
+      const endIndex = findInlineMathEnd(source, index + 2, "\\)");
+
+      if (endIndex !== -1) {
+        flushBuffer();
+        html += renderMathInline(source.slice(index + 2, endIndex));
+        index = endIndex + 2;
+        continue;
+      }
+    }
+
+    if (
+      source[index] === "$" &&
+      source[index + 1] !== "$" &&
+      source[index - 1] !== "\\" &&
+      !/\s/.test(source[index + 1] ?? "")
+    ) {
+      const endIndex = findInlineMathEnd(source, index + 1, "$");
+
+      if (endIndex !== -1 && !/\s/.test(source[endIndex - 1] ?? "")) {
+        flushBuffer();
+        html += renderMathInline(source.slice(index + 1, endIndex));
+        index = endIndex + 1;
+        continue;
+      }
+    }
+
+    buffer += source[index];
+    index += 1;
+  }
+
+  flushBuffer();
+  return html;
 }
 
 function getCodeFamily(languageLabel = "") {
@@ -1010,6 +1434,118 @@ function renderListTree(list, depth = 0) {
   `;
 }
 
+function splitMarkdownTableRow(line) {
+  const trimmed = String(line ?? "").trim();
+  const withoutOuterPipes = trimmed.replace(/^\|/, "").replace(/\|$/, "");
+  const cells = [];
+  let current = "";
+  let escaped = false;
+
+  for (const char of withoutOuterPipes) {
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (char === "|") {
+      cells.push(current.trim());
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  cells.push(current.trim());
+  return cells;
+}
+
+function getMarkdownTableAlignments(line) {
+  const cells = splitMarkdownTableRow(line);
+
+  if (!cells.length || !cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()))) {
+    return null;
+  }
+
+  return cells.map((cell) => {
+    const trimmed = cell.trim();
+
+    if (trimmed.startsWith(":") && trimmed.endsWith(":")) {
+      return "center";
+    }
+
+    if (trimmed.endsWith(":")) {
+      return "right";
+    }
+
+    return "left";
+  });
+}
+
+function isMarkdownTableStart(lines, index) {
+  if (index + 1 >= lines.length) {
+    return false;
+  }
+
+  const headerCells = splitMarkdownTableRow(lines[index]);
+  const alignments = getMarkdownTableAlignments(lines[index + 1]);
+
+  return lines[index].includes("|") && headerCells.length >= 2 && Array.isArray(alignments) && alignments.length >= 2;
+}
+
+function renderMarkdownTable(lines, startIndex) {
+  const headerCells = splitMarkdownTableRow(lines[startIndex]);
+  const alignments = getMarkdownTableAlignments(lines[startIndex + 1]) ?? [];
+  const bodyRows = [];
+  let index = startIndex + 2;
+
+  while (index < lines.length && lines[index].includes("|") && lines[index].trim()) {
+    const cells = splitMarkdownTableRow(lines[index]);
+
+    if (cells.length >= 2) {
+      bodyRows.push(cells);
+      index += 1;
+      continue;
+    }
+
+    break;
+  }
+
+  const cellCount = Math.max(headerCells.length, alignments.length, ...bodyRows.map((row) => row.length));
+  const renderCell = (cell, cellIndex, tagName) => {
+    const alignment = alignments[cellIndex] ?? "left";
+    const alignClass = alignment === "center" || alignment === "right" ? ` is-${alignment}` : "";
+
+    return `<${tagName} class="command-rich-table-cell${alignClass}">${formatInlineText(cell ?? "")}</${tagName}>`;
+  };
+
+  const headerHtml = Array.from({ length: cellCount }, (_, cellIndex) => renderCell(headerCells[cellIndex], cellIndex, "th")).join("");
+  const bodyHtml = bodyRows
+    .map((row) => {
+      const rowHtml = Array.from({ length: cellCount }, (_, cellIndex) => renderCell(row[cellIndex], cellIndex, "td")).join("");
+      return `<tr>${rowHtml}</tr>`;
+    })
+    .join("");
+
+  return {
+    html: `
+      <div class="command-rich-table-wrap">
+        <table class="command-rich-table">
+          <thead><tr>${headerHtml}</tr></thead>
+          <tbody>${bodyHtml}</tbody>
+        </table>
+      </div>
+    `,
+    index
+  };
+}
+
 export function renderRichText(content) {
   const normalized = String(content ?? "").replace(/\r\n?/g, "\n");
 
@@ -1022,11 +1558,34 @@ export function renderRichText(content) {
   let index = 0;
 
   const isCodeFenceLine = (line) => /^```/.test(line.trim());
+  const isBlockMathStartLine = (line) => ["$$", "\\["].includes(line.trim());
+  const getSingleLineBlockMath = (line) => {
+    const trimmed = String(line ?? "").trim();
+
+    if (trimmed.startsWith("$$") && trimmed.endsWith("$$") && trimmed.length > 4) {
+      return trimmed.slice(2, -2);
+    }
+
+    if (trimmed.startsWith("\\[") && trimmed.endsWith("\\]") && trimmed.length > 4) {
+      return trimmed.slice(2, -2);
+    }
+
+    return null;
+  };
+  const isDividerLine = (line) => /^ {0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line);
   const isHeadingLine = (line) => /^(#{1,3})\s+/.test(line);
   const isQuoteLine = (line) => /^>\s?/.test(line);
   const isListLine = (line) => Boolean(getMarkdownListLineMeta(line));
   const isBoundaryLine = (line) =>
-    !line.trim() || isCodeFenceLine(line) || isHeadingLine(line) || isQuoteLine(line) || isListLine(line);
+    !line.trim() ||
+    isCodeFenceLine(line) ||
+    getSingleLineBlockMath(line) !== null ||
+    isBlockMathStartLine(line) ||
+    isDividerLine(line) ||
+    isHeadingLine(line) ||
+    isQuoteLine(line) ||
+    isListLine(line) ||
+    isMarkdownTableStart(lines, index);
 
   while (index < lines.length) {
     const line = lines[index];
@@ -1055,12 +1614,54 @@ export function renderRichText(content) {
       continue;
     }
 
+    const singleLineBlockMath = getSingleLineBlockMath(line);
+
+    if (singleLineBlockMath !== null) {
+      blocks.push(renderMathBlock(singleLineBlockMath));
+      index += 1;
+      continue;
+    }
+
+    if (isBlockMathStartLine(line)) {
+      const startToken = line.trim();
+      const endToken = startToken === "$$" ? "$$" : "\\]";
+      const mathLines = [];
+      index += 1;
+
+      while (index < lines.length && lines[index].trim() !== endToken) {
+        mathLines.push(lines[index]);
+        index += 1;
+      }
+
+      if (index < lines.length && lines[index].trim() === endToken) {
+        index += 1;
+      }
+
+      blocks.push(renderMathBlock(mathLines.join("\n")));
+      continue;
+    }
+
+    if (isDividerLine(line)) {
+      blocks.push('<hr class="command-rich-divider" />');
+      index += 1;
+      continue;
+    }
+
     if (isHeadingLine(line)) {
       const match = line.match(/^(#{1,3})\s+(.*)$/);
       const depth = match?.[1]?.length ?? 1;
       const tagName = `h${Math.min(depth + 2, 6)}`;
-      blocks.push(`<${tagName} class="command-rich-heading">${formatInlineText(match?.[2] ?? line)}</${tagName}>`);
+      blocks.push(
+        `<${tagName} class="command-rich-heading command-rich-heading-depth-${depth}">${formatInlineText(match?.[2] ?? line)}</${tagName}>`
+      );
       index += 1;
+      continue;
+    }
+
+    if (isMarkdownTableStart(lines, index)) {
+      const table = renderMarkdownTable(lines, index);
+      blocks.push(table.html);
+      index = table.index;
       continue;
     }
 

@@ -4,6 +4,7 @@ import { readPromptAsset } from "./prompt-assets.js";
 
 export const BUILTIN_WORKBENCH_ID_PREFIX = "builtin:";
 export const BUILTIN_GORDON_AGENT_ID = "builtin:agent:gordon";
+export const BUILTIN_ARTHUR_AGENT_ID = "builtin:agent:arthur";
 export const BUILTIN_WORKSPACE_MCP_ID = "builtin:mcp:workspace";
 export const BUILTIN_SEARCH_TOOLS_MCP_ID = "builtin:mcp:search-tools";
 export const BUILTIN_COMPUTER_USE_MCP_ID = "builtin:mcp:computer-use";
@@ -36,6 +37,7 @@ const BUILTIN_DEEP_RESEARCH_SKILL_PROMPT = readPromptAsset("builtinSkillDeepRese
 const BUILTIN_SKILL_CREATOR_SKILL_PROMPT = readPromptAsset("builtinSkillCreatorPrompt");
 const BUILTIN_WRITING_SKILL_PROMPT = readPromptAsset("builtinSkillWritingPrompt");
 const BUILTIN_GORDON_AGENT_SYSTEM_PROMPT = readPromptAsset("builtinAgentGordonSystem");
+const BUILTIN_ARTHUR_AGENT_SYSTEM_PROMPT = readPromptAsset("builtinAgentArthurSystem");
 
 function shellEscape(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
@@ -176,10 +178,11 @@ export function getBuiltinMcpServers(): McpServerConfig[] {
     {
       id: BUILTIN_WORKSPACE_MCP_ID,
       name: "Workspace Tools",
-      description: "内置工作区工具，支持基础文件操作、路径管理、工作区搜索、联网搜索、网页读取、文件对比与受限命令诊断。",
+      description: "内置工作区工具，支持基础文件操作、路径管理、工作区搜索、联网搜索、网页读取、文件对比、JSON 解析验证与受限命令诊断。",
       transport: "stdio",
       command: `/usr/bin/env node ${shellEscape(workspaceScriptPath)}`,
       env: {
+        GORDON_DATA_ROOT: resolveFromRoot("data"),
         GORDON_WORKSPACE_ROOT: resolveFromRoot(".")
       },
       toolAllowlist: [],
@@ -237,11 +240,11 @@ export function getBuiltinMcpServers(): McpServerConfig[] {
   ];
 }
 
-export function getBuiltinAgentProfile(
+export function getBuiltinAgentProfiles(
   modelSettings: ModelSettings,
   skills: SkillDefinition[],
   mcpServers: McpServerConfig[]
-): AgentProfile {
+): AgentProfile[] {
   const modelProfileId = resolvePreferredModelProfileId(modelSettings);
   const builtinSkillIds = getBuiltinSkillDefinitions().map((skill) => skill.id);
   const skillIds = Array.from(
@@ -252,18 +255,33 @@ export function getBuiltinAgentProfile(
     new Set([...builtinServerIds, ...mcpServers.filter((server) => server.enabled).map((server) => server.id)])
   );
 
-  return {
-    id: BUILTIN_GORDON_AGENT_ID,
-    name: "Gordon",
-    description: "内置默认开发 Agent，直接复用当前优先模型，并可围绕当前仓库调用基础工具完成协作。",
-    mode: "chat",
-    modelProfileId,
-    systemPrompt: BUILTIN_GORDON_AGENT_SYSTEM_PROMPT,
-    allowedSkillIds: skillIds,
-    allowedMcpServerIds: mcpServerIds,
-    enabled: true,
-    updatedAt: BUILTIN_UPDATED_AT
-  };
+  return [
+    {
+      id: BUILTIN_GORDON_AGENT_ID,
+      name: "Gordon",
+      description: "内置默认开发 Agent，直接复用当前优先模型，并可围绕当前仓库调用基础工具完成协作。",
+      mode: "chat",
+      modelProfileId,
+      systemPrompt: BUILTIN_GORDON_AGENT_SYSTEM_PROMPT,
+      allowedSkillIds: skillIds,
+      allowedMcpServerIds: mcpServerIds,
+      enabled: true,
+      updatedAt: BUILTIN_UPDATED_AT
+    },
+    {
+      id: BUILTIN_ARTHUR_AGENT_ID,
+      name: "Arthur",
+      description:
+        "内置 Research OS 型科研合作者 Agent，以决策优先级、假设剪枝和最小区分实验推进问题发现、证据验证、早期错误方向识别与论文审稿，并内置化工结晶研究适配。",
+      mode: "chat",
+      modelProfileId,
+      systemPrompt: BUILTIN_ARTHUR_AGENT_SYSTEM_PROMPT,
+      allowedSkillIds: skillIds,
+      allowedMcpServerIds: mcpServerIds,
+      enabled: true,
+      updatedAt: BUILTIN_UPDATED_AT
+    }
+  ];
 }
 
 export function mergeBuiltinEntries<T extends { id: string }>(builtinEntries: T[], userEntries: T[]): T[] {
