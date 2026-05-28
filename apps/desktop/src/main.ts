@@ -5,6 +5,7 @@ import { createHmac } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import JSZip from "jszip";
 
 import { callToolOnMcpServer, listToolsFromMcpServer, runAgent } from "../../../packages/agent/src/index.js";
 import { buildWorkbenchSnapshot } from "../../../packages/core/src/index.js";
@@ -57,6 +58,8 @@ import {
 } from "../../../packages/workbench/src/index.js";
 import type {
   AgentRunProgressEvent,
+  CommandWorkshopMessageExportFormat,
+  CommandWorkshopMessageExportRequest,
   ComicProjectExportFormat,
   ComicProjectExportRequest,
   MusicProjectExportFormat,
@@ -189,6 +192,7 @@ const WRITING_BOOK_EXPORT_EXTENSIONS = new Set<WritingBookExportFormat>(["txt", 
 const COMIC_PROJECT_EXPORT_EXTENSIONS = new Set<ComicProjectExportFormat>(["md"]);
 const VIDEO_PROJECT_EXPORT_EXTENSIONS = new Set<VideoProjectExportFormat>(["md"]);
 const MUSIC_PROJECT_EXPORT_EXTENSIONS = new Set<MusicProjectExportFormat>(["md"]);
+const COMMAND_WORKSHOP_MESSAGE_EXPORT_EXTENSIONS = new Set<CommandWorkshopMessageExportFormat>(["pdf", "docx"]);
 
 class WorkflowRunCancelledError extends Error {
   constructor() {
@@ -724,6 +728,487 @@ function resolveMusicProjectExportPath(request: MusicProjectExportRequest): {
     format,
     content: content.endsWith("\n") ? content : `${content}\n`
   };
+}
+
+function normalizeCommandWorkshopMessageExportFormat(value: unknown): CommandWorkshopMessageExportFormat {
+  const format = String(value ?? "").trim().toLowerCase();
+  return COMMAND_WORKSHOP_MESSAGE_EXPORT_EXTENSIONS.has(format as CommandWorkshopMessageExportFormat)
+    ? (format as CommandWorkshopMessageExportFormat)
+    : "pdf";
+}
+
+function sanitizeExportBaseFileName(value: unknown, fallback: string): string {
+  const baseName = String(value ?? "")
+    .replace(/\.[^.]+$/, "")
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
+    .replace(/\s+/g, " ")
+    .replace(/[. ]+$/g, "")
+    .trim();
+  return baseName || fallback;
+}
+
+function normalizeCommandWorkshopMessageExportRequest(
+  request: CommandWorkshopMessageExportRequest
+): CommandWorkshopMessageExportRequest {
+  const format = normalizeCommandWorkshopMessageExportFormat(request?.format);
+  const contentText = String(request?.contentText ?? "").trim();
+  const contentHtml = String(request?.contentHtml ?? "").trim();
+
+  if (!contentText && !contentHtml) {
+    throw new Error("当前 AI 回复没有可导出的内容");
+  }
+
+  return {
+    fileName: `${sanitizeExportBaseFileName(request?.fileName, "Gordon AI 回复")}.${format}`,
+    format,
+    title: String(request?.title ?? "").trim() || "Gordon AI 回复",
+    agentName: String(request?.agentName ?? "").trim() || "Gordon",
+    createdAt: String(request?.createdAt ?? "").trim(),
+    contentText,
+    contentHtml: contentHtml || `<p>${escapeHtml(contentText).replace(/\n/g, "<br />")}</p>`
+  };
+}
+
+function formatExportDateTime(value: unknown): string {
+  const date = new Date(String(value ?? ""));
+
+  if (Number.isNaN(date.getTime())) {
+    return new Date().toLocaleString("zh-CN", { hour12: false });
+  }
+
+  return date.toLocaleString("zh-CN", { hour12: false });
+}
+
+function buildCommandWorkshopExportHtml(request: CommandWorkshopMessageExportRequest): string {
+  const title = escapeHtml(request.title);
+  const agentName = escapeHtml(request.agentName);
+  const createdAt = escapeHtml(formatExportDateTime(request.createdAt));
+
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>${title}</title>
+  <style>
+    @page { size: A4; margin: 18mm 16mm 20mm; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #ffffff;
+      color: #1f2933;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      font-size: 12.5pt;
+      line-height: 1.72;
+    }
+    .document-shell { max-width: 760px; margin: 0 auto; }
+    .document-header {
+      padding: 0 0 18px;
+      margin: 0 0 22px;
+      border-bottom: 1px solid #d7e6e2;
+    }
+    .document-eyebrow {
+      margin: 0 0 7px;
+      color: #0f8f7b;
+      font-size: 9pt;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    h1 {
+      margin: 0 0 9px;
+      color: #18272f;
+      font-size: 24pt;
+      line-height: 1.18;
+      letter-spacing: 0;
+    }
+    .document-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      color: #60717d;
+      font-size: 9.5pt;
+    }
+    .document-content { overflow-wrap: anywhere; }
+    .document-content > *:first-child { margin-top: 0; }
+    .command-rich-heading {
+      break-after: avoid;
+      color: #18313a;
+      line-height: 1.28;
+      margin: 23px 0 9px;
+      letter-spacing: 0;
+    }
+    .command-rich-heading-depth-1 { font-size: 18pt; }
+    .command-rich-heading-depth-2 { font-size: 15pt; }
+    .command-rich-heading-depth-3 { font-size: 13.5pt; }
+    .command-rich-paragraph { margin: 8px 0; }
+    .command-rich-list { margin: 8px 0 10px 0; padding-left: 22px; }
+    .command-rich-list .command-rich-list { margin-top: 4px; }
+    .command-rich-list-item { margin: 3px 0; padding-left: 2px; }
+    .command-rich-list-marker {
+      display: inline-block;
+      min-width: 26px;
+      margin-left: -26px;
+      color: #0f8f7b;
+      font-variant-numeric: tabular-nums;
+      font-weight: 700;
+    }
+    .command-rich-quote {
+      margin: 12px 0;
+      padding: 9px 13px;
+      border-left: 3px solid #0fbea2;
+      background: #f4fbf8;
+      color: #40515c;
+    }
+    .command-rich-divider {
+      height: 1px;
+      margin: 18px 0;
+      border: 0;
+      background: #d7e6e2;
+    }
+    .command-rich-link { color: #087f6e; text-decoration: none; border-bottom: 1px solid rgba(8, 127, 110, 0.28); }
+    .command-inline-code {
+      padding: 1px 4px;
+      border: 1px solid #d9e7e4;
+      border-radius: 4px;
+      background: #f6faf9;
+      color: #9f4c3b;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 0.88em;
+    }
+    .command-code-block {
+      break-inside: avoid;
+      margin: 13px 0;
+      border: 1px solid #d6e4e1;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #f8fbfa;
+    }
+    .command-code-head {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 10px;
+      border-bottom: 1px solid #e1ebe8;
+      color: #5c6f79;
+      font-size: 8.5pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .command-code-copy { display: none; }
+    .command-code-pre {
+      margin: 0;
+      padding: 9px 0;
+      overflow-wrap: normal;
+      white-space: pre-wrap;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 8.5pt;
+      line-height: 1.55;
+    }
+    .command-code-line {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr);
+      gap: 8px;
+      padding: 0 10px;
+    }
+    .command-code-line-number {
+      color: #91a1a9;
+      text-align: right;
+      user-select: none;
+    }
+    .command-code-line-content { min-width: 0; }
+    .command-rich-table-wrap {
+      margin: 14px 0;
+      overflow: hidden;
+      border: 1px solid #d6e4e1;
+      border-radius: 8px;
+    }
+    .command-rich-table { width: 100%; border-collapse: collapse; font-size: 9.5pt; }
+    .command-rich-table th,
+    .command-rich-table td {
+      padding: 7px 9px;
+      border-right: 1px solid #dce9e6;
+      border-bottom: 1px solid #dce9e6;
+      text-align: left;
+      vertical-align: top;
+    }
+    .command-rich-table th {
+      background: #eff8f5;
+      color: #28414b;
+      font-weight: 800;
+    }
+    .command-rich-table-cell.is-center { text-align: center; }
+    .command-rich-table-cell.is-right { text-align: right; }
+    .command-math-inline,
+    .command-math-block {
+      font-family: "Times New Roman", "STIX Two Math", serif;
+      color: #17313b;
+    }
+    .command-math-inline {
+      display: inline-flex;
+      align-items: center;
+      max-width: 100%;
+      padding: 0 3px;
+      border-radius: 4px;
+      background: #f3faf8;
+      vertical-align: baseline;
+    }
+    .command-math-block {
+      display: flex;
+      justify-content: center;
+      margin: 14px 0;
+      padding: 12px;
+      overflow-x: auto;
+      border: 1px solid #d8e8e4;
+      border-radius: 8px;
+      background: #fbfdfc;
+      text-align: center;
+    }
+    .command-math-fraction {
+      display: inline-grid;
+      grid-template-rows: auto auto;
+      align-items: center;
+      margin: 0 2px;
+      text-align: center;
+      vertical-align: middle;
+    }
+    .command-math-fraction > span:first-child { border-bottom: 1px solid currentColor; }
+    .command-math-root-mark { border-top: 1px solid currentColor; margin-right: 2px; }
+    @media print {
+      body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+      a { color: #087f6e; }
+    }
+  </style>
+</head>
+<body>
+  <main class="document-shell">
+    <header class="document-header">
+      <p class="document-eyebrow">Gordon Command Workshop</p>
+      <h1>${title}</h1>
+      <div class="document-meta">
+        <span>Agent: ${agentName}</span>
+        <span>生成时间: ${createdAt}</span>
+      </div>
+    </header>
+    <article class="document-content">${request.contentHtml}</article>
+  </main>
+</body>
+</html>`;
+}
+
+async function exportCommandWorkshopMessageAsPdf(
+  request: CommandWorkshopMessageExportRequest,
+  filePath: string
+): Promise<number> {
+  const exportWindow = new BrowserWindow({
+    width: 900,
+    height: 1200,
+    show: false,
+    webPreferences: {
+      offscreen: true,
+      sandbox: true,
+      contextIsolation: true
+    }
+  });
+
+  try {
+    const html = buildCommandWorkshopExportHtml(request);
+    await exportWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    const pdf = await exportWindow.webContents.printToPDF({
+      printBackground: true,
+      pageSize: "A4",
+      preferCSSPageSize: true,
+      margins: {
+        marginType: "custom",
+        top: 0,
+        bottom: 0,
+        left: 0,
+        right: 0
+      }
+    });
+
+    await writeFile(filePath, pdf);
+    return pdf.byteLength;
+  } finally {
+    if (!exportWindow.isDestroyed()) {
+      exportWindow.destroy();
+    }
+  }
+}
+
+function escapeXml(value: unknown): string {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("'", "&apos;");
+}
+
+function normalizeDocxTextLines(text: string): string[] {
+  return String(text ?? "")
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.replace(/\t/g, "    "));
+}
+
+function buildDocxRun(text: string, options: { bold?: boolean; italic?: boolean } = {}): string {
+  const runProperties = [
+    options.bold ? "<w:b/>" : "",
+    options.italic ? "<w:i/>" : ""
+  ].join("");
+  const safeText = escapeXml(text);
+  return `<w:r>${runProperties ? `<w:rPr>${runProperties}</w:rPr>` : ""}<w:t xml:space="preserve">${safeText}</w:t></w:r>`;
+}
+
+function buildDocxParagraph(
+  text: string,
+  style: "Title" | "Subtitle" | "Heading1" | "Heading2" | "Heading3" | "Normal" | "ListParagraph" = "Normal"
+): string {
+  const paragraphProperties = style === "Normal" ? "" : `<w:pPr><w:pStyle w:val="${style}"/></w:pPr>`;
+  return `<w:p>${paragraphProperties}${buildDocxRun(text)}</w:p>`;
+}
+
+function buildCommandWorkshopDocxDocument(request: CommandWorkshopMessageExportRequest): string {
+  const lines = normalizeDocxTextLines(request.contentText);
+  const paragraphs = [
+    buildDocxParagraph(request.title, "Title"),
+    buildDocxParagraph(`Agent: ${request.agentName}    生成时间: ${formatExportDateTime(request.createdAt)}`, "Subtitle")
+  ];
+  let blankCount = 0;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd();
+
+    if (!line.trim()) {
+      blankCount += 1;
+      if (blankCount <= 1) {
+        paragraphs.push("<w:p/>");
+      }
+      continue;
+    }
+
+    blankCount = 0;
+
+    const headingMatch = line.match(/^(#{1,3})\s+(.*)$/);
+
+    if (headingMatch) {
+      const depth = headingMatch[1].length;
+      paragraphs.push(buildDocxParagraph(headingMatch[2], depth === 1 ? "Heading1" : depth === 2 ? "Heading2" : "Heading3"));
+      continue;
+    }
+
+    const listMatch = line.match(/^\s*(?:[-*+]|\d+(?:\.\d+)*[.)])\s+(.*)$/);
+
+    if (listMatch) {
+      paragraphs.push(buildDocxParagraph(`• ${listMatch[1]}`, "ListParagraph"));
+      continue;
+    }
+
+    if (/^>\s?/.test(line)) {
+      paragraphs.push(buildDocxParagraph(line.replace(/^>\s?/, ""), "Subtitle"));
+      continue;
+    }
+
+    paragraphs.push(buildDocxParagraph(line));
+  }
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <w:body>
+    ${paragraphs.join("\n")}
+    <w:sectPr>
+      <w:pgSz w:w="11906" w:h="16838"/>
+      <w:pgMar w:top="1440" w:right="1260" w:bottom="1440" w:left="1260" w:header="708" w:footer="708" w:gutter="0"/>
+    </w:sectPr>
+  </w:body>
+</w:document>`;
+}
+
+function buildCommandWorkshopDocxStyles(): string {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
+    <w:name w:val="Normal"/>
+    <w:qFormat/>
+    <w:pPr><w:spacing w:after="120" w:line="360" w:lineRule="auto"/></w:pPr>
+    <w:rPr><w:rFonts w:ascii="Aptos" w:eastAsia="Microsoft YaHei" w:hAnsi="Aptos"/><w:sz w:val="22"/></w:rPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Title">
+    <w:name w:val="Title"/>
+    <w:basedOn w:val="Normal"/>
+    <w:next w:val="Normal"/>
+    <w:qFormat/>
+    <w:pPr><w:spacing w:before="0" w:after="180"/></w:pPr>
+    <w:rPr><w:b/><w:color w:val="18313A"/><w:sz w:val="44"/></w:rPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Subtitle">
+    <w:name w:val="Subtitle"/>
+    <w:basedOn w:val="Normal"/>
+    <w:next w:val="Normal"/>
+    <w:qFormat/>
+    <w:pPr><w:spacing w:after="220"/></w:pPr>
+    <w:rPr><w:color w:val="60717D"/><w:sz w:val="20"/></w:rPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Heading1">
+    <w:name w:val="heading 1"/>
+    <w:basedOn w:val="Normal"/>
+    <w:next w:val="Normal"/>
+    <w:qFormat/>
+    <w:pPr><w:keepNext/><w:spacing w:before="360" w:after="120"/></w:pPr>
+    <w:rPr><w:b/><w:color w:val="0F7F6E"/><w:sz w:val="32"/></w:rPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Heading2">
+    <w:name w:val="heading 2"/>
+    <w:basedOn w:val="Normal"/>
+    <w:next w:val="Normal"/>
+    <w:qFormat/>
+    <w:pPr><w:keepNext/><w:spacing w:before="280" w:after="100"/></w:pPr>
+    <w:rPr><w:b/><w:color w:val="18313A"/><w:sz w:val="28"/></w:rPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Heading3">
+    <w:name w:val="heading 3"/>
+    <w:basedOn w:val="Normal"/>
+    <w:next w:val="Normal"/>
+    <w:qFormat/>
+    <w:pPr><w:keepNext/><w:spacing w:before="220" w:after="80"/></w:pPr>
+    <w:rPr><w:b/><w:color w:val="28414B"/><w:sz w:val="24"/></w:rPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="ListParagraph">
+    <w:name w:val="List Paragraph"/>
+    <w:basedOn w:val="Normal"/>
+    <w:qFormat/>
+    <w:pPr><w:ind w:left="420" w:hanging="220"/><w:spacing w:after="80"/></w:pPr>
+  </w:style>
+</w:styles>`;
+}
+
+async function exportCommandWorkshopMessageAsDocx(
+  request: CommandWorkshopMessageExportRequest,
+  filePath: string
+): Promise<number> {
+  const zip = new JSZip();
+
+  zip.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+  <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+</Types>`);
+  zip.folder("_rels")?.file(".rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`);
+  zip.folder("word")?.file("document.xml", buildCommandWorkshopDocxDocument(request));
+  zip.folder("word")?.file("styles.xml", buildCommandWorkshopDocxStyles());
+  zip.folder("word")?.folder("_rels")?.file("document.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`);
+
+  const buffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
+  await writeFile(filePath, buffer);
+  return buffer.byteLength;
 }
 
 function buildGordonConfirmWindowHtml(options: GordonConfirmWindowOptions, resolveChannel: string): string {
@@ -2025,6 +2510,46 @@ app.whenReady().then(async () => {
   ipcMain.handle("gordon:command-workshop:delete", async (_event, sessionId: string) =>
     deleteCommandWorkshopSession(sessionId)
   );
+  ipcMain.handle("gordon:command-workshop:export-message", async (event, request: CommandWorkshopMessageExportRequest) => {
+    const exportRequest = normalizeCommandWorkshopMessageExportRequest(request);
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+    const extension = exportRequest.format;
+    const saveDialogOptions = {
+      title: extension === "pdf" ? "导出 AI 回复为 PDF" : "导出 AI 回复为 DOCX",
+      defaultPath: path.join(app.getPath("documents"), exportRequest.fileName),
+      filters: [
+        {
+          name: extension === "pdf" ? "PDF 文档" : "Word 文档",
+          extensions: [extension]
+        }
+      ]
+    } satisfies Electron.SaveDialogOptions;
+    const dialogResult = ownerWindow
+      ? await dialog.showSaveDialog(ownerWindow, saveDialogOptions)
+      : await dialog.showSaveDialog(saveDialogOptions);
+
+    if (dialogResult.canceled || !dialogResult.filePath) {
+      return null;
+    }
+
+    const normalizedFilePath = dialogResult.filePath.toLowerCase().endsWith(`.${extension}`)
+      ? dialogResult.filePath
+      : `${dialogResult.filePath}.${extension}`;
+
+    await mkdir(path.dirname(normalizedFilePath), { recursive: true });
+
+    const writtenBytes =
+      extension === "pdf"
+        ? await exportCommandWorkshopMessageAsPdf(exportRequest, normalizedFilePath)
+        : await exportCommandWorkshopMessageAsDocx(exportRequest, normalizedFilePath);
+
+    return {
+      filePath: normalizedFilePath,
+      fileName: path.basename(normalizedFilePath),
+      format: extension,
+      writtenBytes
+    };
+  });
   ipcMain.handle("gordon:workflow-library:upsert", async (_event, item) => upsertWorkflowLibraryItem(item));
   ipcMain.handle("gordon:workflow-library:run-record", async (event, record) =>
     runWorkflowRecord(record, (payload) =>

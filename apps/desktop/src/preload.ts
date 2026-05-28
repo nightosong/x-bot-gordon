@@ -5,6 +5,8 @@ import type {
   ComicProjectExportRequest,
   ComicProjectExportResult,
   ComicProject,
+  CommandWorkshopMessageExportRequest,
+  CommandWorkshopMessageExportResult,
   ModelBalanceHistoryEntry,
   ModelBalanceQueryRequest,
   ModelBalanceSnapshot,
@@ -168,6 +170,10 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
     ipcRenderer.invoke("gordon:command-workshop:upsert", toPlainIpcData(session)),
   deleteCommandWorkshopSession: (sessionId: string): Promise<CommandWorkshopSession[]> =>
     ipcRenderer.invoke("gordon:command-workshop:delete", sessionId),
+  exportCommandWorkshopMessage: (
+    request: CommandWorkshopMessageExportRequest
+  ): Promise<CommandWorkshopMessageExportResult | null> =>
+    ipcRenderer.invoke("gordon:command-workshop:export-message", toPlainIpcData(request)),
   upsertWorkflowLibraryItem: (item: WorkflowLibraryItem): Promise<WorkflowLibraryItem[]> =>
     ipcRenderer.invoke("gordon:workflow-library:upsert", toPlainIpcData(item)),
   runWorkflowRecord: (record: WorkflowLibraryItem["records"][number]) =>

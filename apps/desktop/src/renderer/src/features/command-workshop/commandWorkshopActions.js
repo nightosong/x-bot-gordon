@@ -345,6 +345,10 @@ export function createCommandWorkshopActions({
     return template.innerHTML;
   }
 
+  function getCommandMessageExportKey(message, format) {
+    return `${message?.id ?? ""}:${format}`;
+  }
+
   const activeCommandSession = computed(() =>
     workbench.commandSessions.find((session) => session.id === ui.command.activeSessionId) ?? null
   );
@@ -533,6 +537,53 @@ export function createCommandWorkshopActions({
     } catch (error) {
       console.error("Failed to copy command assistant message", error);
       setStatus(`复制 AI 回复失败：${getErrorMessage(error)}`, "danger");
+    }
+  }
+
+  async function handleCommandMessageExport(message, format) {
+    const content = String(message?.content ?? "").trim();
+    const normalizedFormat = format === "docx" ? "docx" : "pdf";
+
+    if (!content) {
+      setStatus("当前 AI 回复没有可导出的内容。", "warning");
+      return;
+    }
+
+    if (!desktopApi?.exportCommandWorkshopMessage) {
+      setStatus("当前桌面桥接暂不支持文档导出。", "danger");
+      return;
+    }
+
+    const activeSession = activeCommandSession.value;
+    const exportKey = getCommandMessageExportKey(message, normalizedFormat);
+    ui.command.exportingMessageKey = exportKey;
+
+    try {
+      const result = await desktopApi.exportCommandWorkshopMessage({
+        fileName: `${activeSession?.title || "Gordon AI 回复"}-${normalizedFormat.toUpperCase()}`,
+        format: normalizedFormat,
+        title: activeSession?.title || "Gordon AI 回复",
+        agentName: resolveBoundModelName(commandSelectedAgent.value?.modelProfileId)
+          ? `${commandSelectedAgent.value?.name ?? "Gordon"} / ${resolveBoundModelName(commandSelectedAgent.value?.modelProfileId)}`
+          : commandSelectedAgent.value?.name ?? "Gordon",
+        createdAt: message?.createdAt ?? new Date().toISOString(),
+        contentText: content,
+        contentHtml: renderCommandMessageCopyHtml(content)
+      });
+
+      if (!result) {
+        setStatus("已取消导出。", "neutral");
+        return;
+      }
+
+      setStatus(`AI 回复已导出为 ${normalizedFormat.toUpperCase()}：${result.fileName}`, "success");
+    } catch (error) {
+      console.error("Failed to export command assistant message", error);
+      setStatus(`导出 AI 回复失败：${getErrorMessage(error)}`, "danger");
+    } finally {
+      if (ui.command.exportingMessageKey === exportKey) {
+        ui.command.exportingMessageKey = null;
+      }
     }
   }
 
@@ -1665,6 +1716,7 @@ export function createCommandWorkshopActions({
     handleCommandInputEnterKeydown,
     handleCommandLoadMcpTools,
     handleCommandMessageCopy,
+    handleCommandMessageExport,
     handleCommandRunCancel,
     handleCommandServerChange,
     handleCommandSessionDelete,

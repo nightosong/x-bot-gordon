@@ -63,20 +63,6 @@
               >
                 <div class="command-message-head">
                   <span class="command-message-role">{{ message.role === "user" ? "你" : resolveAgentName(ui.command.form.agentProfileId) }}</span>
-                  <span class="command-message-meta">
-                    <span class="command-message-time">{{ formatLocalDateTime(message.createdAt) }}</span>
-                    <button
-                      v-if="message.role === 'assistant' && message.content"
-                      type="button"
-                      class="model-icon-button command-message-copy-button"
-                      :class="{ 'is-copied': ui.command.copiedMessageId === message.id }"
-                      :aria-label="ui.command.copiedMessageId === message.id ? 'AI 回复已复制' : '复制 AI 回复'"
-                      :title="ui.command.copiedMessageId === message.id ? '已复制' : '复制 AI 回复'"
-                      @click="handleCommandMessageCopy(message)"
-                    >
-                      <GIcon :name="ui.command.copiedMessageId === message.id ? 'check' : 'copy'" :size="14" />
-                    </button>
-                  </span>
                 </div>
 
                 <div
@@ -165,12 +151,49 @@
                     </div>
                   </article>
                 </div>
+
+                <div class="command-message-foot">
+                  <span class="command-message-time">{{ formatLocalDateTime(message.createdAt) }}</span>
+                  <span v-if="message.role === 'assistant' && message.content" class="command-message-actions" aria-label="消息操作">
+                    <button
+                      type="button"
+                      class="model-icon-button command-message-action-button"
+                      :class="{ 'is-loading': ui.command.exportingMessageKey === `${message.id}:pdf` }"
+                      :disabled="Boolean(ui.command.exportingMessageKey)"
+                      :aria-label="ui.command.exportingMessageKey === `${message.id}:pdf` ? '正在导出 PDF' : '导出 PDF'"
+                      :title="ui.command.exportingMessageKey === `${message.id}:pdf` ? '正在导出 PDF' : '导出 PDF'"
+                      @click="handleCommandMessageExport(message, 'pdf')"
+                    >
+                      <GIcon :name="ui.command.exportingMessageKey === `${message.id}:pdf` ? 'loading' : 'fileText'" :size="13" :spin="ui.command.exportingMessageKey === `${message.id}:pdf`" />
+                    </button>
+                    <button
+                      type="button"
+                      class="model-icon-button command-message-action-button command-message-docx-button"
+                      :class="{ 'is-loading': ui.command.exportingMessageKey === `${message.id}:docx` }"
+                      :disabled="Boolean(ui.command.exportingMessageKey)"
+                      :aria-label="ui.command.exportingMessageKey === `${message.id}:docx` ? '正在导出 DOCX' : '导出 DOCX'"
+                      :title="ui.command.exportingMessageKey === `${message.id}:docx` ? '正在导出 DOCX' : '导出 DOCX'"
+                      @click="handleCommandMessageExport(message, 'docx')"
+                    >
+                      <GIcon :name="ui.command.exportingMessageKey === `${message.id}:docx` ? 'loading' : 'book'" :size="13" :spin="ui.command.exportingMessageKey === `${message.id}:docx`" />
+                    </button>
+                    <button
+                      type="button"
+                      class="model-icon-button command-message-action-button"
+                      :class="{ 'is-copied': ui.command.copiedMessageId === message.id }"
+                      :aria-label="ui.command.copiedMessageId === message.id ? 'AI 回复已复制' : '复制 AI 回复'"
+                      :title="ui.command.copiedMessageId === message.id ? '已复制' : '复制 AI 回复'"
+                      @click="handleCommandMessageCopy(message)"
+                    >
+                      <GIcon :name="ui.command.copiedMessageId === message.id ? 'check' : 'copy'" :size="13" />
+                    </button>
+                  </span>
+                </div>
               </article>
 
               <article v-if="ui.command.isRunning" class="command-message is-assistant is-pending">
                 <div class="command-message-head">
                   <span class="command-message-role">{{ resolveAgentName(ui.command.form.agentProfileId) }}</span>
-                  <span class="command-message-time">{{ ui.command.liveProgress?.updatedAt ? formatLocalDateTime(ui.command.liveProgress.updatedAt) : "处理中" }}</span>
                 </div>
 
                 <div v-if="getCommandResponseProcessItems(ui.command.liveProgress?.artifact).length" class="command-response-process is-live">
@@ -244,6 +267,10 @@
                       </a>
                     </div>
                   </article>
+                </div>
+
+                <div class="command-message-foot">
+                  <span class="command-message-time">{{ ui.command.liveProgress?.updatedAt ? formatLocalDateTime(ui.command.liveProgress.updatedAt) : "处理中" }}</span>
                 </div>
               </article>
             </div>
@@ -516,6 +543,7 @@ const props = defineProps({
   handleCommandInputEnterKeydown: { type: Function, required: true },
   handleCommandLoadMcpTools: { type: Function, required: true },
   handleCommandMessageCopy: { type: Function, required: true },
+  handleCommandMessageExport: { type: Function, required: true },
   handleCommandRunCancel: { type: Function, required: true },
   handleCommandServerChange: { type: Function, required: true },
   handleCommandSessionDelete: { type: Function, required: true },

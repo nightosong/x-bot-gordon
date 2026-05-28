@@ -622,6 +622,25 @@ export interface CommandWorkshopSession {
   updatedAt: string;
 }
 
+export type CommandWorkshopMessageExportFormat = "pdf" | "docx";
+
+export interface CommandWorkshopMessageExportRequest {
+  fileName: string;
+  format: CommandWorkshopMessageExportFormat;
+  title: string;
+  agentName: string;
+  createdAt: string;
+  contentText: string;
+  contentHtml: string;
+}
+
+export interface CommandWorkshopMessageExportResult {
+  filePath: string;
+  fileName: string;
+  format: CommandWorkshopMessageExportFormat;
+  writtenBytes: number;
+}
+
 export interface WritingBookPart {
   id: string;
   type: WritingBookPartType;

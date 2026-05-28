@@ -974,12 +974,92 @@ function findInlineMathEnd(value, startIndex, delimiter) {
   return -1;
 }
 
-function renderPlainInlineText(text) {
+function normalizeRichTextUrl(url) {
+  const normalized = String(url ?? "").trim();
+
+  if (/^(?:https?:\/\/|mailto:)/i.test(normalized)) {
+    return normalized;
+  }
+
+  return "";
+}
+
+function trimAutolinkUrl(value) {
+  let normalized = String(value ?? "");
+  let suffix = "";
+
+  while (/[),.;!?，。；！？]$/.test(normalized)) {
+    const char = normalized.slice(-1);
+
+    if (char === ")") {
+      const openCount = normalized.match(/\(/g)?.length ?? 0;
+      const closeCount = normalized.match(/\)/g)?.length ?? 0;
+
+      if (openCount >= closeCount) {
+        break;
+      }
+    }
+
+    suffix = `${char}${suffix}`;
+    normalized = normalized.slice(0, -1);
+  }
+
+  return {
+    url: normalized,
+    suffix
+  };
+}
+
+function renderRichTextLink(label, url) {
+  const normalizedUrl = normalizeRichTextUrl(url);
+
+  if (!normalizedUrl) {
+    return escapeHtml(label);
+  }
+
+  return `<a class="command-rich-link" href="${escapeHtml(normalizedUrl)}" target="_blank" rel="noreferrer">${renderPlainInlineText(
+    label,
+    { disableLinks: true }
+  )}</a>`;
+}
+
+function renderPlainInlineText(text, options = {}) {
   const source = String(text ?? "");
   let index = 0;
   let html = "";
 
   while (index < source.length) {
+    if (!options.disableLinks && source[index] === "[") {
+      const labelEndIndex = source.indexOf("]", index + 1);
+
+      if (labelEndIndex !== -1 && source[labelEndIndex + 1] === "(") {
+        const urlEndIndex = source.indexOf(")", labelEndIndex + 2);
+        const label = source.slice(index + 1, labelEndIndex);
+        const url = source.slice(labelEndIndex + 2, urlEndIndex);
+
+        if (urlEndIndex !== -1 && label.trim() && normalizeRichTextUrl(url)) {
+          html += renderRichTextLink(label, url);
+          index = urlEndIndex + 1;
+          continue;
+        }
+      }
+    }
+
+    if (!options.disableLinks) {
+      const urlMatch = source.slice(index).match(/^https?:\/\/[^\s<>"']+/i);
+
+      if (urlMatch) {
+        const { url, suffix } = trimAutolinkUrl(urlMatch[0]);
+
+        if (normalizeRichTextUrl(url)) {
+          html += renderRichTextLink(url, url);
+          html += escapeHtml(suffix);
+          index += urlMatch[0].length;
+          continue;
+        }
+      }
+    }
+
     if (source.startsWith("**", index)) {
       const endIndex = source.indexOf("**", index + 2);
 
@@ -987,7 +1067,7 @@ function renderPlainInlineText(text) {
         const inner = source.slice(index + 2, endIndex);
 
         if (inner.trim()) {
-          html += `<strong>${renderPlainInlineText(inner)}</strong>`;
+          html += `<strong>${renderPlainInlineText(inner, options)}</strong>`;
           index = endIndex + 2;
           continue;
         }
@@ -1001,7 +1081,7 @@ function renderPlainInlineText(text) {
         const inner = source.slice(index + 1, endIndex);
 
         if (inner.trim() && !inner.includes("\n")) {
-          html += `<em>${renderPlainInlineText(inner)}</em>`;
+          html += `<em>${renderPlainInlineText(inner, options)}</em>`;
           index = endIndex + 1;
           continue;
         }

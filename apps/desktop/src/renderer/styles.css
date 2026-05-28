@@ -12380,8 +12380,19 @@ canvas {
   background: rgba(255, 255, 255, 0.025);
 }
 
+.command-message.is-assistant {
+  width: min(100%, 880px);
+  padding: 14px 16px;
+  border-color: rgba(151, 182, 216, 0.12);
+  background:
+    linear-gradient(145deg, rgba(92, 225, 194, 0.035), rgba(245, 200, 107, 0.018)),
+    rgba(255, 255, 255, 0.028);
+}
+
 .command-message.is-user {
   align-self: flex-end;
+  width: fit-content;
+  max-width: min(76%, 640px);
   background: rgba(92, 225, 194, 0.08);
   border-color: rgba(92, 225, 194, 0.16);
 }
@@ -12397,7 +12408,7 @@ canvas {
 
 .command-message-head {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
   gap: 10px;
   margin-bottom: 8px;
@@ -12416,35 +12427,84 @@ canvas {
   color: rgba(247, 243, 235, 0.48);
 }
 
-.command-message-meta {
+.command-message-foot {
   display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 24px;
+  margin-top: 9px;
   min-width: 0;
 }
 
-.command-message-copy-button {
-  width: 26px;
-  height: 26px;
-  opacity: 0.72;
-  border-color: rgba(151, 182, 216, 0.12);
-  background: rgba(255, 255, 255, 0.035);
-  color: rgba(247, 243, 235, 0.66);
+.command-message.is-user .command-message-foot {
+  justify-content: flex-end;
 }
 
-.command-message-copy-button:hover,
-.command-message-copy-button:focus-visible,
-.command-message-copy-button.is-copied {
+.command-message-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
+
+.command-message-action-button {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  opacity: 0.62;
+  border-color: transparent;
+  background: transparent;
+  color: rgba(247, 243, 235, 0.46);
+  line-height: 1;
+  box-shadow: none;
+}
+
+.command-message-action-button .action-icon {
+  display: block;
+  width: 13px;
+  height: 13px;
+  margin: 0;
+}
+
+.command-message-action-button:hover,
+.command-message-action-button:focus-visible,
+.command-message-action-button.is-copied,
+.command-message-action-button.is-loading {
   opacity: 1;
-  border-color: rgba(92, 225, 194, 0.26);
-  background: rgba(92, 225, 194, 0.1);
+  border-color: rgba(92, 225, 194, 0.22);
+  background: rgba(92, 225, 194, 0.08);
   color: #bcf8ea;
+}
+
+.command-message-action-button:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
+.command-message-action-button.is-loading {
+  opacity: 1;
+}
+
+.command-message-docx-button {
+  color: rgba(245, 200, 107, 0.56);
+}
+
+.command-message-docx-button:hover,
+.command-message-docx-button:focus-visible,
+.command-message-docx-button.is-loading {
+  border-color: rgba(245, 200, 107, 0.28);
+  background: rgba(245, 200, 107, 0.08);
+  color: #f7d88a;
 }
 
 .command-message-body {
   color: var(--text);
   font-size: 13px;
+  min-width: 0;
 }
 
 .command-message-attachments {
@@ -12561,6 +12621,7 @@ canvas {
 }
 
 .command-rich-text > * {
+  min-width: 0;
   margin: 0;
 }
 
@@ -12789,7 +12850,7 @@ canvas {
   display: flex;
   align-items: center;
   min-width: 0;
-  margin-top: 2px;
+  margin-top: 4px;
   padding-left: 12px;
   color: var(--text);
   font-weight: 800;
@@ -12810,7 +12871,8 @@ canvas {
 }
 
 .command-rich-heading-depth-1 {
-  font-size: 16px;
+  margin-top: 7px;
+  font-size: 16.5px;
 }
 
 .command-rich-heading-depth-2 {
@@ -12825,6 +12887,7 @@ canvas {
 .command-rich-paragraph {
   max-width: 78ch;
   color: rgba(247, 243, 235, 0.86);
+  text-wrap: pretty;
 }
 
 .command-rich-text strong {
@@ -12837,9 +12900,24 @@ canvas {
   font-style: normal;
 }
 
+.command-rich-link {
+  color: #bcf8ea;
+  font-weight: 750;
+  text-decoration: underline;
+  text-decoration-color: rgba(92, 225, 194, 0.34);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  transition: color 160ms ease, text-decoration-color 160ms ease;
+}
+
+.command-rich-link:hover {
+  color: #e1fff7;
+  text-decoration-color: rgba(92, 225, 194, 0.78);
+}
+
 .command-rich-list {
   display: grid;
-  gap: 5px;
+  gap: 6px;
   padding-left: 20px;
   color: rgba(247, 243, 235, 0.86);
 }
@@ -12852,7 +12930,7 @@ canvas {
 .command-rich-list-item {
   min-width: 0;
   padding-left: 1px;
-  line-height: 1.62;
+  line-height: 1.64;
 }
 
 .command-rich-list-item-content {
@@ -12875,6 +12953,7 @@ canvas {
 
 .command-rich-quote {
   margin: 0;
+  max-width: 78ch;
   padding: 10px 12px 10px 14px;
   border-left: 3px solid rgba(92, 225, 194, 0.3);
   border-radius: 10px;
@@ -12887,6 +12966,7 @@ canvas {
 .command-rich-divider {
   width: 100%;
   height: 1px;
+  margin: 2px 0;
   border: 0;
   background: linear-gradient(90deg, transparent, rgba(151, 182, 216, 0.22), transparent);
 }
@@ -12903,7 +12983,7 @@ canvas {
 
 .command-rich-table {
   width: 100%;
-  min-width: 420px;
+  min-width: min(520px, 100%);
   border-collapse: collapse;
   color: rgba(247, 243, 235, 0.84);
   font-size: 12px;
@@ -12937,6 +13017,7 @@ canvas {
 .command-rich-table th {
   color: rgba(188, 248, 234, 0.94);
   font-weight: 800;
+  white-space: nowrap;
 }
 
 .command-rich-table td {
@@ -12969,6 +13050,8 @@ canvas {
   color: rgba(232, 255, 250, 0.96);
   line-height: 1.45;
   vertical-align: baseline;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .command-math-block {
@@ -13049,7 +13132,7 @@ canvas {
 }
 
 .command-inline-code {
-  display: inline-block;
+  display: inline;
   padding: 1px 5px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.06);
@@ -13060,7 +13143,7 @@ canvas {
 
 .command-code-block {
   border: 1px solid rgba(151, 182, 216, 0.14);
-  border-radius: 14px;
+  border-radius: 10px;
   overflow: hidden;
   background: rgba(5, 11, 18, 0.96);
 }
@@ -14309,6 +14392,33 @@ canvas {
 
   .command-message {
     width: 100%;
+  }
+
+  .command-message.is-user {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .command-message.is-assistant {
+    padding: 12px 13px;
+  }
+
+  .command-rich-paragraph,
+  .command-rich-quote {
+    max-width: none;
+  }
+
+  .command-rich-table {
+    min-width: 460px;
+  }
+
+  .command-code-line {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+
+  .command-code-line-number,
+  .command-code-line-content {
+    padding: 0 10px;
   }
 
   .command-artifact-inline-row {

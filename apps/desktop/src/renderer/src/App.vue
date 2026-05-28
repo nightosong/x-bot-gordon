@@ -185,6 +185,7 @@
               :handle-command-input-enter-keydown="handleCommandInputEnterKeydown"
               :handle-command-load-mcp-tools="handleCommandLoadMcpTools"
               :handle-command-message-copy="handleCommandMessageCopy"
+              :handle-command-message-export="handleCommandMessageExport"
               :handle-command-run-cancel="handleCommandRunCancel"
               :handle-command-server-change="handleCommandServerChange"
               :handle-command-session-delete="handleCommandSessionDelete"
@@ -755,6 +756,7 @@ const {
   handleCommandInputEnterKeydown,
   handleCommandLoadMcpTools,
   handleCommandMessageCopy,
+  handleCommandMessageExport,
   handleCommandRunCancel,
   handleCommandServerChange,
   handleCommandSessionDelete,
