@@ -117,7 +117,7 @@ description: "What this skill does and when to use it."
 ### Automated (Recommended)
 
 \`\`\`bash
-./skills/skill-name/scripts/helper.sh [args]
+~/.gord/skills/skill-name/scripts/helper.sh [args]
 \`\`\`
 
 ### Manual Steps
@@ -173,5 +173,5 @@ Before creating a skill from a learning:
 After creating:
 
 - [ ] Update original learning with `promoted_to_skill` status
-- [ ] Add `Skill-Path: skills/skill-name` to learning metadata
+- [ ] Add `Skill-Path: ~/.gord/skills/skill-name` to learning metadata
 - [ ] Test skill by reading it in a fresh session

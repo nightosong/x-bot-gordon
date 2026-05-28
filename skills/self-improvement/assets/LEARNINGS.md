@@ -23,7 +23,7 @@ When a learning is promoted to a skill, add these fields:
 
 ```markdown
 **Status**: promoted_to_skill
-**Skill-Path**: skills/skill-name
+**Skill-Path**: ~/.gord/skills/skill-name
 ```
 
 Example:
@@ -33,7 +33,7 @@ Example:
 **Logged**: 2025-01-15T10:00:00Z
 **Priority**: high
 **Status**: promoted_to_skill
-**Skill-Path**: skills/docker-m1-fixes
+**Skill-Path**: ~/.gord/skills/docker-m1-fixes
 **Area**: infra
 
 ### Summary

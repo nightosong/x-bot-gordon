@@ -13,7 +13,7 @@ export const BUILTIN_APPLICATION_TOOLS_MCP_ID = "builtin:mcp:application-tools";
 export const BUILTIN_PLAN_SKILL_ID = "builtin:skill:plan";
 export const BUILTIN_CODE_SKILL_ID = "builtin:skill:code";
 export const BUILTIN_REVIEW_SKILL_ID = "builtin:skill:review";
-export const BUILTIN_KARPATHY_SKILL_ID = "builtin:skill:karpathy-guidelines";
+export const BUILTIN_CODE_GUIDELINES_SKILL_ID = "builtin:skill:code-guidelines";
 export const BUILTIN_SELF_IMPROVEMENT_SKILL_ID = "builtin:skill:self-improvement";
 export const BUILTIN_DEEP_RESEARCH_SKILL_ID = "builtin:skill:deep-research";
 export const BUILTIN_SKILL_CREATOR_SKILL_ID = "builtin:skill:skill-creator";
@@ -23,7 +23,7 @@ const BUILTIN_UPDATED_AT = "2026-04-27T10:30:00.000Z";
 const BUILTIN_PLAN_SKILL_PATH = resolveFromRoot("skills", "plan");
 const BUILTIN_CODE_SKILL_PATH = resolveFromRoot("skills", "code");
 const BUILTIN_REVIEW_SKILL_PATH = resolveFromRoot("skills", "review");
-const BUILTIN_KARPATHY_SKILL_PATH = resolveFromRoot("skills", "karpathy-guidelines");
+const BUILTIN_CODE_GUIDELINES_SKILL_PATH = resolveFromRoot("skills", "code-guidelines");
 const BUILTIN_SELF_IMPROVEMENT_SKILL_PATH = resolveFromRoot("skills", "self-improvement");
 const BUILTIN_DEEP_RESEARCH_SKILL_PATH = resolveFromRoot("skills", "deep-research");
 const BUILTIN_SKILL_CREATOR_SKILL_PATH = resolveFromRoot("skills", "skill-creator");
@@ -31,7 +31,7 @@ const BUILTIN_WRITING_SKILL_PATH = resolveFromRoot("skills", "writing");
 const BUILTIN_PLAN_SKILL_PROMPT = readPromptAsset("builtinSkillPlanPrompt");
 const BUILTIN_CODE_SKILL_PROMPT = readPromptAsset("builtinSkillCodePrompt");
 const BUILTIN_REVIEW_SKILL_PROMPT = readPromptAsset("builtinSkillReviewPrompt");
-const BUILTIN_KARPATHY_SKILL_PROMPT = readPromptAsset("builtinSkillKarpathyPrompt");
+const BUILTIN_CODE_GUIDELINES_SKILL_PROMPT = readPromptAsset("builtinSkillCodeGuidelinesPrompt");
 const BUILTIN_SELF_IMPROVEMENT_SKILL_PROMPT = readPromptAsset("builtinSkillSelfImprovementPrompt");
 const BUILTIN_DEEP_RESEARCH_SKILL_PROMPT = readPromptAsset("builtinSkillDeepResearchPrompt");
 const BUILTIN_SKILL_CREATOR_SKILL_PROMPT = readPromptAsset("builtinSkillCreatorPrompt");
@@ -96,15 +96,15 @@ export function getBuiltinSkillDefinitions(): SkillDefinition[] {
       updatedAt: BUILTIN_UPDATED_AT
     },
     {
-      id: BUILTIN_KARPATHY_SKILL_ID,
-      name: "karpathy-guidelines",
-      description: "吸收 Karpathy 的开发偏好，强调先澄清、保持简单、外科式修改和目标驱动验证。",
+      id: BUILTIN_CODE_GUIDELINES_SKILL_ID,
+      name: "code-guidelines",
+      description: "生产级代码行为准则，强调简单方案、外科式修改、显式不确定性、可验证验收和防幻觉。",
       tags: [],
       kind: "prompt",
-      promptTemplate: BUILTIN_KARPATHY_SKILL_PROMPT,
+      promptTemplate: BUILTIN_CODE_GUIDELINES_SKILL_PROMPT,
       source: {
         type: "manual",
-        localPath: BUILTIN_KARPATHY_SKILL_PATH
+        localPath: BUILTIN_CODE_GUIDELINES_SKILL_PATH
       },
       enabled: true,
       updatedAt: BUILTIN_UPDATED_AT

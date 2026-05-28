@@ -6,7 +6,9 @@
 set -e
 
 # Configuration
-SKILLS_DIR="./skills"
+GORDON_HOME="${GORDON_HOME:-$HOME/.gord}"
+USER_SKILLS_ROOT="$GORDON_HOME/skills"
+SKILLS_DIR="$USER_SKILLS_ROOT"
 
 # Colors for output
 RED='\033[0;31m'
@@ -25,13 +27,13 @@ Arguments:
 
 Options:
   --dry-run      Show what would be created without creating files
-  --output-dir   Relative output directory under current path (default: ./skills)
+  --output-dir   Skill output root (default: ~/.gord/skills; relative values are resolved under ~/.gord/skills)
   -h, --help     Show this help message
 
 Examples:
   $(basename "$0") docker-m1-fixes
   $(basename "$0") api-timeout-patterns --dry-run
-  $(basename "$0") pnpm-setup --output-dir ./skills/custom
+  $(basename "$0") pnpm-setup --output-dir custom
 
 The skill will be created in: \$SKILLS_DIR/<skill-name>/
 EOF
@@ -61,7 +63,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --output-dir)
             if [ -z "${2:-}" ] || [[ "${2:-}" == -* ]]; then
-                log_error "--output-dir requires a relative path argument"
+                log_error "--output-dir requires a path argument"
                 usage
                 exit 1
             fi
@@ -104,19 +106,14 @@ if ! [[ "$SKILL_NAME" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
     exit 1
 fi
 
-# Validate output path to avoid writes outside current workspace.
-if [[ "$SKILLS_DIR" = /* ]]; then
-    log_error "Output directory must be a relative path under the current directory."
-    exit 1
-fi
-
 if [[ "$SKILLS_DIR" =~ (^|/)\.\.(/|$) ]]; then
     log_error "Output directory cannot include '..' path segments."
     exit 1
 fi
 
-SKILLS_DIR="${SKILLS_DIR#./}"
-SKILLS_DIR="./$SKILLS_DIR"
+if [[ "$SKILLS_DIR" != /* ]]; then
+    SKILLS_DIR="$USER_SKILLS_ROOT/${SKILLS_DIR#./}"
+fi
 
 SKILL_PATH="$SKILLS_DIR/$SKILL_NAME"
 
@@ -218,4 +215,4 @@ echo "  3. Add references/ folder if you have detailed documentation"
 echo "  4. Add scripts/ folder if you have executable code"
 echo "  5. Update the original learning entry with:"
 echo "     **Status**: promoted_to_skill"
-echo "     **Skill-Path**: skills/$SKILL_NAME"
+echo "     **Skill-Path**: ~/.gord/skills/$SKILL_NAME"

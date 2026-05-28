@@ -270,7 +270,7 @@ Consider system preference detection.
 **Logged**: 2025-01-18T11:00:00Z
 **Priority**: high
 **Status**: promoted_to_skill
-**Skill-Path**: skills/docker-m1-fixes
+**Skill-Path**: ~/.gord/skills/docker-m1-fixes
 **Area**: infra
 
 ### Summary
@@ -298,7 +298,7 @@ Add `--platform linux/amd64` to docker build command, or use
 
 When the above learning is extracted as a skill, it becomes:
 
-**File**: `skills/docker-m1-fixes/SKILL.md`
+**File**: `~/.gord/skills/docker-m1-fixes/SKILL.md`
 
 ```markdown
 ---

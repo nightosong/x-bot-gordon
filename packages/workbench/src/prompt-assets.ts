@@ -8,7 +8,7 @@ const PROMPT_ASSET_PATHS = {
   builtinSkillPlanPrompt: ["skills", "plan", "SKILL.md"],
   builtinSkillCodePrompt: ["skills", "code", "SKILL.md"],
   builtinSkillReviewPrompt: ["skills", "review", "SKILL.md"],
-  builtinSkillKarpathyPrompt: ["skills", "karpathy-guidelines", "SKILL.md"],
+  builtinSkillCodeGuidelinesPrompt: ["skills", "code-guidelines", "SKILL.md"],
   builtinSkillSelfImprovementPrompt: ["skills", "self-improvement", "SKILL.md"],
   builtinSkillDeepResearchPrompt: ["skills", "deep-research", "SKILL.md"],
   builtinSkillCreatorPrompt: ["skills", "skill-creator", "SKILL.md"],

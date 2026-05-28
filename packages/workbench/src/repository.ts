@@ -533,6 +533,16 @@ function isBuiltinSkillLocalPath(localPath: string): boolean {
   return getBuiltinSkillDefinitions().some((skill) => normalizeSkillLocalPathKey(skill.source?.localPath) === localPathKey);
 }
 
+function isUserSkillLocalPath(localPath: string | null | undefined): boolean {
+  const trimmed = localPath?.trim();
+  return Boolean(trimmed && isPathInsideDirectory(getUserSkillsRootDirectoryPath(), trimmed) && !isBuiltinSkillLocalPath(trimmed));
+}
+
+function resolveUserSkillLocalPath(localPath: string | null | undefined): string | null {
+  const trimmed = localPath?.trim();
+  return trimmed && isUserSkillLocalPath(trimmed) ? trimmed : null;
+}
+
 function getGithubSkillRootPath(skillFilePath: string): string {
   return skillFilePath.endsWith(SKILL_MARKDOWN_FILE_NAME)
     ? skillFilePath.slice(0, -SKILL_MARKDOWN_FILE_NAME.length).replace(/\/+$/, "")
@@ -754,13 +764,13 @@ async function resolveSkillLocalDirectory(
   currentSkills: SkillDefinition[],
   existingSkill?: SkillDefinition
 ): Promise<string> {
-  const existingLocalPath = existingSkill?.source?.localPath?.trim();
+  const existingLocalPath = resolveUserSkillLocalPath(existingSkill?.source?.localPath);
 
   if (existingLocalPath) {
     return existingLocalPath;
   }
 
-  const sourceLocalPath = skill.source?.localPath?.trim();
+  const sourceLocalPath = resolveUserSkillLocalPath(skill.source?.localPath);
 
   if (sourceLocalPath) {
     return sourceLocalPath;
@@ -3793,12 +3803,13 @@ export async function importSkillDefinitionFromGithub(request: GithubSkillImport
       entry.source.path === fetched.path
   );
   const existingSkill = existingIndex >= 0 ? current[existingIndex] : undefined;
+  const reusableLocalPath = resolveUserSkillLocalPath(existingSkill?.source?.localPath) ?? "";
   const importedPreview = buildImportedSkillDefinition(fetched.markdown, {
     ...fetched,
-    localPath: existingSkill?.source?.localPath?.trim() || ""
+    localPath: reusableLocalPath
   });
   const localPath =
-    existingSkill?.source?.localPath?.trim() ||
+    reusableLocalPath ||
     (await resolveAvailableSkillLocalDirectory(importedPreview.name, current, existingSkill?.id));
 
   await mirrorGithubSkillDirectory(fetched.repo, fetched.ref, skillRootPath, localPath);

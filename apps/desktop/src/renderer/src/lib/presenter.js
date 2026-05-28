@@ -177,7 +177,7 @@ export const SKILL_DISPLAY_NAME_MAP = {
   plan: "任务拆解",
   code: "代码助手",
   review: "问题审查",
-  "karpathy-guidelines": "Karpathy 准则",
+  "code-guidelines": "代码准则",
   "self-improvement": "自我改进",
   "deep-research": "深度研究",
   "skill-creator": "Skill 创建"
