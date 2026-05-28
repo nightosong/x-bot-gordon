@@ -23,7 +23,8 @@ import {
   getWritingTaskPromptSpec as getWritingTaskPromptSpecFromAssets
 } from "./writingPromptBuilder.js";
 
-const WRITING_REVIEW_ONLY_TASK_IDS = new Set(["openingAudit", "outlineAudit", "openingReview", "review"]);
+const WRITING_REVIEW_ONLY_TASK_IDS = new Set(["openingAudit", "outlineAudit", "pacing", "hookDirector", "antiAIGenerated", "openingReview", "review"]);
+const WRITING_STORY_ASSET_TASK_IDS = new Set(["continuityMemory", "relationshipContinuity"]);
 const WRITING_INTRO_PLANNING_TASK_IDS = new Set(["storySetup", "storyRefine", "world", "character", "storyBible"]);
 const WRITING_INTRO_SUMMARY_TASK_IDS = new Set(["premise"]);
 const WRITING_CHAPTER_SUMMARY_TASK_IDS = new Set(["chapterPlan"]);
@@ -424,6 +425,10 @@ function getWritingAssistantMaxOutputTokens(tabId, taskId) {
 }
 
 function getWritingIntroOutputTargetKey(book, taskId) {
+  if (WRITING_STORY_ASSET_TASK_IDS.has(taskId)) {
+    return "storyAssets";
+  }
+
   if (WRITING_INTRO_SUMMARY_TASK_IDS.has(taskId)) {
     return "intro";
   }
@@ -436,6 +441,10 @@ function getWritingIntroOutputTargetKey(book, taskId) {
 }
 
 function getWritingIntroOutputTargetLabel(book, taskId) {
+  if (WRITING_STORY_ASSET_TASK_IDS.has(taskId)) {
+    return "连续性资料";
+  }
+
   const targetKey = getWritingIntroOutputTargetKey(book, taskId);
 
   return WRITING_INTRO_SECTION_DEFINITIONS[targetKey]?.label ?? "故事介绍";
@@ -1819,6 +1828,21 @@ async function applyWritingAssistantOutput(mode = "append") {
 
   if (WRITING_REVIEW_ONLY_TASK_IDS.has(activeWritingTask.value?.id)) {
     setWritingFeedback("体检/质检结果仅用于审阅，不自动写入正文或设定。", "warning");
+    return;
+  }
+
+  if (WRITING_STORY_ASSET_TASK_IDS.has(activeWritingTask.value?.id)) {
+    const nextAssets = parseWritingStoryMemoryPayload(output, book);
+
+    if (!nextAssets) {
+      setWritingFeedback("没有解析到可写入的连续性资料 JSON。", "warning");
+      return;
+    }
+
+    mergeWritingStoryAssets(book, nextAssets);
+    touchWritingBook(book, { persist: false });
+    await persistWritingBookById(book.id, { silent: true });
+    setWritingFeedback("已写入结构化连续性资料。", "success");
     return;
   }
 

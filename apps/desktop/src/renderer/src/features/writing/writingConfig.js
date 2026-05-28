@@ -54,6 +54,20 @@ export const WRITING_AI_TASKS = {
       stage: "审阅",
       goal: "按黄金一章/三章检查主角聚焦、人物数量、群像开局、设定倾倒和追读期待。",
       target: "仅审阅，不自动写入"
+    },
+    {
+      id: "continuityMemory",
+      label: "沉淀连续性",
+      stage: "沉淀",
+      goal: "从当前设定中抽取会影响后续的世界状态、人物状态、资源、伏笔和规则边界。",
+      target: "写入：连续性资料"
+    },
+    {
+      id: "relationshipContinuity",
+      label: "关系连续性",
+      stage: "沉淀",
+      goal: "检查角色关系的债务、信任、羞辱、依赖和未解决 tension，并沉淀后续爆发点。",
+      target: "写入：关系资产"
     }
   ],
   outline: [
@@ -68,6 +82,18 @@ export const WRITING_AI_TASKS = {
       label: "目录体检",
       goal: "集中检查目录的节奏、因果、伏笔、前三章追读和设定一致性，只给可执行修法。",
       target: "仅审阅，不自动写入"
+    },
+    {
+      id: "pacing",
+      label: "节奏导演",
+      goal: "检查卷章节奏是否长期同质，识别连续信息、战斗、赶路或情绪章节造成的疲劳点。",
+      target: "仅审阅，不自动写入"
+    },
+    {
+      id: "hookDirector",
+      label: "追读钩子",
+      goal: "检查每章是否留下具体未解决问题、情绪挂点、风险承诺和下一章打开理由。",
+      target: "仅审阅，不自动写入"
     }
   ],
   chapter: [
@@ -77,6 +103,7 @@ export const WRITING_AI_TASKS = {
     { id: "dialogue", label: "对白增强", goal: "稳定人物声口，补强潜台词、冲突递进和对话中的行动变化。", target: "写入：当前章节正文" },
     { id: "climax", label: "高潮场面", goal: "生成战斗、对峙、打脸、反转或情绪爆发场面，保证爽点来自因果和代价。", target: "写入：当前章节正文" },
     { id: "polish", label: "压缩润色", goal: "删掉空泛解释和无功能辞藻，把抽象情绪改成动作、证据和场景后果。", target: "写入：当前章节正文" },
+    { id: "antiAIGenerated", label: "AI 味检测", goal: "识别空泛哲学句、重复排比、解释性旁白和无功能环境描写，并给出最小替换片段。", target: "仅审阅，不自动写入" },
     { id: "openingReview", label: "开篇自评", goal: "按黄金一章/三章和商业追读标准检查当前章节，识别人物过多、群像开局和设定倾倒。", target: "仅审阅，不自动写入" },
     { id: "review", label: "章节质检", goal: "按人物动机、因果链、节奏、伏笔、设定一致性和可读性检查当前章节。", target: "仅审阅，不自动写入" }
   ]

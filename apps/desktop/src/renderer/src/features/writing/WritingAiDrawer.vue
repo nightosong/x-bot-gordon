@@ -230,6 +230,10 @@ function getWritingTaskTarget(task) {
     return "写入：大纲指导";
   }
 
+  if (task?.id === "continuityMemory" || task?.id === "relationshipContinuity") {
+    return "写入：连续性资料";
+  }
+
   return String(task?.target ?? "");
 }
 
