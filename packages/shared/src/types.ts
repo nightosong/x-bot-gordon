@@ -188,6 +188,7 @@ export interface WeeklyProgressRecord {
   reportTemplate: string;
   generatedDailyReport: string;
   generatedReport: string;
+  generatedPerformanceReport: string;
   status: WeeklyProgressStatus;
   createdAt: string;
   updatedAt: string;
@@ -1057,6 +1058,13 @@ export interface DailyReportGenerateRequest {
   dateTitle: string;
   weekTitle: string;
   content: string;
+}
+
+export interface PerformanceReportGenerateRequest {
+  startDate: string;
+  endDate: string;
+  content: string;
+  instruction?: string;
 }
 
 export interface WorkbenchSnapshot {

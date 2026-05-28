@@ -151,5 +151,6 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
   deleteWeeklyProgress: (recordId) => ipcRenderer.invoke("gordon:weekly-progress:delete", recordId),
   rewriteWeeklyProgressItem: (request) => ipcRenderer.invoke("gordon:weekly-progress:rewrite", request),
   generateDailyProgressReport: (request) => ipcRenderer.invoke("gordon:weekly-progress:generate-daily-report", request),
-  generateWeeklyProgressReport: (request) => ipcRenderer.invoke("gordon:weekly-progress:generate-report", request)
+  generateWeeklyProgressReport: (request) => ipcRenderer.invoke("gordon:weekly-progress:generate-report", request),
+  generatePerformanceProgressReport: (request) => ipcRenderer.invoke("gordon:weekly-progress:generate-performance-report", request)
 });

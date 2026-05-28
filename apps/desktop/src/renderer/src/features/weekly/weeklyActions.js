@@ -9,6 +9,8 @@ import {
 import { WEEKLY_AUTOSAVE_DELAY } from "./weeklyConfig.js";
 import {
   buildDailyReportMarkdown,
+  buildPerformanceReportSourceContent,
+  compareLocalDateKeys,
   findWeeklyTaskContext,
   getDailyReportDateTitle,
   getNextWeeklyReportTemplateName,
@@ -108,15 +110,39 @@ export function createWeeklyActions({
   }
 
   function isWeeklyReportMode() {
-    return ui.weekly.reportingMode !== "daily";
+    return ui.weekly.reportingMode === "weekly";
+  }
+
+  function isWeeklyDailyReportMode() {
+    return ui.weekly.reportingMode === "daily";
+  }
+
+  function isWeeklyPerformanceReportMode() {
+    return ui.weekly.reportingMode === "performance";
   }
 
   function getWeeklyReportModeLabel() {
-    return isWeeklyReportMode() ? "周报" : "日报";
+    if (isWeeklyReportMode()) {
+      return "周报";
+    }
+
+    if (isWeeklyPerformanceReportMode()) {
+      return "述职报告";
+    }
+
+    return "日报";
   }
 
   function getWeeklyReportOutputContent() {
-    return isWeeklyReportMode() ? ui.weekly.draft?.generatedReport ?? "" : ui.weekly.draft?.generatedDailyReport ?? "";
+    if (isWeeklyReportMode()) {
+      return ui.weekly.draft?.generatedReport ?? "";
+    }
+
+    if (isWeeklyPerformanceReportMode()) {
+      return ui.weekly.draft?.generatedPerformanceReport ?? "";
+    }
+
+    return ui.weekly.draft?.generatedDailyReport ?? "";
   }
 
   function setWeeklyReportOutputContent(value) {
@@ -126,6 +152,11 @@ export function createWeeklyActions({
 
     if (isWeeklyReportMode()) {
       ui.weekly.draft.generatedReport = String(value ?? "");
+      return;
+    }
+
+    if (isWeeklyPerformanceReportMode()) {
+      ui.weekly.draft.generatedPerformanceReport = String(value ?? "");
       return;
     }
 
@@ -547,18 +578,45 @@ export function createWeeklyActions({
   }
 
   function setWeeklyReportingMode(mode) {
-    if (ui.weekly.reportingMode === mode) {
+    const nextMode = ["daily", "weekly", "performance"].includes(mode) ? mode : "daily";
+
+    if (ui.weekly.reportingMode === nextMode) {
       return;
     }
 
-    if (mode === "daily") {
+    if (nextMode !== "weekly") {
       closeWeeklyReportTemplateAi();
     }
 
-    ui.weekly.reportingMode = mode;
+    ui.weekly.reportingMode = nextMode;
     clearWeeklyReportFeedback();
     resetWeeklyReportCopyState();
     resetWeeklyReportShareState();
+  }
+
+  function setWeeklyPerformanceReportRangeField(field, value) {
+    const nextRange = {
+      startDate: String(ui.weekly.performanceReportRange?.startDate ?? "").trim(),
+      endDate: String(ui.weekly.performanceReportRange?.endDate ?? "").trim()
+    };
+
+    if (field === "startDate" || field === "endDate") {
+      nextRange[field] = String(value ?? "").trim();
+    }
+
+    ui.weekly.performanceReportRange = nextRange;
+    clearWeeklyReportFeedback();
+    resetWeeklyReportCopyState();
+  }
+
+  function setWeeklyPerformanceReportInstruction(value) {
+    ui.weekly.performanceReportInstruction = String(value ?? "");
+    clearWeeklyReportFeedback();
+    resetWeeklyReportCopyState();
+  }
+
+  function toggleWeeklyPerformanceReportInstructionCollapsed() {
+    ui.weekly.isPerformanceReportInstructionCollapsed = !ui.weekly.isPerformanceReportInstructionCollapsed;
   }
 
   function setWeeklyReportOutputMode(mode) {
@@ -1115,7 +1173,85 @@ export function createWeeklyActions({
       return;
     }
 
+    if (isWeeklyPerformanceReportMode()) {
+      await handleWeeklyPerformanceReportGeneration();
+      return;
+    }
+
     await handleWeeklyDailyReportGeneration();
+  }
+
+  async function handleWeeklyPerformanceReportGeneration() {
+    if (!desktopApi || !ui.weekly.draft) {
+      setWeeklyReportFeedback("当前周报表单尚未就绪，暂无法生成述职报告。", "danger");
+      setStatus("当前周报表单尚未就绪，暂无法生成述职报告。", "danger");
+      return;
+    }
+
+    if (ui.weekly.isGeneratingReport) {
+      return;
+    }
+
+    const startDate = String(ui.weekly.performanceReportRange?.startDate ?? "").trim();
+    const endDate = String(ui.weekly.performanceReportRange?.endDate ?? "").trim();
+
+    if (!startDate || !endDate) {
+      setWeeklyReportFeedback("请先选择述职报告的起始日期和结束日期。", "warning");
+      setStatus("请先选择述职报告的起止日期。", "warning");
+      return;
+    }
+
+    if (compareLocalDateKeys(startDate, endDate) > 0) {
+      setWeeklyReportFeedback("起始日期不能晚于结束日期。", "warning");
+      setStatus("起始日期不能晚于结束日期。", "warning");
+      return;
+    }
+
+    const reportRecords = workbench.weeklyProgress.map((record) =>
+      record.id === ui.weekly.draft?.id ? sanitizeWeeklyProgressRecord(ui.weekly.draft) : record
+    );
+    const { entries, content } = buildPerformanceReportSourceContent(reportRecords, startDate, endDate);
+
+    if (!entries.length || !content) {
+      setWeeklyReportFeedback("所选日期范围内没有检测到可用于述职报告的日报素材。", "warning");
+      setStatus("所选日期范围内没有检测到日报素材。", "warning");
+      return;
+    }
+
+    if (typeof desktopApi.generatePerformanceProgressReport !== "function") {
+      setWeeklyReportFeedback("述职报告生成桥接未就绪。", "danger");
+      setStatus("述职报告生成桥接未就绪。", "danger");
+      return;
+    }
+
+    try {
+      resetWeeklyReportCopyState();
+      ui.weekly.isGeneratingReport = true;
+      ui.weekly.generatingReportKind = "performance";
+      blurWeeklyActiveElement();
+      setWeeklyReportFeedback(`正在整合 ${entries.length} 条日报素材并生成述职报告...`, "neutral");
+      setStatus("正在生成述职报告...", "neutral");
+
+      const result = await desktopApi.generatePerformanceProgressReport({
+        startDate,
+        endDate,
+        instruction: String(ui.weekly.performanceReportInstruction ?? "").trim(),
+        content
+      });
+
+      ui.weekly.draft.generatedPerformanceReport = normalizeMarkdownForClipboard(result.text);
+      resetWeeklyReportCopyState();
+      resetWeeklyReportShareState();
+      setWeeklyReportFeedback(`述职报告已生成（${result.profileLabel}）。`, "success");
+      setStatus(`述职报告已生成（${result.profileLabel}）。`, "success");
+    } catch (error) {
+      console.error("Failed to generate performance report", error);
+      setWeeklyReportFeedback(`述职报告生成失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+      setStatus(`述职报告生成失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+    } finally {
+      ui.weekly.isGeneratingReport = false;
+      ui.weekly.generatingReportKind = null;
+    }
   }
 
   async function handleWeeklyDailyReportGeneration() {
@@ -1288,7 +1424,7 @@ export function createWeeklyActions({
       return;
     }
 
-    if (isWeeklyReportMode()) {
+    if (!isWeeklyDailyReportMode()) {
       setWeeklyReportFeedback("当前分享按钮只发送日报，请先切换到日报模式。", "warning");
       setStatus("当前分享按钮只发送日报。", "warning");
       return;
@@ -1392,11 +1528,14 @@ export function createWeeklyActions({
     setWeeklyFeishuSettingsDraftField,
     setWeeklyReportTemplateAiInstruction,
     setWeeklyReportTemplateAiOutput,
+    setWeeklyPerformanceReportInstruction,
+    setWeeklyPerformanceReportRangeField,
     setWeeklyTaskRewriting,
     setWeeklyTaskStatus,
     setWeeklyReportingMode,
     setWeeklyReportOutputMode,
     syncWeeklyEditorState,
+    toggleWeeklyPerformanceReportInstructionCollapsed,
     toggleWeeklyReportTemplateCollapsed,
     toggleWeeklyProjectCollapsed,
     touchWeeklyTaskById

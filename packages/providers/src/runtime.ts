@@ -453,14 +453,6 @@ function shouldFallbackToNonStream(error: unknown, signal?: AbortSignal): boolea
   return error instanceof ModelStreamReadError && !error.accumulatedText.trim();
 }
 
-function shouldFallbackResponsesToChatCompletions(error: unknown, signal?: AbortSignal): boolean {
-  if (signal?.aborted) {
-    return false;
-  }
-
-  return error instanceof ModelEmptySseResponseError;
-}
-
 function shouldDisableStreamForPayload(payload: unknown): boolean {
   return Boolean(extractErrorMessage(payload) || !extractOpenAiCompatibleText(payload).trim());
 }
@@ -485,24 +477,6 @@ function logStreamFallback(
     profileLabel: profile.displayName,
     model: profile.model,
     endpoint: sanitizeUrlForLogging(endpoint),
-    reason
-  });
-}
-
-function logEndpointFallback(
-  label: string,
-  profile: ModelProfile,
-  fromEndpoint: string,
-  toEndpoint: string,
-  reason: string
-): void {
-  console.warn(`[providers] ${label} endpoint returned no text, falling back to Chat Completions`, {
-    provider: profile.provider,
-    profileId: profile.id,
-    profileLabel: profile.displayName,
-    model: profile.model,
-    fromEndpoint: sanitizeUrlForLogging(fromEndpoint),
-    toEndpoint: sanitizeUrlForLogging(toEndpoint),
     reason
   });
 }
@@ -1057,22 +1031,12 @@ async function invokeOpenAiResponses(
 
   let parsedResponse: JsonOrSseTextResponse;
 
-  try {
-    parsedResponse = await parseJsonOrSseTextResponse(
-      response,
-      "OpenAI Responses",
-      (payload, event) => extractOpenAiResponsesSseDelta(payload, event),
-      (payload) => extractOpenAiResponsesText(payload)
-    );
-  } catch (error) {
-    if (shouldFallbackResponsesToChatCompletions(error, options.signal)) {
-      const chatEndpoint = buildOpenAiStyleEndpoint(profile, "/chat/completions");
-      logEndpointFallback("OpenAI Responses", profile, endpoint, chatEndpoint, error instanceof Error ? error.message : "unknown");
-      return invokeOpenAiChatCompletions(profile, request, withoutTextDelta(options));
-    }
-
-    throw error;
-  }
+  parsedResponse = await parseJsonOrSseTextResponse(
+    response,
+    "OpenAI Responses",
+    (payload, event) => extractOpenAiResponsesSseDelta(payload, event),
+    (payload) => extractOpenAiResponsesText(payload)
+  );
 
   if (parsedResponse.kind === "sse") {
     return {

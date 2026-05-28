@@ -90,9 +90,12 @@
               :set-weekly-feishu-settings-draft-field="setWeeklyFeishuSettingsDraftField"
               :set-weekly-report-template-ai-instruction="setWeeklyReportTemplateAiInstruction"
               :set-weekly-report-template-ai-output="setWeeklyReportTemplateAiOutput"
+              :set-weekly-performance-report-instruction="setWeeklyPerformanceReportInstruction"
+              :set-weekly-performance-report-range-field="setWeeklyPerformanceReportRangeField"
               :set-weekly-reporting-mode="setWeeklyReportingMode"
               :set-weekly-report-output-mode="setWeeklyReportOutputMode"
               :set-weekly-task-status="setWeeklyTaskStatus"
+              :toggle-weekly-performance-report-instruction-collapsed="toggleWeeklyPerformanceReportInstructionCollapsed"
               :toggle-weekly-report-template-collapsed="toggleWeeklyReportTemplateCollapsed"
               :toggle-weekly-project-collapsed="toggleWeeklyProjectCollapsed"
               :touch-weekly-task-by-id="touchWeeklyTaskById"
@@ -952,10 +955,13 @@ const {
   setWeeklyFeishuSettingsDraftField,
   setWeeklyReportTemplateAiInstruction,
   setWeeklyReportTemplateAiOutput,
+  setWeeklyPerformanceReportInstruction,
+  setWeeklyPerformanceReportRangeField,
   setWeeklyReportingMode,
   setWeeklyReportOutputMode,
   setWeeklyTaskStatus,
   syncWeeklyEditorState,
+  toggleWeeklyPerformanceReportInstructionCollapsed,
   toggleWeeklyReportTemplateCollapsed,
   toggleWeeklyProjectCollapsed,
   touchWeeklyTaskById

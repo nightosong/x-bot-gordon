@@ -430,6 +430,7 @@ export function cloneWeeklyProgressRecord(record = null) {
     reportTemplate: String(record.reportTemplate ?? ""),
     generatedDailyReport: String(record.generatedDailyReport ?? ""),
     generatedReport: String(record.generatedReport ?? ""),
+    generatedPerformanceReport: String(record.generatedPerformanceReport ?? ""),
     projects: Array.isArray(record.projects) ? record.projects.map((project) => createWeeklyProjectDraft(project)) : []
   };
 }
@@ -641,6 +642,7 @@ export function sanitizeWeeklyProgressRecord(record) {
     reportTemplate: String(selectedReportTemplate?.content ?? record.reportTemplate ?? "").trim(),
     generatedDailyReport: String(record.generatedDailyReport ?? "").trim(),
     generatedReport: String(record.generatedReport ?? "").trim(),
+    generatedPerformanceReport: String(record.generatedPerformanceReport ?? "").trim(),
     projects,
     content: serializeWeeklyProgressProjects(projects)
   };

@@ -9527,8 +9527,8 @@ canvas {
 
 .weekly-report-mode-tabs {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  width: min(220px, 100%);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: min(330px, 100%);
   padding: 4px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -9537,7 +9537,7 @@ canvas {
 
 .weekly-report-mode-tab {
   min-height: 34px;
-  padding: 0 16px;
+  padding: 0 12px;
   border-radius: 999px;
   background: transparent;
   color: rgba(247, 243, 235, 0.68);
@@ -9567,6 +9567,127 @@ canvas {
   color: rgba(247, 243, 235, 0.72);
   font-size: 12px;
   white-space: nowrap;
+}
+
+.weekly-date-range-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 3px 5px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.weekly-date-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.weekly-date-field span,
+.weekly-date-range-separator {
+  color: rgba(247, 243, 235, 0.5);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.weekly-date-field input {
+  width: 128px;
+  min-height: 26px;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: rgba(8, 15, 24, 0.54);
+  color: rgba(247, 243, 235, 0.88);
+  font-size: 12px;
+  font-weight: 700;
+  color-scheme: dark;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.weekly-date-field input:focus {
+  outline: none;
+  border-color: rgba(92, 225, 194, 0.28);
+  background: rgba(8, 15, 24, 0.74);
+  box-shadow: 0 0 0 3px rgba(92, 225, 194, 0.08);
+}
+
+.weekly-date-field input:disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
+}
+
+.weekly-performance-instruction-card {
+  display: grid;
+  gap: 9px;
+  margin: 4px 0 14px;
+  padding: 8px;
+  border: 1px solid rgba(247, 243, 235, 0.1);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.035);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.weekly-performance-instruction-card.is-collapsed {
+  gap: 0;
+  padding-block: 6px;
+}
+
+.weekly-performance-instruction-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 26px;
+  padding: 0 3px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.weekly-performance-instruction-toggle .action-icon {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  color: rgba(245, 200, 107, 0.86);
+}
+
+.weekly-performance-instruction-toggle span,
+.weekly-performance-instruction-toggle small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.weekly-performance-instruction-toggle span {
+  color: rgba(247, 243, 235, 0.92);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.weekly-performance-instruction-toggle small {
+  color: rgba(247, 243, 235, 0.48);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.weekly-performance-instruction-body {
+  display: grid;
+  min-width: 0;
+}
+
+.weekly-performance-instruction-input {
+  min-height: 72px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .compact-select.weekly-template-select {

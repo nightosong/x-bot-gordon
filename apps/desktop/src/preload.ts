@@ -23,6 +23,7 @@ import type {
   MusicProject,
   ModelProfile,
   ModelTextRequest,
+  PerformanceReportGenerateRequest,
   VideoProject,
   VideoProjectExportRequest,
   VideoProjectExportResult,
@@ -242,6 +243,8 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
     ipcRenderer.invoke("gordon:weekly-progress:generate-daily-report", request),
   generateWeeklyProgressReport: (request: WeeklyReportGenerateRequest) =>
     ipcRenderer.invoke("gordon:weekly-progress:generate-report", request),
+  generatePerformanceProgressReport: (request: PerformanceReportGenerateRequest) =>
+    ipcRenderer.invoke("gordon:weekly-progress:generate-performance-report", request),
   getWeeklyFeishuSettings: (): Promise<WeeklyFeishuSettings> =>
     ipcRenderer.invoke("gordon:weekly-progress:feishu-settings:get"),
   saveWeeklyFeishuSettings: (settings: WeeklyFeishuSettings): Promise<WeeklyFeishuSettings> =>

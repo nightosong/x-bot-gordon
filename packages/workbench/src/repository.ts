@@ -1366,6 +1366,7 @@ function normalizeWeeklyProgressRecord(record: WeeklyProgressRecord): WeeklyProg
     reportTemplate: normalizedTemplates.reportTemplate,
     generatedDailyReport: record.generatedDailyReport ?? "",
     generatedReport: record.generatedReport ?? "",
+    generatedPerformanceReport: record.generatedPerformanceReport ?? "",
     status: record.status ?? "archived"
   };
 }
@@ -1387,6 +1388,7 @@ function createWeeklyProgressRecord(referenceDate = new Date(), projects: Weekly
     reportTemplate: DEFAULT_WEEKLY_REPORT_TEMPLATE,
     generatedDailyReport: "",
     generatedReport: "",
+    generatedPerformanceReport: "",
     status: "active",
     createdAt: timestamp,
     updatedAt: timestamp

@@ -6,6 +6,7 @@ import type {
   ModelProfile,
   ModelTextRequest,
   ModelTextResponse,
+  PerformanceReportGenerateRequest,
   WeeklyProgressRewriteRequest,
   WeeklyReportGenerateRequest
 } from "../../../packages/shared/src/index.js";
@@ -13,6 +14,7 @@ import type {
 const WEEKLY_REWRITE_ITEM_SYSTEM_PROMPT = readPromptAsset("weeklyRewriteItemSystem");
 const WEEKLY_DAILY_REPORT_GENERATE_SYSTEM_PROMPT = readPromptAsset("weeklyDailyReportGenerateSystem");
 const WEEKLY_REPORT_GENERATE_SYSTEM_PROMPT = readPromptAsset("weeklyReportGenerateSystem");
+const WEEKLY_PERFORMANCE_REPORT_GENERATE_SYSTEM_PROMPT = readPromptAsset("weeklyPerformanceReportGenerateSystem");
 const BASE_URL_REQUIRED_PROVIDERS = new Set([
   "azure",
   "openai_like",
@@ -154,6 +156,38 @@ ${request.dateTitle}
 ${request.weekTitle}
 
 今天有更新的任务：
+${request.content}`
+      }
+    ]
+  });
+}
+
+export async function generatePerformanceProgressReport(
+  request: PerformanceReportGenerateRequest
+): Promise<ModelTextResponse> {
+  if (!request.content.trim()) {
+    throw new Error("当前日期范围内没有可用于生成述职报告的日报素材");
+  }
+
+  const instruction = String(request.instruction ?? "").trim();
+
+  return invokeActiveModel({
+    temperature: 0.28,
+    maxOutputTokens: 4200,
+    messages: [
+      {
+        role: "system",
+        content: WEEKLY_PERFORMANCE_REPORT_GENERATE_SYSTEM_PROMPT
+      },
+      {
+        role: "user",
+        content: `报告周期：
+${request.startDate} 至 ${request.endDate}
+
+用户补充要求：
+${instruction || "（无）"}
+
+日期范围内的日报素材：
 ${request.content}`
       }
     ]

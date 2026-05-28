@@ -75,7 +75,13 @@ import type {
 } from "../../../packages/shared/src/index.js";
 import { ensureGordonHomeDirectory } from "../../../packages/shared/src/index.js";
 import { readCommandWorkshopAttachment } from "./attachment-reader.js";
-import { generateDailyProgressReport, generateWeeklyProgressReport, invokeActiveModel, rewriteWeeklyProgressItem } from "./ai.js";
+import {
+  generateDailyProgressReport,
+  generatePerformanceProgressReport,
+  generateWeeklyProgressReport,
+  invokeActiveModel,
+  rewriteWeeklyProgressItem
+} from "./ai.js";
 import { queryModelBalance } from "./model-balance.js";
 
 const currentFilePath = fileURLToPath(import.meta.url);
@@ -2704,6 +2710,9 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("gordon:weekly-progress:generate-report", async (_event, request) =>
     generateWeeklyProgressReport(request)
+  );
+  ipcMain.handle("gordon:weekly-progress:generate-performance-report", async (_event, request) =>
+    generatePerformanceProgressReport(request)
   );
   ipcMain.handle("gordon:weekly-progress:feishu-settings:get", async () => getWeeklyFeishuSettings());
   ipcMain.handle("gordon:weekly-progress:feishu-settings:save", async (_event, settings: WeeklyFeishuSettings) =>

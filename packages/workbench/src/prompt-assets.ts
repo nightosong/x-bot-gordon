@@ -16,6 +16,7 @@ const PROMPT_ASSET_PATHS = {
   weeklyRewriteItemSystem: ["prompts", "workbench", "weekly", "rewrite-item.system.md"],
   weeklyDailyReportGenerateSystem: ["prompts", "workbench", "weekly", "daily-report-generate.system.md"],
   weeklyReportGenerateSystem: ["prompts", "workbench", "weekly", "report-generate.system.md"],
+  weeklyPerformanceReportGenerateSystem: ["prompts", "workbench", "weekly", "performance-report-generate.system.md"],
   weeklyReportTemplateDefault: ["prompts", "workbench", "weekly", "report-template.default.md"],
   weeklyReportTemplateLegacy: ["prompts", "workbench", "weekly", "report-template.legacy.md"],
   writingMasterSystem: ["prompts", "workbench", "writing", "master.system.md"],
