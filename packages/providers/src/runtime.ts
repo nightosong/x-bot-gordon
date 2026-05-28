@@ -461,8 +461,8 @@ function rememberNonStreamOnlyProfile(profile: ModelProfile): void {
   NON_STREAM_ONLY_PROFILE_IDS.add(profile.id);
 }
 
-function canAttemptStream(profile: ModelProfile, options: ModelTextInvokeOptions): boolean {
-  return typeof options.onTextDelta === "function" && profile.supportsStreaming !== false && !NON_STREAM_ONLY_PROFILE_IDS.has(profile.id);
+function canAttemptStream(profile: ModelProfile): boolean {
+  return profile.supportsStreaming !== false && !NON_STREAM_ONLY_PROFILE_IDS.has(profile.id);
 }
 
 function logStreamFallback(
@@ -982,7 +982,7 @@ async function invokeOpenAiResponses(
   options: ModelTextInvokeOptions = {}
 ): Promise<ModelTextResponse> {
   const endpoint = buildOpenAiStyleEndpoint(profile, "/responses");
-  const stream = canAttemptStream(profile, options);
+  const stream = canAttemptStream(profile);
   const instructions = getSystemPrompt(request.messages);
   const maxOutputTokens = resolveMaxOutputTokens(request);
   const response = await fetch(endpoint, {
@@ -1079,7 +1079,7 @@ async function invokeOpenAiChatCompletions(
   options: ModelTextInvokeOptions = {}
 ): Promise<ModelTextResponse> {
   const endpoint = buildOpenAiStyleEndpoint(profile, "/chat/completions");
-  const stream = canAttemptStream(profile, options);
+  const stream = canAttemptStream(profile);
   const maxOutputTokens = resolveMaxOutputTokens(request);
   const response = await fetch(endpoint, {
     method: "POST",
@@ -1198,7 +1198,7 @@ async function invokeAzure(
   options: ModelTextInvokeOptions = {}
 ): Promise<ModelTextResponse> {
   const endpoint = buildAzureEndpoint(profile);
-  const stream = canAttemptStream(profile, options);
+  const stream = canAttemptStream(profile);
   const maxOutputTokens = resolveMaxOutputTokens(request);
   const response = await fetch(endpoint, {
     method: "POST",
@@ -1304,7 +1304,7 @@ async function invokeAnthropic(
 ): Promise<ModelTextResponse> {
   const endpoint = `${trimTrailingSlash(profile.baseUrl?.trim() || "https://api.anthropic.com")}/v1/messages`;
   const conversation = getConversationMessages(request.messages);
-  const stream = canAttemptStream(profile, options);
+  const stream = canAttemptStream(profile);
   const maxOutputTokens = resolveMaxOutputTokens(request);
   const response = await fetch(endpoint, {
     method: "POST",
@@ -1455,7 +1455,7 @@ async function invokeGoogle(
 ): Promise<ModelTextResponse> {
   const systemPrompt = getSystemPrompt(request.messages);
   const conversation = getConversationMessages(request.messages);
-  const stream = canAttemptStream(profile, options);
+  const stream = canAttemptStream(profile);
   const maxOutputTokens = resolveMaxOutputTokens(request);
   const response = await fetch(buildGoogleEndpoint(profile, stream), {
     method: "POST",
