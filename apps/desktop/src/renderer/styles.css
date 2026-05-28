@@ -13005,6 +13005,17 @@ canvas {
   font-size: 13.5px;
 }
 
+.command-rich-heading-depth-4 {
+  color: rgba(247, 243, 235, 0.82);
+  font-size: 12.8px;
+}
+
+.command-rich-heading-depth-5,
+.command-rich-heading-depth-6 {
+  color: rgba(247, 243, 235, 0.76);
+  font-size: 12.2px;
+}
+
 .command-rich-paragraph {
   max-width: 78ch;
   color: rgba(247, 243, 235, 0.86);

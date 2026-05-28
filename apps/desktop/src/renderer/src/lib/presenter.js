@@ -1655,7 +1655,7 @@ export function renderRichText(content) {
     return null;
   };
   const isDividerLine = (line) => /^ {0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line);
-  const isHeadingLine = (line) => /^(#{1,3})\s+/.test(line);
+  const isHeadingLine = (line) => /^(#{1,6})\s+/.test(line);
   const isQuoteLine = (line) => /^>\s?/.test(line);
   const isListLine = (line) => Boolean(getMarkdownListLineMeta(line));
   const isBoundaryLine = (line) =>
@@ -1730,7 +1730,7 @@ export function renderRichText(content) {
     }
 
     if (isHeadingLine(line)) {
-      const match = line.match(/^(#{1,3})\s+(.*)$/);
+      const match = line.match(/^(#{1,6})\s+(.*)$/);
       const depth = match?.[1]?.length ?? 1;
       const tagName = `h${Math.min(depth + 2, 6)}`;
       blocks.push(

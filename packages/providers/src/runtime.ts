@@ -576,26 +576,29 @@ function extractOpenAiResponsesText(payload: unknown): string {
 }
 
 function extractOpenAiResponsesStreamDelta(payload: unknown): string {
-  return readTextValue(getNestedValue(payload, ["delta"]))
-    || readTextValue(getNestedValue(payload, ["part", "text"]))
-    || readTextValue(getNestedValue(payload, ["item", "content", 0, "text"]));
+  return parseOpenAiMessageContent(getNestedValue(payload, ["delta"])).trim()
+    || readTextValue(getNestedValue(payload, ["part", "delta"]))
+    || readTextValue(getNestedValue(payload, ["text_delta"]));
 }
 
 function extractOpenAiResponsesSseDelta(payload: unknown, event: SseEvent): string {
-  const directDelta = extractOpenAiResponsesStreamDelta(payload);
-
-  if (directDelta) {
-    return directDelta;
-  }
-
   const eventType = event.event || readTextValue(getNestedValue(payload, ["type"]));
   const choices = getNestedValue(payload, ["choices"]);
   const canUseCompatibleDelta =
     eventType === "message" ||
     eventType.includes("delta") ||
     Array.isArray(choices);
+  const compatibleDelta = canUseCompatibleDelta ? extractOpenAiCompatibleStreamDelta(payload) : "";
 
-  return canUseCompatibleDelta ? extractOpenAiCompatibleStreamDelta(payload) : "";
+  if (compatibleDelta) {
+    return compatibleDelta;
+  }
+
+  if (!eventType.includes("delta")) {
+    return "";
+  }
+
+  return extractOpenAiResponsesStreamDelta(payload);
 }
 
 function extractOpenAiCompatibleStreamDelta(payload: unknown): string {
@@ -611,14 +614,11 @@ function extractOpenAiCompatibleStreamDelta(payload: unknown): string {
         getNestedValue(delta, ["output_text"]),
         getNestedValue(delta, ["reasoning_content"]),
         getNestedValue(delta, ["reasoning"]),
-        getNestedValue(choice, ["text"]),
-        getNestedValue(choice, ["message", "content"]),
-        getNestedValue(choice, ["message", "reasoning_content"]),
-        getNestedValue(choice, ["message", "reasoning"])
+        delta
       ];
 
       for (const candidate of candidates) {
-        const text = parseOpenAiMessageContent(candidate);
+        const text = parseOpenAiMessageContent(candidate).trim();
 
         if (text) {
           deltas.push(text);
@@ -633,7 +633,21 @@ function extractOpenAiCompatibleStreamDelta(payload: unknown): string {
   }
 
   return parseOpenAiMessageContent(getNestedValue(payload, ["delta", "content"]))
-    || parseOpenAiMessageContent(getNestedValue(payload, ["output_text"]));
+    || parseOpenAiMessageContent(getNestedValue(payload, ["delta", "text"]))
+    || parseOpenAiMessageContent(getNestedValue(payload, ["delta", "output_text"]))
+    || parseOpenAiMessageContent(getNestedValue(payload, ["delta"]));
+}
+
+function extractOpenAiCompatibleStreamSnapshot(payload: unknown): string {
+  return extractOpenAiCompatibleText(payload).trim();
+}
+
+function extractOpenAiResponsesStreamSnapshot(payload: unknown): string {
+  return extractOpenAiResponsesText(payload).trim()
+    || parseOpenAiMessageContent(getNestedValue(payload, ["part", "text"])).trim()
+    || parseOpenAiMessageContent(getNestedValue(payload, ["item", "content"])).trim()
+    || parseOpenAiMessageContent(getNestedValue(payload, ["item", "content", 0, "text"])).trim()
+    || extractOpenAiCompatibleStreamSnapshot(payload);
 }
 
 function sanitizeUrlForLogging(value: string): string {
@@ -869,6 +883,7 @@ async function readOpenAiCompatibleStream(
   options: ModelTextInvokeOptions
 ): Promise<string> {
   let accumulatedText = "";
+  let snapshotText = "";
 
   try {
     await consumeSseEvents(response, (event) => {
@@ -900,6 +915,14 @@ async function readOpenAiCompatibleStream(
       if (delta) {
         accumulatedText += delta;
         emitTextDelta(options, delta, accumulatedText);
+        return;
+      }
+
+      const snapshot = extractOpenAiCompatibleStreamSnapshot(payload);
+
+      if (!accumulatedText.trim() && snapshot && snapshot.length >= snapshotText.length) {
+        snapshotText = snapshot;
+        emitTextDelta(options, snapshot, snapshotText);
       }
     });
   } catch (error) {
@@ -910,7 +933,7 @@ async function readOpenAiCompatibleStream(
     throw new ModelStreamReadError(error instanceof Error ? error.message : "模型流式响应读取失败", accumulatedText);
   }
 
-  const text = accumulatedText.trim();
+  const text = accumulatedText.trim() || snapshotText.trim();
 
   if (!text) {
     throw new ModelStreamReadError("模型没有返回可用文本内容", accumulatedText);
@@ -926,6 +949,7 @@ async function readOpenAiResponsesStream(
   options: ModelTextInvokeOptions
 ): Promise<string> {
   let accumulatedText = "";
+  let snapshotText = "";
 
   try {
     await consumeSseEvents(response, (event) => {
@@ -957,6 +981,14 @@ async function readOpenAiResponsesStream(
       if (delta) {
         accumulatedText += delta;
         emitTextDelta(options, delta, accumulatedText);
+        return;
+      }
+
+      const snapshot = extractOpenAiResponsesStreamSnapshot(payload);
+
+      if (!accumulatedText.trim() && snapshot && snapshot.length >= snapshotText.length) {
+        snapshotText = snapshot;
+        emitTextDelta(options, snapshot, snapshotText);
       }
     });
   } catch (error) {
@@ -967,7 +999,7 @@ async function readOpenAiResponsesStream(
     throw new ModelStreamReadError(error instanceof Error ? error.message : "模型流式响应读取失败", accumulatedText);
   }
 
-  const text = accumulatedText.trim();
+  const text = accumulatedText.trim() || snapshotText.trim();
 
   if (!text) {
     throw new ModelStreamReadError("模型没有返回可用文本内容", accumulatedText);

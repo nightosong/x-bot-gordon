@@ -906,6 +906,10 @@ export function createCommandWorkshopActions({
       workbench.commandSessions = sortCommandWorkshopSessions(sessions.map((entry) => normalizeCommandWorkshopSession(entry)));
       ui.command.activeSessionId = completedSession.id;
       workbench.agentRunLogs = [normalizedResult, ...workbench.agentRunLogs.filter((log) => log.id !== result.id)];
+      ui.command.isRunning = false;
+      ui.command.cancelRequested = false;
+      ui.command.activeProgressEventId = null;
+      ui.command.liveProgress = null;
       if (
         typeof refreshWorkbenchSnapshot === "function" &&
         result.mcpCalls?.some(
@@ -917,10 +921,6 @@ export function createCommandWorkshopActions({
       ) {
         await refreshWorkbenchSnapshot();
       }
-      ui.command.isRunning = false;
-      ui.command.cancelRequested = false;
-      ui.command.activeProgressEventId = null;
-      ui.command.liveProgress = null;
       setStatus(`命令工坊已完成本轮响应（${result.profileLabel}）。`, "success");
       if (runQueuedCommandGuidanceIfNeeded()) {
         setStatus("正在按新的引导继续执行。", "neutral");
