@@ -80,6 +80,8 @@ import {
 } from "./default-assets.js";
 import { readPromptAsset } from "./prompt-assets.js";
 
+const RETIRED_AGENT_PROFILE_IDS = new Set(["builtin:agent:arthur"]);
+
 async function readJsonFile<T>(filePath: string): Promise<T> {
   const content = await readFile(filePath, "utf8");
   return JSON.parse(content) as T;
@@ -3980,7 +3982,9 @@ export async function deleteMcpServer(serverId: string): Promise<McpServerConfig
 }
 
 export async function listAgentProfiles(): Promise<AgentProfile[]> {
-  const userProfiles = sortByUpdatedAtDescending(await readWorkbenchCollection<AgentProfile>(getAgentProfilesFilePath()));
+  const userProfiles = sortByUpdatedAtDescending(await readWorkbenchCollection<AgentProfile>(getAgentProfilesFilePath())).filter(
+    (profile) => !RETIRED_AGENT_PROFILE_IDS.has(profile.id)
+  );
   const [modelSettings, skills, servers] = await Promise.all([
     listModelSettings(),
     listSkillDefinitions(),

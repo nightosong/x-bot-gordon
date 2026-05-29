@@ -1011,7 +1011,8 @@ async function exportCommandWorkshopMessageAsPdf(
     webPreferences: {
       offscreen: true,
       sandbox: true,
-      contextIsolation: true
+      contextIsolation: true,
+      nodeIntegration: false
     }
   });
 
@@ -2224,7 +2225,9 @@ async function createMainWindow(): Promise<void> {
     icon: appIconPath,
     webPreferences: {
       preload: path.join(currentDir, "preload.cjs"),
-      contextIsolation: true
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
     }
   });
 

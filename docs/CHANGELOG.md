@@ -41,7 +41,7 @@
 
 - 已完成 `apps/desktop`、`apps/cli`、`packages/agent`、`packages/core`、`packages/providers`、`packages/memory`、`packages/workbench`、`packages/shared` 的基础分层
 - 已配置本地 macOS 安装包构建链路，`pnpm run dist:mac` 会执行桌面端构建并通过 `electron-builder` 输出 ad-hoc 本地签名 DMG 到 `release/`；渲染层构建会清理旧 hash 产物，避免历史 Vite 文件累积进安装包；`pnpm run dist:mac:clean` 可在打包后清理 `mac-arm64 / *.blockmap / latest-mac.yml / builder-debug.yml` 等辅助产物，仅保留 DMG；`release/` 已加入 `.gitignore`，DMG 不携带仓库旧版 `data/`，桌面端和 CLI 启动会自动初始化 `~/.gord`，工作台数据统一落到 `~/.gord/data`，用户新增 / GitHub 导入 Skill 默认落到 `~/.gord/skills`
-- 桌面端 preload 桥接已对齐当前渲染层调用面，覆盖 prompt 资产读取、TOOL 配置、命令工坊导出、视频 / 音乐项目保存导出和飞书日报配置 / 发送等 IPC 能力
+- 桌面端主窗口和导出窗口已显式声明 `contextIsolation: true`、`nodeIntegration: false`、`sandbox: true`，与自绘确认窗口保持一致的安全姿态；preload 桥接唯一源文件为 `apps/desktop/src/preload.ts`，构建时由 `scripts/copy-desktop-assets.mjs` 生成 `dist/apps/desktop/src/preload.cjs`，源码树不再保留手写同步副本；旧版非 Vue `renderer.js` 已移除，渲染入口以 Vite `apps/desktop/src/renderer/index.html` -> `src/main.js` 为准。当前桥接覆盖 prompt 资产读取、TOOL 配置、命令工坊导出、视频 / 音乐项目保存导出和飞书日报配置 / 发送等 IPC 能力
 - 已建立共享类型、工作台快照聚合与本地 JSON 示例数据
 - 系统级提示词已迁移到仓库根目录 `prompts/`，避免散落在代码里
 
