@@ -144,8 +144,8 @@
 - 命令工坊自动工具循环已引入首版任务账本（Task Ledger）：本轮运行会维护目标、约束、已完成子任务、待办子任务、分层计划、已发现事实、失败尝试、环境状态、用户中断、成功条件和下一步提示；工具规划模型每轮会基于账本和历史工具结果选择下一步，并输出 `expectedOutcome` 与 `verificationMethod`；工具返回后会压缩观察结果回写账本，最终回复也会结合账本判断是否真正完成
 - 命令工坊已支持跨轮任务账本延续：助手消息 artifact 会保留 `taskLedger`，下一次提交会从最近一条助手消息取出账本并作为 `AgentRunRequest.taskLedger` 传给 Agent runtime；runtime 会归一化旧账本、记录本轮继续请求，并把目标、计划、观察、失败恢复和成功条件带入新的规划轮
 - 任务账本已补充 `taskPhase / decisionTrace / observations / structuredSuccessCriteria`：`taskPhase` 用于区分理解、规划、执行、验证、恢复和收尾阶段；`decisionTrace` 记录为什么选择当前动作以及拒绝了哪些替代动作；`observations` 将工具结果分为摘要、长期事实、短期环境事实和证据引用；`structuredSuccessCriteria` 为后续可机器验证的成功条件留出结构化槽位
-- 命令工坊已形成 Planner / Executor / Verifier 的最小分层：Planner 负责下一步工具与决策轨迹，Executor 负责权限、重试、修复和 fallback，Verifier 会在最终回复前根据工具历史更新结构化成功条件状态，避免直接把“模型认为完成”当作真实完成
-- Agent runtime 关键纯逻辑已从 `runtime.ts` 拆到 `ledger.ts`、`tool-metadata.ts`、`failure-classifier.ts` 与 `runtime-utils.ts`，并新增 `pnpm run test:agent` 覆盖工具描述清洗、工具画像、失败分类、账本归一化 / 合并和结构化成功条件验证
+- 命令工坊已形成 Planner / Executor / Verifier 的最小分层：Planner 负责下一步工具与决策轨迹，Executor 负责权限、重试、修复和 fallback，Verifier 已从任务账本中独立出来，会在最终回复前根据工具历史更新结构化成功条件状态，并把匹配到的 evidence 回写到任务账本，避免直接把“模型认为完成”当作真实完成
+- Agent runtime 关键纯逻辑已从 `runtime.ts` 拆到 `ledger.ts`、`tool-metadata.ts`、`failure-classifier.ts`、`verifier.ts` 与 `runtime-utils.ts`，并新增 `pnpm run test:agent` 覆盖工具描述清洗、工具画像、失败分类、账本归一化 / 合并、结构化成功条件验证和 evidence 生成
 - 工具失败分类已从“schema / 不可用 / 执行失败”扩展到权限受限、环境状态变化、工具不匹配、时序过早和目标不存在，便于后续 fallback、账本恢复和前端过程流更准确表达失败本质
 - `Gordon Tools` 已作为独立本地工具服务接入默认 Agent，会按能力拓展 TOOL 配置动态暴露已启用工具；当前 `image_gen` 可读取 OpenAI 系列图片配置并调用 `imagen` / `imagen/edit`，`music_gen` 可读取 Mureka / Suno 配置调用歌曲 / 纯音乐生成和任务查询，并把音频 URL 归一化为可展示产物
 - `Application Tools` 已作为独立本地应用工具服务接入默认 Agent，首版把命令工坊联到应用广场的 `墨笔生花` 资产，支持新建小说、小说列表、书稿读取、关键词检索、章节修改 dryRun 预览 / 写回、小说字段 dryRun 预览 / 写回，以及结构化故事资产写回；新建小说可一次性写入简介、大纲、分卷 / 章节目录、补充设定区块与 `storyAssets`，已有小说可通过 `writing_update_story_assets` 合并或替换世界观、人物、关系、伏笔、规则、风格档案和连续性备注；命令工坊提交时会注入当前应用广场上下文，用户提到“这个小说 / 当前章节”时可优先定位当前资源
@@ -269,7 +269,7 @@
 - 为模型配置补齐连接测试或校验能力
 - 为流程中心补充更多 workflow 卡片与本地维护能力
 - 为 MCP Server 增加独立测试页、连接诊断与更明确的错误提示
-- 为 Agent 任务账本继续补齐跨会话持久化、观察压缩质量评估、更细粒度成功条件自动验证、Capability Graph / embedding 召回和失败恢复策略评分，逐步从“工具调用器”演进为长期任务状态机
+- 为 Agent 任务账本继续补齐跨会话持久化、观察压缩质量评估、文件 / URL / UI / 命令专用验证器、Capability Graph / embedding 召回和失败恢复策略评分，逐步从“工具调用器”演进为长期任务状态机
 - 继续扩展 `Gordon Tools` 的真实多模态生成能力，下一步重点补齐 `video_gen` 的供应商调用协议，并为 `music_gen` 增加更多供应商返回结构样本的专项回归
 - 为能力拓展继续补齐按 tool / capability 语义分层的恢复策略
 

@@ -9,7 +9,8 @@ import type {
   AgentTaskPhase,
   SkillDefinition
 } from "../../shared/src/index.js";
-import { isRecord, stringifyArguments } from "./runtime-utils.js";
+import { isRecord } from "./runtime-utils.js";
+import { verifyCriteriaFromToolHistory } from "./verifier.js";
 
 const MAX_LEDGER_LIST_ITEMS = 8;
 const MAX_LEDGER_PLAN_STEPS = 8;
@@ -506,80 +507,21 @@ export function inferTaskPhaseAfterCall(ledger: AgentTaskLedger, call: AgentMcpC
   return hasPendingCriteria ? "verifying" : "finalizing";
 }
 
-export function verifyCriterionFromToolHistory(
-  criterion: AgentTaskLedgerSuccessCriterion,
-  mcpCalls: AgentMcpCallRecord[]
-): AgentTaskLedgerSuccessCriterion {
-  if (criterion.status === "passed" || criterion.status === "failed") {
-    return criterion;
-  }
-
-  const successfulCalls = mcpCalls.filter((call) => !call.isError);
-  const failedCalls = mcpCalls.filter((call) => call.isError);
-  const expected = criterion.expected.toLowerCase();
-  const target = criterion.target?.toLowerCase() ?? "";
-  const matchesText = (text: string): boolean => {
-    const normalized = text.toLowerCase();
-    return Boolean((target && normalized.includes(target)) || (expected && normalized.includes(expected)));
-  };
-
-  if (criterion.type === "text_response") {
-    return {
-      ...criterion,
-      status: "unknown"
-    };
-  }
-
-  if (criterion.type === "tool_result") {
-    const matched = successfulCalls.some((call) => matchesText(call.resultText) || matchesText(call.toolName) || matchesText(call.serverName));
-    return {
-      ...criterion,
-      status: matched ? "passed" : failedCalls.length ? "failed" : "unknown"
-    };
-  }
-
-  if (criterion.type === "artifact_created") {
-    const matched = successfulCalls.some((call) => (call.artifacts?.length ?? 0) > 0);
-    return {
-      ...criterion,
-      status: matched ? "passed" : "unknown"
-    };
-  }
-
-  if (criterion.type === "command_passed") {
-    const matched = successfulCalls.some((call) => /command|shell|run/i.test(call.toolName) && !/failed|error|失败/u.test(call.resultText));
-    return {
-      ...criterion,
-      status: matched ? "passed" : failedCalls.some((call) => /command|shell|run/i.test(call.toolName)) ? "failed" : "unknown"
-    };
-  }
-
-  if (criterion.type === "file_contains" || criterion.type === "url_opened" || criterion.type === "ui_state") {
-    const matched = successfulCalls.some((call) => matchesText(call.resultText) || matchesText(stringifyArguments(call.arguments)));
-    return {
-      ...criterion,
-      status: matched ? "passed" : "unknown"
-    };
-  }
-
-  return {
-    ...criterion,
-    status: "unknown"
-  };
-}
-
 export function verifyTaskLedgerSuccessCriteria(ledger: AgentTaskLedger, mcpCalls: AgentMcpCallRecord[]): AgentTaskLedger {
-  const verifiedCriteria = ledger.structuredSuccessCriteria.map((criterion) =>
-    verifyCriterionFromToolHistory(criterion, mcpCalls)
-  );
+  const verificationResults = verifyCriteriaFromToolHistory(ledger.structuredSuccessCriteria, mcpCalls);
+  const verifiedCriteria = verificationResults.map((result) => result.criterion);
   const hasFailed = verifiedCriteria.some((criterion) => criterion.status === "failed");
   const hasPending = verifiedCriteria.some((criterion) => criterion.status === "pending" || criterion.status === "unknown");
   const taskPhase: AgentTaskPhase = hasFailed ? "recovering" : hasPending ? "verifying" : "finalizing";
+  const verificationFacts = verificationResults
+    .flatMap((result) => result.evidence.map((evidence) => `${evidence.reason}：${evidence.serverName} / ${evidence.toolName}`))
+    .filter(Boolean);
 
   return normalizeAgentTaskLedger(
     {
       ...ledger,
       taskPhase,
+      discoveredFacts: [...ledger.discoveredFacts, ...verificationFacts],
       structuredSuccessCriteria: verifiedCriteria,
       nextActionHint: hasPending
         ? "仍有成功条件未被独立验证，最终回复需明确未验证状态或继续选择验证工具"

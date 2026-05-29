@@ -70,7 +70,7 @@ test("mergeAgentTaskLedgerPatch preserves fields absent from patch", () => {
   assert.equal(merged.nextActionHint, "继续补测试");
 });
 
-test("verifyTaskLedgerSuccessCriteria marks tool, artifact, command and URL criteria", () => {
+test("verifyTaskLedgerSuccessCriteria updates ledger phase and stores verification facts", () => {
   const ledger = normalizeAgentTaskLedger(
     {
       objective: "验证执行结果",
@@ -79,22 +79,6 @@ test("verifyTaskLedgerSuccessCriteria marks tool, artifact, command and URL crit
           type: "tool_result",
           target: "Workspace Tools",
           expected: "file read",
-          status: "pending"
-        },
-        {
-          type: "artifact_created",
-          expected: "poster generated",
-          status: "pending"
-        },
-        {
-          type: "command_passed",
-          expected: "pnpm run check",
-          status: "pending"
-        },
-        {
-          type: "url_opened",
-          target: "https://example.com",
-          expected: "example opened",
           status: "pending"
         }
       ]
@@ -106,36 +90,12 @@ test("verifyTaskLedgerSuccessCriteria marks tool, artifact, command and URL crit
       serverName: "Workspace Tools",
       toolName: "read_file",
       resultText: "file read"
-    }),
-    createCallRecord({
-      serverName: "Gordon Tools",
-      toolName: "image_gen",
-      resultText: "done",
-      artifacts: [
-        {
-          id: "artifact_1",
-          kind: "image",
-          title: "poster",
-          url: "https://cdn.example.com/poster.png"
-        }
-      ]
-    }),
-    createCallRecord({
-      toolName: "run_shell_command",
-      resultText: "pnpm run check completed"
-    }),
-    createCallRecord({
-      toolName: "open_url",
-      arguments: { url: "https://example.com" },
-      resultText: "opened"
     })
   ]);
 
-  assert.deepEqual(
-    verified.structuredSuccessCriteria.map((criterion) => criterion.status),
-    ["passed", "passed", "passed", "passed"]
-  );
+  assert.equal(verified.structuredSuccessCriteria[0]?.status, "passed");
   assert.equal(verified.taskPhase, "finalizing");
+  assert.deepEqual(verified.discoveredFacts, ["工具结果匹配成功条件：Workspace Tools / read_file"]);
 });
 
 test("verifyTaskLedgerSuccessCriteria fails missing tool result when a tool already errored", () => {
