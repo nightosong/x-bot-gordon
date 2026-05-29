@@ -14,7 +14,8 @@ import {
   buildCommandApplicationContext,
   buildCommandUserInputForAgent,
   buildCommandWorkshopLiveArtifact,
-  buildConversationMessagesForAgentRun
+  buildConversationMessagesForAgentRun,
+  findLatestCommandTaskLedger
 } from "./commandWorkshopRuntime.js";
 
 function readRef(value) {
@@ -46,6 +47,26 @@ function formatCommandFailureKind(failureKind) {
 
   if (failureKind === "tool_execution") {
     return "工具执行失败";
+  }
+
+  if (failureKind === "permission_denied") {
+    return "权限受限";
+  }
+
+  if (failureKind === "environment_state") {
+    return "环境状态变化";
+  }
+
+  if (failureKind === "wrong_tool") {
+    return "工具不匹配";
+  }
+
+  if (failureKind === "action_too_early") {
+    return "时序过早";
+  }
+
+  if (failureKind === "nonexistent_entity") {
+    return "目标不存在";
   }
 
   return "未知失败";
@@ -801,6 +822,7 @@ export function createCommandWorkshopActions({
     const startedAt = new Date().toISOString();
     const progressEventId = `command_progress_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const baseMessages = toPlainIpcData(activeSession?.messages ?? [], []);
+    const latestTaskLedger = findLatestCommandTaskLedger(baseMessages);
     const userMessage = {
       id: `command_message_${Date.now()}`,
       role: "user",
@@ -845,6 +867,7 @@ export function createCommandWorkshopActions({
         mcpResultText: "",
         mcpCalls: [],
         stopReason: "",
+        taskLedger: null,
         steps: [],
         createdAt: startedAt
       })
@@ -869,6 +892,7 @@ export function createCommandWorkshopActions({
         agentProfileId: agent.id,
         userInput: agentUserInput,
         conversationMessages: buildConversationMessagesForAgentRun(baseMessages),
+        ...(latestTaskLedger ? { taskLedger: latestTaskLedger } : {}),
         progressEventId,
         ...(ui.command.form.skillId ? { skillId: ui.command.form.skillId } : {}),
         ...(effectiveAutoSelectMcp ? { autoSelectMcp: true } : {}),

@@ -15,6 +15,7 @@ export function buildCommandWorkshopLiveArtifact(progress) {
     mcpResultText: progress?.mcpResultText ?? null,
     mcpCalls: [...(progress?.mcpCalls ?? [])],
     stopReason: progress?.stopReason ?? "",
+    taskLedger: progress?.taskLedger ?? null,
     steps: [...(progress?.steps ?? [])],
     createdAt: progress?.createdAt ?? new Date().toISOString()
   });
@@ -195,4 +196,16 @@ export function buildConversationMessagesForAgentRun(messages) {
           ? buildCommandUserInputForAgent(message.content, message.attachments ?? [])
           : message.content
     }));
+}
+
+export function findLatestCommandTaskLedger(messages) {
+  for (const message of [...normalizeList(messages)].reverse()) {
+    const ledger = message?.artifact?.taskLedger;
+
+    if (message?.role === "assistant" && ledger && typeof ledger === "object" && !Array.isArray(ledger)) {
+      return ledger;
+    }
+  }
+
+  return null;
 }

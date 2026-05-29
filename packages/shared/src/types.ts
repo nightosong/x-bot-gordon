@@ -85,7 +85,75 @@ export type AgentRunStepType =
   | "completed";
 
 export type McpErrorCategory = "retryable" | "non_retryable";
-export type McpFailureKind = "schema_mismatch" | "tool_unavailable" | "tool_execution" | "unknown";
+export type McpFailureKind =
+  | "schema_mismatch"
+  | "tool_unavailable"
+  | "tool_execution"
+  | "permission_denied"
+  | "environment_state"
+  | "wrong_tool"
+  | "action_too_early"
+  | "nonexistent_entity"
+  | "unknown";
+export type AgentTaskPhase = "understanding" | "planning" | "executing" | "verifying" | "recovering" | "finalizing";
+
+export interface AgentTaskLedgerDecisionTraceEntry {
+  step: string;
+  intent: string;
+  chosenAction: string;
+  rejectedAlternatives: string[];
+  why: string;
+  expectedOutcome?: string;
+}
+
+export interface AgentTaskLedgerObservation {
+  source: string;
+  rawRef?: string;
+  summary: string;
+  durableFacts: string[];
+  ephemeralFacts: string[];
+  evidenceRefs: string[];
+}
+
+export interface AgentTaskLedgerSuccessCriterion {
+  type: "text_response" | "tool_result" | "file_contains" | "url_opened" | "command_passed" | "ui_state" | "artifact_created" | "custom";
+  target?: string;
+  expected: string;
+  verificationMethod?: string;
+  status: "pending" | "passed" | "failed" | "unknown";
+}
+
+export interface AgentTaskLedgerPlanStep {
+  step: string;
+  toolHint?: string;
+  successCriteria?: string;
+  status: "pending" | "in_progress" | "completed" | "blocked";
+}
+
+export interface AgentTaskLedgerFailedAttempt {
+  action: string;
+  reason: string;
+  category: string;
+  recoveryHint?: string;
+}
+
+export interface AgentTaskLedger {
+  taskPhase: AgentTaskPhase;
+  objective: string;
+  constraints: string[];
+  completedSubtasks: string[];
+  pendingSubtasks: string[];
+  activePlan: AgentTaskLedgerPlanStep[];
+  decisionTrace: AgentTaskLedgerDecisionTraceEntry[];
+  observations: AgentTaskLedgerObservation[];
+  discoveredFacts: string[];
+  failedAttempts: AgentTaskLedgerFailedAttempt[];
+  environmentState: string[];
+  userInterruptions: string[];
+  successCriteria: string[];
+  structuredSuccessCriteria: AgentTaskLedgerSuccessCriterion[];
+  nextActionHint?: string;
+}
 
 export interface AgentIdentity {
   primaryName: string;
@@ -488,6 +556,7 @@ export interface AgentRunRequest {
   agentProfileId: string;
   userInput: string;
   conversationMessages?: ModelMessage[];
+  taskLedger?: AgentTaskLedger | null;
   skillId?: string;
   autoSelectMcp?: boolean;
   mcpServerId?: string;
@@ -547,6 +616,7 @@ export interface AgentRunLog extends ModelTextResponse {
   mcpResultText: string | null;
   mcpCalls?: AgentMcpCallRecord[];
   stopReason?: string;
+  taskLedger?: AgentTaskLedger | null;
   steps: AgentRunStep[];
   createdAt: string;
   updatedAt: string;
@@ -566,6 +636,7 @@ export interface AgentRunProgressEvent {
   mcpResultText: string | null;
   mcpCalls: AgentMcpCallRecord[];
   stopReason?: string;
+  taskLedger?: AgentTaskLedger | null;
   steps: AgentRunStep[];
   createdAt: string;
   updatedAt: string;
@@ -581,6 +652,7 @@ export interface CommandWorkshopMessageArtifact {
   mcpResultText: string | null;
   mcpCalls: AgentMcpCallRecord[];
   stopReason?: string;
+  taskLedger?: AgentTaskLedger | null;
   steps: AgentRunStep[];
   createdAt: string;
 }
@@ -996,6 +1068,8 @@ export interface AgentMcpCallRecord {
   errorCategory?: McpErrorCategory;
   failureKind?: McpFailureKind;
   failureReason?: string;
+  expectedOutcome?: string;
+  verificationMethod?: string;
   repairReason?: string;
   repairedFromArguments?: Record<string, unknown>;
   fallbackFromToolName?: string;

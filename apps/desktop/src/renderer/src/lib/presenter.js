@@ -240,6 +240,7 @@ export function buildCommandWorkshopArtifact(runLog) {
     mcpResultText: runLog.mcpResultText,
     mcpCalls: [...(runLog.mcpCalls ?? [])],
     stopReason: runLog.stopReason ?? "",
+    taskLedger: runLog.taskLedger ?? null,
     steps: [...(runLog.steps ?? [])],
     createdAt: runLog.createdAt
   };
@@ -361,6 +362,26 @@ export function formatFailureKind(failureKind) {
 
   if (failureKind === "tool_execution") {
     return "工具执行失败";
+  }
+
+  if (failureKind === "permission_denied") {
+    return "权限受限";
+  }
+
+  if (failureKind === "environment_state") {
+    return "环境状态变化";
+  }
+
+  if (failureKind === "wrong_tool") {
+    return "工具不匹配";
+  }
+
+  if (failureKind === "action_too_early") {
+    return "时序过早";
+  }
+
+  if (failureKind === "nonexistent_entity") {
+    return "目标不存在";
   }
 
   return "未知失败";

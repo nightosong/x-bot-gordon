@@ -1,0 +1,140 @@
+import type { McpToolDefinition } from "../../shared/src/index.js";
+
+const MAX_TOOL_DESCRIPTION_LENGTH = 360;
+const BUILTIN_WORKSPACE_MCP_ID = "builtin:mcp:workspace";
+const BUILTIN_SEARCH_TOOLS_MCP_ID = "builtin:mcp:search-tools";
+const BUILTIN_COMPUTER_USE_MCP_ID = "builtin:mcp:computer-use";
+const BUILTIN_GORDON_TOOLS_MCP_ID = "builtin:mcp:gordon-tools";
+const BUILTIN_APPLICATION_TOOLS_MCP_ID = "builtin:mcp:application-tools";
+
+function describeSchemaType(value: unknown): string {
+  if (typeof value === "string" && value.trim()) {
+    return value.trim();
+  }
+
+  if (Array.isArray(value)) {
+    return value.filter((item) => typeof item === "string" && item.trim()).join(" | ");
+  }
+
+  return "unknown";
+}
+
+export function buildToolSchemaSummary(tool: McpToolDefinition): string {
+  if (!tool.inputSchema) {
+    return "无显式 inputSchema";
+  }
+
+  const required =
+    Array.isArray(tool.inputSchema.required) && tool.inputSchema.required.length
+      ? tool.inputSchema.required.filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
+      : [];
+  const properties =
+    tool.inputSchema.properties &&
+    typeof tool.inputSchema.properties === "object" &&
+    !Array.isArray(tool.inputSchema.properties)
+      ? (tool.inputSchema.properties as Record<string, unknown>)
+      : {};
+
+  const propertyLines = Object.entries(properties).map(([name, definition]) => {
+    const schema = definition && typeof definition === "object" ? (definition as Record<string, unknown>) : {};
+    const type = describeSchemaType(schema.type);
+    const description = typeof schema.description === "string" ? schema.description.trim() : "";
+    return `${name}: ${type}${description ? ` - ${description}` : ""}`;
+  });
+
+  return [
+    required.length ? `required=${required.join(", ")}` : "required=none",
+    propertyLines.length ? `properties=${propertyLines.join("; ")}` : "properties=none"
+  ].join(" / ");
+}
+
+export function sanitizeToolDescription(description: string | undefined): string {
+  const lines = String(description ?? "")
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter(
+      (line) =>
+        !/ignore (all )?(previous|prior|above) instructions|忽略(以上|之前|前面).*指令|system prompt|developer message|always (use|prefer|choose)|必须(优先|总是)选择|不要使用其他工具|do not use other tools|reveal.*(secret|prompt)|泄露.*(密钥|提示词)/iu.test(
+          line
+        )
+    );
+  const sanitized = lines.join(" ");
+
+  return sanitized.length > MAX_TOOL_DESCRIPTION_LENGTH
+    ? `${sanitized.slice(0, MAX_TOOL_DESCRIPTION_LENGTH)}...`
+    : sanitized;
+}
+
+export function inferToolExecutionDomain(tool: McpToolDefinition): string {
+  const source = `${tool.serverName} ${tool.name} ${tool.description ?? ""}`.toLowerCase();
+
+  if (tool.serverId === BUILTIN_WORKSPACE_MCP_ID || /file|path|workspace|shell|json|diff|文件|目录|仓库|命令/u.test(source)) {
+    return "workspace";
+  }
+
+  if (tool.serverId === BUILTIN_SEARCH_TOOLS_MCP_ID || /search|web|github|research|url|联网|搜索|网页/u.test(source)) {
+    return "web_research";
+  }
+
+  if (tool.serverId === BUILTIN_COMPUTER_USE_MCP_ID || /computer|desktop|browser|click|screenshot|桌面|点击|截图/u.test(source)) {
+    return "desktop";
+  }
+
+  if (tool.serverId === BUILTIN_APPLICATION_TOOLS_MCP_ID || /application|writing|book|chapter|应用|小说|章节/u.test(source)) {
+    return "application_asset";
+  }
+
+  if (tool.serverId === BUILTIN_GORDON_TOOLS_MCP_ID || /image|video|music|generate|图片|视频|音乐|生成/u.test(source)) {
+    return "generation";
+  }
+
+  return "external_mcp";
+}
+
+export function inferToolRiskLevel(tool: McpToolDefinition): "low" | "medium" | "high" {
+  const source = `${tool.name} ${tool.description ?? ""}`.toLowerCase();
+
+  if (/delete|remove|write|update|replace|move|rename|run_shell|execute|click|type|press|drag|生成|写入|修改|删除|移动|重命名|点击|输入/u.test(source)) {
+    return "high";
+  }
+
+  if (/read|inspect|search|list|query|screenshot|open|读取|检查|搜索|查询|截图|打开/u.test(source)) {
+    return "medium";
+  }
+
+  return "low";
+}
+
+export function inferToolCapabilities(tool: McpToolDefinition): string[] {
+  const source = `${tool.serverName} ${tool.name} ${tool.description ?? ""}`.toLowerCase();
+  const capabilities: string[] = [];
+  const addCapability = (capability: string, patterns: RegExp[]): void => {
+    if (patterns.some((pattern) => pattern.test(source))) {
+      capabilities.push(capability);
+    }
+  };
+
+  addCapability("read", [/read|list|inspect|query|screenshot|读取|查看|列出|查询|截图/u]);
+  addCapability("write", [/write|update|replace|create|delete|move|rename|写入|更新|创建|删除|移动|重命名/u]);
+  addCapability("search", [/search|research|github|web|搜索|调研|联网/u]);
+  addCapability("execute", [/run|execute|shell|click|type|press|drag|运行|执行|点击|输入|按键|拖拽/u]);
+  addCapability("generate", [/generate|image|video|music|生成|图片|视频|音乐/u]);
+  addCapability("verify", [/validate|diff|status|inspect|验证|校验|对比|状态/u]);
+
+  return capabilities.length ? Array.from(new Set(capabilities)) : ["unknown"];
+}
+
+export function buildPlannerToolPayload(candidateTools: McpToolDefinition[]): Array<Record<string, unknown>> {
+  return candidateTools.map((tool) => ({
+    serverId: tool.serverId,
+    serverName: tool.serverName,
+    name: tool.name,
+    capability: inferToolCapabilities(tool),
+    executionDomain: inferToolExecutionDomain(tool),
+    riskLevel: inferToolRiskLevel(tool),
+    descriptionSummary: sanitizeToolDescription(tool.description),
+    schemaSummary: buildToolSchemaSummary(tool),
+    inputSchema: tool.inputSchema ?? {}
+  }));
+}
