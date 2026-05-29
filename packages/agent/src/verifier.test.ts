@@ -3,6 +3,8 @@ import test from "node:test";
 
 import type { AgentMcpCallRecord } from "../../shared/src/index.js";
 import {
+  getActiveVerificationCriteria,
+  getPendingSuccessCriteria,
   verifyCriteriaFromToolHistory,
   verifyCriterionFromToolHistory
 } from "./verifier.js";
@@ -23,6 +25,61 @@ function createCallRecord(overrides: Partial<AgentMcpCallRecord> = {}): AgentMcp
     ...overrides
   };
 }
+
+test("getPendingSuccessCriteria returns only pending or unknown criteria", () => {
+  const criteria = getPendingSuccessCriteria([
+    {
+      type: "tool_result",
+      expected: "done",
+      status: "pending"
+    },
+    {
+      type: "ui_state",
+      expected: "ready",
+      status: "unknown"
+    },
+    {
+      type: "artifact_created",
+      expected: "image",
+      status: "passed"
+    },
+    {
+      type: "command_passed",
+      expected: "check",
+      status: "failed"
+    }
+  ]);
+
+  assert.deepEqual(
+    criteria.map((criterion) => criterion.status),
+    ["pending", "unknown"]
+  );
+});
+
+test("getActiveVerificationCriteria excludes text-response and custom criteria", () => {
+  const criteria = getActiveVerificationCriteria([
+    {
+      type: "text_response",
+      expected: "final answer",
+      status: "pending"
+    },
+    {
+      type: "custom",
+      expected: "human judgment",
+      status: "unknown"
+    },
+    {
+      type: "url_opened",
+      expected: "page opened",
+      status: "unknown"
+    }
+  ]);
+
+  assert.deepEqual(
+    criteria.map((criterion) => criterion.type),
+    ["url_opened"]
+  );
+});
 
 test("verifyCriterionFromToolHistory returns evidence for matched tool results", () => {
   const result = verifyCriterionFromToolHistory(

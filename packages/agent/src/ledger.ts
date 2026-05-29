@@ -10,7 +10,7 @@ import type {
   SkillDefinition
 } from "../../shared/src/index.js";
 import { isRecord } from "./runtime-utils.js";
-import { verifyCriteriaFromToolHistory } from "./verifier.js";
+import { getActiveVerificationCriteria, verifyCriteriaFromToolHistory } from "./verifier.js";
 
 const MAX_LEDGER_LIST_ITEMS = 8;
 const MAX_LEDGER_PLAN_STEPS = 8;
@@ -511,7 +511,7 @@ export function verifyTaskLedgerSuccessCriteria(ledger: AgentTaskLedger, mcpCall
   const verificationResults = verifyCriteriaFromToolHistory(ledger.structuredSuccessCriteria, mcpCalls);
   const verifiedCriteria = verificationResults.map((result) => result.criterion);
   const hasFailed = verifiedCriteria.some((criterion) => criterion.status === "failed");
-  const hasPending = verifiedCriteria.some((criterion) => criterion.status === "pending" || criterion.status === "unknown");
+  const hasPending = getActiveVerificationCriteria(verifiedCriteria).length > 0;
   const taskPhase: AgentTaskPhase = hasFailed ? "recovering" : hasPending ? "verifying" : "finalizing";
   const verificationFacts = verificationResults
     .flatMap((result) => result.evidence.map((evidence) => `${evidence.reason}：${evidence.serverName} / ${evidence.toolName}`))

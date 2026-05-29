@@ -46,8 +46,10 @@ import {
 } from "./ledger.js";
 import { isRecord, stringifyArguments } from "./runtime-utils.js";
 import { buildPlannerToolPayload, buildToolSchemaSummary } from "./tool-metadata.js";
+import { getActiveVerificationCriteria } from "./verifier.js";
 
 const MAX_AUTO_MCP_ROUNDS = 6;
+const MAX_ACTIVE_VERIFICATION_ROUNDS = 2;
 const MAX_CONSECUTIVE_AUTO_MCP_FAILURES = 2;
 const MAX_MCP_TOOL_ATTEMPTS = 3;
 const AGENT_FINAL_MAX_OUTPUT_TOKENS = 4096;
@@ -102,6 +104,16 @@ interface McpArgumentsRepairPlan {
 
 interface McpFallbackPlan {
   shouldFallback: boolean;
+  serverId: string | null;
+  toolName: string | null;
+  arguments: Record<string, unknown>;
+  reason: string;
+  expectedOutcome?: string;
+  verificationMethod?: string;
+}
+
+interface McpVerificationPlan {
+  shouldVerify: boolean;
   serverId: string | null;
   toolName: string | null;
   arguments: Record<string, unknown>;
@@ -1399,6 +1411,133 @@ ${JSON.stringify(buildPlannerToolPayload(candidateTools), null, 2)}`
   };
 }
 
+async function planActiveMcpVerification(
+  modelProfile: ModelProfile,
+  agent: AgentProfile,
+  userInput: string,
+  candidateTools: McpToolDefinition[],
+  mcpCalls: AgentMcpCallRecord[],
+  taskLedger: AgentTaskLedger,
+  round: number,
+  signal?: AbortSignal
+): Promise<McpVerificationPlan> {
+  const pendingCriteria = getActiveVerificationCriteria(taskLedger.structuredSuccessCriteria);
+
+  if (!pendingCriteria.length || !candidateTools.length) {
+    return {
+      shouldVerify: false,
+      serverId: null,
+      toolName: null,
+      arguments: {},
+      reason: pendingCriteria.length ? "没有可用验证工具" : "没有待验证成功条件"
+    };
+  }
+
+  const planningResponse = await invokeModelText(
+    modelProfile,
+    {
+      temperature: 0,
+      maxOutputTokens: 900,
+      messages: [
+        {
+          role: "system",
+          content: `你是 Gordon 的主动验证规划器。
+你的任务是判断是否需要调用一个工具来验证 pending/unknown 的结构化成功条件。
+
+请严格输出 JSON，不要输出解释、标题、Markdown 或代码块之外的任何文字。
+JSON 结构必须为：
+{
+  "shouldVerify": boolean,
+  "serverId": string | null,
+  "toolName": string | null,
+  "arguments": object,
+  "reason": string,
+  "expectedOutcome": string,
+  "verificationMethod": string
+}
+
+约束：
+- 你只负责验证，不负责继续执行新任务或修改用户资产
+- 如果已有工具历史足以验证，shouldVerify=false
+- 如果成功条件仍 pending/unknown，且候选工具里存在低风险或中风险读取/检查/状态类工具，应选择最小副作用工具验证
+- 对 file_contains 优先选择能读取文件、搜索文件或检查路径的工具
+- 对 url_opened 优先选择能读取网页、打开 URL 后读取状态或获取浏览器/页面状态的工具
+- 对 ui_state 优先选择能读取应用状态或截图/辅助功能树的工具
+- 对 command_passed 优先选择能读取已有命令结果的方式；只有用户目标明确需要命令验证且候选工具允许时，才选择命令工具
+- 对 artifact_created 优先基于已有 artifact 验证；只有需要检查外部 URL 或文件存在时才调用工具
+- 不要为了验证选择写入、删除、生成、点击、输入等高副作用工具，除非成功条件明确要求该动作且没有更低风险替代
+- serverId 和 toolName 必须来自候选工具列表
+- arguments 必须是 JSON 对象
+- expectedOutcome 描述验证工具成功后应观察到什么
+- verificationMethod 描述如何从工具返回中判断成功条件是否通过`
+        },
+        {
+          role: "user",
+          content: `当前 Agent：
+${agent.name}
+
+用户任务：
+${userInput}
+
+主动验证轮次：
+第 ${round} 轮
+
+当前任务账本：
+${buildTaskLedgerText(taskLedger)}
+
+待验证成功条件：
+${JSON.stringify(pendingCriteria, null, 2)}
+
+已有工具调用历史：
+${buildMcpHistoryText(mcpCalls)}
+
+可用工具列表：
+${JSON.stringify(buildPlannerToolPayload(candidateTools), null, 2)}`
+        }
+      ]
+    },
+    { signal }
+  );
+
+  const parsed = JSON.parse(extractJsonBlock(planningResponse.text)) as {
+    shouldVerify?: boolean;
+    serverId?: unknown;
+    toolName?: unknown;
+    arguments?: unknown;
+    reason?: unknown;
+    expectedOutcome?: unknown;
+    verificationMethod?: unknown;
+  };
+  const shouldVerify = Boolean(parsed.shouldVerify);
+  const serverId = typeof parsed.serverId === "string" && parsed.serverId.trim() ? parsed.serverId.trim() : null;
+  const toolName = typeof parsed.toolName === "string" && parsed.toolName.trim() ? parsed.toolName.trim() : null;
+  const reason = typeof parsed.reason === "string" && parsed.reason.trim() ? parsed.reason.trim() : "";
+  const argumentsObject = normalizePlannerArguments(parsed.arguments);
+  const matchedTool = findCandidateTool(candidateTools, serverId, toolName);
+  const expectedOutcome = truncateLedgerText(parsed.expectedOutcome);
+  const verificationMethod = truncateLedgerText(parsed.verificationMethod);
+
+  if (!shouldVerify || !matchedTool) {
+    return {
+      shouldVerify: false,
+      serverId: null,
+      toolName: null,
+      arguments: {},
+      reason: reason || "模型判断无需主动调用验证工具"
+    };
+  }
+
+  return {
+    shouldVerify: true,
+    serverId,
+    toolName,
+    arguments: argumentsObject,
+    reason: reason || "模型已规划主动验证工具",
+    ...(expectedOutcome ? { expectedOutcome } : {}),
+    ...(verificationMethod ? { verificationMethod } : {})
+  };
+}
+
 function buildSystemPrompt(agent: AgentProfile, skill: SkillDefinition | null, authorizedMcpServers: McpServerConfig[]): string {
   const sections = [
     `你是 Gordon 中的一个 harness Agent。\nAgent 名称：${agent.name}\n执行模式：${agent.mode}`,
@@ -2038,6 +2177,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
       )
     : createInitialTaskLedger(contextualUserInput, selectedSkill);
   const mcpCalls: AgentMcpCallRecord[] = [];
+  let discoveredCandidateTools: McpToolDefinition[] = [];
   let actualMcpToolName: string | null = request.mcpToolName?.trim() || null;
   let actualMcpArguments: Record<string, unknown> | undefined = request.mcpArguments;
   let autoSelectedMcp = false;
@@ -2219,6 +2359,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
     let candidateTools: McpToolDefinition[] = [];
     try {
       candidateTools = await collectCandidateMcpTools(candidateServers);
+      discoveredCandidateTools = candidateTools;
     } catch (error) {
       throwIfAgentAborted(options.signal);
       stopReason = `工具发现失败：${error instanceof Error ? error.message : "未知错误"}`;
@@ -2469,6 +2610,99 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
             : "正在验证成功条件...",
       taskLedger
     });
+
+    const activeVerificationTools = discoveredCandidateTools.length
+      ? discoveredCandidateTools
+      : await collectCandidateMcpTools(authorizedMcpServers).catch(() => []);
+
+    for (
+      let verificationRound = 1;
+      verificationRound <= MAX_ACTIVE_VERIFICATION_ROUNDS && getActiveVerificationCriteria(taskLedger.structuredSuccessCriteria).length;
+      verificationRound += 1
+    ) {
+      if (!activeVerificationTools.length) {
+        break;
+      }
+
+      pushStep(
+        "mcp_auto_planning",
+        `正在主动验证成功条件（第 ${verificationRound} 轮）`,
+        `仍有 ${getActiveVerificationCriteria(taskLedger.structuredSuccessCriteria).length} 个可工具验证的成功条件未确认`
+      );
+
+      let verificationPlan: McpVerificationPlan;
+
+      try {
+        verificationPlan = await planActiveMcpVerification(
+          modelProfile,
+          agent,
+          contextualUserInput,
+          activeVerificationTools,
+          mcpCalls,
+          taskLedger,
+          verificationRound,
+          options.signal
+        );
+      } catch (error) {
+        throwIfAgentAborted(options.signal);
+        pushStep(
+          "mcp_auto_stopped",
+          `主动验证规划失败（第 ${verificationRound} 轮）`,
+          error instanceof Error ? error.message : "未知错误"
+        );
+        break;
+      }
+
+      pushStep("mcp_auto_planning", `主动验证规划结果（第 ${verificationRound} 轮）`, verificationPlan.reason);
+
+      if (!verificationPlan.shouldVerify || !verificationPlan.serverId || !verificationPlan.toolName) {
+        break;
+      }
+
+      if (hasDuplicateToolCall(mcpCalls, verificationPlan.serverId, verificationPlan.toolName, verificationPlan.arguments)) {
+        pushStep("mcp_auto_stopped", `主动验证跳过重复调用（第 ${verificationRound} 轮）`, verificationPlan.reason);
+        break;
+      }
+
+      const verificationServer = resolveMcpSelection(agent, authorizedMcpServers, {
+        ...request,
+        mcpServerId: verificationPlan.serverId
+      });
+      const verificationTool = findCandidateTool(activeVerificationTools, verificationPlan.serverId, verificationPlan.toolName);
+
+      if (!verificationServer || !verificationTool) {
+        break;
+      }
+
+      const verificationRecord = await executeMcpToolCall({
+        server: verificationServer,
+        toolName: verificationTool.name,
+        toolArguments: verificationPlan.arguments,
+        toolDefinition: verificationTool,
+        round: MAX_AUTO_MCP_ROUNDS + verificationRound,
+        autoSelected: true,
+        steps,
+        reportProgress: () => emitProgress(),
+        repairContext: {
+          modelProfile,
+          agent,
+          userInput: contextualUserInput,
+          mcpCalls
+        },
+        workspacePermission,
+        computerUsePermission,
+        expectedOutcome: verificationPlan.expectedOutcome,
+        verificationMethod: verificationPlan.verificationMethod,
+        signal: options.signal
+      });
+      mcpCalls.push(verificationRecord);
+      await updateLedgerFromToolCall(verificationRecord);
+      taskLedger = verifyTaskLedgerSuccessCriteria(taskLedger, mcpCalls);
+      emitProgress({
+        statusText: "主动验证结果已写回任务账本",
+        taskLedger
+      });
+    }
   }
   let skillResultText: string | null = null;
   let skillFinalOutput = false;

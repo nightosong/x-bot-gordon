@@ -16,6 +16,27 @@ export interface AgentCriterionVerificationResult {
   evidence: AgentVerificationEvidence[];
 }
 
+export function getPendingSuccessCriteria(
+  criteria: AgentTaskLedgerSuccessCriterion[]
+): AgentTaskLedgerSuccessCriterion[] {
+  return criteria.filter((criterion) => criterion.status === "pending" || criterion.status === "unknown");
+}
+
+export function getActiveVerificationCriteria(
+  criteria: AgentTaskLedgerSuccessCriterion[]
+): AgentTaskLedgerSuccessCriterion[] {
+  const activeVerificationTypes = new Set<AgentTaskLedgerSuccessCriterion["type"]>([
+    "tool_result",
+    "file_contains",
+    "url_opened",
+    "command_passed",
+    "ui_state",
+    "artifact_created"
+  ]);
+
+  return getPendingSuccessCriteria(criteria).filter((criterion) => activeVerificationTypes.has(criterion.type));
+}
+
 function buildCallRef(call: AgentMcpCallRecord): string {
   return `mcp:${call.round}:${call.serverId}:${call.toolName}:${call.createdAt}`;
 }
