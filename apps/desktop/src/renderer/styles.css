@@ -9963,9 +9963,13 @@ canvas {
 
 .weekly-feishu-backdrop {
   z-index: calc(var(--z-dialog) + 4);
+  grid-template-columns: minmax(272px, 318px) minmax(0, 1fr);
+  gap: clamp(10px, 1.2vw, 16px);
+  padding: clamp(12px, 1.4vw, 20px);
 }
 
 .weekly-feishu-dialog {
+  grid-column: 2;
   width: min(540px, calc(100vw - 36px));
 }
 
@@ -14119,6 +14123,15 @@ canvas {
 
   .workspace-panel {
     min-height: 60vh;
+  }
+
+  .weekly-feishu-backdrop {
+    grid-template-columns: 1fr;
+    padding: 18px;
+  }
+
+  .weekly-feishu-dialog {
+    grid-column: 1;
   }
 
   .models-grid,
