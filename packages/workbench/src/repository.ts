@@ -62,6 +62,10 @@ import type {
   WritingChapter,
   WritingCharacterAsset,
   WritingForeshadowAsset,
+  WritingNarrativeRiskLevel,
+  WritingNarrativeState,
+  WritingNarrativeStateNode,
+  WritingNarrativeStateNodeKind,
   WritingOutlinePlannerJob,
   WritingOutlinePlannerStatus,
   WritingBookSaveOptions,
@@ -2071,6 +2075,18 @@ const WRITING_BOOK_LENGTHS = new Set<WritingBookLength>(["short", "medium", "lon
 const WRITING_BOOK_PART_TYPES = new Set<WritingBookPartType>(["act", "volume"]);
 const WRITING_CHAPTER_STATUSES = new Set<WritingChapterStatus>(["todo", "inProgress", "done"]);
 const WRITING_OUTLINE_PLANNER_STATUSES = new Set<WritingOutlinePlannerStatus>(["idle", "running", "completed", "failed", "cancelled"]);
+const WRITING_NARRATIVE_STATE_NODE_KINDS = new Set<WritingNarrativeStateNodeKind>([
+  "character",
+  "worldRule",
+  "resource",
+  "region",
+  "foreshadow",
+  "arc",
+  "timelineEvent",
+  "continuityWarning",
+  "planDrift"
+]);
+const WRITING_NARRATIVE_RISK_LEVELS = new Set<WritingNarrativeRiskLevel>(["low", "medium", "high"]);
 const WRITING_CHAPTER_CONTENT_FILE_NAME_PATTERN = /^[a-f0-9]{32}\.md$/i;
 const WRITING_CHAPTER_PREFIX_PATTERN = /^第\s*([0-9０-９一二三四五六七八九十百千万零〇两]+)\s*章\s*(?:[：:、.\-]\s*)?(.*)$/;
 const WRITING_PART_PREFIX_PATTERN = /^(?:第\s*)?([0-9０-９一二三四五六七八九十百千万零〇两]+)\s*(幕|卷)\s*(?:[：:、.\-·]\s*)?(.*)$/;
@@ -2398,7 +2414,14 @@ function normalizeWritingStyleProfile(input: Partial<WritingStyleProfile> | null
     voice: String(input?.voice ?? "").trim(),
     pacing: String(input?.pacing ?? "").trim(),
     genreSignals: normalizeStringList(input?.genreSignals),
-    taboos: normalizeStringList(input?.taboos)
+    taboos: normalizeStringList(input?.taboos),
+    ...(input?.proseDensity ? { proseDensity: String(input.proseDensity).trim() } : {}),
+    ...(input?.dialogueRatio ? { dialogueRatio: String(input.dialogueRatio).trim() } : {}),
+    ...(input?.narrationDistance ? { narrationDistance: String(input.narrationDistance).trim() } : {}),
+    ...(input?.emotionalTemperature ? { emotionalTemperature: String(input.emotionalTemperature).trim() } : {}),
+    ...(input?.humorLevel ? { humorLevel: String(input.humorLevel).trim() } : {}),
+    ...(input?.violenceExplicitness ? { violenceExplicitness: String(input.violenceExplicitness).trim() } : {}),
+    ...(normalizeStringList(input?.pacingCurve).length ? { pacingCurve: normalizeStringList(input?.pacingCurve) } : {})
   };
 }
 
@@ -2414,6 +2437,209 @@ function normalizeWritingStoryAssets(input: Partial<WritingStoryAssets> | null |
     styleProfile: normalizeWritingStyleProfile(input?.styleProfile),
     memoryNotes: normalizeWritingStoryAssetEntries(input?.memoryNotes, bookId, "memory"),
     updatedAt: String(input?.updatedAt ?? new Date().toISOString())
+  };
+}
+
+function normalizeWritingNarrativeStateNodeKind(value: unknown, fallback: WritingNarrativeStateNodeKind): WritingNarrativeStateNodeKind {
+  const kind = String(value ?? "").trim();
+  return WRITING_NARRATIVE_STATE_NODE_KINDS.has(kind as WritingNarrativeStateNodeKind)
+    ? (kind as WritingNarrativeStateNodeKind)
+    : fallback;
+}
+
+function normalizeWritingNarrativeRiskLevel(value: unknown): WritingNarrativeRiskLevel {
+  const level = String(value ?? "").trim();
+  return WRITING_NARRATIVE_RISK_LEVELS.has(level as WritingNarrativeRiskLevel)
+    ? (level as WritingNarrativeRiskLevel)
+    : "low";
+}
+
+function normalizeWritingNarrativeStateNode(
+  input: Partial<WritingNarrativeStateNode> | Record<string, unknown> | null | undefined,
+  index: number,
+  bookId: string,
+  kind: WritingNarrativeStateNodeKind
+): WritingNarrativeStateNode | null {
+  const source = input && typeof input === "object" ? input : {};
+  const label = String(source.label ?? (source as Record<string, unknown>).title ?? (source as Record<string, unknown>).name ?? "").trim();
+  const summary = String(
+    source.summary ??
+      (source as Record<string, unknown>).detail ??
+      (source as Record<string, unknown>).description ??
+      (source as Record<string, unknown>).setup ??
+      ""
+  ).trim();
+
+  if (!label && !summary) {
+    return null;
+  }
+
+  return {
+    id: String(source.id ?? `${bookId}_${kind}_${index + 1}`),
+    kind: normalizeWritingNarrativeStateNodeKind(source.kind, kind),
+    label: label || `未命名${kind} ${index + 1}`,
+    summary,
+    status: String(source.status ?? "active").trim() || "active",
+    ...(normalizeOptionalChapterIndex(source.introducedAtChapterIndex ?? (source as Record<string, unknown>).chapterIndex) ? {
+      introducedAtChapterIndex: normalizeOptionalChapterIndex(source.introducedAtChapterIndex ?? (source as Record<string, unknown>).chapterIndex)
+    } : {}),
+    ...(normalizeOptionalChapterIndex(source.payoffDeadlineChapterIndex) ? {
+      payoffDeadlineChapterIndex: normalizeOptionalChapterIndex(source.payoffDeadlineChapterIndex)
+    } : {}),
+    ...(normalizeOptionalChapterIndex(source.resolvedAtChapterIndex) ? {
+      resolvedAtChapterIndex: normalizeOptionalChapterIndex(source.resolvedAtChapterIndex)
+    } : {}),
+    evidenceChapterIds: normalizeStringList(source.evidenceChapterIds),
+    relatedNodeIds: normalizeStringList(source.relatedNodeIds),
+    riskLevel: normalizeWritingNarrativeRiskLevel(source.riskLevel),
+    updatedAt: String(source.updatedAt ?? new Date().toISOString())
+  };
+}
+
+function normalizeWritingNarrativeStateNodeList(
+  input: unknown,
+  bookId: string,
+  kind: WritingNarrativeStateNodeKind
+): WritingNarrativeStateNode[] {
+  return (Array.isArray(input) ? input : [])
+    .map((entry, index) => normalizeWritingNarrativeStateNode(entry as Partial<WritingNarrativeStateNode>, index, bookId, kind))
+    .filter((entry): entry is WritingNarrativeStateNode => Boolean(entry));
+}
+
+function hasWritingNarrativeStateContent(state: Partial<WritingNarrativeState> | null | undefined): boolean {
+  if (!state || typeof state !== "object") {
+    return false;
+  }
+
+  return [
+    state.characters,
+    state.worldRules,
+    state.resources,
+    state.regions,
+    state.foreshadows,
+    state.arcs,
+    state.timelineEvents,
+    state.continuityWarnings,
+    state.planDriftNotes
+  ].some((entries) => Array.isArray(entries) && entries.length > 0);
+}
+
+function deriveWritingNarrativeStateFromStoryAssets(assets: WritingStoryAssets, bookId: string): WritingNarrativeState {
+  const now = String(assets.updatedAt ?? new Date().toISOString());
+  const toNode = (
+    kind: WritingNarrativeStateNodeKind,
+    label: string,
+    summary: string,
+    index: number,
+    options: Partial<WritingNarrativeStateNode> = {}
+  ): WritingNarrativeStateNode => ({
+    id: String(options.id ?? `${bookId}_${kind}_${index + 1}`),
+    kind,
+    label: label || `未命名${kind} ${index + 1}`,
+    summary,
+    status: String(options.status ?? "active"),
+    ...(options.introducedAtChapterIndex ? { introducedAtChapterIndex: options.introducedAtChapterIndex } : {}),
+    ...(options.payoffDeadlineChapterIndex ? { payoffDeadlineChapterIndex: options.payoffDeadlineChapterIndex } : {}),
+    ...(options.resolvedAtChapterIndex ? { resolvedAtChapterIndex: options.resolvedAtChapterIndex } : {}),
+    evidenceChapterIds: normalizeStringList(options.evidenceChapterIds),
+    relatedNodeIds: normalizeStringList(options.relatedNodeIds),
+    riskLevel: normalizeWritingNarrativeRiskLevel(options.riskLevel),
+    updatedAt: String(options.updatedAt ?? now)
+  });
+
+  return {
+    characters: assets.characters.map((character, index) =>
+      toNode(
+        "character",
+        character.name,
+        [
+          character.role ? `身份：${character.role}` : "",
+          character.goal ? `目标：${character.goal}` : "",
+          character.growthArc ? `弧线：${character.growthArc}` : "",
+          character.relationships.length ? `关系：${character.relationships.join("；")}` : ""
+        ].filter(Boolean).join(" / "),
+        index,
+        { id: character.id, status: character.status, updatedAt: character.updatedAt }
+      )
+    ),
+    worldRules: [...assets.rules, ...assets.worldview].map((entry, index) =>
+      toNode("worldRule", entry.title, entry.detail, index, {
+        id: entry.id,
+        status: entry.status ?? "active",
+        introducedAtChapterIndex: entry.chapterIndex,
+        updatedAt: entry.updatedAt
+      })
+    ),
+    resources: assets.memoryNotes
+      .filter((entry) => normalizeStringList(entry.tags).some((tag) => /资源|物件|伤痕|债务|权限|名声|证据/.test(tag)) || /资源|物件|伤痕|债务|权限|名声|证据/.test(`${entry.title}${entry.detail}`))
+      .map((entry, index) => toNode("resource", entry.title, entry.detail, index, {
+        id: entry.id,
+        status: entry.status ?? "active",
+        introducedAtChapterIndex: entry.chapterIndex,
+        updatedAt: entry.updatedAt
+      })),
+    regions: assets.worldview
+      .filter((entry) => normalizeStringList(entry.tags).some((tag) => /地区|区域|地点|城|域|地图/.test(tag)) || /地区|区域|地点|城|域|地图/.test(`${entry.title}${entry.detail}`))
+      .map((entry, index) => toNode("region", entry.title, entry.detail, index, {
+        id: `${entry.id}_region`,
+        status: entry.status ?? "active",
+        introducedAtChapterIndex: entry.chapterIndex,
+        updatedAt: entry.updatedAt
+      })),
+    foreshadows: assets.foreshadows.map((entry, index) =>
+      toNode("foreshadow", entry.title, [entry.setup, entry.payoff ? `回收计划：${entry.payoff}` : ""].filter(Boolean).join(" / "), index, {
+        id: entry.id,
+        status: entry.status,
+        introducedAtChapterIndex: entry.chapterIndex,
+        payoffDeadlineChapterIndex: entry.payoffChapterIndex,
+        updatedAt: entry.updatedAt,
+        riskLevel: entry.status === "open" ? "medium" : "low"
+      })
+    ),
+    arcs: assets.characters
+      .filter((character) => character.growthArc)
+      .map((character, index) => toNode("arc", `${character.name}：成长弧`, character.growthArc, index, {
+        id: `${character.id}_arc`,
+        relatedNodeIds: [character.id],
+        status: character.status,
+        updatedAt: character.updatedAt
+      })),
+    timelineEvents: assets.timeline.map((entry, index) =>
+      toNode("timelineEvent", entry.title, entry.detail, index, {
+        id: entry.id,
+        status: entry.status ?? "active",
+        introducedAtChapterIndex: entry.chapterIndex,
+        updatedAt: entry.updatedAt
+      })
+    ),
+    continuityWarnings: [],
+    planDriftNotes: [],
+    updatedAt: now
+  };
+}
+
+function normalizeWritingNarrativeState(
+  input: Partial<WritingNarrativeState> | null | undefined,
+  assets: WritingStoryAssets,
+  bookId: string
+): WritingNarrativeState {
+  const source = input && typeof input === "object" ? input : {};
+
+  if (!hasWritingNarrativeStateContent(source)) {
+    return deriveWritingNarrativeStateFromStoryAssets(assets, bookId);
+  }
+
+  return {
+    characters: normalizeWritingNarrativeStateNodeList(source.characters, bookId, "character"),
+    worldRules: normalizeWritingNarrativeStateNodeList(source.worldRules, bookId, "worldRule"),
+    resources: normalizeWritingNarrativeStateNodeList(source.resources, bookId, "resource"),
+    regions: normalizeWritingNarrativeStateNodeList(source.regions, bookId, "region"),
+    foreshadows: normalizeWritingNarrativeStateNodeList(source.foreshadows, bookId, "foreshadow"),
+    arcs: normalizeWritingNarrativeStateNodeList(source.arcs, bookId, "arc"),
+    timelineEvents: normalizeWritingNarrativeStateNodeList(source.timelineEvents, bookId, "timelineEvent"),
+    continuityWarnings: normalizeWritingNarrativeStateNodeList(source.continuityWarnings, bookId, "continuityWarning"),
+    planDriftNotes: normalizeWritingNarrativeStateNodeList(source.planDriftNotes, bookId, "planDrift"),
+    updatedAt: String(source.updatedAt ?? new Date().toISOString())
   };
 }
 
@@ -2464,6 +2690,7 @@ function normalizeWritingBookConfig(input: Partial<WritingBook> | null | undefin
   const id = String(input?.id ?? `writing_book_${randomUUID()}`);
   const outlinePlannerJob = normalizeWritingOutlinePlannerJob(input?.outlinePlannerJob);
   const legacyDetailedOutline = String(input?.seriesPlan ?? "").trim();
+  const storyAssets = normalizeWritingStoryAssets(input?.storyAssets, id);
 
   return {
     id,
@@ -2479,7 +2706,8 @@ function normalizeWritingBookConfig(input: Partial<WritingBook> | null | undefin
     seriesPlan: "",
     extraIntroSections: normalizeWritingBookIntroSections(input?.extraIntroSections, id),
     parts: normalizeWritingBookParts(input?.parts, id),
-    storyAssets: normalizeWritingStoryAssets(input?.storyAssets, id),
+    storyAssets,
+    narrativeState: normalizeWritingNarrativeState(input?.narrativeState, storyAssets, id),
     ...(outlinePlannerJob ? { outlinePlannerJob } : {})
   };
 }

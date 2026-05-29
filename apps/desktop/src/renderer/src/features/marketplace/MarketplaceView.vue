@@ -2421,6 +2421,39 @@
             <section class="writing-editor-grid">
               <div class="writing-editor-surface">
                 <div v-if="ui.marketplace.writing.activeTab === 'intro'" class="writing-intro-stack">
+                  <section class="writing-intro-card writing-narrative-state-card">
+                    <div class="writing-intro-card-head">
+                      <div class="writing-intro-card-title">
+                        <span class="field-label">Narrative State</span>
+                      </div>
+                      <div class="writing-narrative-state-metrics" aria-label="叙事状态统计">
+                        <span
+                          v-for="item in getWritingNarrativeStateSummary(activeWritingBook)"
+                          :key="item.label"
+                          class="status-pill writing-narrative-state-pill"
+                        >
+                          {{ item.label }} {{ item.value }}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div class="writing-narrative-state-preview">
+                      <article
+                        v-for="node in getWritingNarrativeStatePreview(activeWritingBook)"
+                        :key="node.id"
+                        class="writing-narrative-state-node"
+                        :class="`is-risk-${node.riskLevel}`"
+                      >
+                        <span>{{ node.kindLabel }}</span>
+                        <strong>{{ node.label }}</strong>
+                        <p>{{ node.summary || node.status }}</p>
+                      </article>
+                      <p v-if="!getWritingNarrativeStatePreview(activeWritingBook).length" class="writing-narrative-state-empty">
+                        暂无状态节点
+                      </p>
+                    </div>
+                  </section>
+
                   <section
                     v-for="section in activeWritingIntroSections"
                     :key="section.key"
@@ -2721,12 +2754,15 @@
                 :state="ui.marketplace.writing"
                 :active-writing-task="activeWritingTask"
                 :active-writing-task-options="activeWritingTaskOptions"
+                :active-writing-phase-options="activeWritingPhaseOptions"
+                :active-writing-phase-id="activeWritingPhaseId"
                 :active-writing-prompt-preview="activeWritingPromptPreview"
                 :active-writing-long-outline-request="activeWritingLongOutlineRequest"
                 :active-writing-outline-planner-job="activeWritingOutlinePlannerJob"
                 :active-writing-book="activeWritingBook"
                 :toggle-writing-ai-task-picker="toggleWritingAiTaskPicker"
                 :select-writing-ai-task="selectWritingAiTask"
+                :select-writing-ai-phase="selectWritingAiPhase"
                 :toggle-writing-prompt-preview="toggleWritingPromptPreview"
                 :build-writing-long-outline-target-content="buildWritingLongOutlineTargetContent"
                 :get-writing-outline-planner-status-label="getWritingOutlinePlannerStatusLabel"
@@ -3465,6 +3501,8 @@ const {
   activeWritingDoneChapterCount,
   activeWritingExportFileName,
   activeWritingExtraIntroSections,
+  activeWritingPhaseId,
+  activeWritingPhaseOptions,
   activeWritingIntroSections,
   activeWritingLengthProfile,
   activeWritingOutlinePlannerJob,
@@ -3491,6 +3529,8 @@ const {
   getWritingIntroFieldWordCount,
   getWritingIntroFieldValue,
   getWritingLengthLabel,
+  getWritingNarrativeStateSummary,
+  getWritingNarrativeStatePreview,
   getWritingTabWordCount,
   goWritingChapter,
   handleWritingBookUpload,
@@ -3503,6 +3543,7 @@ const {
   rememberWritingBookTitleBaseline,
   rememberWritingExtraIntroSectionTitleBaseline,
   selectWritingAiTask,
+  selectWritingAiPhase,
   selectWritingChapter,
   selectWritingChapterFromPicker,
   selectWritingExportDirectory,

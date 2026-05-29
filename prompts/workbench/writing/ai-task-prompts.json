@@ -29,6 +29,16 @@
       "role": "人物关系连续性编辑",
       "strategy": "检查当前故事中角色关系是否具有惯性。重点抽取债务、亏欠、信任、背叛、羞辱、依赖、交易、误会、共同秘密、利益交换和下一次爆发点；关系变化必须能用具体事件、物件、公开结果、承诺或行为证据支撑。不要把关系写成“互相欣赏/互相敌对”这类静态标签。",
       "output": "只输出一个 JSON 代码块，格式为 {\"storyAssets\":{\"relationships\":[{\"title\":\"人物A - 人物B：关系状态\",\"detail\":\"变化原因、未解决 tension、关系证据、下一次爆发点\",\"tags\":[\"关系惯性\"]}],\"characters\":[{\"name\":\"\",\"role\":\"\",\"goal\":\"\",\"fear\":\"\",\"secret\":\"\",\"growthArc\":\"\",\"relationships\":[],\"tags\":[\"关系状态\"],\"status\":\"active\"}],\"memoryNotes\":[{\"title\":\"\",\"detail\":\"\",\"tags\":[\"关系债务\",\"未解决张力\"]}]}}。只写已有设定能支持的关系状态。"
+    },
+    "narrativeState": {
+      "role": "Narrative State 架构师",
+      "strategy": "把当前故事介绍、大纲、目录、章节和 storyAssets 统一成可追踪的叙事状态图。重点识别人物状态、世界规则、资源/债务/伤势、区域状态、未回收伏笔、故事弧、时间线事件、连续性风险和计划漂移。只记录会影响后续章节生成或审阅的长期状态，不把普通氛围、一次性修辞或项目管理语言写进作品。",
+      "output": "只输出一个 JSON 代码块，格式为 {\"narrativeState\":{\"characters\":[{\"label\":\"\",\"summary\":\"当前身份、目标、伤势、秘密、关系债务或能力边界\",\"status\":\"active\",\"introducedAtChapterIndex\":1,\"evidenceChapterIds\":[],\"relatedNodeIds\":[],\"riskLevel\":\"low\"}],\"worldRules\":[{\"label\":\"\",\"summary\":\"规则、触发条件、代价、已知者、违反风险\",\"status\":\"active\",\"evidenceChapterIds\":[],\"relatedNodeIds\":[],\"riskLevel\":\"low\"}],\"resources\":[{\"label\":\"\",\"summary\":\"物件、资源、债务、权限、名声、伤势或证据载体的当前状态\",\"status\":\"active\",\"evidenceChapterIds\":[],\"relatedNodeIds\":[],\"riskLevel\":\"low\"}],\"regions\":[{\"label\":\"\",\"summary\":\"区域控制、生态、危险、地方活法或探索状态\",\"status\":\"active\",\"evidenceChapterIds\":[],\"relatedNodeIds\":[],\"riskLevel\":\"low\"}],\"foreshadows\":[{\"label\":\"\",\"summary\":\"埋设内容、回收承诺、压力和可能失踪风险\",\"status\":\"open\",\"introducedAtChapterIndex\":1,\"payoffDeadlineChapterIndex\":20,\"evidenceChapterIds\":[],\"relatedNodeIds\":[],\"riskLevel\":\"medium\"}],\"arcs\":[{\"label\":\"\",\"summary\":\"主角弧、关系弧、世界弧或卷级弧当前阶段、下一阶段和最终方向\",\"status\":\"active\",\"evidenceChapterIds\":[],\"relatedNodeIds\":[],\"riskLevel\":\"low\"}],\"timelineEvents\":[{\"label\":\"\",\"summary\":\"已发生事件、前后顺序和时间限制\",\"status\":\"active\",\"introducedAtChapterIndex\":1,\"evidenceChapterIds\":[],\"relatedNodeIds\":[],\"riskLevel\":\"low\"}],\"continuityWarnings\":[{\"label\":\"\",\"summary\":\"战力、时间、资源、伤势、关系或规则冲突\",\"status\":\"open\",\"evidenceChapterIds\":[],\"relatedNodeIds\":[],\"riskLevel\":\"high\"}],\"planDriftNotes\":[{\"label\":\"\",\"summary\":\"哪些后续章节、伏笔、人物动机或卷级目标受影响\",\"status\":\"open\",\"evidenceChapterIds\":[],\"relatedNodeIds\":[],\"riskLevel\":\"medium\"}]}}。没有依据的数组返回空数组，不输出解释文本。"
+    },
+    "styleProfile": {
+      "role": "叙事风格画像编辑",
+      "strategy": "为当前作品建立区别于其它书的 Narrative Style Profile。根据题材、已有文本和作者要求，定义文风密度、对白比例、叙述距离、情绪温度、节奏曲线、幽默程度、暴力显性程度、类型信号和禁忌，避免所有作品都被统一成商业网文标准体。",
+      "output": "只输出一个 JSON 代码块，格式为 {\"storyAssets\":{\"styleProfile\":{\"voice\":\"\",\"pacing\":\"\",\"genreSignals\":[],\"taboos\":[],\"proseDensity\":\"\",\"dialogueRatio\":\"\",\"narrationDistance\":\"\",\"emotionalTemperature\":\"\",\"humorLevel\":\"\",\"violenceExplicitness\":\"\",\"pacingCurve\":[]}}}。字段内容必须能直接指导后续正文生成，不输出解释文本。"
     }
   },
   "outline": {
@@ -36,6 +46,16 @@
       "role": "章节目录架构师",
       "strategy": "根据故事介绍、大纲指导、篇幅策略和作者要求生成最终章节目录。章节规划必须内置前三章设计、节奏分布、伏笔布设和一致性保护：前三章要形成主角鲜明、人物克制、设定不倾倒的开篇小故事；后续章节要有冲突升级、信息增量、人物变化、高潮缓冲和伏笔回收。探险、末世游历、废土远行、异境旅行或奇观地图题材，目录必须围绕渴望、抵达、见闻、地方活法、偶然改道和价值变化推进；不要写成获得任务、解锁地图、收集线索、接近真相、公布真相的游戏主线，也不要默认组固定小队。每章按 3000-5000 字正文容量设计，必须能展开成一个完整章节级事件；不要把到达、发现痕迹、试探、短斗、所得、开路拆成多个空章节，相邻 3-5 个小拍点应合并进同一章。标题要概括本章独特事件、意象或转折，禁止使用“地点 + 初临/旧痕/试探/险声/伏身/短斗/变招/代价/所得/开路”等模板。中长篇如需要幕或卷，必须把幕/卷放在 parts，不要把幕/卷当成 chapter。若作者要求拆分、移除、插入或重排章节，直接输出变更后的最终目录，不要只给操作建议。",
       "output": "必须输出一个 JSON 代码块，格式为 {\"parts\":[{\"index\":1,\"type\":\"act\",\"title\":\"幕或卷标题（不要包含第X幕/第X卷前缀）\",\"description\":\"本幕/卷整体故事设计；探险/游历题材需包含本段抵达方向、地方见闻、主角价值变化\"}],\"chapters\":[{\"index\":1,\"partIndex\":1,\"title\":\"章节标题（不要包含第X章前缀，不使用固定后缀模板）\",\"summary\":\"本章目标、主要冲突、地方生活或奇观压力、资源/危险压力、信息增量、人物变化、伏笔/回收、结尾钩子；内容量能支撑 3000-5000 字正文\"}]}。index 与 partIndex 必须是 integer；短篇可省略 parts 和 partIndex；JSON 外可以补充简短设计说明，但章节落盘只读取 JSON。"
+    },
+    "arcTracker": {
+      "role": "故事弧跟踪编辑",
+      "strategy": "检查当前目录和 Narrative State 是否推动了长期故事弧，而不是只有局部章节热闹。必须分别检查主角弧、关系弧、世界弧、资源/权限弧、伏笔弧和卷级弧：当前阶段是什么，下一阶段应该发生什么，哪些章节没有推进任何弧，哪些弧推进过快或停滞。",
+      "output": "输出故事弧跟踪报告，包含：弧线总览 / 主角弧阶段 / 关系弧阶段 / 世界弧阶段 / 资源或权限变化 / 伏笔压力 / 停滞章节 / 应合并或重排的章节 / 可直接交给「规划章节目录」执行的修改指令。不输出 chapters JSON。"
+    },
+    "planDrift": {
+      "role": "动态重规划编辑",
+      "strategy": "把当前故事修改与原目录、Master Plan、伏笔、人物动机和 Narrative State 对齐，找出计划漂移。重点分析新增角色、删除伏笔、世界规则变化、感情线变化、战力变化、章节顺序变化和已完成章节事实对后续章节的影响范围。",
+      "output": "输出 Plan Drift Analysis，包含：漂移来源 / 受影响章节范围 / 受影响伏笔 / 受影响人物动机 / 受影响卷级目标 / 必须重规划的部分 / 可保留的部分 / 最小重规划指令。不要输出 chapters JSON，除非作者明确要求落盘修改。"
     },
     "outlineAudit": {
       "role": "目录体检总编",
@@ -98,6 +118,11 @@
       "role": "AI 味检测编辑",
       "strategy": "专门识别文本中的 AI 味和模板化写法：空泛哲学句、连续排比、解释性旁白、重复心理总结、“他明白了”式顿悟、无功能环境描写、漂亮但无因果的比喻、人物动机说明书、战斗技能名轰炸、段落结尾强行升华。只指出会伤害阅读体验的地方，并给出最小替换片段。",
       "output": "输出 AI 味检测报告，包含：高风险句段 / 问题类型 / 为什么像 AI / 最小改写原则 / 可直接替换片段。不要重写整章，不输出泛泛建议。"
+    },
+    "continuityAudit": {
+      "role": "连续性校验编辑",
+      "strategy": "根据 Narrative State、storyAssets、目录窗口和当前章节正文检查一致性。重点找战力冲突、伤势遗忘、资源凭空恢复、时间线跳跃、位置移动不成立、关系债务清零、世界规则违反、伏笔失踪和计划漂移。只指出会影响后续长篇稳定的问题，并给出最小修复顺序。",
+      "output": "输出连续性校验报告，包含：冲突清单 / 证据位置 / 风险等级 / 影响后续章节 / 最小修复方案 / 应写入 Narrative State 的节点。不自动重写正文。"
     }
   }
 }

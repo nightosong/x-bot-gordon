@@ -770,6 +770,13 @@ export interface WritingStyleProfile {
   pacing: string;
   genreSignals: string[];
   taboos: string[];
+  proseDensity?: string;
+  dialogueRatio?: string;
+  narrationDistance?: string;
+  emotionalTemperature?: string;
+  humorLevel?: string;
+  violenceExplicitness?: string;
+  pacingCurve?: string[];
 }
 
 export interface WritingStoryAssets {
@@ -782,6 +789,47 @@ export interface WritingStoryAssets {
   rules: WritingStoryAssetEntry[];
   styleProfile: WritingStyleProfile;
   memoryNotes: WritingStoryAssetEntry[];
+  updatedAt: string;
+}
+
+export type WritingNarrativeStateNodeKind =
+  | "character"
+  | "worldRule"
+  | "resource"
+  | "region"
+  | "foreshadow"
+  | "arc"
+  | "timelineEvent"
+  | "continuityWarning"
+  | "planDrift";
+
+export type WritingNarrativeRiskLevel = "low" | "medium" | "high";
+
+export interface WritingNarrativeStateNode {
+  id: string;
+  kind: WritingNarrativeStateNodeKind;
+  label: string;
+  summary: string;
+  status: string;
+  introducedAtChapterIndex?: number;
+  payoffDeadlineChapterIndex?: number;
+  resolvedAtChapterIndex?: number;
+  evidenceChapterIds: string[];
+  relatedNodeIds: string[];
+  riskLevel: WritingNarrativeRiskLevel;
+  updatedAt: string;
+}
+
+export interface WritingNarrativeState {
+  characters: WritingNarrativeStateNode[];
+  worldRules: WritingNarrativeStateNode[];
+  resources: WritingNarrativeStateNode[];
+  regions: WritingNarrativeStateNode[];
+  foreshadows: WritingNarrativeStateNode[];
+  arcs: WritingNarrativeStateNode[];
+  timelineEvents: WritingNarrativeStateNode[];
+  continuityWarnings: WritingNarrativeStateNode[];
+  planDriftNotes: WritingNarrativeStateNode[];
   updatedAt: string;
 }
 
@@ -837,6 +885,7 @@ export interface WritingBook {
   extraIntroSections: WritingBookIntroSection[];
   parts: WritingBookPart[];
   storyAssets: WritingStoryAssets;
+  narrativeState: WritingNarrativeState;
   outlinePlannerJob?: WritingOutlinePlannerJob;
   chapters: WritingChapter[];
   directoryName?: string;
