@@ -90,9 +90,12 @@
               :set-weekly-feishu-settings-draft-field="setWeeklyFeishuSettingsDraftField"
               :set-weekly-report-template-ai-instruction="setWeeklyReportTemplateAiInstruction"
               :set-weekly-report-template-ai-output="setWeeklyReportTemplateAiOutput"
+              :set-weekly-performance-report-instruction="setWeeklyPerformanceReportInstruction"
+              :set-weekly-performance-report-range-field="setWeeklyPerformanceReportRangeField"
               :set-weekly-reporting-mode="setWeeklyReportingMode"
               :set-weekly-report-output-mode="setWeeklyReportOutputMode"
               :set-weekly-task-status="setWeeklyTaskStatus"
+              :toggle-weekly-performance-report-instruction-collapsed="toggleWeeklyPerformanceReportInstructionCollapsed"
               :toggle-weekly-report-template-collapsed="toggleWeeklyReportTemplateCollapsed"
               :toggle-weekly-project-collapsed="toggleWeeklyProjectCollapsed"
               :touch-weekly-task-by-id="touchWeeklyTaskById"
@@ -184,6 +187,8 @@
               :handle-command-input-composition-start="handleCommandInputCompositionStart"
               :handle-command-input-enter-keydown="handleCommandInputEnterKeydown"
               :handle-command-load-mcp-tools="handleCommandLoadMcpTools"
+              :handle-command-message-copy="handleCommandMessageCopy"
+              :handle-command-message-export="handleCommandMessageExport"
               :handle-command-run-cancel="handleCommandRunCancel"
               :handle-command-server-change="handleCommandServerChange"
               :handle-command-session-delete="handleCommandSessionDelete"
@@ -753,6 +758,8 @@ const {
   handleCommandInputCompositionStart,
   handleCommandInputEnterKeydown,
   handleCommandLoadMcpTools,
+  handleCommandMessageCopy,
+  handleCommandMessageExport,
   handleCommandRunCancel,
   handleCommandServerChange,
   handleCommandSessionDelete,
@@ -765,6 +772,8 @@ const {
 } = createCommandWorkshopActions({
   activeFeature,
   commandWorkshopViewRef,
+  copyRichTextToClipboard,
+  copyTextToClipboard,
   desktopApi,
   enabledAgentProfiles,
   featureCommandWorkshopId: FEATURE_COMMAND_WORKSHOP,
@@ -946,10 +955,13 @@ const {
   setWeeklyFeishuSettingsDraftField,
   setWeeklyReportTemplateAiInstruction,
   setWeeklyReportTemplateAiOutput,
+  setWeeklyPerformanceReportInstruction,
+  setWeeklyPerformanceReportRangeField,
   setWeeklyReportingMode,
   setWeeklyReportOutputMode,
   setWeeklyTaskStatus,
   syncWeeklyEditorState,
+  toggleWeeklyPerformanceReportInstructionCollapsed,
   toggleWeeklyReportTemplateCollapsed,
   toggleWeeklyProjectCollapsed,
   touchWeeklyTaskById

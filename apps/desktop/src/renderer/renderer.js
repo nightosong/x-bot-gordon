@@ -1205,7 +1205,7 @@ const SKILL_DISPLAY_NAME_MAP = {
   plan: "任务拆解",
   code: "代码助手",
   review: "问题审查",
-  "karpathy-guidelines": "Karpathy 准则",
+  "code-guidelines": "代码准则",
   "self-improvement": "自我改进",
   "deep-research": "深度研究"
 };
@@ -2451,7 +2451,7 @@ function renderSkillEditorForm(editor) {
     <form id="skill-definition-form" class="model-form">
       <label class="field">
         <span class="field-label">Skill 名称</span>
-        <input class="field-input" name="name" value="${escapeHtml(editor.values.name)}" placeholder="例如：karpathy-guidelines" required />
+        <input class="field-input" name="name" value="${escapeHtml(editor.values.name)}" placeholder="例如：code-guidelines" required />
       </label>
 
       <label class="field field-full">

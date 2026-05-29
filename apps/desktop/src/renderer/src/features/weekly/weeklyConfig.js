@@ -7,7 +7,31 @@ export const DAILY_REPORT_GUIDE_COPY = [
   "输出结果会按项目归组，仅保留今天推进过的任务清单。"
 ].join("\n");
 
+function getDateInputValue(referenceDate = new Date()) {
+  const date = referenceDate instanceof Date ? referenceDate : new Date(referenceDate);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function getDefaultPerformanceReportRange() {
+  const endDate = new Date();
+  const startDate = new Date(endDate);
+
+  startDate.setDate(endDate.getDate() - 29);
+
+  return {
+    startDate: getDateInputValue(startDate),
+    endDate: getDateInputValue(endDate)
+  };
+}
+
 export function createWeeklyState() {
+  const performanceReportRange = getDefaultPerformanceReportRange();
+
   return {
     view: "list",
     activeRecordId: null,
@@ -22,6 +46,9 @@ export function createWeeklyState() {
     dailyReportShareState: "idle",
     isSendingDailyReport: false,
     dailyReportUseModelOptimization: false,
+    performanceReportRange,
+    performanceReportInstruction: "",
+    isPerformanceReportInstructionCollapsed: true,
     feishuSettings: {
       webhookUrl: "",
       secret: "",

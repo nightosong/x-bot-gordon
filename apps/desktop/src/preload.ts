@@ -5,6 +5,8 @@ import type {
   ComicProjectExportRequest,
   ComicProjectExportResult,
   ComicProject,
+  CommandWorkshopMessageExportRequest,
+  CommandWorkshopMessageExportResult,
   ModelBalanceHistoryEntry,
   ModelBalanceQueryRequest,
   ModelBalanceSnapshot,
@@ -21,6 +23,7 @@ import type {
   MusicProject,
   ModelProfile,
   ModelTextRequest,
+  PerformanceReportGenerateRequest,
   VideoProject,
   VideoProjectExportRequest,
   VideoProjectExportResult,
@@ -168,6 +171,10 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
     ipcRenderer.invoke("gordon:command-workshop:upsert", toPlainIpcData(session)),
   deleteCommandWorkshopSession: (sessionId: string): Promise<CommandWorkshopSession[]> =>
     ipcRenderer.invoke("gordon:command-workshop:delete", sessionId),
+  exportCommandWorkshopMessage: (
+    request: CommandWorkshopMessageExportRequest
+  ): Promise<CommandWorkshopMessageExportResult | null> =>
+    ipcRenderer.invoke("gordon:command-workshop:export-message", toPlainIpcData(request)),
   upsertWorkflowLibraryItem: (item: WorkflowLibraryItem): Promise<WorkflowLibraryItem[]> =>
     ipcRenderer.invoke("gordon:workflow-library:upsert", toPlainIpcData(item)),
   runWorkflowRecord: (record: WorkflowLibraryItem["records"][number]) =>
@@ -236,6 +243,8 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
     ipcRenderer.invoke("gordon:weekly-progress:generate-daily-report", request),
   generateWeeklyProgressReport: (request: WeeklyReportGenerateRequest) =>
     ipcRenderer.invoke("gordon:weekly-progress:generate-report", request),
+  generatePerformanceProgressReport: (request: PerformanceReportGenerateRequest) =>
+    ipcRenderer.invoke("gordon:weekly-progress:generate-performance-report", request),
   getWeeklyFeishuSettings: (): Promise<WeeklyFeishuSettings> =>
     ipcRenderer.invoke("gordon:weekly-progress:feishu-settings:get"),
   saveWeeklyFeishuSettings: (settings: WeeklyFeishuSettings): Promise<WeeklyFeishuSettings> =>

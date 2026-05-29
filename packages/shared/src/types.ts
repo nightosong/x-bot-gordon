@@ -188,6 +188,7 @@ export interface WeeklyProgressRecord {
   reportTemplate: string;
   generatedDailyReport: string;
   generatedReport: string;
+  generatedPerformanceReport: string;
   status: WeeklyProgressStatus;
   createdAt: string;
   updatedAt: string;
@@ -622,6 +623,25 @@ export interface CommandWorkshopSession {
   updatedAt: string;
 }
 
+export type CommandWorkshopMessageExportFormat = "pdf" | "docx";
+
+export interface CommandWorkshopMessageExportRequest {
+  fileName: string;
+  format: CommandWorkshopMessageExportFormat;
+  title: string;
+  agentName: string;
+  createdAt: string;
+  contentText: string;
+  contentHtml: string;
+}
+
+export interface CommandWorkshopMessageExportResult {
+  filePath: string;
+  fileName: string;
+  format: CommandWorkshopMessageExportFormat;
+  writtenBytes: number;
+}
+
 export interface WritingBookPart {
   id: string;
   type: WritingBookPartType;
@@ -1038,6 +1058,13 @@ export interface DailyReportGenerateRequest {
   dateTitle: string;
   weekTitle: string;
   content: string;
+}
+
+export interface PerformanceReportGenerateRequest {
+  startDate: string;
+  endDate: string;
+  content: string;
+  instruction?: string;
 }
 
 export interface WorkbenchSnapshot {

@@ -285,7 +285,7 @@ function buildToolScopeText(authorizedServers: McpServerConfig[]): string {
 
   if (localTools.length) {
     sections.push(
-      `本地工具：${localTools.map((server) => server.name).join("、")}。这是 Gordon 内置能力通道，不代表用户已连接外部 MCP。Workspace Tools 用于文件读写、路径检查、工作区搜索、网页读取、文件对比和受限命令诊断；Search Tools 用于高质量联网搜索、自动读取来源、GitHub 仓库搜索和证据包研究，遇到最新事实、资料调研、产品/技术对比或需要引用来源的问题应优先使用 Search Tools 的 web_research，遇到开源项目查找应优先使用 github_search_repositories；Application Tools 用于按应用语义读取、检索、预览和写回应用广场资产；Gordon Tools 会按能力拓展 TOOL 配置暴露 image_gen 等内置生成工具；Computer Use 会在首次读取或控制桌面前申请本轮授权。`
+      `本地工具：${localTools.map((server) => server.name).join("、")}。这是 Gordon 内置能力通道，不代表用户已连接外部 MCP。Workspace Tools 用于文件读写、路径检查、工作区搜索、网页读取、文件对比、JSON 文件解析验证和受限命令诊断，也可以在 Application Tools 不可用或未覆盖目标能力时直接维护 ~/.gord/data/workbench 下的应用数据；Search Tools 用于高质量联网搜索、自动读取来源、GitHub 仓库搜索和证据包研究，遇到最新事实、资料调研、产品/技术对比或需要引用来源的问题应优先使用 Search Tools 的 web_research，遇到开源项目查找应优先使用 github_search_repositories；Application Tools 用于按应用语义读取、检索、预览和写回应用广场资产；Gordon Tools 会按能力拓展 TOOL 配置暴露 image_gen 等内置生成工具；Computer Use 会在首次读取或控制桌面前申请本轮授权。`
     );
   }
 
@@ -315,7 +315,15 @@ function inferToolRequirementHint(input: string, authorizedServers: McpServerCon
     return {
       required: true,
       preferredServerId: BUILTIN_APPLICATION_TOOLS_MCP_ID,
-      reason: "用户要求创建、保存、写入或更新应用广场资产，必须通过 Application Tools 完成"
+      reason: "用户要求创建、保存、写入或更新应用广场资产，优先通过 Application Tools 完成；若应用工具不可用或无法覆盖目标操作，应 fallback 到 Workspace Tools 直接维护 Gordon 数据文件并验证解析"
+    };
+  }
+
+  if (isApplicationAssetMutationTask(text) && hasServer(BUILTIN_WORKSPACE_MCP_ID)) {
+    return {
+      required: true,
+      preferredServerId: BUILTIN_WORKSPACE_MCP_ID,
+      reason: "用户要求创建、保存、写入或更新应用广场资产；当前未检测到 Application Tools，应使用 Workspace Tools 读写 ~/.gord/data/workbench 下的应用数据文件并验证解析"
     };
   }
 
@@ -385,6 +393,10 @@ function getApplicationToolServer(authorizedServers: McpServerConfig[]): McpServ
   return authorizedServers.find((server) => server.id === BUILTIN_APPLICATION_TOOLS_MCP_ID) ?? null;
 }
 
+function getWorkspaceToolServer(authorizedServers: McpServerConfig[]): McpServerConfig | null {
+  return authorizedServers.find((server) => server.id === BUILTIN_WORKSPACE_MCP_ID) ?? null;
+}
+
 function getPreferredToolServer(
   authorizedServers: McpServerConfig[],
   preferredServerId: string | null
@@ -394,6 +406,22 @@ function getPreferredToolServer(
   }
 
   return authorizedServers.find((server) => server.id === preferredServerId) ?? null;
+}
+
+function uniqueToolServers(servers: Array<McpServerConfig | null | undefined>): McpServerConfig[] {
+  const seenServerIds = new Set<string>();
+  const output: McpServerConfig[] = [];
+
+  for (const server of servers) {
+    if (!server || seenServerIds.has(server.id)) {
+      continue;
+    }
+
+    seenServerIds.add(server.id);
+    output.push(server);
+  }
+
+  return output;
 }
 
 function resolveMcpSelection(
@@ -1169,10 +1197,11 @@ JSON 结构必须为：
 - 用户给出 URL、网页、文章、官方文档或指定站点时，必须选择能读取网页或研究来源的工具，不能只基于 URL 文本猜测
 - 用户询问最新事实、联网资料、新闻、产品/技术调研、资料对比、官方文档或需要引用来源时，优先选择 Search Tools / web_research；如果用户提到官方站、产品名或文档域名，尽量把官方域名放入 preferredDomains 或 includeDomains；用户要找 GitHub 项目、开源库、参考实现时优先选择 github_search_repositories；只需要少量搜索结果列表时可选择 web_search_v2；Workspace Tools 的 web_search 仅作为基础兜底
 - 用户明确要求新增、创建、保存、写入、修改或删除本地资产时，必须优先选择合适工具执行，不能只用文字承诺已经完成
-- 对应用广场资产的读写优先使用 Application Tools；没有工具返回成功前，不要判断资产已经变更
+- 对应用广场资产的读写优先使用 Application Tools；如果候选工具里没有 Application Tools、Application Tools 未覆盖目标能力，或已有调用结果显示应用工具失败/不可用，应选择 Workspace Tools 读取和修改 ~/.gord/data/workbench 下的应用数据文件
 - 用户要求把小说企划、世界观、角色、武道体系、势力设定、章节大纲等写入「墨笔生花」时，优先选择 Application Tools：新建小说用 writing_create_book，写入已有小说资产用 writing_update_story_assets；用户明确说“写入/保存/创建”时应设置 dryRun=false
+- 如果改用 Workspace Tools 写入「墨笔生花」，必须先检查 writing-books 目录结构，按现有 book.json、chapters.json、chapters/*.md 结构创建或更新文件，并在写入后调用 validate_json_file 校验 book.json 和 chapters.json 能被解析
 - writing_create_book 支持一次性写入 intro、outlineGuide、parts、chapters、extraIntroSections 和 storyAssets，不要因为资产较复杂就改成“整理成可粘贴格式”
-- 文件/代码/仓库读取、搜索、差异和受限命令诊断优先选择 Workspace Tools；生成图片/音乐/视频优先选择 Gordon Tools；桌面界面读取或操作优先选择 Computer Use
+- 文件/代码/仓库读取、搜索、差异、JSON 解析验证和受限命令诊断优先选择 Workspace Tools；生成图片/音乐/视频优先选择 Gordon Tools；桌面界面读取或操作优先选择 Computer Use
 - 如果已有工具调用结果显示任务尚未完成，继续选择下一步工具；如果工具结果已足够完成任务，再停止调用
 - serverId 和 toolName 必须来自提供给你的候选列表
 - arguments 必须是一个 JSON 对象
@@ -1541,7 +1570,7 @@ function buildSystemPrompt(agent: AgentProfile, skill: SkillDefinition | null, a
   sections.push(`工具上下文：\n${buildToolScopeText(authorizedMcpServers)}`);
 
   sections.push(
-    "输出只返回最终结果，不要解释内部隐藏推理过程；可以简要说明已经执行的可见步骤和工具结果。不要把内置本地工具描述成用户已经接入外部 MCP。用户要求新增、创建、保存、写入、修改或删除本地资产时，必须通过工具完成；没有成功的工具结果前，不要声称已经完成。若用户要求把小说企划、世界观、角色、武道体系、势力设定或章节大纲写入「墨笔生花」，应使用 Application Tools 完成写入或明确报告工具失败原因，不要降级成让用户手动粘贴。"
+    "输出只返回最终结果，不要解释内部隐藏推理过程；可以简要说明已经执行的可见步骤和工具结果。不要把内置本地工具描述成用户已经接入外部 MCP。用户要求新增、创建、保存、写入、修改或删除本地资产时，必须通过工具完成；没有成功的工具结果前，不要声称已经完成。若用户要求把小说企划、世界观、角色、武道体系、势力设定或章节大纲写入「墨笔生花」，应优先使用 Application Tools；如果应用工具不可用、未覆盖目标操作或调用失败，应使用 Workspace Tools 直接维护 ~/.gord/data/workbench/writing-books 下的文件并验证 JSON 解析，不要降级成让用户手动粘贴。"
   );
 
   return sections.filter(Boolean).join("\n\n");
@@ -2129,6 +2158,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
   const authorizedMcpServers = resolveAuthorizedMcpServers(agent, mcpServers);
   let selectedMcpServer = resolveMcpSelection(agent, authorizedMcpServers, request);
   const applicationToolServer = getApplicationToolServer(authorizedMcpServers);
+  const workspaceToolServer = getWorkspaceToolServer(authorizedMcpServers);
   const shouldPreferApplicationTools = isApplicationAssetMutationTask(contextualUserInput) && Boolean(applicationToolServer);
   const toolRequirement = inferToolRequirementHint(contextualUserInput, authorizedMcpServers);
   const mcpCalls: AgentMcpCallRecord[] = [];
@@ -2276,9 +2306,9 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
         : null;
     const candidateServers =
       shouldPreferApplicationTools && applicationToolServer && !selectedMcpServer
-        ? [applicationToolServer]
+        ? uniqueToolServers([applicationToolServer, workspaceToolServer])
         : preferredRequirementServer
-          ? [preferredRequirementServer]
+          ? uniqueToolServers([preferredRequirementServer, isApplicationAssetMutationTask(contextualUserInput) ? workspaceToolServer : null])
           : selectedMcpServer
             ? [selectedMcpServer]
             : authorizedMcpServers;
@@ -2391,7 +2421,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
 
         if (!plannedSelection.shouldCall || !plannedSelection.serverId || !plannedSelection.toolName) {
           if (shouldPreferApplicationTools && applicationToolServer) {
-            stopReason = "当前任务需要写入应用资产，但工具规划未选择可执行工具";
+            stopReason = "当前任务需要写入应用资产，但工具规划未选择 Application Tools 或 Workspace Tools 中的可执行工具";
           } else if (toolRequirement.required) {
             stopReason = `当前任务需要工具执行，但工具规划未选择可执行工具：${toolRequirement.reason}`;
           }

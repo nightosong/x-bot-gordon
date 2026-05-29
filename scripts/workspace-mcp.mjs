@@ -5,8 +5,12 @@ import readline from "node:readline";
 import { spawn } from "node:child_process";
 
 const workspaceRoot = path.resolve(process.env.GORDON_WORKSPACE_ROOT || process.cwd());
+const gordonDataRoot = path.resolve(
+  process.env.GORDON_DATA_ROOT || path.join(process.env.GORDON_HOME || path.join(os.homedir(), ".gord"), "data")
+);
 const PERMISSION_REQUIRED_PREFIX = "GORDON_PERMISSION_REQUIRED";
 const TEXT_FILE_MAX_BYTES = 256 * 1024;
+const JSON_FILE_MAX_BYTES = 2 * 1024 * 1024;
 const SEARCH_RESULT_LIMIT = 80;
 const WEB_SEARCH_RESULT_LIMIT = 8;
 const WEB_SEARCH_TIMEOUT_MS = 10_000;
@@ -46,7 +50,7 @@ function parseAllowedRoots() {
   return [];
 }
 
-const allowedRoots = Array.from(new Set([workspaceRoot, ...parseAllowedRoots()]));
+const allowedRoots = Array.from(new Set([workspaceRoot, gordonDataRoot, ...parseAllowedRoots()]));
 
 function send(payload) {
   process.stdout.write(`${JSON.stringify(payload)}\n`);
@@ -487,6 +491,50 @@ async function getPathInfo(argumentsObject) {
       `updatedAt: ${info.updatedAt}`
     ].join("\n"),
     info
+  );
+}
+
+async function validateJsonFile(argumentsObject) {
+  const targetPath = resolveWorkspacePath(argumentsObject?.path);
+  const stat = await fs.stat(targetPath);
+
+  if (!stat.isFile()) {
+    throw new Error("目标路径不是文件");
+  }
+
+  if (stat.size > JSON_FILE_MAX_BYTES) {
+    throw new Error(`JSON 文件过大，当前只允许校验 ${JSON_FILE_MAX_BYTES} 字节以内的文件`);
+  }
+
+  const rawContent = await fs.readFile(targetPath, "utf8");
+  let parsed;
+
+  try {
+    parsed = JSON.parse(rawContent);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`JSON 解析失败：${message}`);
+  }
+
+  const jsonType = Array.isArray(parsed) ? "array" : parsed === null ? "null" : typeof parsed;
+  const topLevelCount =
+    Array.isArray(parsed) ? parsed.length : parsed && typeof parsed === "object" ? Object.keys(parsed).length : 0;
+
+  return buildTextResult(
+    [
+      `path: ${toRelativePath(targetPath)}`,
+      "valid: true",
+      `type: ${jsonType}`,
+      `topLevelCount: ${topLevelCount}`,
+      `size: ${stat.size}`
+    ].join("\n"),
+    {
+      path: toRelativePath(targetPath),
+      valid: true,
+      type: jsonType,
+      topLevelCount,
+      size: stat.size
+    }
   );
 }
 
@@ -1969,6 +2017,21 @@ function getTools() {
       }
     },
     {
+      name: "validate_json_file",
+      description:
+        "校验指定 JSON 文件是否能被正确解析，返回顶层类型、顶层字段/数组数量和文件大小；适合写入 book.json、chapters.json 或配置文件后做解析验证。",
+      inputSchema: {
+        type: "object",
+        required: ["path"],
+        properties: {
+          path: {
+            type: "string",
+            description: "相对工作区根目录或 Gordon 数据根的 JSON 文件路径"
+          }
+        }
+      }
+    },
+    {
       name: "inspect_path",
       description: "更细致地检查文件或目录：文件会返回扩展名、文本判断和行数，目录会返回子项数量与样例列表。",
       inputSchema: {
@@ -2278,6 +2341,11 @@ async function handleRequest(message) {
 
     if (toolName === "path_info") {
       ok(id, await getPathInfo(argumentsObject));
+      return;
+    }
+
+    if (toolName === "validate_json_file") {
+      ok(id, await validateJsonFile(argumentsObject));
       return;
     }
 

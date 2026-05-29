@@ -4,6 +4,7 @@ import { readPromptAsset } from "./prompt-assets.js";
 
 export const BUILTIN_WORKBENCH_ID_PREFIX = "builtin:";
 export const BUILTIN_GORDON_AGENT_ID = "builtin:agent:gordon";
+export const BUILTIN_ARTHUR_AGENT_ID = "builtin:agent:arthur";
 export const BUILTIN_WORKSPACE_MCP_ID = "builtin:mcp:workspace";
 export const BUILTIN_SEARCH_TOOLS_MCP_ID = "builtin:mcp:search-tools";
 export const BUILTIN_COMPUTER_USE_MCP_ID = "builtin:mcp:computer-use";
@@ -12,7 +13,7 @@ export const BUILTIN_APPLICATION_TOOLS_MCP_ID = "builtin:mcp:application-tools";
 export const BUILTIN_PLAN_SKILL_ID = "builtin:skill:plan";
 export const BUILTIN_CODE_SKILL_ID = "builtin:skill:code";
 export const BUILTIN_REVIEW_SKILL_ID = "builtin:skill:review";
-export const BUILTIN_KARPATHY_SKILL_ID = "builtin:skill:karpathy-guidelines";
+export const BUILTIN_CODE_GUIDELINES_SKILL_ID = "builtin:skill:code-guidelines";
 export const BUILTIN_SELF_IMPROVEMENT_SKILL_ID = "builtin:skill:self-improvement";
 export const BUILTIN_DEEP_RESEARCH_SKILL_ID = "builtin:skill:deep-research";
 export const BUILTIN_SKILL_CREATOR_SKILL_ID = "builtin:skill:skill-creator";
@@ -22,7 +23,7 @@ const BUILTIN_UPDATED_AT = "2026-04-27T10:30:00.000Z";
 const BUILTIN_PLAN_SKILL_PATH = resolveFromRoot("skills", "plan");
 const BUILTIN_CODE_SKILL_PATH = resolveFromRoot("skills", "code");
 const BUILTIN_REVIEW_SKILL_PATH = resolveFromRoot("skills", "review");
-const BUILTIN_KARPATHY_SKILL_PATH = resolveFromRoot("skills", "karpathy-guidelines");
+const BUILTIN_CODE_GUIDELINES_SKILL_PATH = resolveFromRoot("skills", "code-guidelines");
 const BUILTIN_SELF_IMPROVEMENT_SKILL_PATH = resolveFromRoot("skills", "self-improvement");
 const BUILTIN_DEEP_RESEARCH_SKILL_PATH = resolveFromRoot("skills", "deep-research");
 const BUILTIN_SKILL_CREATOR_SKILL_PATH = resolveFromRoot("skills", "skill-creator");
@@ -30,12 +31,13 @@ const BUILTIN_WRITING_SKILL_PATH = resolveFromRoot("skills", "writing");
 const BUILTIN_PLAN_SKILL_PROMPT = readPromptAsset("builtinSkillPlanPrompt");
 const BUILTIN_CODE_SKILL_PROMPT = readPromptAsset("builtinSkillCodePrompt");
 const BUILTIN_REVIEW_SKILL_PROMPT = readPromptAsset("builtinSkillReviewPrompt");
-const BUILTIN_KARPATHY_SKILL_PROMPT = readPromptAsset("builtinSkillKarpathyPrompt");
+const BUILTIN_CODE_GUIDELINES_SKILL_PROMPT = readPromptAsset("builtinSkillCodeGuidelinesPrompt");
 const BUILTIN_SELF_IMPROVEMENT_SKILL_PROMPT = readPromptAsset("builtinSkillSelfImprovementPrompt");
 const BUILTIN_DEEP_RESEARCH_SKILL_PROMPT = readPromptAsset("builtinSkillDeepResearchPrompt");
 const BUILTIN_SKILL_CREATOR_SKILL_PROMPT = readPromptAsset("builtinSkillCreatorPrompt");
 const BUILTIN_WRITING_SKILL_PROMPT = readPromptAsset("builtinSkillWritingPrompt");
 const BUILTIN_GORDON_AGENT_SYSTEM_PROMPT = readPromptAsset("builtinAgentGordonSystem");
+const BUILTIN_ARTHUR_AGENT_SYSTEM_PROMPT = readPromptAsset("builtinAgentArthurSystem");
 
 function shellEscape(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
@@ -94,15 +96,15 @@ export function getBuiltinSkillDefinitions(): SkillDefinition[] {
       updatedAt: BUILTIN_UPDATED_AT
     },
     {
-      id: BUILTIN_KARPATHY_SKILL_ID,
-      name: "karpathy-guidelines",
-      description: "吸收 Karpathy 的开发偏好，强调先澄清、保持简单、外科式修改和目标驱动验证。",
+      id: BUILTIN_CODE_GUIDELINES_SKILL_ID,
+      name: "code-guidelines",
+      description: "生产级代码行为准则，强调简单方案、外科式修改、显式不确定性、可验证验收和防幻觉。",
       tags: [],
       kind: "prompt",
-      promptTemplate: BUILTIN_KARPATHY_SKILL_PROMPT,
+      promptTemplate: BUILTIN_CODE_GUIDELINES_SKILL_PROMPT,
       source: {
         type: "manual",
-        localPath: BUILTIN_KARPATHY_SKILL_PATH
+        localPath: BUILTIN_CODE_GUIDELINES_SKILL_PATH
       },
       enabled: true,
       updatedAt: BUILTIN_UPDATED_AT
@@ -176,10 +178,11 @@ export function getBuiltinMcpServers(): McpServerConfig[] {
     {
       id: BUILTIN_WORKSPACE_MCP_ID,
       name: "Workspace Tools",
-      description: "内置工作区工具，支持基础文件操作、路径管理、工作区搜索、联网搜索、网页读取、文件对比与受限命令诊断。",
+      description: "内置工作区工具，支持基础文件操作、路径管理、工作区搜索、联网搜索、网页读取、文件对比、JSON 解析验证与受限命令诊断。",
       transport: "stdio",
       command: `/usr/bin/env node ${shellEscape(workspaceScriptPath)}`,
       env: {
+        GORDON_DATA_ROOT: resolveFromRoot("data"),
         GORDON_WORKSPACE_ROOT: resolveFromRoot(".")
       },
       toolAllowlist: [],
@@ -237,11 +240,11 @@ export function getBuiltinMcpServers(): McpServerConfig[] {
   ];
 }
 
-export function getBuiltinAgentProfile(
+export function getBuiltinAgentProfiles(
   modelSettings: ModelSettings,
   skills: SkillDefinition[],
   mcpServers: McpServerConfig[]
-): AgentProfile {
+): AgentProfile[] {
   const modelProfileId = resolvePreferredModelProfileId(modelSettings);
   const builtinSkillIds = getBuiltinSkillDefinitions().map((skill) => skill.id);
   const skillIds = Array.from(
@@ -252,18 +255,33 @@ export function getBuiltinAgentProfile(
     new Set([...builtinServerIds, ...mcpServers.filter((server) => server.enabled).map((server) => server.id)])
   );
 
-  return {
-    id: BUILTIN_GORDON_AGENT_ID,
-    name: "Gordon",
-    description: "内置默认开发 Agent，直接复用当前优先模型，并可围绕当前仓库调用基础工具完成协作。",
-    mode: "chat",
-    modelProfileId,
-    systemPrompt: BUILTIN_GORDON_AGENT_SYSTEM_PROMPT,
-    allowedSkillIds: skillIds,
-    allowedMcpServerIds: mcpServerIds,
-    enabled: true,
-    updatedAt: BUILTIN_UPDATED_AT
-  };
+  return [
+    {
+      id: BUILTIN_GORDON_AGENT_ID,
+      name: "Gordon",
+      description: "内置默认开发 Agent，直接复用当前优先模型，并可围绕当前仓库调用基础工具完成协作。",
+      mode: "chat",
+      modelProfileId,
+      systemPrompt: BUILTIN_GORDON_AGENT_SYSTEM_PROMPT,
+      allowedSkillIds: skillIds,
+      allowedMcpServerIds: mcpServerIds,
+      enabled: true,
+      updatedAt: BUILTIN_UPDATED_AT
+    },
+    {
+      id: BUILTIN_ARTHUR_AGENT_ID,
+      name: "Arthur",
+      description:
+        "内置 Research OS 型科研合作者 Agent，以决策优先级、假设剪枝和最小区分实验推进问题发现、证据验证、早期错误方向识别与论文审稿，并内置化工结晶研究适配。",
+      mode: "chat",
+      modelProfileId,
+      systemPrompt: BUILTIN_ARTHUR_AGENT_SYSTEM_PROMPT,
+      allowedSkillIds: skillIds,
+      allowedMcpServerIds: mcpServerIds,
+      enabled: true,
+      updatedAt: BUILTIN_UPDATED_AT
+    }
+  ];
 }
 
 export function mergeBuiltinEntries<T extends { id: string }>(builtinEntries: T[], userEntries: T[]): T[] {

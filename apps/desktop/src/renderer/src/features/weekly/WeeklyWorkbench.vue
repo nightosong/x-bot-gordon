@@ -302,6 +302,16 @@
                         >
                           周报
                         </button>
+                        <button
+                          type="button"
+                          class="weekly-report-mode-tab"
+                          :class="{ 'is-active': state.reportingMode === 'performance' }"
+                          :aria-selected="state.reportingMode === 'performance' ? 'true' : 'false'"
+                          :disabled="state.isGeneratingReport"
+                          @click="setWeeklyReportingMode('performance')"
+                        >
+                          述职报告
+                        </button>
                       </div>
 
                       <div class="weekly-report-toolbar-side">
@@ -331,14 +341,70 @@
                             删除模板
                           </button>
                         </template>
-                        <template v-else>
+                        <template v-else-if="weeklyIsDailyReportMode">
                           <label class="command-inline-toggle weekly-report-inline-toggle">
                             <span class="command-inline-toggle-label">使用大模型优化</span>
                             <input v-model="state.dailyReportUseModelOptimization" type="checkbox" />
                           </label>
                         </template>
+                        <template v-if="weeklyIsPerformanceReportMode">
+                          <div class="weekly-date-range-control" aria-label="述职报告日期范围">
+                            <label class="weekly-date-field">
+                              <span>起始</span>
+                              <input
+                                type="date"
+                                :value="state.performanceReportRange?.startDate ?? ''"
+                                :disabled="state.isGeneratingReport"
+                                @input="setWeeklyPerformanceReportRangeField('startDate', $event.target.value)"
+                              />
+                            </label>
+                            <span class="weekly-date-range-separator">至</span>
+                            <label class="weekly-date-field">
+                              <span>结束</span>
+                              <input
+                                type="date"
+                                :value="state.performanceReportRange?.endDate ?? ''"
+                                :disabled="state.isGeneratingReport"
+                                @input="setWeeklyPerformanceReportRangeField('endDate', $event.target.value)"
+                              />
+                            </label>
+                          </div>
+                        </template>
                       </div>
                     </div>
+
+                    <section
+                      v-if="weeklyIsPerformanceReportMode"
+                      class="weekly-performance-instruction-card"
+                      :class="{ 'is-collapsed': state.isPerformanceReportInstructionCollapsed }"
+                    >
+                      <button
+                        type="button"
+                        class="weekly-performance-instruction-toggle"
+                        :aria-expanded="state.isPerformanceReportInstructionCollapsed ? 'false' : 'true'"
+                        aria-controls="weekly-performance-instruction-input"
+                        @click="toggleWeeklyPerformanceReportInstructionCollapsed"
+                      >
+                        <GIcon :name="state.isPerformanceReportInstructionCollapsed ? 'chevronRight' : 'chevronDown'" />
+                        <span>补充要求</span>
+                        <small>{{ weeklyPerformanceInstructionMetaLabel }}</small>
+                      </button>
+                      <Transition name="weekly-template-editor-body">
+                        <div
+                          v-if="!state.isPerformanceReportInstructionCollapsed"
+                          id="weekly-performance-instruction-input"
+                          class="weekly-performance-instruction-body"
+                        >
+                          <textarea
+                            class="field-textarea weekly-textarea weekly-performance-instruction-input"
+                            :value="state.performanceReportInstruction ?? ''"
+                            :disabled="state.isGeneratingReport"
+                            placeholder="例如：我是平台研发负责人，本周期重点强调模型调用链稳定性、命令工坊 Agent 能力升级，以及任务笔记述职报告功能落地。"
+                            @input="setWeeklyPerformanceReportInstruction($event.target.value)"
+                          ></textarea>
+                        </div>
+                      </Transition>
+                    </section>
 
                     <section
                       v-if="weeklyIsWeeklyReportMode"
@@ -528,7 +594,7 @@
                           <span v-else class="weekly-report-run-icon"><GIcon name="play" /></span>
                         </button>
                         <button
-                          v-if="!weeklyIsWeeklyReportMode"
+                          v-if="weeklyIsDailyReportMode"
                           type="button"
                           class="model-icon-button weekly-report-share-button"
                           :class="{ 'is-sent': state.dailyReportShareState === 'sent', 'is-loading': state.isSendingDailyReport }"
@@ -817,9 +883,12 @@ const props = defineProps({
   setWeeklyFeishuSettingsDraftField: { type: Function, required: true },
   setWeeklyReportTemplateAiInstruction: { type: Function, required: true },
   setWeeklyReportTemplateAiOutput: { type: Function, required: true },
+  setWeeklyPerformanceReportInstruction: { type: Function, required: true },
+  setWeeklyPerformanceReportRangeField: { type: Function, required: true },
   setWeeklyReportingMode: { type: Function, required: true },
   setWeeklyReportOutputMode: { type: Function, required: true },
   setWeeklyTaskStatus: { type: Function, required: true },
+  toggleWeeklyPerformanceReportInstructionCollapsed: { type: Function, required: true },
   toggleWeeklyReportTemplateCollapsed: { type: Function, required: true },
   toggleWeeklyProjectCollapsed: { type: Function, required: true },
   touchWeeklyTaskById: { type: Function, required: true }
@@ -971,8 +1040,20 @@ const weeklyReportTemplateOptions = computed(() =>
     value: template.id
   }))
 );
-const weeklyIsWeeklyReportMode = computed(() => props.state.reportingMode !== "daily");
-const weeklyReportModeLabel = computed(() => (weeklyIsWeeklyReportMode.value ? "周报" : "日报"));
+const weeklyIsWeeklyReportMode = computed(() => props.state.reportingMode === "weekly");
+const weeklyIsDailyReportMode = computed(() => props.state.reportingMode === "daily");
+const weeklyIsPerformanceReportMode = computed(() => props.state.reportingMode === "performance");
+const weeklyReportModeLabel = computed(() => {
+  if (weeklyIsWeeklyReportMode.value) {
+    return "周报";
+  }
+
+  if (weeklyIsPerformanceReportMode.value) {
+    return "述职报告";
+  }
+
+  return "日报";
+});
 const weeklySelectedReportTemplate = computed(() => getWeeklySelectedReportTemplate(props.state.draft));
 const weeklyReportTemplateAiState = computed(
   () =>
@@ -992,6 +1073,11 @@ const weeklyReportTemplateMetaLabel = computed(() => {
   const typeLabel = template?.builtin ? "内置模板" : "自定义模板";
 
   return `${name} · ${typeLabel}`;
+});
+const weeklyPerformanceInstructionMetaLabel = computed(() => {
+  const content = String(props.state.performanceReportInstruction ?? "").trim();
+
+  return content ? `已填写 ${content.length} 字` : "身份、职责、重点项目、希望强调的贡献";
 });
 const weeklyReportTemplateAiButtonLabel = computed(() =>
   weeklyReportTemplateAiState.value.isOpen ? "关闭周报模板优化" : "优化周报模板"
@@ -1041,15 +1127,41 @@ const weeklyReportGuideContent = computed({
     weeklySelectedReportTemplateContent.value = value;
   }
 });
-const weeklyReportOutputLabel = computed(() => (weeklyIsWeeklyReportMode.value ? "周报结果" : getDailyReportHeadingTitle()));
+const weeklyReportOutputLabel = computed(() => {
+  if (weeklyIsWeeklyReportMode.value) {
+    return "周报结果";
+  }
+
+  if (weeklyIsPerformanceReportMode.value) {
+    return "述职报告";
+  }
+
+  return getDailyReportHeadingTitle();
+});
 const weeklyReportOutputMode = computed(() => props.state.reportOutputMode === "edit" ? "edit" : "preview");
-const weeklyReportOutputPlaceholder = computed(() =>
-  weeklyIsWeeklyReportMode.value
-    ? "点击右上角执行按钮后，会在这里填充周报结果，确认后再保存"
-    : "点击右上角执行按钮后，会在这里填充今天有更新任务的日报结果"
-);
+const weeklyReportOutputPlaceholder = computed(() => {
+  if (weeklyIsWeeklyReportMode.value) {
+    return "点击右上角执行按钮后，会在这里填充周报结果，确认后再保存";
+  }
+
+  if (weeklyIsPerformanceReportMode.value) {
+    return "选择日期范围后点击执行按钮，会整合范围内日报素材并生成专业述职报告";
+  }
+
+  return "点击右上角执行按钮后，会在这里填充今天有更新任务的日报结果";
+});
 const weeklyReportOutputContent = computed({
-  get: () => (weeklyIsWeeklyReportMode.value ? props.state.draft?.generatedReport ?? "" : props.state.draft?.generatedDailyReport ?? ""),
+  get: () => {
+    if (weeklyIsWeeklyReportMode.value) {
+      return props.state.draft?.generatedReport ?? "";
+    }
+
+    if (weeklyIsPerformanceReportMode.value) {
+      return props.state.draft?.generatedPerformanceReport ?? "";
+    }
+
+    return props.state.draft?.generatedDailyReport ?? "";
+  },
   set: (value) => {
     if (!props.state.draft) {
       return;
@@ -1062,13 +1174,23 @@ const weeklyReportOutputContent = computed({
       return;
     }
 
+    if (weeklyIsPerformanceReportMode.value) {
+      props.state.draft.generatedPerformanceReport = String(value ?? "");
+      props.resetWeeklyReportCopyState();
+      props.resetWeeklyReportShareState();
+      return;
+    }
+
     props.state.draft.generatedDailyReport = String(value ?? "");
     props.resetWeeklyReportCopyState();
     props.resetWeeklyReportShareState();
   }
 });
 const weeklyActiveReportIsGenerating = computed(
-  () => props.state.isGeneratingReport && props.state.generatingReportKind === (weeklyIsWeeklyReportMode.value ? "weekly" : "daily")
+  () =>
+    props.state.isGeneratingReport &&
+    props.state.generatingReportKind ===
+      (weeklyIsWeeklyReportMode.value ? "weekly" : weeklyIsPerformanceReportMode.value ? "performance" : "daily")
 );
 const weeklyReportRunButtonLabel = computed(() =>
   weeklyActiveReportIsGenerating.value ? `${weeklyReportModeLabel.value}生成中` : `生成${weeklyReportModeLabel.value}`
@@ -1080,11 +1202,17 @@ const weeklyReportFeedbackText = computed(() => {
     return customText;
   }
 
-  return weeklyIsWeeklyReportMode.value
-    ? "按当前模板生成周报输出。"
-    : props.state.dailyReportUseModelOptimization
-      ? "先提取今天更新的任务树，再交给大模型做轻量润色；若层级校验失败会回退基础稿。"
-      : "仅提取今天有更新的任务树，并严格保留原父子层级。";
+  if (weeklyIsWeeklyReportMode.value) {
+    return "按当前模板生成周报输出。";
+  }
+
+  if (weeklyIsPerformanceReportMode.value) {
+    return "按所选日期范围聚合日报素材，提炼阶段成果、风险控制、能力沉淀和后续计划。";
+  }
+
+  return props.state.dailyReportUseModelOptimization
+    ? "先提取今天更新的任务树，再交给大模型做轻量润色；若层级校验失败会回退基础稿。"
+    : "仅提取今天有更新的任务树，并严格保留原父子层级。";
 });
 const weeklyReportFeedbackTone = computed(() => {
   const tone = String(props.state.reportFeedbackTone ?? "").trim();
@@ -1092,7 +1220,7 @@ const weeklyReportFeedbackTone = computed(() => {
 });
 const weeklyCanCopyReportOutput = computed(() => Boolean(String(weeklyReportOutputContent.value ?? "").trim()));
 const weeklyCanShareDailyReport = computed(
-  () => !weeklyIsWeeklyReportMode.value && Boolean(String(props.state.draft?.generatedDailyReport ?? "").trim())
+  () => weeklyIsDailyReportMode.value && Boolean(String(props.state.draft?.generatedDailyReport ?? "").trim())
 );
 const weeklyNormalizedReportOutputContent = computed(() => normalizeMarkdownForClipboard(weeklyReportOutputContent.value));
 const weeklyRenderedReportOutputHtml = computed(() => renderRichText(weeklyNormalizedReportOutputContent.value));

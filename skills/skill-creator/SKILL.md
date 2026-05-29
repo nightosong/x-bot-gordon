@@ -1,17 +1,19 @@
 ---
 name: skill-creator
-description: "创建、更新和校验 Gordon 本地 Skill 资产，适用于把稳定工作流、脚本工具或领域经验沉淀到 skills/ 目录。"
+description: "创建、更新和校验 Gordon 用户 Skill 资产，适用于把稳定工作流、脚本工具或领域经验沉淀到 ~/.gord/skills 目录。"
 ---
 
 # Skill Creator
 
-用于把可复用能力沉淀为 Gordon 的目录级 Skill。Skill 可以放在 `skills/` 下任意层级，只要某个目录内包含 `SKILL.md` 就会被识别为一个 Skill；普通场景仍推荐使用 `skills/<skill-name>/SKILL.md`，只有需要命名空间或能力包分组时才使用更深层目录。
+用于把可复用能力沉淀为 Gordon 的目录级 Skill。用户手动创建、界面新增、GitHub 导入或外部加载的 Skill 必须放在 `~/.gord/skills` 下；仓库内 `skills/` 只存放随应用发布的内置 Skill，不作为用户自定义 Skill 的写入位置。
+
+`~/.gord/skills` 支持任意层级递归发现，只要某个目录内包含 `SKILL.md` 就会被识别为一个用户 Skill；普通场景推荐使用 `~/.gord/skills/<skill-name>/SKILL.md`，只有需要命名空间或能力包分组时才使用更深层目录。
 
 ## 何时使用
 
 | 场景 | 动作 |
 |---|---|
-| 用户要求创建新 Skill | 优先新建 `skills/<skill-name>/SKILL.md` |
+| 用户要求创建新 Skill | 优先新建 `~/.gord/skills/<skill-name>/SKILL.md` |
 | 现有流程反复出现 | 抽取稳定步骤、模板或脚本入口 |
 | Skill 需要确定性执行 | 优先放入 `scripts/`，在 `SKILL.md` 写清调用方式 |
 | Skill 需要大段背景资料 | 放入 `references/`，只在 `SKILL.md` 写导航 |
@@ -20,7 +22,7 @@ description: "创建、更新和校验 Gordon 本地 Skill 资产，适用于把
 ## 目录规范
 
 ```text
-skills/<skill-name>/
+~/.gord/skills/<skill-name>/
 ├── SKILL.md
 ├── scripts/
 ├── references/
@@ -30,7 +32,7 @@ skills/<skill-name>/
 递归发现同样支持命名空间结构，例如：
 
 ```text
-skills/<namespace>/<skill-name>/
+~/.gord/skills/<namespace>/<skill-name>/
 ├── SKILL.md
 ├── references/
 └── assets/
@@ -59,11 +61,11 @@ description: "一句话说明触发场景和能力边界。"
 
 ## 创建流程
 
-1. 先确认目标能力是否已经存在于 `skills/` 或内置工具中。
+1. 先确认目标能力是否已经存在于 `~/.gord/skills`、内置 `skills/` 或内置工具中。
 2. 选择小写短横线命名，例如 `api-debugger`。
-3. 创建 `skills/<skill-name>/SKILL.md`；若是能力包内部子能力，可创建 `skills/<namespace>/<skill-name>/SKILL.md`。
+3. 创建 `~/.gord/skills/<skill-name>/SKILL.md`；若是能力包内部子能力，可创建 `~/.gord/skills/<namespace>/<skill-name>/SKILL.md`。
 4. 如果需要确定性能力，补充 `scripts/`，并让脚本参数清晰、失败信息可读。
-5. 如果要成为 Gordon 默认可用能力，需要在 `packages/workbench/src/default-assets.ts` 和 `packages/workbench/src/prompt-assets.ts` 注册。
+5. 只有确认为系统内置能力、需要随应用版本发布时，才放入仓库 `skills/`，并在 `packages/workbench/src/default-assets.ts` 和 `packages/workbench/src/prompt-assets.ts` 注册。
 6. 更新 `docs/ARCHITECTURE.md` 与 `docs/CHANGELOG.md` 中的能力边界和清单。
 7. 运行类型检查或对应验证命令。
 

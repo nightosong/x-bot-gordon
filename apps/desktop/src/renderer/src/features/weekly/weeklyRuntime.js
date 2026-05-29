@@ -20,6 +20,7 @@ export function getWeeklyDraftSnapshot(record) {
     reportTemplate: sanitized.reportTemplate,
     generatedDailyReport: sanitized.generatedDailyReport,
     generatedReport: sanitized.generatedReport,
+    generatedPerformanceReport: sanitized.generatedPerformanceReport,
     content: sanitized.content
   });
 }
@@ -198,6 +199,27 @@ export function getDailyReportHeadingTitle(referenceDate = new Date()) {
   return `${year}/${month}/${day} 日报`;
 }
 
+export function getDateInputValue(referenceDate = new Date()) {
+  const date = referenceDate instanceof Date ? referenceDate : new Date(referenceDate);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+export function compareLocalDateKeys(leftValue, rightValue) {
+  const leftKey = getLocalDateKey(leftValue);
+  const rightKey = getLocalDateKey(rightValue);
+
+  if (!leftKey || !rightKey) {
+    return 0;
+  }
+
+  return leftKey.localeCompare(rightKey);
+}
+
 export function filterWeeklyTasksToUpdatedBranches(tasks = [], todayKey = getLocalDateKey(new Date())) {
   const filtered = [];
 
@@ -224,6 +246,137 @@ export function filterWeeklyTasksToUpdatedBranches(tasks = [], todayKey = getLoc
   }
 
   return filtered;
+}
+
+export function collectUpdatedLeafTasksInDateRange(projects = [], startDate = new Date(), endDate = new Date()) {
+  const startKey = getLocalDateKey(startDate);
+  const endKey = getLocalDateKey(endDate);
+  const entries = [];
+
+  if (!startKey || !endKey || startKey > endKey) {
+    return entries;
+  }
+
+  for (const project of Array.isArray(projects) ? projects : []) {
+    const projectTitle = String(project?.title ?? "").trim() || "未命名项目";
+
+    const visit = (tasks = [], path = []) => {
+      tasks.forEach((task, index) => {
+        const nextPath = [...path, index + 1];
+        const children = getWeeklyTaskChildren(task);
+        const title = String(task?.title ?? "").trim();
+
+        if (children.length) {
+          visit(children, nextPath);
+          return;
+        }
+
+        const updatedKey = getLocalDateKey(task?.updatedAt);
+
+        if (!title || !updatedKey || updatedKey < startKey || updatedKey > endKey) {
+          return;
+        }
+
+        entries.push({
+          dateKey: updatedKey,
+          projectTitle,
+          taskPath: nextPath.join("."),
+          title,
+          detail: String(task?.detail ?? "").trim(),
+          statusLabel: getWeeklyProgressStatusMeta(task?.status).label,
+          createdAt: getWeeklyTaskTimestamp(task, "createdAt"),
+          updatedAt: getWeeklyTaskTimestamp(task, "updatedAt")
+        });
+      });
+    };
+
+    visit(project.tasks);
+  }
+
+  return entries.sort((left, right) => {
+    const dateOrder = left.dateKey.localeCompare(right.dateKey);
+
+    if (dateOrder) {
+      return dateOrder;
+    }
+
+    const projectOrder = left.projectTitle.localeCompare(right.projectTitle, "zh-CN");
+
+    if (projectOrder) {
+      return projectOrder;
+    }
+
+    return left.taskPath.localeCompare(right.taskPath, "zh-CN", { numeric: true });
+  });
+}
+
+export function buildPerformanceReportSourceContent(records = [], startDate = new Date(), endDate = new Date()) {
+  const startKey = getLocalDateKey(startDate);
+  const endKey = getLocalDateKey(endDate);
+  const entries = [];
+  const lines = [];
+
+  if (!startKey || !endKey || startKey > endKey) {
+    return {
+      entries,
+      content: ""
+    };
+  }
+
+  const sortedRecords = [...(Array.isArray(records) ? records : [])].sort((left, right) =>
+    String(left?.startDate ?? left?.weekKey ?? left?.createdAt ?? "").localeCompare(
+      String(right?.startDate ?? right?.weekKey ?? right?.createdAt ?? "")
+    )
+  );
+
+  for (const record of sortedRecords) {
+    const recordEntries = collectUpdatedLeafTasksInDateRange(record?.projects ?? [], startKey, endKey);
+
+    if (!recordEntries.length) {
+      continue;
+    }
+
+    entries.push(...recordEntries.map((entry) => ({ ...entry, weekTitle: String(record?.title ?? "").trim() })));
+  }
+
+  const groupedByDate = new Map();
+
+  for (const entry of entries) {
+    if (!groupedByDate.has(entry.dateKey)) {
+      groupedByDate.set(entry.dateKey, []);
+    }
+
+    groupedByDate.get(entry.dateKey).push(entry);
+  }
+
+  for (const [dateKey, dateEntries] of groupedByDate.entries()) {
+    lines.push(`## ${dateKey}`);
+    const groupedByProject = new Map();
+
+    for (const entry of dateEntries) {
+      if (!groupedByProject.has(entry.projectTitle)) {
+        groupedByProject.set(entry.projectTitle, []);
+      }
+
+      groupedByProject.get(entry.projectTitle).push(entry);
+    }
+
+    for (const [projectTitle, projectEntries] of groupedByProject.entries()) {
+      lines.push(`* ${projectTitle}`);
+
+      for (const entry of projectEntries) {
+        const detailText = entry.detail ? `：${entry.detail}` : "";
+        lines.push(`    * ${entry.title}${detailText}（${entry.statusLabel}）`);
+      }
+    }
+
+    lines.push("");
+  }
+
+  return {
+    entries,
+    content: lines.join("\n").trim()
+  };
 }
 
 export function collectTodayUpdatedLeafTasks(projects = [], referenceDate = new Date()) {

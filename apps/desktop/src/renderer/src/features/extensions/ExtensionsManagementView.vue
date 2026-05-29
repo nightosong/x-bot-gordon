@@ -522,7 +522,7 @@
                   <input
                     v-model="ui.extensions.editor.values.name"
                     class="field-input"
-                    placeholder="例如：karpathy-guidelines"
+                    placeholder="例如：code-guidelines"
                     required
                   />
                 </label>
@@ -592,7 +592,7 @@
                 <label class="field field-full">
                   <span class="field-label">说明</span>
                   <textarea class="field-textarea" readonly>
-当前会从 GitHub 读取整个 Skill 目录，镜像到 Gordon 的 `~/.gord/skills` 本地 Skill 目录，并把 SKILL.md 映射为本地 SkillDefinition。导入后你仍然可以在列表里继续编辑。
+当前会从 GitHub 读取整个 Skill 目录，镜像到 Gordon 的 `~/.gord/skills` 用户 Skill 目录，并把 SKILL.md 映射为本地 SkillDefinition。导入后你仍然可以在列表里继续编辑；仓库内 `skills/` 只保留随应用发布的内置 Skill。
                   </textarea>
                 </label>
               </template>

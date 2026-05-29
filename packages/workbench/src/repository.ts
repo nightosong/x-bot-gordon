@@ -72,7 +72,7 @@ import type {
   WorkTask
 } from "../../shared/src/index.js";
 import {
-  getBuiltinAgentProfile,
+  getBuiltinAgentProfiles,
   getBuiltinMcpServers,
   getBuiltinSkillDefinitions,
   isBuiltinWorkbenchEntry,
@@ -533,6 +533,16 @@ function isBuiltinSkillLocalPath(localPath: string): boolean {
   return getBuiltinSkillDefinitions().some((skill) => normalizeSkillLocalPathKey(skill.source?.localPath) === localPathKey);
 }
 
+function isUserSkillLocalPath(localPath: string | null | undefined): boolean {
+  const trimmed = localPath?.trim();
+  return Boolean(trimmed && isPathInsideDirectory(getUserSkillsRootDirectoryPath(), trimmed) && !isBuiltinSkillLocalPath(trimmed));
+}
+
+function resolveUserSkillLocalPath(localPath: string | null | undefined): string | null {
+  const trimmed = localPath?.trim();
+  return trimmed && isUserSkillLocalPath(trimmed) ? trimmed : null;
+}
+
 function getGithubSkillRootPath(skillFilePath: string): string {
   return skillFilePath.endsWith(SKILL_MARKDOWN_FILE_NAME)
     ? skillFilePath.slice(0, -SKILL_MARKDOWN_FILE_NAME.length).replace(/\/+$/, "")
@@ -754,13 +764,13 @@ async function resolveSkillLocalDirectory(
   currentSkills: SkillDefinition[],
   existingSkill?: SkillDefinition
 ): Promise<string> {
-  const existingLocalPath = existingSkill?.source?.localPath?.trim();
+  const existingLocalPath = resolveUserSkillLocalPath(existingSkill?.source?.localPath);
 
   if (existingLocalPath) {
     return existingLocalPath;
   }
 
-  const sourceLocalPath = skill.source?.localPath?.trim();
+  const sourceLocalPath = resolveUserSkillLocalPath(skill.source?.localPath);
 
   if (sourceLocalPath) {
     return sourceLocalPath;
@@ -1366,6 +1376,7 @@ function normalizeWeeklyProgressRecord(record: WeeklyProgressRecord): WeeklyProg
     reportTemplate: normalizedTemplates.reportTemplate,
     generatedDailyReport: record.generatedDailyReport ?? "",
     generatedReport: record.generatedReport ?? "",
+    generatedPerformanceReport: record.generatedPerformanceReport ?? "",
     status: record.status ?? "archived"
   };
 }
@@ -1387,6 +1398,7 @@ function createWeeklyProgressRecord(referenceDate = new Date(), projects: Weekly
     reportTemplate: DEFAULT_WEEKLY_REPORT_TEMPLATE,
     generatedDailyReport: "",
     generatedReport: "",
+    generatedPerformanceReport: "",
     status: "active",
     createdAt: timestamp,
     updatedAt: timestamp
@@ -3791,12 +3803,13 @@ export async function importSkillDefinitionFromGithub(request: GithubSkillImport
       entry.source.path === fetched.path
   );
   const existingSkill = existingIndex >= 0 ? current[existingIndex] : undefined;
+  const reusableLocalPath = resolveUserSkillLocalPath(existingSkill?.source?.localPath) ?? "";
   const importedPreview = buildImportedSkillDefinition(fetched.markdown, {
     ...fetched,
-    localPath: existingSkill?.source?.localPath?.trim() || ""
+    localPath: reusableLocalPath
   });
   const localPath =
-    existingSkill?.source?.localPath?.trim() ||
+    reusableLocalPath ||
     (await resolveAvailableSkillLocalDirectory(importedPreview.name, current, existingSkill?.id));
 
   await mirrorGithubSkillDirectory(fetched.repo, fetched.ref, skillRootPath, localPath);
@@ -3974,7 +3987,7 @@ export async function listAgentProfiles(): Promise<AgentProfile[]> {
     listMcpServers()
   ]);
 
-  return mergeBuiltinEntries([getBuiltinAgentProfile(modelSettings, skills, servers)], userProfiles);
+  return mergeBuiltinEntries(getBuiltinAgentProfiles(modelSettings, skills, servers), userProfiles);
 }
 
 export async function upsertAgentProfile(profile: AgentProfile): Promise<AgentProfile[]> {

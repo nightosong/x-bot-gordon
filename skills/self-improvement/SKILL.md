@@ -103,7 +103,7 @@ cp -n skills/self-improvement/assets/FEATURE_REQUESTS.md .learnings/FEATURE_REQU
 ./skills/self-improvement/scripts/extract-skill.sh <skill-name> --dry-run
 ```
 
-正式生成后，再补充对应内容。
+正式生成会默认写入 `~/.gord/skills/<skill-name>/`。用户自定义、外部加载或从 learning 抽取的 Skill 不写入仓库 `skills/`；仓库 `skills/` 只保留应用内置 Skill。
 
 ## 输出偏好
 

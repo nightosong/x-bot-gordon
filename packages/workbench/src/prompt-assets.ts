@@ -4,10 +4,11 @@ import { resolveFromRoot } from "../../shared/src/index.js";
 
 const PROMPT_ASSET_PATHS = {
   builtinAgentGordonSystem: ["prompts", "builtins", "agents", "gordon.system.md"],
+  builtinAgentArthurSystem: ["prompts", "builtins", "agents", "arthur.system.md"],
   builtinSkillPlanPrompt: ["skills", "plan", "SKILL.md"],
   builtinSkillCodePrompt: ["skills", "code", "SKILL.md"],
   builtinSkillReviewPrompt: ["skills", "review", "SKILL.md"],
-  builtinSkillKarpathyPrompt: ["skills", "karpathy-guidelines", "SKILL.md"],
+  builtinSkillCodeGuidelinesPrompt: ["skills", "code-guidelines", "SKILL.md"],
   builtinSkillSelfImprovementPrompt: ["skills", "self-improvement", "SKILL.md"],
   builtinSkillDeepResearchPrompt: ["skills", "deep-research", "SKILL.md"],
   builtinSkillCreatorPrompt: ["skills", "skill-creator", "SKILL.md"],
@@ -15,6 +16,7 @@ const PROMPT_ASSET_PATHS = {
   weeklyRewriteItemSystem: ["prompts", "workbench", "weekly", "rewrite-item.system.md"],
   weeklyDailyReportGenerateSystem: ["prompts", "workbench", "weekly", "daily-report-generate.system.md"],
   weeklyReportGenerateSystem: ["prompts", "workbench", "weekly", "report-generate.system.md"],
+  weeklyPerformanceReportGenerateSystem: ["prompts", "workbench", "weekly", "performance-report-generate.system.md"],
   weeklyReportTemplateDefault: ["prompts", "workbench", "weekly", "report-template.default.md"],
   weeklyReportTemplateLegacy: ["prompts", "workbench", "weekly", "report-template.legacy.md"],
   writingMasterSystem: ["prompts", "workbench", "writing", "master.system.md"],

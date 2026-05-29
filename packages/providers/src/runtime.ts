@@ -453,14 +453,6 @@ function shouldFallbackToNonStream(error: unknown, signal?: AbortSignal): boolea
   return error instanceof ModelStreamReadError && !error.accumulatedText.trim();
 }
 
-function shouldFallbackResponsesToChatCompletions(error: unknown, signal?: AbortSignal): boolean {
-  if (signal?.aborted) {
-    return false;
-  }
-
-  return error instanceof ModelEmptySseResponseError;
-}
-
 function shouldDisableStreamForPayload(payload: unknown): boolean {
   return Boolean(extractErrorMessage(payload) || !extractOpenAiCompatibleText(payload).trim());
 }
@@ -469,8 +461,8 @@ function rememberNonStreamOnlyProfile(profile: ModelProfile): void {
   NON_STREAM_ONLY_PROFILE_IDS.add(profile.id);
 }
 
-function canAttemptStream(profile: ModelProfile, options: ModelTextInvokeOptions): boolean {
-  return typeof options.onTextDelta === "function" && profile.supportsStreaming !== false && !NON_STREAM_ONLY_PROFILE_IDS.has(profile.id);
+function canAttemptStream(profile: ModelProfile): boolean {
+  return profile.supportsStreaming !== false && !NON_STREAM_ONLY_PROFILE_IDS.has(profile.id);
 }
 
 function logStreamFallback(
@@ -485,24 +477,6 @@ function logStreamFallback(
     profileLabel: profile.displayName,
     model: profile.model,
     endpoint: sanitizeUrlForLogging(endpoint),
-    reason
-  });
-}
-
-function logEndpointFallback(
-  label: string,
-  profile: ModelProfile,
-  fromEndpoint: string,
-  toEndpoint: string,
-  reason: string
-): void {
-  console.warn(`[providers] ${label} endpoint returned no text, falling back to Chat Completions`, {
-    provider: profile.provider,
-    profileId: profile.id,
-    profileLabel: profile.displayName,
-    model: profile.model,
-    fromEndpoint: sanitizeUrlForLogging(fromEndpoint),
-    toEndpoint: sanitizeUrlForLogging(toEndpoint),
     reason
   });
 }
@@ -602,26 +576,29 @@ function extractOpenAiResponsesText(payload: unknown): string {
 }
 
 function extractOpenAiResponsesStreamDelta(payload: unknown): string {
-  return readTextValue(getNestedValue(payload, ["delta"]))
-    || readTextValue(getNestedValue(payload, ["part", "text"]))
-    || readTextValue(getNestedValue(payload, ["item", "content", 0, "text"]));
+  return parseOpenAiMessageContent(getNestedValue(payload, ["delta"])).trim()
+    || readTextValue(getNestedValue(payload, ["part", "delta"]))
+    || readTextValue(getNestedValue(payload, ["text_delta"]));
 }
 
 function extractOpenAiResponsesSseDelta(payload: unknown, event: SseEvent): string {
-  const directDelta = extractOpenAiResponsesStreamDelta(payload);
-
-  if (directDelta) {
-    return directDelta;
-  }
-
   const eventType = event.event || readTextValue(getNestedValue(payload, ["type"]));
   const choices = getNestedValue(payload, ["choices"]);
   const canUseCompatibleDelta =
     eventType === "message" ||
     eventType.includes("delta") ||
     Array.isArray(choices);
+  const compatibleDelta = canUseCompatibleDelta ? extractOpenAiCompatibleStreamDelta(payload) : "";
 
-  return canUseCompatibleDelta ? extractOpenAiCompatibleStreamDelta(payload) : "";
+  if (compatibleDelta) {
+    return compatibleDelta;
+  }
+
+  if (!eventType.includes("delta")) {
+    return "";
+  }
+
+  return extractOpenAiResponsesStreamDelta(payload);
 }
 
 function extractOpenAiCompatibleStreamDelta(payload: unknown): string {
@@ -637,14 +614,11 @@ function extractOpenAiCompatibleStreamDelta(payload: unknown): string {
         getNestedValue(delta, ["output_text"]),
         getNestedValue(delta, ["reasoning_content"]),
         getNestedValue(delta, ["reasoning"]),
-        getNestedValue(choice, ["text"]),
-        getNestedValue(choice, ["message", "content"]),
-        getNestedValue(choice, ["message", "reasoning_content"]),
-        getNestedValue(choice, ["message", "reasoning"])
+        delta
       ];
 
       for (const candidate of candidates) {
-        const text = parseOpenAiMessageContent(candidate);
+        const text = parseOpenAiMessageContent(candidate).trim();
 
         if (text) {
           deltas.push(text);
@@ -659,7 +633,21 @@ function extractOpenAiCompatibleStreamDelta(payload: unknown): string {
   }
 
   return parseOpenAiMessageContent(getNestedValue(payload, ["delta", "content"]))
-    || parseOpenAiMessageContent(getNestedValue(payload, ["output_text"]));
+    || parseOpenAiMessageContent(getNestedValue(payload, ["delta", "text"]))
+    || parseOpenAiMessageContent(getNestedValue(payload, ["delta", "output_text"]))
+    || parseOpenAiMessageContent(getNestedValue(payload, ["delta"]));
+}
+
+function extractOpenAiCompatibleStreamSnapshot(payload: unknown): string {
+  return extractOpenAiCompatibleText(payload).trim();
+}
+
+function extractOpenAiResponsesStreamSnapshot(payload: unknown): string {
+  return extractOpenAiResponsesText(payload).trim()
+    || parseOpenAiMessageContent(getNestedValue(payload, ["part", "text"])).trim()
+    || parseOpenAiMessageContent(getNestedValue(payload, ["item", "content"])).trim()
+    || parseOpenAiMessageContent(getNestedValue(payload, ["item", "content", 0, "text"])).trim()
+    || extractOpenAiCompatibleStreamSnapshot(payload);
 }
 
 function sanitizeUrlForLogging(value: string): string {
@@ -895,6 +883,7 @@ async function readOpenAiCompatibleStream(
   options: ModelTextInvokeOptions
 ): Promise<string> {
   let accumulatedText = "";
+  let snapshotText = "";
 
   try {
     await consumeSseEvents(response, (event) => {
@@ -926,6 +915,14 @@ async function readOpenAiCompatibleStream(
       if (delta) {
         accumulatedText += delta;
         emitTextDelta(options, delta, accumulatedText);
+        return;
+      }
+
+      const snapshot = extractOpenAiCompatibleStreamSnapshot(payload);
+
+      if (!accumulatedText.trim() && snapshot && snapshot.length >= snapshotText.length) {
+        snapshotText = snapshot;
+        emitTextDelta(options, snapshot, snapshotText);
       }
     });
   } catch (error) {
@@ -936,7 +933,7 @@ async function readOpenAiCompatibleStream(
     throw new ModelStreamReadError(error instanceof Error ? error.message : "模型流式响应读取失败", accumulatedText);
   }
 
-  const text = accumulatedText.trim();
+  const text = accumulatedText.trim() || snapshotText.trim();
 
   if (!text) {
     throw new ModelStreamReadError("模型没有返回可用文本内容", accumulatedText);
@@ -952,6 +949,7 @@ async function readOpenAiResponsesStream(
   options: ModelTextInvokeOptions
 ): Promise<string> {
   let accumulatedText = "";
+  let snapshotText = "";
 
   try {
     await consumeSseEvents(response, (event) => {
@@ -983,6 +981,14 @@ async function readOpenAiResponsesStream(
       if (delta) {
         accumulatedText += delta;
         emitTextDelta(options, delta, accumulatedText);
+        return;
+      }
+
+      const snapshot = extractOpenAiResponsesStreamSnapshot(payload);
+
+      if (!accumulatedText.trim() && snapshot && snapshot.length >= snapshotText.length) {
+        snapshotText = snapshot;
+        emitTextDelta(options, snapshot, snapshotText);
       }
     });
   } catch (error) {
@@ -993,7 +999,7 @@ async function readOpenAiResponsesStream(
     throw new ModelStreamReadError(error instanceof Error ? error.message : "模型流式响应读取失败", accumulatedText);
   }
 
-  const text = accumulatedText.trim();
+  const text = accumulatedText.trim() || snapshotText.trim();
 
   if (!text) {
     throw new ModelStreamReadError("模型没有返回可用文本内容", accumulatedText);
@@ -1008,7 +1014,7 @@ async function invokeOpenAiResponses(
   options: ModelTextInvokeOptions = {}
 ): Promise<ModelTextResponse> {
   const endpoint = buildOpenAiStyleEndpoint(profile, "/responses");
-  const stream = canAttemptStream(profile, options);
+  const stream = canAttemptStream(profile);
   const instructions = getSystemPrompt(request.messages);
   const maxOutputTokens = resolveMaxOutputTokens(request);
   const response = await fetch(endpoint, {
@@ -1057,22 +1063,12 @@ async function invokeOpenAiResponses(
 
   let parsedResponse: JsonOrSseTextResponse;
 
-  try {
-    parsedResponse = await parseJsonOrSseTextResponse(
-      response,
-      "OpenAI Responses",
-      (payload, event) => extractOpenAiResponsesSseDelta(payload, event),
-      (payload) => extractOpenAiResponsesText(payload)
-    );
-  } catch (error) {
-    if (shouldFallbackResponsesToChatCompletions(error, options.signal)) {
-      const chatEndpoint = buildOpenAiStyleEndpoint(profile, "/chat/completions");
-      logEndpointFallback("OpenAI Responses", profile, endpoint, chatEndpoint, error instanceof Error ? error.message : "unknown");
-      return invokeOpenAiChatCompletions(profile, request, withoutTextDelta(options));
-    }
-
-    throw error;
-  }
+  parsedResponse = await parseJsonOrSseTextResponse(
+    response,
+    "OpenAI Responses",
+    (payload, event) => extractOpenAiResponsesSseDelta(payload, event),
+    (payload) => extractOpenAiResponsesText(payload)
+  );
 
   if (parsedResponse.kind === "sse") {
     return {
@@ -1115,7 +1111,7 @@ async function invokeOpenAiChatCompletions(
   options: ModelTextInvokeOptions = {}
 ): Promise<ModelTextResponse> {
   const endpoint = buildOpenAiStyleEndpoint(profile, "/chat/completions");
-  const stream = canAttemptStream(profile, options);
+  const stream = canAttemptStream(profile);
   const maxOutputTokens = resolveMaxOutputTokens(request);
   const response = await fetch(endpoint, {
     method: "POST",
@@ -1234,7 +1230,7 @@ async function invokeAzure(
   options: ModelTextInvokeOptions = {}
 ): Promise<ModelTextResponse> {
   const endpoint = buildAzureEndpoint(profile);
-  const stream = canAttemptStream(profile, options);
+  const stream = canAttemptStream(profile);
   const maxOutputTokens = resolveMaxOutputTokens(request);
   const response = await fetch(endpoint, {
     method: "POST",
@@ -1340,7 +1336,7 @@ async function invokeAnthropic(
 ): Promise<ModelTextResponse> {
   const endpoint = `${trimTrailingSlash(profile.baseUrl?.trim() || "https://api.anthropic.com")}/v1/messages`;
   const conversation = getConversationMessages(request.messages);
-  const stream = canAttemptStream(profile, options);
+  const stream = canAttemptStream(profile);
   const maxOutputTokens = resolveMaxOutputTokens(request);
   const response = await fetch(endpoint, {
     method: "POST",
@@ -1491,7 +1487,7 @@ async function invokeGoogle(
 ): Promise<ModelTextResponse> {
   const systemPrompt = getSystemPrompt(request.messages);
   const conversation = getConversationMessages(request.messages);
-  const stream = canAttemptStream(profile, options);
+  const stream = canAttemptStream(profile);
   const maxOutputTokens = resolveMaxOutputTokens(request);
   const response = await fetch(buildGoogleEndpoint(profile, stream), {
     method: "POST",

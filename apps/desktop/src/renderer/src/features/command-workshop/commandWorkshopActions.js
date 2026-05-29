@@ -5,6 +5,7 @@ import {
   BUILTIN_GORDON_AGENT_ID,
   buildCommandWorkshopArtifact,
   buildCommandWorkshopTitle,
+  renderRichText,
   sortCommandWorkshopSessions,
   summarizeCommandWorkshopContent,
   truncateText
@@ -240,6 +241,8 @@ function collapseRepeatedCommandText(text) {
 export function createCommandWorkshopActions({
   activeFeature,
   commandWorkshopViewRef,
+  copyRichTextToClipboard,
+  copyTextToClipboard,
   desktopApi,
   enabledAgentProfiles,
   featureCommandWorkshopId,
@@ -259,6 +262,8 @@ export function createCommandWorkshopActions({
   ui,
   workbench
 }) {
+  let commandMessageCopyTimer = null;
+
   function runOnNextTick(callback) {
     if (typeof nextTick === "function") {
       void nextTick(callback);
@@ -312,6 +317,36 @@ export function createCommandWorkshopActions({
 
   function normalizeCommandWorkshopSessions(sessions) {
     return sortCommandWorkshopSessions((Array.isArray(sessions) ? sessions : []).map((session) => normalizeCommandWorkshopSession(session)));
+  }
+
+  function clearCommandMessageCopyTimer() {
+    if (commandMessageCopyTimer) {
+      clearTimeout(commandMessageCopyTimer);
+      commandMessageCopyTimer = null;
+    }
+  }
+
+  function markCommandMessageCopied(messageId) {
+    clearCommandMessageCopyTimer();
+    ui.command.copiedMessageId = messageId ?? null;
+    commandMessageCopyTimer = setTimeout(() => {
+      ui.command.copiedMessageId = null;
+      commandMessageCopyTimer = null;
+    }, 1600);
+  }
+
+  function renderCommandMessageCopyHtml(content) {
+    const html = renderRichText(content);
+    const template = document.createElement("template");
+
+    template.innerHTML = html;
+    template.content.querySelectorAll("[data-command-copy-code]").forEach((element) => element.remove());
+
+    return template.innerHTML;
+  }
+
+  function getCommandMessageExportKey(message, format) {
+    return `${message?.id ?? ""}:${format}`;
   }
 
   const activeCommandSession = computed(() =>
@@ -475,6 +510,81 @@ export function createCommandWorkshopActions({
       mcpToolName: ""
     });
     ui.command.availableMcpTools = [];
+  }
+
+  async function handleCommandMessageCopy(message) {
+    const content = String(message?.content ?? "").trim();
+
+    if (!content) {
+      setStatus("当前 AI 回复没有可复制的内容。", "warning");
+      return;
+    }
+
+    try {
+      const renderedHtml = renderCommandMessageCopyHtml(content);
+      const copiedFormat =
+        typeof copyRichTextToClipboard === "function"
+          ? await copyRichTextToClipboard({ html: renderedHtml, text: content })
+          : await copyTextToClipboard(content);
+
+      markCommandMessageCopied(message?.id ?? null);
+
+      if (copiedFormat === "html") {
+        setStatus("AI 回复已复制为富文本。", "success");
+      } else {
+        setStatus("AI 回复已复制为纯文本。", "success");
+      }
+    } catch (error) {
+      console.error("Failed to copy command assistant message", error);
+      setStatus(`复制 AI 回复失败：${getErrorMessage(error)}`, "danger");
+    }
+  }
+
+  async function handleCommandMessageExport(message, format) {
+    const content = String(message?.content ?? "").trim();
+    const normalizedFormat = format === "docx" ? "docx" : "pdf";
+
+    if (!content) {
+      setStatus("当前 AI 回复没有可导出的内容。", "warning");
+      return;
+    }
+
+    if (!desktopApi?.exportCommandWorkshopMessage) {
+      setStatus("当前桌面桥接暂不支持文档导出。", "danger");
+      return;
+    }
+
+    const activeSession = activeCommandSession.value;
+    const exportKey = getCommandMessageExportKey(message, normalizedFormat);
+    ui.command.exportingMessageKey = exportKey;
+
+    try {
+      const result = await desktopApi.exportCommandWorkshopMessage({
+        fileName: `${activeSession?.title || "Gordon AI 回复"}-${normalizedFormat.toUpperCase()}`,
+        format: normalizedFormat,
+        title: activeSession?.title || "Gordon AI 回复",
+        agentName: resolveBoundModelName(commandSelectedAgent.value?.modelProfileId)
+          ? `${commandSelectedAgent.value?.name ?? "Gordon"} / ${resolveBoundModelName(commandSelectedAgent.value?.modelProfileId)}`
+          : commandSelectedAgent.value?.name ?? "Gordon",
+        createdAt: message?.createdAt ?? new Date().toISOString(),
+        contentText: content,
+        contentHtml: renderCommandMessageCopyHtml(content)
+      });
+
+      if (!result) {
+        setStatus("已取消导出。", "neutral");
+        return;
+      }
+
+      setStatus(`AI 回复已导出为 ${normalizedFormat.toUpperCase()}：${result.fileName}`, "success");
+    } catch (error) {
+      console.error("Failed to export command assistant message", error);
+      setStatus(`导出 AI 回复失败：${getErrorMessage(error)}`, "danger");
+    } finally {
+      if (ui.command.exportingMessageKey === exportKey) {
+        ui.command.exportingMessageKey = null;
+      }
+    }
   }
 
   function handleCommandInputCompositionStart() {
@@ -796,6 +906,10 @@ export function createCommandWorkshopActions({
       workbench.commandSessions = sortCommandWorkshopSessions(sessions.map((entry) => normalizeCommandWorkshopSession(entry)));
       ui.command.activeSessionId = completedSession.id;
       workbench.agentRunLogs = [normalizedResult, ...workbench.agentRunLogs.filter((log) => log.id !== result.id)];
+      ui.command.isRunning = false;
+      ui.command.cancelRequested = false;
+      ui.command.activeProgressEventId = null;
+      ui.command.liveProgress = null;
       if (
         typeof refreshWorkbenchSnapshot === "function" &&
         result.mcpCalls?.some(
@@ -807,10 +921,6 @@ export function createCommandWorkshopActions({
       ) {
         await refreshWorkbenchSnapshot();
       }
-      ui.command.isRunning = false;
-      ui.command.cancelRequested = false;
-      ui.command.activeProgressEventId = null;
-      ui.command.liveProgress = null;
       setStatus(`命令工坊已完成本轮响应（${result.profileLabel}）。`, "success");
       if (runQueuedCommandGuidanceIfNeeded()) {
         setStatus("正在按新的引导继续执行。", "neutral");
@@ -914,10 +1024,6 @@ export function createCommandWorkshopActions({
       .replace(/\s*\n+\s*/g, " ")
       .replace(/\s{2,}/g, " ")
       .trim();
-  }
-
-  function getCommandArtifactInlineText(value) {
-    return normalizeCommandArtifactInlineText(value);
   }
 
   function normalizeCommandArtifactProduct(artifact, index = 0) {
@@ -1102,14 +1208,6 @@ export function createCommandWorkshopActions({
     return match?.[1] ?? "";
   }
 
-  function isCommandPlanningResultStep(step) {
-    return step?.type === "mcp_auto_planning" && /结果/u.test(String(step?.title ?? ""));
-  }
-
-  function isCommandPlanningStartStep(step) {
-    return step?.type === "mcp_auto_planning" && !isCommandPlanningResultStep(step);
-  }
-
   function getCommandProcessCallDetail(call) {
     const detailParts = [];
     const argumentText = truncateCommandProcessText(stringifyCommandArtifactArguments(getCommandArtifactResolvedCallArguments(call)), 180);
@@ -1150,7 +1248,7 @@ export function createCommandWorkshopActions({
       return null;
     }
 
-    const roundText = call.round ? `Plan ${call.round}` : `Plan ${index + 1}`;
+    const roundText = call.round ? `步骤 ${call.round}` : `步骤 ${index + 1}`;
     const output = truncateCommandProcessOutput(call.resultText);
 
     return {
@@ -1189,7 +1287,7 @@ export function createCommandWorkshopActions({
       id: `${selectedStep?.id ?? selectedStep?.createdAt ?? "tool"}_process_pending`,
       kind: "execute",
       marker: "执",
-      label: `执行中 · Plan ${round || calls.length + 1}`,
+      label: `执行中 · 步骤 ${round || calls.length + 1}`,
       className: "is-execute is-running",
       title: `${serverName} / ${toolName}`,
       detail: argumentText ? `参数：${truncateCommandProcessText(argumentText, 180)}` : "参数已确定，正在等待工具返回。",
@@ -1199,48 +1297,25 @@ export function createCommandWorkshopActions({
     };
   }
 
-  function normalizeCommandResponseProcessStep(step, index = 0, planningResultRounds = new Set()) {
+  function normalizeCommandResponseProcessStep(step, index = 0, options = {}) {
     if (!step || typeof step !== "object") {
       return null;
     }
 
     const detail = truncateCommandProcessText(step.detail);
-    const round = getCommandStepRound(step);
     const id = step.id ?? `process_step_${index}`;
     const createdAt = step.createdAt ?? "";
 
-    if (isCommandPlanningResultStep(step)) {
-      return {
-        id,
-        kind: "thought",
-        marker: "思",
-        label: round ? `思考 · 第 ${round} 轮` : "思考",
-        className: "is-thought",
-        title: round ? `我判断第 ${round} 轮下一步` : "我判断下一步",
-        detail,
-        createdAt
-      };
-    }
-
-    if (isCommandPlanningStartStep(step)) {
-      if (round && planningResultRounds.has(round)) {
-        return null;
-      }
-
-      return {
-        id,
-        kind: "thought",
-        marker: "思",
-        label: round ? `思考中 · 第 ${round} 轮` : "思考中",
-        className: "is-thought is-running",
-        title: "正在选择下一步动作",
-        detail,
-        createdAt
-      };
+    if (step.type === "mcp_auto_planning") {
+      return null;
     }
 
     if (step.type === "mcp_auto_stopped") {
       const hasFailure = /失败|停止|重复|最大/u.test(`${step.title ?? ""} ${step.detail ?? ""}`);
+
+      if (!hasFailure && !options.hasToolCalls) {
+        return null;
+      }
 
       return {
         id,
@@ -1372,6 +1447,10 @@ export function createCommandWorkshopActions({
     }
 
     if (step.type === "model_invoked") {
+      if (!options.showFinalStage) {
+        return null;
+      }
+
       return {
         id,
         kind: "final",
@@ -1385,6 +1464,10 @@ export function createCommandWorkshopActions({
     }
 
     if (step.type === "completed") {
+      if (!options.showFinalStage) {
+        return null;
+      }
+
       return {
         id,
         kind: "final",
@@ -1430,65 +1513,26 @@ export function createCommandWorkshopActions({
     });
   }
 
-  function getCommandResponseThoughtDetail(artifact) {
-    const steps = Array.isArray(artifact?.steps) ? artifact.steps : [];
-    const calls = Array.isArray(artifact?.mcpCalls) ? artifact.mcpCalls : [];
-    const firstPlanResult = steps.find((step) => isCommandPlanningResultStep(step) && normalizeCommandArtifactInlineText(step.detail));
-    const stopStep = steps.find((step) => step?.type === "mcp_auto_stopped" && normalizeCommandArtifactInlineText(step.detail));
-
-    if (calls.length) {
-      return firstPlanResult
-        ? `我先判断这轮需要动用工具：${truncateCommandProcessText(firstPlanResult.detail, 180)}`
-        : "我先把需求拆成可执行动作，再调用工具把结果落到本地或当前应用里。";
+  function isCommandOperationalProcessStep(step) {
+    if (step?.type === "mcp_auto_stopped") {
+      return /失败|停止|重复|最大/u.test(`${step.title ?? ""} ${step.detail ?? ""}`);
     }
 
-    if (stopStep) {
-      return `我先判断是否需要工具：${truncateCommandProcessText(stopStep.detail, 180)}`;
-    }
-
-    if (steps.some((step) => step?.type === "mcp_authorized")) {
-      return "我先确认可用工具范围，再判断这轮是直接回复还是进入工具执行。";
-    }
-
-    return "我先理解你的问题和当前上下文，再把可执行结果整理给你。";
-  }
-
-  function getCommandResponsePlanItems(artifact) {
-    const steps = Array.isArray(artifact?.steps) ? artifact.steps : [];
-    const calls = Array.isArray(artifact?.mcpCalls) ? artifact.mcpCalls : [];
-    const pendingTool = normalizeCommandResponsePendingTool(steps, calls);
-    const planItems = [];
-
-    if (artifact?.skillName) {
-      planItems.push(`加载 Skill：${artifact.skillName}`);
-    }
-
-    const toolItems = [
-      ...calls.map((call, index) => {
-        const roundText = call.round ? `Plan ${call.round}` : `Plan ${index + 1}`;
-        return `${roundText}：调用 ${call.serverName ?? "工具服务"} / ${call.toolName ?? "工具"}`;
-      }),
-      ...(pendingTool ? [`${pendingTool.label.replace("执行中 · ", "")}：调用 ${pendingTool.title}`] : [])
-    ];
-
-    if (toolItems.length) {
-      planItems.push(...toolItems);
-      planItems.push("根据中间输出判断是否继续调用工具");
-      planItems.push("整理最终答复");
-    } else {
-      const stoppedStep = steps.find((step) => step?.type === "mcp_auto_stopped");
-
-      if (stoppedStep) {
-        planItems.push("确认无需继续调用工具");
-      } else {
-        planItems.push("理解问题与当前上下文");
-        planItems.push("按需判断是否调用工具");
-      }
-
-      planItems.push("整理回复");
-    }
-
-    return Array.from(new Set(planItems)).slice(0, 8);
+    return [
+      "mcp_args_repaired",
+      "mcp_retrying",
+      "mcp_fallback_planned",
+      "mcp_fallback_selected",
+      "workspace_permission_requested",
+      "workspace_permission_granted",
+      "workspace_permission_denied",
+      "computer_use_permission_requested",
+      "computer_use_permission_granted",
+      "computer_use_permission_denied",
+      "skill_handler_started",
+      "skill_handler_completed",
+      "skill_handler_failed"
+    ].includes(step?.type);
   }
 
   function getCommandResponseProcessItems(artifact) {
@@ -1503,12 +1547,11 @@ export function createCommandWorkshopActions({
       return [];
     }
 
-    const firstCreatedAt = steps[0]?.createdAt ?? calls[0]?.createdAt ?? artifact.createdAt ?? "";
-    const planningResultRounds = new Set(
-      steps.filter(isCommandPlanningResultStep).map((step) => getCommandStepRound(step)).filter(Boolean)
-    );
+    const hasToolCalls = calls.length > 0;
+    const hasOperationalSteps = steps.some(isCommandOperationalProcessStep);
+    const showFinalStage = hasToolCalls || hasOperationalSteps || Boolean(artifact.stopReason);
     const timelineItems = [
-      ...steps.map((step, index) => normalizeCommandResponseProcessStep(step, index, planningResultRounds)).filter(Boolean),
+      ...steps.map((step, index) => normalizeCommandResponseProcessStep(step, index, { hasToolCalls, showFinalStage })).filter(Boolean),
       ...calls.map((call, index) => normalizeCommandResponseProcessCall(call, index)).filter(Boolean)
     ];
     const pendingTool = normalizeCommandResponsePendingTool(steps, calls);
@@ -1530,29 +1573,13 @@ export function createCommandWorkshopActions({
       });
     }
 
-    return normalizeCommandProcessRunningState([
-      {
-        id: `process_thought_${(artifact.createdAt ?? firstCreatedAt) || "now"}`,
-        kind: "thought",
-        marker: "思",
-        label: "思路摘要",
-        className: "is-thought",
-        title: "我先判断任务路径",
-        detail: getCommandResponseThoughtDetail(artifact),
-        createdAt: firstCreatedAt
-      },
-      {
-        id: `process_plan_${(artifact.createdAt ?? firstCreatedAt) || "now"}`,
-        kind: "plan",
-        marker: "计",
-        label: "执行计划",
-        className: "is-plan",
-        title: "这轮按这些步骤推进",
-        items: getCommandResponsePlanItems(artifact),
-        createdAt: firstCreatedAt
-      },
-      ...timelineItems.sort((left, right) => String(left.createdAt || "").localeCompare(String(right.createdAt || "")))
-    ]);
+    const visibleItems = timelineItems.sort((left, right) => String(left.createdAt || "").localeCompare(String(right.createdAt || "")));
+
+    if (!visibleItems.length) {
+      return [];
+    }
+
+    return normalizeCommandProcessRunningState(visibleItems);
   }
 
   function getCommandArtifactToolNameFromStep(step) {
@@ -1688,6 +1715,8 @@ export function createCommandWorkshopActions({
     handleCommandInputCompositionStart,
     handleCommandInputEnterKeydown,
     handleCommandLoadMcpTools,
+    handleCommandMessageCopy,
+    handleCommandMessageExport,
     handleCommandRunCancel,
     handleCommandServerChange,
     handleCommandSessionDelete,

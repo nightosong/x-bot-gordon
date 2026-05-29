@@ -24,6 +24,8 @@ export function createCommandWorkshopState() {
     isRunning: false,
     cancelRequested: false,
     isInputComposing: false,
+    copiedMessageId: null,
+    exportingMessageKey: null,
     liveProgress: null
   };
 }
