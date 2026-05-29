@@ -1,5 +1,4 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell } from "electron";
-import type { IpcMainEvent } from "electron";
 import { spawn } from "node:child_process";
 import { createHmac } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -1217,13 +1216,14 @@ async function exportCommandWorkshopMessageAsDocx(
   return buffer.byteLength;
 }
 
-function buildGordonConfirmWindowHtml(options: GordonConfirmWindowOptions, resolveChannel: string): string {
+function buildGordonConfirmWindowHtml(options: GordonConfirmWindowOptions, confirmUrl: string, cancelUrl: string): string {
   const tone = options.tone ?? "warning";
   const detailItems = (options.detailLines ?? [])
     .filter((line) => String(line ?? "").trim())
     .map((line) => `<li>${escapeHtml(line)}</li>`)
     .join("");
-  const safeResolveChannel = JSON.stringify(resolveChannel).replaceAll("<", "\\u003c");
+  const escapedConfirmUrl = escapeHtml(confirmUrl);
+  const escapedCancelUrl = escapeHtml(cancelUrl);
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -1355,11 +1355,14 @@ function buildGordonConfirmWindowHtml(options: GordonConfirmWindowOptions, resol
         margin-top: 14px;
       }
 
-      button {
+      .dialog-action {
+        display: inline-grid;
+        place-items: center;
         min-height: 34px;
         padding: 0 12px;
         border: 1px solid rgba(255, 255, 255, 0.08);
         border-radius: 999px;
+        text-decoration: none;
         font: inherit;
         font-weight: 700;
         font-size: 12px;
@@ -1403,30 +1406,19 @@ function buildGordonConfirmWindowHtml(options: GordonConfirmWindowOptions, resol
       <p class="message">${escapeHtml(options.message)}</p>
       ${detailItems ? `<ul class="detail">${detailItems}</ul>` : ""}
       <div class="actions">
-        <button class="secondary" type="button" data-action="cancel">${escapeHtml(options.cancelText ?? "取消")}</button>
-        <button class="primary" type="button" data-action="confirm" autofocus>${escapeHtml(options.confirmText ?? "确认")}</button>
+        <a class="dialog-action secondary" href="${escapedCancelUrl}" data-action="cancel">${escapeHtml(options.cancelText ?? "取消")}</a>
+        <a class="dialog-action primary" href="${escapedConfirmUrl}" data-action="confirm" autofocus>${escapeHtml(options.confirmText ?? "确认")}</a>
       </div>
     </main>
-    <script>
-      const { ipcRenderer } = require("electron");
-      const resolveChannel = ${safeResolveChannel};
-      const closeWith = (confirmed) => ipcRenderer.send(resolveChannel, { confirmed });
-      document.querySelector('[data-action="confirm"]').addEventListener("click", () => closeWith(true));
-      document.querySelector('[data-action="cancel"]').addEventListener("click", () => closeWith(false));
-      window.addEventListener("keydown", (event) => {
-        if (event.key === "Escape") {
-          event.preventDefault();
-          closeWith(false);
-        }
-      });
-    </script>
   </body>
 </html>`;
 }
 
 function showGordonConfirmWindow(ownerWindow: BrowserWindow | null, options: GordonConfirmWindowOptions): Promise<boolean> {
   return new Promise((resolve) => {
-    const resolveChannel = `gordon:confirm-window:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const confirmUrl = `gordon-confirm://${requestId}/confirm`;
+    const cancelUrl = `gordon-confirm://${requestId}/cancel`;
     const confirmWindow = new BrowserWindow({
       width: 460,
       height: 320,
@@ -1442,9 +1434,9 @@ function showGordonConfirmWindow(ownerWindow: BrowserWindow | null, options: Gor
       backgroundColor: "#07111d",
       autoHideMenuBar: true,
       webPreferences: {
-        contextIsolation: false,
-        nodeIntegration: true,
-        sandbox: false
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true
       }
     });
 
@@ -1455,7 +1447,6 @@ function showGordonConfirmWindow(ownerWindow: BrowserWindow | null, options: Gor
       }
 
       settled = true;
-      ipcMain.removeListener(resolveChannel, handleResolve);
 
       if (!confirmWindow.isDestroyed()) {
         confirmWindow.close();
@@ -1463,18 +1454,38 @@ function showGordonConfirmWindow(ownerWindow: BrowserWindow | null, options: Gor
 
       resolve(confirmed);
     };
-    const handleResolve = (event: IpcMainEvent, payload: { confirmed?: boolean }) => {
-      if (event.sender !== confirmWindow.webContents) {
+
+    const handleNavigation = (event: Electron.Event, targetUrl: string) => {
+      const url = new URL(targetUrl);
+
+      if (url.protocol !== "gordon-confirm:" || url.hostname !== requestId) {
+        event.preventDefault();
         return;
       }
 
-      settle(Boolean(payload?.confirmed));
+      event.preventDefault();
+      settle(url.pathname.replace(/^\//, "") === "confirm");
     };
 
-    ipcMain.on(resolveChannel, handleResolve);
+    confirmWindow.webContents.on("will-navigate", handleNavigation);
+    confirmWindow.webContents.on("before-input-event", (event, input) => {
+      if (input.type !== "keyDown") {
+        return;
+      }
+
+      if (input.key === "Escape") {
+        event.preventDefault();
+        settle(false);
+      }
+
+      if (input.key === "Enter") {
+        event.preventDefault();
+        settle(true);
+      }
+    });
     confirmWindow.once("ready-to-show", () => confirmWindow.show());
     confirmWindow.once("closed", () => settle(false));
-    confirmWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(buildGordonConfirmWindowHtml(options, resolveChannel))}`).catch(() => {
+    confirmWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(buildGordonConfirmWindowHtml(options, confirmUrl, cancelUrl))}`).catch(() => {
       settle(false);
     });
   });
