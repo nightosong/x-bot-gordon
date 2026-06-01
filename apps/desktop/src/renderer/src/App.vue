@@ -196,7 +196,6 @@
               :handle-rich-text-click="handleRichTextClick"
               :open-command-session="openCommandSession"
               :remove-command-attachment="removeCommandAttachment"
-              :resolve-agent-name="resolveAgentName"
             />
           </template>
 
@@ -852,10 +851,6 @@ function resolveBoundModelName(modelProfileId) {
   }
 
   return workbench.modelSettings.profiles.find((profile) => profile.id === modelProfileId)?.displayName ?? "未绑定模型";
-}
-
-function resolveAgentName(agentId) {
-  return getAgentById(agentId)?.name ?? "Gordon";
 }
 
 function getAgentById(agentId) {

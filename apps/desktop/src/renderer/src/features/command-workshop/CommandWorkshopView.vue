@@ -61,10 +61,6 @@
                   'is-error': message.state === 'error'
                 }"
               >
-                <div class="command-message-head">
-                  <span class="command-message-role">{{ message.role === "user" ? "你" : resolveAgentName(ui.command.form.agentProfileId) }}</span>
-                </div>
-
                 <div
                   v-if="message.role !== 'assistant' && message.content"
                   class="command-message-body command-rich-text"
@@ -203,10 +199,6 @@
               </article>
 
               <article v-if="ui.command.isRunning" class="command-message is-assistant is-pending">
-                <div class="command-message-head">
-                  <span class="command-message-role">{{ resolveAgentName(ui.command.form.agentProfileId) }}</span>
-                </div>
-
                 <div v-if="getCommandResponseProcessItems(ui.command.liveProgress?.artifact).length" class="command-response-process is-live">
                   <article
                     v-for="item in getCommandResponseProcessItems(ui.command.liveProgress?.artifact)"
@@ -575,8 +567,7 @@ const props = defineProps({
   handleCommandSubmit: { type: Function, required: true },
   handleRichTextClick: { type: Function, required: true },
   openCommandSession: { type: Function, required: true },
-  removeCommandAttachment: { type: Function, required: true },
-  resolveAgentName: { type: Function, required: true }
+  removeCommandAttachment: { type: Function, required: true }
 });
 
 const commandInputRef = ref(null);
