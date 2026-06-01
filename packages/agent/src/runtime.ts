@@ -46,7 +46,7 @@ import {
 } from "./ledger.js";
 import { isRecord, stringifyArguments } from "./runtime-utils.js";
 import { buildPlannerToolPayload, buildToolSchemaSummary } from "./tool-metadata.js";
-import { getActiveVerificationCriteria } from "./verifier.js";
+import { buildActiveVerificationStrategyContext, getActiveVerificationCriteria } from "./verifier.js";
 
 const MAX_AUTO_MCP_ROUNDS = 6;
 const MAX_ACTIVE_VERIFICATION_ROUNDS = 2;
@@ -1422,6 +1422,7 @@ async function planActiveMcpVerification(
   signal?: AbortSignal
 ): Promise<McpVerificationPlan> {
   const pendingCriteria = getActiveVerificationCriteria(taskLedger.structuredSuccessCriteria);
+  const verificationStrategies = buildActiveVerificationStrategyContext(taskLedger.structuredSuccessCriteria);
 
   if (!pendingCriteria.length || !candidateTools.length) {
     return {
@@ -1460,11 +1461,8 @@ JSON 结构必须为：
 - 你只负责验证，不负责继续执行新任务或修改用户资产
 - 如果已有工具历史足以验证，shouldVerify=false
 - 如果成功条件仍 pending/unknown，且候选工具里存在低风险或中风险读取/检查/状态类工具，应选择最小副作用工具验证
-- 对 file_contains 优先选择能读取文件、搜索文件或检查路径的工具
-- 对 url_opened 优先选择能读取网页、打开 URL 后读取状态或获取浏览器/页面状态的工具
-- 对 ui_state 优先选择能读取应用状态或截图/辅助功能树的工具
-- 对 command_passed 优先选择能读取已有命令结果的方式；只有用户目标明确需要命令验证且候选工具允许时，才选择命令工具
-- 对 artifact_created 优先基于已有 artifact 验证；只有需要检查外部 URL 或文件存在时才调用工具
+- 你会收到“验证策略上下文”，其中 preferredCapabilities / preferredExecutionDomains / argumentHints / evidenceRequirements 是规划偏置，不是工具白名单
+- 仍然必须从完整候选工具列表中自主判断最合适的验证工具
 - 不要为了验证选择写入、删除、生成、点击、输入等高副作用工具，除非成功条件明确要求该动作且没有更低风险替代
 - serverId 和 toolName 必须来自候选工具列表
 - arguments 必须是 JSON 对象
@@ -1487,6 +1485,9 @@ ${buildTaskLedgerText(taskLedger)}
 
 待验证成功条件：
 ${JSON.stringify(pendingCriteria, null, 2)}
+
+验证策略上下文：
+${JSON.stringify(verificationStrategies, null, 2)}
 
 已有工具调用历史：
 ${buildMcpHistoryText(mcpCalls)}

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import type { AgentMcpCallRecord } from "../../shared/src/index.js";
 import {
+  buildActiveVerificationStrategyContext,
   getActiveVerificationCriteria,
   getPendingSuccessCriteria,
   verifyCriteriaFromToolHistory,
@@ -79,6 +80,42 @@ test("getActiveVerificationCriteria excludes text-response and custom criteria",
     criteria.map((criterion) => criterion.type),
     ["url_opened"]
   );
+});
+
+test("buildActiveVerificationStrategyContext provides typed verification guidance", () => {
+  const strategies = buildActiveVerificationStrategyContext([
+    {
+      type: "file_contains",
+      target: "packages/agent/src/runtime.ts",
+      expected: "planActiveMcpVerification",
+      verificationMethod: "read the file and match the function name",
+      status: "pending"
+    },
+    {
+      type: "ui_state",
+      target: "Chrome",
+      expected: "Google homepage visible",
+      status: "unknown"
+    },
+    {
+      type: "text_response",
+      expected: "final summary",
+      status: "pending"
+    }
+  ]);
+
+  assert.deepEqual(
+    strategies.map((strategy) => strategy.criterion.type),
+    ["file_contains", "ui_state"]
+  );
+  assert.deepEqual(strategies[0]?.preferredExecutionDomains, ["workspace"]);
+  assert.ok(strategies[0]?.preferredCapabilities.includes("read"));
+  assert.ok(strategies[0]?.avoidCapabilities.includes("write"));
+  assert.ok(strategies[0]?.argumentHints.some((hint) => hint.includes("packages/agent/src/runtime.ts")));
+  assert.ok(strategies[0]?.argumentHints.some((hint) => hint.includes("planActiveMcpVerification")));
+  assert.ok(strategies[0]?.argumentHints.some((hint) => hint.includes("read the file")));
+  assert.deepEqual(strategies[1]?.preferredExecutionDomains, ["desktop"]);
+  assert.ok(strategies[1]?.evidenceRequirements.some((requirement) => requirement.includes("activeApp")));
 });
 
 test("verifyCriterionFromToolHistory returns evidence for matched tool results", () => {
