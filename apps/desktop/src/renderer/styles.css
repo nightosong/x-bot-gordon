@@ -12370,6 +12370,41 @@ canvas {
   overscroll-behavior: contain;
 }
 
+.command-hero-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 14px;
+  border-color: rgba(92, 225, 194, 0.22);
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.18), rgba(245, 200, 107, 0.07)),
+    rgba(8, 15, 24, 0.48);
+  color: #e7fff8;
+  font-size: 12px;
+  font-weight: 800;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.command-hero-action:hover,
+.command-hero-action:focus-visible {
+  border-color: rgba(92, 225, 194, 0.36);
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.24), rgba(245, 200, 107, 0.1)),
+    rgba(8, 15, 24, 0.58);
+  color: #ffffff;
+}
+
+.command-hero-action .action-icon {
+  flex: 0 0 auto;
+  color: #bcf8ea;
+}
+
+.command-session-head-actions {
+  align-self: start;
+}
+
 .command-session-section {
   display: flex;
   flex-direction: column;
@@ -12392,8 +12427,7 @@ canvas {
   gap: 6px;
 }
 
-.command-agent-title,
-.command-session-group-title {
+.command-agent-title {
   margin: 0;
   color: var(--text);
   font-size: 18px;
@@ -12455,19 +12489,6 @@ canvas {
   transform: translateY(-1px);
   border-color: rgba(92, 225, 194, 0.24);
   background: rgba(92, 225, 194, 0.08);
-}
-
-.command-session-group {
-  display: grid;
-  gap: 10px;
-  align-content: start;
-}
-
-.command-session-group-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
 }
 
 .command-session-list {
@@ -14738,8 +14759,7 @@ canvas {
 
   .command-session-topline,
   .command-chat-head,
-  .command-settings-head,
-  .command-session-group-head {
+  .command-settings-head {
     flex-direction: column;
     align-items: flex-start;
   }

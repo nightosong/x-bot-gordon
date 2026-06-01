@@ -11,7 +11,10 @@
       </div>
 
       <div class="model-section-actions">
-        <button type="button" class="model-action" @click="beginNewCommandSession">开始协作</button>
+        <button type="button" class="model-action command-hero-action" @click="beginNewCommandSession">
+          <GIcon name="messagePlus" :size="15" />
+          <span>新建会话</span>
+        </button>
       </div>
     </section>
 
@@ -478,47 +481,43 @@
             <p class="model-section-title">会话列表</p>
           </div>
 
+          <div class="model-section-actions command-session-head-actions">
+            <span class="pill pill-neutral">{{ workbench.commandSessions.length }} 条</span>
+          </div>
         </div>
 
         <div class="model-section-body command-session-list-shell">
-          <div class="command-session-group">
-            <div class="command-session-group-head">
-              <p class="command-session-group-title">最近会话</p>
-              <span class="pill pill-neutral">{{ workbench.commandSessions.length }} 条</span>
-            </div>
+          <div v-if="workbench.commandSessions.length" class="command-session-list">
+            <article
+              v-for="session in workbench.commandSessions"
+              :key="session.id"
+              class="command-session-card"
+              :class="{ 'is-active': ui.command.activeSessionId === session.id }"
+            >
+              <button type="button" class="command-session-main" @click="openCommandSession(session.id)">
+                <div class="command-session-topline">
+                  <p class="command-session-title">{{ session.title || "新对话" }}</p>
+                  <p class="command-session-meta">
+                    {{ formatLocalDateTime(session.updatedAt) }} · {{ session.messages.length }} 条消息 ·
+                    {{ session.messages.filter((message) => message.role === "assistant").length }} 次响应
+                  </p>
+                </div>
+              </button>
 
-            <div v-if="workbench.commandSessions.length" class="command-session-list">
-              <article
-                v-for="session in workbench.commandSessions"
-                :key="session.id"
-                class="command-session-card"
-                :class="{ 'is-active': ui.command.activeSessionId === session.id }"
+              <button
+                type="button"
+                class="model-icon-button model-icon-button-danger command-session-delete"
+                :aria-label="`删除 ${session.title || '当前会话'}`"
+                title="删除会话"
+                @click.stop="handleCommandSessionDelete(session.id)"
               >
-                <button type="button" class="command-session-main" @click="openCommandSession(session.id)">
-                  <div class="command-session-topline">
-                    <p class="command-session-title">{{ session.title || "新对话" }}</p>
-                    <p class="command-session-meta">
-                      {{ formatLocalDateTime(session.updatedAt) }} · {{ session.messages.length }} 条消息 ·
-                      {{ session.messages.filter((message) => message.role === "assistant").length }} 次响应
-                    </p>
-                  </div>
-                </button>
+                <GIcon name="delete" />
+              </button>
+            </article>
+          </div>
 
-                <button
-                  type="button"
-                  class="model-icon-button model-icon-button-danger command-session-delete"
-                  :aria-label="`删除 ${session.title || '当前会话'}`"
-                  title="删除会话"
-                  @click.stop="handleCommandSessionDelete(session.id)"
-                >
-                  <GIcon name="delete" />
-                </button>
-              </article>
-            </div>
-
-            <div v-else class="command-empty-card">
-              <p class="model-empty-copy">还没有历史会话。点击上方“开始协作”，直接进入命令工坊。</p>
-            </div>
+          <div v-else class="command-empty-card">
+            <p class="model-empty-copy">还没有历史会话。点击右上角“新建会话”，直接进入命令工坊。</p>
           </div>
         </div>
       </section>
