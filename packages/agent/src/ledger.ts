@@ -321,10 +321,16 @@ function normalizeStructuredSuccessCriteria(value: unknown): AgentTaskLedgerSucc
     "text_response",
     "tool_result",
     "file_contains",
+    "file_exists",
     "url_opened",
+    "url_matches",
     "command_passed",
+    "command_exit_zero",
     "ui_state",
+    "ui_contains",
     "artifact_created",
+    "artifact_exists",
+    "json_path_equals",
     "custom"
   ]);
   const validStatuses = new Set(["pending", "passed", "failed", "unknown"]);

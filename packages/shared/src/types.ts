@@ -136,7 +136,21 @@ export interface AgentTaskLedgerEvidenceNode {
 }
 
 export interface AgentTaskLedgerSuccessCriterion {
-  type: "text_response" | "tool_result" | "file_contains" | "url_opened" | "command_passed" | "ui_state" | "artifact_created" | "custom";
+  type:
+    | "text_response"
+    | "tool_result"
+    | "file_contains"
+    | "file_exists"
+    | "url_opened"
+    | "url_matches"
+    | "command_passed"
+    | "command_exit_zero"
+    | "ui_state"
+    | "ui_contains"
+    | "artifact_created"
+    | "artifact_exists"
+    | "json_path_equals"
+    | "custom";
   target?: string;
   expected: string;
   verificationMethod?: string;

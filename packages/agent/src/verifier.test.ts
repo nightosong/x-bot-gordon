@@ -302,6 +302,162 @@ test("verifyCriteriaFromToolHistory verifies artifacts, commands, URLs and UI st
   );
 });
 
+test("verifyCriteriaFromToolHistory verifies v2 deterministic criteria", () => {
+  const results = verifyCriteriaFromToolHistory(
+    [
+      {
+        type: "file_exists",
+        target: "packages/agent/src/verifier.ts",
+        expected: "packages/agent/src/verifier.ts",
+        status: "pending"
+      },
+      {
+        type: "command_exit_zero",
+        expected: "pnpm run check",
+        status: "pending"
+      },
+      {
+        type: "url_matches",
+        target: "https://example.com/docs",
+        expected: "https://example.com/docs",
+        status: "pending"
+      },
+      {
+        type: "ui_contains",
+        target: "Settings",
+        expected: "Settings",
+        status: "pending"
+      },
+      {
+        type: "artifact_exists",
+        target: "artifact_1",
+        expected: "artifact_1",
+        status: "pending"
+      },
+      {
+        type: "json_path_equals",
+        target: "data.status",
+        expected: "ready",
+        status: "pending"
+      }
+    ],
+    [
+      createCallRecord({
+        toolName: "inspect_path",
+        arguments: { path: "packages/agent/src/verifier.ts" },
+        structuredContent: {
+          path: "packages/agent/src/verifier.ts",
+          exists: true,
+          isFile: true
+        },
+        resultText: "path=packages/agent/src/verifier.ts exists=true isFile=true"
+      }),
+      createCallRecord({
+        toolName: "run_shell_command",
+        resultText: "pnpm run check completed with exitCode=0"
+      }),
+      createCallRecord({
+        toolName: "get_app_state",
+        structuredContent: {
+          currentUrl: "https://example.com/docs"
+        },
+        resultText: "currentUrl=https://example.com/docs"
+      }),
+      createCallRecord({
+        serverName: "Computer Use",
+        toolName: "get_app_state",
+        resultText: "visible text: Settings"
+      }),
+      createCallRecord({
+        serverName: "Gordon Tools",
+        toolName: "image_gen",
+        resultText: "artifact ready",
+        artifacts: [
+          {
+            id: "artifact_1",
+            kind: "image",
+            title: "cover"
+          }
+        ]
+      }),
+      createCallRecord({
+        toolName: "read_json",
+        structuredContent: {
+          data: {
+            status: "ready"
+          }
+        },
+        resultText: "{\"data\":{\"status\":\"ready\"}}"
+      })
+    ]
+  );
+
+  assert.deepEqual(
+    results.map((result) => result.criterion.status),
+    ["passed", "passed", "passed", "passed", "passed", "passed"]
+  );
+  assert.deepEqual(
+    results.map((result) => result.evidence[0]?.reason),
+    ["文件存在断言通过", "命令退出码断言通过", "URL 匹配断言通过", "UI 文本断言通过", "工具调用产生了匹配 artifact", "JSON 路径断言通过"]
+  );
+});
+
+test("v2 deterministic criteria fail on explicit mismatch evidence", () => {
+  const results = verifyCriteriaFromToolHistory(
+    [
+      {
+        type: "file_exists",
+        target: "missing.ts",
+        expected: "missing.ts",
+        status: "pending"
+      },
+      {
+        type: "command_exit_zero",
+        expected: "pnpm run check",
+        status: "pending"
+      },
+      {
+        type: "json_path_equals",
+        target: "data.status",
+        expected: "ready",
+        status: "pending"
+      }
+    ],
+    [
+      createCallRecord({
+        toolName: "inspect_path",
+        structuredContent: {
+          path: "missing.ts",
+          exists: false
+        },
+        resultText: "missing.ts exists=false not found"
+      }),
+      createCallRecord({
+        toolName: "run_shell_command",
+        resultText: "pnpm run check failed with exit code 1"
+      }),
+      createCallRecord({
+        toolName: "read_json",
+        structuredContent: {
+          data: {
+            status: "pending"
+          }
+        },
+        resultText: "{\"data\":{\"status\":\"pending\"}}"
+      })
+    ]
+  );
+
+  assert.deepEqual(
+    results.map((result) => result.criterion.status),
+    ["failed", "failed", "failed"]
+  );
+  assert.deepEqual(
+    results.map((result) => result.evidence[0]?.reason),
+    ["文件存在断言失败", "命令退出码断言失败", "JSON 路径断言失败"]
+  );
+});
+
 test("command criteria remain unknown when command output indicates failure", () => {
   const result = verifyCriterionFromToolHistory(
     {

@@ -461,7 +461,7 @@ JSON 结构必须为：
   "environmentState": string[],
   "userInterruptions": string[],
   "successCriteria": string[],
-  "structuredSuccessCriteria": [{"type": "text_response" | "tool_result" | "file_contains" | "url_opened" | "command_passed" | "ui_state" | "artifact_created" | "custom", "target": string, "expected": string, "verificationMethod": string, "status": "pending" | "passed" | "failed" | "unknown"}],
+  "structuredSuccessCriteria": [{"type": "text_response" | "tool_result" | "file_contains" | "file_exists" | "url_opened" | "url_matches" | "command_passed" | "command_exit_zero" | "ui_state" | "ui_contains" | "artifact_created" | "artifact_exists" | "json_path_equals" | "custom", "target": string, "expected": string, "verificationMethod": string, "status": "pending" | "passed" | "failed" | "unknown"}],
   "nextActionHint": string
 }
 
@@ -480,7 +480,7 @@ JSON 结构必须为：
 - userInterruptions 记录用户在运行期间追加的新约束、转向、停止或修正意图；没有则保持空数组
 - failedAttempts 记录失败动作、原因、分类和恢复建议；成功调用不要伪造失败
 - successCriteria 应描述当前任务何时算完成，必要时根据工具结果收紧
-- structuredSuccessCriteria 尽量把成功条件转成可验证规则，并维护 status
+- structuredSuccessCriteria 尽量把成功条件转成可验证规则，并维护 status；新条件优先使用 file_exists / command_exit_zero / artifact_exists / url_matches / ui_contains / json_path_equals 这类更确定的断言，只有无法表达时才退回宽泛类型或 custom
 - 控制每个数组不超过 8 项，语言简洁`
         },
         {
@@ -1026,7 +1026,7 @@ JSON 结构必须为：
     "environmentState": string[],
     "userInterruptions": string[],
     "successCriteria": string[],
-    "structuredSuccessCriteria": [{"type": "text_response" | "tool_result" | "file_contains" | "url_opened" | "command_passed" | "ui_state" | "artifact_created" | "custom", "target": string, "expected": string, "verificationMethod": string, "status": "pending" | "passed" | "failed" | "unknown"}],
+    "structuredSuccessCriteria": [{"type": "text_response" | "tool_result" | "file_contains" | "file_exists" | "url_opened" | "url_matches" | "command_passed" | "command_exit_zero" | "ui_state" | "ui_contains" | "artifact_created" | "artifact_exists" | "json_path_equals" | "custom", "target": string, "expected": string, "verificationMethod": string, "status": "pending" | "passed" | "failed" | "unknown"}],
     "nextActionHint": string
   }
 }
@@ -1036,6 +1036,7 @@ JSON 结构必须为：
 - 你必须把“任务账本”作为当前世界状态：优先推进 taskPhase、activePlan、pendingSubtasks、structuredSuccessCriteria 和 successCriteria，避免忘记最初目标
 - 如果任务复杂，先用 ledgerPatch.activePlan 维护分层计划；每次只选择最能推进当前计划的一步工具，不要变成看到什么点什么
 - active 的 decisionMemory 是下一步规划必须参考的工作记忆，尤其是已放弃路线、已证伪假设和恢复策略；不要重复 active 决策里明确放弃的同一路线，除非有新证据，并在 ledgerPatch.decisionMemory 中把旧记忆标记为 superseded
+- ledgerPatch.structuredSuccessCriteria 应尽量生成 1-3 个机器可验证断言；文件存在用 file_exists，命令成功用 command_exit_zero，artifact 可引用用 artifact_exists，URL 状态用 url_matches，UI 文本可见用 ui_contains，JSON 字段断言用 json_path_equals
 - 每次选择工具时，都要通过 ledgerPatch.decisionTrace 记录 intent、chosenAction、rejectedAlternatives、why 和 expectedOutcome
 - 如果任务进入验证或恢复阶段，应优先选择能验证 successCriteria 或绕开已证伪路径的动作，不要重复同一失败假设
 - 用户要求你实际读取、检查、搜索、调研、打开、点击、输入、修改、创建、生成、运行或验证时，应优先调用工具；没有工具结果前，不要声称已经完成这些动作

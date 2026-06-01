@@ -146,7 +146,8 @@
 - 任务账本已引入首版 Evidence Graph：runtime 会把真实工具结果、artifact、文件引用、durableFacts 和 Verifier 命中的验证证据转为 `kind / claim / source / evidenceRefs / confidence / durability / createdAt` 结构化节点，并注入 Context Packet；模型可以读取这些证据，但不能通过 ledger patch 直接伪造证据节点
 - 任务账本已补充 `taskPhase / decisionTrace / observations / structuredSuccessCriteria`：`taskPhase` 用于区分理解、规划、执行、验证、恢复和收尾阶段；`decisionTrace` 记录为什么选择当前动作以及拒绝了哪些替代动作；`observations` 将工具结果分为摘要、长期事实、短期环境事实和证据引用；`structuredSuccessCriteria` 为后续可机器验证的成功条件留出结构化槽位
 - 命令工坊已形成 Planner / Critic / Executor / Verifier 的最小分层：Planner 负责下一步工具与决策轨迹；Plan Critic 作为执行前质量闸门，检查计划是否重复 active Decision Memory、缺少 `expectedOutcome / verificationMethod`、重复近期相同工具调用或在验证阶段使用高副作用动作，但不负责工具选择或候选裁剪；Executor 负责权限、重试、修复和 fallback；Verifier 已从任务账本中独立出来，会在最终回复前根据工具历史更新结构化成功条件状态，并把匹配到的 evidence 回写到任务账本，避免直接把“模型认为完成”当作真实完成
-- Verifier 已支持主动验证首版：当 `tool_result / file_contains / url_opened / command_passed / ui_state / artifact_created` 仍为 pending 或 unknown 时，runtime 会在最终回复前最多发起 2 轮验证规划，由模型在完整授权工具集合中选择最小副作用验证工具；`text_response / custom` 不触发主动验证，也不阻塞最终整理
+- Verifier 已支持主动验证首版：当 `tool_result / file_contains / file_exists / url_opened / url_matches / command_passed / command_exit_zero / ui_state / ui_contains / artifact_created / artifact_exists / json_path_equals` 仍为 pending 或 unknown 时，runtime 会在最终回复前最多发起 2 轮验证规划，由模型在完整授权工具集合中选择最小副作用验证工具；`text_response / custom` 不触发主动验证，也不阻塞最终整理
+- 结构化成功条件已升级到 v2：新增 `file_exists / command_exit_zero / artifact_exists / url_matches / ui_contains / json_path_equals` 等更确定的断言类型，Planner 新任务优先产出这些机器可验证条件；Verifier 会对文件存在、命令退出码、artifact 可引用、URL 匹配、UI 文本和简单 JSON 点路径做确定性判断，并继续兼容旧的宽泛类型
 - Verifier 已新增验证策略上下文：按成功条件类型生成 intent、能力偏好、执行域偏好、风险边界、参数提示、证据要求和失败信号，并注入主动验证规划；该上下文只作为模型规划偏置，不裁剪候选工具，继续保持模型主导工具选择
 - 主动验证已新增质量评分与账本回写：每轮主动验证会基于工具画像、成功条件状态变化和 evidence 质量生成 `qualityScore / riskLevel / evidenceGrade`，并把评分摘要写入 `discoveredFacts`；失败或仍未确认时会更新 `nextActionHint`，帮助后续恢复或最终回复准确标注未验证状态
 - Agent runtime 关键纯逻辑已从 `runtime.ts` 拆到 `ledger.ts`、`context-packet.ts`、`evidence-graph.ts`、`plan-critic.ts`、`tool-metadata.ts`、`failure-classifier.ts`、`verifier.ts` 与 `runtime-utils.ts`，并新增 `pnpm run test:agent` 覆盖工具描述清洗、工具画像、失败分类、账本归一化 / 合并、Context Packet、Evidence Graph、Plan Critic、结构化成功条件验证和 evidence 生成
@@ -273,7 +274,7 @@
 - 为模型配置补齐连接测试或校验能力
 - 为流程中心补充更多 workflow 卡片与本地维护能力
 - 为 MCP Server 增加独立测试页、连接诊断与更明确的错误提示
-- 为 Agent runtime 继续推进 Capability Routing / embedding 召回、机器可验证成功条件扩展和长期任务持久化；当前 Decision Memory、Context Packet、Plan Critic 与 Evidence Graph 已先落地，用于把目标、计划、证据、验证状态、已证伪路线、开放问题、执行前质量审查和可引用证据节点注入后续规划
+- 为 Agent runtime 继续推进 Capability Routing / embedding 召回、长期任务持久化和更细的验证执行器；当前 Decision Memory、Context Packet、Plan Critic、Evidence Graph 与结构化成功条件 v2 已先落地，用于把目标、计划、证据、验证状态、已证伪路线、开放问题、执行前质量审查、可引用证据节点和可机器验证断言注入后续规划
 - 继续扩展 `Gordon Tools` 的真实多模态生成能力，下一步重点补齐 `video_gen` 的供应商调用协议，并为 `music_gen` 增加更多供应商返回结构样本的专项回归
 - 为能力拓展继续补齐按 tool / capability 语义分层的恢复策略
 
