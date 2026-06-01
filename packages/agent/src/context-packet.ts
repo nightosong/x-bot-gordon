@@ -52,6 +52,7 @@ export interface AgentContextPacketMessage {
 
 export interface AgentContextPacketToolCall {
   round: number;
+  serverId: string;
   serverName: string;
   toolName: string;
   arguments: string;
@@ -104,6 +105,7 @@ function buildRecentConversation(messages: ModelMessage[]): AgentContextPacketMe
 function buildRecentToolCalls(mcpCalls: AgentMcpCallRecord[]): AgentContextPacketToolCall[] {
   return mcpCalls.slice(-MAX_CONTEXT_TOOL_CALLS).map((call) => ({
     round: call.round,
+    serverId: truncateContextText(call.serverId, 160),
     serverName: truncateContextText(call.serverName, 120),
     toolName: truncateContextText(call.toolName, 120),
     arguments: truncateContextText(stringifyArguments(call.arguments), 500),

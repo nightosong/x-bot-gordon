@@ -42,6 +42,8 @@
 
 运行时会把最近会话、任务账本、Decision Memory、工具证据、验证状态和开放问题压缩为 Context Packet。优先使用这份结构化上下文判断目标、下一步和完成状态；不要依赖零散聊天片段反复重建上下文。
 
+工具计划会经过 Plan Critic 审查。若 Critic 指出计划重复失败路线、缺少 expectedOutcome / verificationMethod，或在验证阶段使用高副作用工具，应修订计划而不是强行执行。
+
 ## Execution Priority
 
 任务分层与默认行为：

@@ -31,6 +31,7 @@ import type {
 import { callToolOnMcpServer, listToolsFromMcpServer } from "./mcp.js";
 import { buildAgentContextPacket, buildAgentContextPacketText } from "./context-packet.js";
 import { classifyMcpError, classifyMcpMessage } from "./failure-classifier.js";
+import { critiqueMcpToolPlan } from "./plan-critic.js";
 import {
   appendDecisionMemory,
   appendLedgerObservation,
@@ -2370,6 +2371,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
       pushStep("mcp_auto_stopped", "工具编排停止", stopReason);
     }
     let consecutiveFailures = 0;
+    let consecutiveCriticRevisions = 0;
 
     for (let round = 1; round <= MAX_AUTO_MCP_ROUNDS && candidateTools.length; round += 1) {
       pushStep(
@@ -2399,6 +2401,62 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
       pushStep("mcp_auto_planning", `工具规划结果（第 ${round} 轮）`, plannedSelection.reason);
       taskLedger = mergeAgentTaskLedgerPatch(taskLedger, plannedSelection.ledgerPatch, contextualUserInput);
       emitProgress({ taskLedger });
+
+      const critiqueResult = critiqueMcpToolPlan({
+        contextPacket: buildAgentContextPacket({
+          userInput,
+          conversationMessages,
+          taskLedger,
+          mcpCalls
+        }),
+        candidateTools,
+        serverId: plannedSelection.serverId,
+        toolName: plannedSelection.toolName,
+        arguments: plannedSelection.arguments,
+        expectedOutcome: plannedSelection.expectedOutcome,
+        verificationMethod: plannedSelection.verificationMethod,
+        reason: plannedSelection.reason,
+        shouldCall: plannedSelection.shouldCall
+      });
+
+      if (critiqueResult.decision !== "allow") {
+        consecutiveCriticRevisions += 1;
+        const critiqueSummary = `${critiqueResult.reason}${critiqueResult.revisionHint ? `；${critiqueResult.revisionHint}` : ""}`;
+        pushStep("mcp_auto_planning", `Plan Critic 要求${critiqueResult.decision === "stop" ? "停止" : "修订"}（第 ${round} 轮）`, critiqueSummary);
+        taskLedger = mergeAgentTaskLedgerPatch(
+          taskLedger,
+          {
+            taskPhase: critiqueResult.decision === "stop" ? "verifying" : "planning",
+            decisionTrace: [
+              ...taskLedger.decisionTrace,
+              {
+                step: `Plan Critic 审查第 ${round} 轮工具计划`,
+                intent: "检查工具计划是否与目标、风险、验证和工作记忆一致",
+                chosenAction: critiqueResult.decision === "stop" ? "停止当前工具计划" : "要求 Planner 修订当前工具计划",
+                rejectedAlternatives: plannedSelection.toolName ? [`直接执行 ${plannedSelection.serverId} / ${plannedSelection.toolName}`] : [],
+                why: critiqueSummary,
+                expectedOutcome: critiqueResult.revisionHint
+              }
+            ],
+            nextActionHint: critiqueResult.revisionHint ?? critiqueResult.reason
+          },
+          contextualUserInput
+        );
+        emitProgress({ taskLedger });
+
+        if (critiqueResult.decision === "stop" || consecutiveCriticRevisions >= 2) {
+          stopReason =
+            critiqueResult.decision === "stop"
+              ? critiqueSummary
+              : `Plan Critic 连续 ${consecutiveCriticRevisions} 次要求修订，工具编排已停止：${critiqueSummary}`;
+          pushStep("mcp_auto_stopped", `工具编排停止（第 ${round} 轮）`, stopReason);
+          break;
+        }
+
+        continue;
+      }
+
+      consecutiveCriticRevisions = 0;
 
       if (!plannedSelection.shouldCall || !plannedSelection.serverId || !plannedSelection.toolName) {
         taskLedger = normalizeAgentTaskLedger(
