@@ -1,8 +1,10 @@
 import type {
   AgentMcpCallRecord,
+  McpToolDefinition,
   AgentTaskLedgerSuccessCriterion
 } from "../../shared/src/index.js";
 import { stringifyArguments } from "./runtime-utils.js";
+import { inferToolCapabilities, inferToolExecutionDomain, inferToolRiskLevel } from "./tool-metadata.js";
 
 export interface AgentVerificationEvidence {
   callRef: string;
@@ -34,6 +36,18 @@ export interface AgentActiveVerificationStrategy {
   argumentHints: string[];
   evidenceRequirements: string[];
   failureSignals: string[];
+}
+
+export interface AgentActiveVerificationEvaluation {
+  qualityScore: number;
+  riskLevel: "low" | "medium" | "high";
+  evidenceGrade: "none" | "weak" | "direct";
+  passedCriteria: number;
+  failedCriteria: number;
+  remainingCriteria: number;
+  matchedStrategy: boolean;
+  summary: string;
+  recoveryHint?: string;
 }
 
 const ACTIVE_VERIFICATION_TYPES = new Set<ActiveVerificationCriterionType>([
@@ -165,6 +179,162 @@ export function buildActiveVerificationStrategyContext(
       argumentHints: buildCriterionArgumentHints(criterion)
     };
   });
+}
+
+function getCriterionKey(criterion: AgentTaskLedgerSuccessCriterion): string {
+  return [criterion.type, criterion.target ?? "", criterion.expected].join("::").toLowerCase();
+}
+
+function countStatusTransitions(
+  beforeCriteria: AgentTaskLedgerSuccessCriterion[],
+  afterCriteria: AgentTaskLedgerSuccessCriterion[]
+): Pick<AgentActiveVerificationEvaluation, "passedCriteria" | "failedCriteria" | "remainingCriteria"> {
+  const beforeKeys = new Set(getActiveVerificationCriteria(beforeCriteria).map(getCriterionKey));
+  let passedCriteria = 0;
+  let failedCriteria = 0;
+  let remainingCriteria = 0;
+
+  for (const criterion of afterCriteria) {
+    if (!beforeKeys.has(getCriterionKey(criterion))) {
+      continue;
+    }
+
+    if (criterion.status === "passed") {
+      passedCriteria += 1;
+    } else if (criterion.status === "failed") {
+      failedCriteria += 1;
+    } else if (criterion.status === "pending" || criterion.status === "unknown") {
+      remainingCriteria += 1;
+    }
+  }
+
+  return {
+    passedCriteria,
+    failedCriteria,
+    remainingCriteria
+  };
+}
+
+function inferVerificationRiskLevel(call: AgentMcpCallRecord, matchedStrategy: boolean): AgentActiveVerificationEvaluation["riskLevel"] {
+  const source = `${call.toolName} ${call.verificationMethod ?? ""}`.toLowerCase();
+
+  if (/delete|remove|write|update|replace|move|rename|generate|click|type|press|drag|run_shell|execute|删除|写入|修改|生成|点击|输入|按键|拖拽/u.test(source)) {
+    return matchedStrategy ? "medium" : "high";
+  }
+
+  if (/open|command|shell|run|打开|命令|执行/u.test(source)) {
+    return matchedStrategy ? "medium" : "high";
+  }
+
+  return matchedStrategy ? "low" : "medium";
+}
+
+function inferEvidenceGrade(
+  call: AgentMcpCallRecord,
+  statusCounts: Pick<AgentActiveVerificationEvaluation, "passedCriteria" | "failedCriteria" | "remainingCriteria">
+): AgentActiveVerificationEvaluation["evidenceGrade"] {
+  if (call.isError || statusCounts.failedCriteria > 0) {
+    return "none";
+  }
+
+  if (statusCounts.passedCriteria > 0 || call.artifacts?.length) {
+    return "direct";
+  }
+
+  if (String(call.resultText ?? "").trim()) {
+    return "weak";
+  }
+
+  return "none";
+}
+
+function scoreVerificationQuality(
+  call: AgentMcpCallRecord,
+  riskLevel: AgentActiveVerificationEvaluation["riskLevel"],
+  evidenceGrade: AgentActiveVerificationEvaluation["evidenceGrade"],
+  matchedStrategy: boolean,
+  statusCounts: Pick<AgentActiveVerificationEvaluation, "passedCriteria" | "failedCriteria" | "remainingCriteria">
+): number {
+  let score = 0;
+
+  if (!call.isError) {
+    score += 25;
+  }
+
+  if (matchedStrategy) {
+    score += 20;
+  }
+
+  if (evidenceGrade === "direct") {
+    score += 30;
+  } else if (evidenceGrade === "weak") {
+    score += 10;
+  }
+
+  score += Math.min(statusCounts.passedCriteria, 2) * 15;
+  score -= statusCounts.failedCriteria * 25;
+  score -= statusCounts.remainingCriteria > 0 ? 10 : 0;
+
+  if (riskLevel === "medium") {
+    score -= 10;
+  } else if (riskLevel === "high") {
+    score -= 25;
+  }
+
+  return Math.max(0, Math.min(100, score));
+}
+
+export function evaluateActiveVerificationResult(
+  call: AgentMcpCallRecord,
+  beforeCriteria: AgentTaskLedgerSuccessCriterion[],
+  afterCriteria: AgentTaskLedgerSuccessCriterion[],
+  strategies: AgentActiveVerificationStrategy[],
+  toolDefinition?: McpToolDefinition
+): AgentActiveVerificationEvaluation {
+  const statusCounts = countStatusTransitions(beforeCriteria, afterCriteria);
+  const toolForMetadata = toolDefinition ?? {
+    serverId: call.serverId,
+    serverName: call.serverName,
+    name: call.toolName,
+    description: call.verificationMethod ?? ""
+  };
+  const toolCapabilities = inferToolCapabilities(toolForMetadata);
+  const toolExecutionDomain = inferToolExecutionDomain(toolForMetadata);
+  const matchedStrategy = strategies.some((strategy) => {
+    const capabilityMatched = strategy.preferredCapabilities.some((capability) => toolCapabilities.includes(capability));
+    const domainMatched = strategy.preferredExecutionDomains.includes(toolExecutionDomain);
+    return capabilityMatched || domainMatched;
+  });
+  const inferredToolRisk = inferToolRiskLevel(toolForMetadata);
+  const riskLevel = inferredToolRisk === "high" ? "high" : inferVerificationRiskLevel(call, matchedStrategy);
+  const evidenceGrade = inferEvidenceGrade(call, statusCounts);
+  const qualityScore = scoreVerificationQuality(call, riskLevel, evidenceGrade, matchedStrategy, statusCounts);
+  const summary = [
+    `主动验证评分 ${qualityScore}/100`,
+    `证据=${evidenceGrade}`,
+    `风险=${riskLevel}`,
+    `通过=${statusCounts.passedCriteria}`,
+    `失败=${statusCounts.failedCriteria}`,
+    `未确认=${statusCounts.remainingCriteria}`,
+    `策略匹配=${matchedStrategy ? "是" : "否"}`,
+    `${call.serverName} / ${call.toolName}`
+  ].join("；");
+  const recoveryHint =
+    call.isError || statusCounts.failedCriteria > 0
+      ? "主动验证失败，应进入恢复或换用更低副作用的读取/检查类工具"
+      : statusCounts.remainingCriteria > 0
+        ? "仍有成功条件未确认，后续应补充直接证据或在最终回复中标注未验证状态"
+        : undefined;
+
+  return {
+    qualityScore,
+    riskLevel,
+    evidenceGrade,
+    ...statusCounts,
+    matchedStrategy,
+    summary,
+    ...(recoveryHint ? { recoveryHint } : {})
+  };
 }
 
 function buildCallRef(call: AgentMcpCallRecord): string {

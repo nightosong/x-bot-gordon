@@ -4,6 +4,7 @@ import test from "node:test";
 import type { AgentMcpCallRecord } from "../../shared/src/index.js";
 import {
   buildActiveVerificationStrategyContext,
+  evaluateActiveVerificationResult,
   getActiveVerificationCriteria,
   getPendingSuccessCriteria,
   verifyCriteriaFromToolHistory,
@@ -116,6 +117,75 @@ test("buildActiveVerificationStrategyContext provides typed verification guidanc
   assert.ok(strategies[0]?.argumentHints.some((hint) => hint.includes("read the file")));
   assert.deepEqual(strategies[1]?.preferredExecutionDomains, ["desktop"]);
   assert.ok(strategies[1]?.evidenceRequirements.some((requirement) => requirement.includes("activeApp")));
+});
+
+test("evaluateActiveVerificationResult scores direct low-risk evidence", () => {
+  const beforeCriteria = [
+    {
+      type: "file_contains" as const,
+      target: "packages/agent/src/runtime.ts",
+      expected: "planActiveMcpVerification",
+      status: "pending" as const
+    }
+  ];
+  const strategies = buildActiveVerificationStrategyContext(beforeCriteria);
+  const evaluation = evaluateActiveVerificationResult(
+    createCallRecord({
+      serverId: "builtin:mcp:workspace",
+      serverName: "Workspace Tools",
+      toolName: "read_file",
+      resultText: "function planActiveMcpVerification() {}"
+    }),
+    beforeCriteria,
+    [
+      {
+        ...beforeCriteria[0],
+        status: "passed"
+      }
+    ],
+    strategies
+  );
+
+  assert.equal(evaluation.evidenceGrade, "direct");
+  assert.equal(evaluation.riskLevel, "low");
+  assert.equal(evaluation.passedCriteria, 1);
+  assert.equal(evaluation.remainingCriteria, 0);
+  assert.ok(evaluation.qualityScore >= 80);
+  assert.match(evaluation.summary, /主动验证评分/u);
+});
+
+test("evaluateActiveVerificationResult flags failed risky verification", () => {
+  const beforeCriteria = [
+    {
+      type: "ui_state" as const,
+      target: "Chrome",
+      expected: "Google homepage visible",
+      status: "pending" as const
+    }
+  ];
+  const evaluation = evaluateActiveVerificationResult(
+    createCallRecord({
+      serverId: "builtin:mcp:computer-use",
+      serverName: "Computer Use",
+      toolName: "click",
+      resultText: "button not found",
+      isError: true
+    }),
+    beforeCriteria,
+    [
+      {
+        ...beforeCriteria[0],
+        status: "failed"
+      }
+    ],
+    buildActiveVerificationStrategyContext(beforeCriteria)
+  );
+
+  assert.equal(evaluation.evidenceGrade, "none");
+  assert.equal(evaluation.riskLevel, "high");
+  assert.equal(evaluation.failedCriteria, 1);
+  assert.ok(evaluation.qualityScore < 40);
+  assert.match(evaluation.recoveryHint ?? "", /主动验证失败/u);
 });
 
 test("verifyCriterionFromToolHistory returns evidence for matched tool results", () => {

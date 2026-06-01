@@ -46,7 +46,11 @@ import {
 } from "./ledger.js";
 import { isRecord, stringifyArguments } from "./runtime-utils.js";
 import { buildPlannerToolPayload, buildToolSchemaSummary } from "./tool-metadata.js";
-import { buildActiveVerificationStrategyContext, getActiveVerificationCriteria } from "./verifier.js";
+import {
+  buildActiveVerificationStrategyContext,
+  evaluateActiveVerificationResult,
+  getActiveVerificationCriteria
+} from "./verifier.js";
 
 const MAX_AUTO_MCP_ROUNDS = 6;
 const MAX_ACTIVE_VERIFICATION_ROUNDS = 2;
@@ -2675,6 +2679,8 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
         break;
       }
 
+      const criteriaBeforeVerification = getActiveVerificationCriteria(taskLedger.structuredSuccessCriteria);
+      const strategiesBeforeVerification = buildActiveVerificationStrategyContext(taskLedger.structuredSuccessCriteria);
       const verificationRecord = await executeMcpToolCall({
         server: verificationServer,
         toolName: verificationTool.name,
@@ -2699,6 +2705,22 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
       mcpCalls.push(verificationRecord);
       await updateLedgerFromToolCall(verificationRecord);
       taskLedger = verifyTaskLedgerSuccessCriteria(taskLedger, mcpCalls);
+      const verificationEvaluation = evaluateActiveVerificationResult(
+        verificationRecord,
+        criteriaBeforeVerification,
+        taskLedger.structuredSuccessCriteria,
+        strategiesBeforeVerification,
+        verificationTool
+      );
+      taskLedger = normalizeAgentTaskLedger(
+        {
+          ...taskLedger,
+          discoveredFacts: [...taskLedger.discoveredFacts, verificationEvaluation.summary],
+          ...(verificationEvaluation.recoveryHint ? { nextActionHint: verificationEvaluation.recoveryHint } : {})
+        },
+        taskLedger.objective
+      );
+      pushStep("mcp_auto_planning", `主动验证质量评估（第 ${verificationRound} 轮）`, verificationEvaluation.summary);
       emitProgress({
         statusText: "主动验证结果已写回任务账本",
         taskLedger

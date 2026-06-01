@@ -147,6 +147,7 @@
 - 命令工坊已形成 Planner / Executor / Verifier 的最小分层：Planner 负责下一步工具与决策轨迹，Executor 负责权限、重试、修复和 fallback，Verifier 已从任务账本中独立出来，会在最终回复前根据工具历史更新结构化成功条件状态，并把匹配到的 evidence 回写到任务账本，避免直接把“模型认为完成”当作真实完成
 - Verifier 已支持主动验证首版：当 `tool_result / file_contains / url_opened / command_passed / ui_state / artifact_created` 仍为 pending 或 unknown 时，runtime 会在最终回复前最多发起 2 轮验证规划，由模型在完整授权工具集合中选择最小副作用验证工具；`text_response / custom` 不触发主动验证，也不阻塞最终整理
 - Verifier 已新增验证策略上下文：按成功条件类型生成 intent、能力偏好、执行域偏好、风险边界、参数提示、证据要求和失败信号，并注入主动验证规划；该上下文只作为模型规划偏置，不裁剪候选工具，继续保持模型主导工具选择
+- 主动验证已新增质量评分与账本回写：每轮主动验证会基于工具画像、成功条件状态变化和 evidence 质量生成 `qualityScore / riskLevel / evidenceGrade`，并把评分摘要写入 `discoveredFacts`；失败或仍未确认时会更新 `nextActionHint`，帮助后续恢复或最终回复准确标注未验证状态
 - Agent runtime 关键纯逻辑已从 `runtime.ts` 拆到 `ledger.ts`、`tool-metadata.ts`、`failure-classifier.ts`、`verifier.ts` 与 `runtime-utils.ts`，并新增 `pnpm run test:agent` 覆盖工具描述清洗、工具画像、失败分类、账本归一化 / 合并、结构化成功条件验证和 evidence 生成
 - 工具失败分类已从“schema / 不可用 / 执行失败”扩展到权限受限、环境状态变化、工具不匹配、时序过早和目标不存在，便于后续 fallback、账本恢复和前端过程流更准确表达失败本质
 - `Gordon Tools` 已作为独立本地工具服务接入默认 Agent，会按能力拓展 TOOL 配置动态暴露已启用工具；当前 `image_gen` 可读取 OpenAI 系列图片配置并调用 `imagen` / `imagen/edit`，`music_gen` 可读取 Mureka / Suno 配置调用歌曲 / 纯音乐生成和任务查询，并把音频 URL 归一化为可展示产物
@@ -271,7 +272,7 @@
 - 为模型配置补齐连接测试或校验能力
 - 为流程中心补充更多 workflow 卡片与本地维护能力
 - 为 MCP Server 增加独立测试页、连接诊断与更明确的错误提示
-- 为 Agent 任务账本继续补齐跨会话持久化、观察压缩质量评估、验证策略效果评分、Capability Graph / embedding 召回和失败恢复策略评分，逐步从“工具调用器”演进为长期任务状态机
+- 为 Agent 任务账本继续补齐跨会话持久化、观察压缩质量评估、主动验证评分统计持久化、Capability Graph / embedding 召回和失败恢复策略评分，逐步从“工具调用器”演进为长期任务状态机
 - 继续扩展 `Gordon Tools` 的真实多模态生成能力，下一步重点补齐 `video_gen` 的供应商调用协议，并为 `music_gen` 增加更多供应商返回结构样本的专项回归
 - 为能力拓展继续补齐按 tool / capability 语义分层的恢复策略
 
