@@ -761,7 +761,7 @@ canvas {
 
 .models-hero {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   padding: clamp(18px, 1.8vw, 22px);
@@ -770,6 +770,93 @@ canvas {
   background:
     linear-gradient(135deg, rgba(92, 225, 194, 0.12), rgba(245, 200, 107, 0.08)),
     var(--panel);
+}
+
+.models-hero-metrics {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: min(520px, 52%);
+}
+
+.models-metric-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 82px;
+  max-width: 190px;
+  min-height: 42px;
+  padding: 7px 11px;
+  overflow: hidden;
+  border: 1px solid rgba(247, 243, 235, 0.1);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.072), rgba(255, 255, 255, 0.026)),
+    rgba(255, 255, 255, 0.035);
+  color: rgba(247, 243, 235, 0.9);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 12px 28px rgba(0, 0, 0, 0.12);
+}
+
+.models-metric-chip::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: rgba(247, 243, 235, 0.14);
+}
+
+.models-metric-chip-primary {
+  min-width: 150px;
+  border-color: rgba(92, 225, 194, 0.22);
+  background:
+    radial-gradient(circle at 18px 2px, rgba(92, 225, 194, 0.22), transparent 34px),
+    linear-gradient(135deg, rgba(92, 225, 194, 0.13), rgba(68, 156, 216, 0.06)),
+    rgba(255, 255, 255, 0.04);
+  color: #bcf8ea;
+}
+
+.models-metric-chip-primary::before {
+  background: linear-gradient(180deg, rgba(92, 225, 194, 0.9), rgba(245, 200, 107, 0.76));
+}
+
+.models-metric-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  line-height: 1.05;
+}
+
+.models-metric-copy small,
+.models-metric-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.models-metric-copy small {
+  color: rgba(247, 243, 235, 0.5);
+  font-size: 9.5px;
+  font-weight: 800;
+}
+
+.models-metric-copy strong {
+  color: rgba(247, 243, 235, 0.92);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.models-metric-chip-primary .models-metric-copy small {
+  color: rgba(188, 248, 234, 0.62);
+}
+
+.models-metric-chip-primary .models-metric-copy strong {
+  color: #e8fff8;
 }
 
 .models-title {
@@ -940,6 +1027,16 @@ canvas {
   height: 15px;
 }
 
+.model-count-pill {
+  min-height: 30px;
+  padding-inline: 10px;
+  border-color: rgba(92, 225, 194, 0.15);
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.1), rgba(68, 156, 216, 0.045)),
+    rgba(255, 255, 255, 0.05);
+  color: rgba(188, 248, 234, 0.86);
+}
+
 .model-section-actions-end {
   min-width: 0;
   justify-self: end;
@@ -1001,6 +1098,33 @@ canvas {
 .model-config-draggable-card {
   gap: 8px;
   padding-block: 10px;
+}
+
+.models-shell .model-config-card {
+  border-color: rgba(247, 243, 235, 0.1);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.052), rgba(255, 255, 255, 0.02)),
+    rgba(255, 255, 255, 0.026);
+}
+
+.models-shell .model-config-draggable-card:hover {
+  border-color: rgba(92, 225, 194, 0.18);
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.062), rgba(68, 156, 216, 0.028)),
+    rgba(255, 255, 255, 0.032);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.14);
+}
+
+.models-shell .model-config-card.is-model-preferred {
+  border-color: rgba(245, 200, 107, 0.3);
+  background:
+    linear-gradient(90deg, rgba(245, 200, 107, 0.16), rgba(245, 200, 107, 0.035) 4px, transparent 4px),
+    radial-gradient(circle at 72px 0, rgba(245, 200, 107, 0.13), transparent 120px),
+    linear-gradient(135deg, rgba(92, 225, 194, 0.07), rgba(245, 200, 107, 0.055)),
+    rgba(255, 255, 255, 0.035);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 16px 40px rgba(0, 0, 0, 0.18);
 }
 
 .model-config-draggable-card:hover .model-drag-handle,
@@ -7096,6 +7220,13 @@ canvas {
   letter-spacing: 0.04em;
 }
 
+.is-model-preferred .provider-avatar {
+  border-color: rgba(245, 200, 107, 0.28);
+  box-shadow:
+    0 0 0 1px rgba(245, 200, 107, 0.08),
+    0 8px 18px rgba(245, 200, 107, 0.08);
+}
+
 .provider-avatar.has-logo {
   padding: 8px;
   background: rgba(255, 255, 255, 0.96);
@@ -7150,15 +7281,80 @@ canvas {
 }
 
 .model-card-title {
-  margin: 0 0 2px;
-  color: var(--text);
+  margin: 0;
+  overflow: hidden;
+  color: rgba(247, 243, 235, 0.96);
   font-size: 16px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-card-identity {
+  min-width: 0;
+}
+
+.model-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 5px;
 }
 
 .model-card-meta {
   margin: 0;
-  color: rgba(247, 243, 235, 0.72);
-  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: rgba(247, 243, 235, 0.58);
+  font-size: 11.5px;
+}
+
+.model-card-provider,
+.model-card-code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-card-provider {
+  flex: 0 1 auto;
+  color: rgba(188, 248, 234, 0.76);
+  font-weight: 800;
+}
+
+.model-card-meta-separator {
+  color: rgba(247, 243, 235, 0.24);
+}
+
+.model-card-code {
+  flex: 1 1 auto;
+  max-width: min(320px, 34vw);
+  color: rgba(247, 243, 235, 0.76);
+  font-family: "SFMono-Regular", "JetBrains Mono", "Menlo", monospace;
+  font-size: 11px;
+}
+
+.model-default-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 21px;
+  padding: 0 7px;
+  border: 1px solid rgba(245, 200, 107, 0.28);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 8px 0, rgba(245, 200, 107, 0.22), transparent 22px),
+    rgba(245, 200, 107, 0.12);
+  color: #ffe6b0;
+  font-size: 10.5px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .model-card-actions {
@@ -7171,19 +7367,6 @@ canvas {
   align-items: center;
   justify-content: flex-end;
   flex: 0 0 auto;
-}
-
-.model-priority-tag {
-  display: inline-flex;
-  align-items: center;
-  min-height: 26px;
-  padding: 0 9px;
-  border-radius: 999px;
-  background: rgba(245, 200, 107, 0.16);
-  border: 1px solid rgba(245, 200, 107, 0.24);
-  color: #ffe6b0;
-  font-size: 11.5px;
-  white-space: nowrap;
 }
 
 .model-balance-widget {
@@ -7619,6 +7802,71 @@ canvas {
   background: rgba(92, 225, 194, 0.14);
   border-color: rgba(92, 225, 194, 0.2);
   color: #bcf8ea;
+}
+
+.model-default-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 88px;
+  padding: 0 9px 0 7px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.064), rgba(255, 255, 255, 0.028)),
+    rgba(255, 255, 255, 0.04);
+}
+
+.model-default-switch.is-active {
+  border-color: rgba(245, 200, 107, 0.26);
+  background:
+    linear-gradient(135deg, rgba(245, 200, 107, 0.16), rgba(92, 225, 194, 0.08)),
+    rgba(255, 255, 255, 0.045);
+  color: #ffe6b0;
+}
+
+.model-status-switch-track {
+  position: relative;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 17px;
+  border: 1px solid rgba(247, 243, 235, 0.12);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02)),
+    rgba(8, 15, 24, 0.42);
+  transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
+}
+
+.model-status-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  background: rgba(247, 243, 235, 0.72);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.28);
+  transition: transform 180ms ease, background 180ms ease, box-shadow 180ms ease;
+}
+
+.model-default-switch.is-active .model-status-switch-track {
+  border-color: rgba(245, 200, 107, 0.34);
+  background:
+    linear-gradient(90deg, rgba(245, 200, 107, 0.38), rgba(92, 225, 194, 0.25)),
+    rgba(245, 200, 107, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(245, 200, 107, 0.06);
+}
+
+.model-default-switch.is-active .model-status-switch-thumb {
+  transform: translateX(13px);
+  background: #ffe6b0;
+  box-shadow:
+    0 0 0 1px rgba(245, 200, 107, 0.22),
+    0 3px 8px rgba(245, 200, 107, 0.18);
+}
+
+.model-status-switch-copy {
+  font-weight: 800;
+  line-height: 1;
 }
 
 .model-action,
@@ -14723,6 +14971,16 @@ canvas {
   .model-config-head {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .models-hero {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .models-hero-metrics {
+    justify-content: flex-start;
+    max-width: none;
   }
 
   .model-card-actions-inline {
