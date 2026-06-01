@@ -391,25 +391,7 @@
               </div>
             </div>
 
-            <div v-else class="command-input-shell command-input-shell-float">
-              <div class="command-input-toolbar">
-                <p class="command-input-label">输入消息</p>
-
-                <div class="command-input-toolbar-actions">
-                  <p class="command-input-shortcut">Enter 发送 · Shift + Enter 换行</p>
-
-                  <button
-                    type="button"
-                    class="model-icon-button command-input-settings-trigger"
-                    aria-label="打开高级设置"
-                    title="高级设置"
-                    @click="ui.command.composerView = 'settings'"
-                  >
-                    <GIcon name="gear" />
-                  </button>
-                </div>
-              </div>
-
+            <div v-else class="command-input-shell command-input-shell-plain">
               <div class="command-input-frame">
                 <div v-if="ui.command.attachments.length" class="command-attachment-tray">
                   <span
@@ -443,6 +425,16 @@
                   @compositionend="handleCommandInputCompositionEnd"
                   @keydown.enter.exact="handleCommandInputEnterKeydown"
                 ></textarea>
+
+                <button
+                  type="button"
+                  class="model-icon-button command-input-settings-trigger"
+                  aria-label="打开高级设置"
+                  title="高级设置"
+                  @click="ui.command.composerView = 'settings'"
+                >
+                  <GIcon name="gear" />
+                </button>
 
                 <button
                   type="button"
