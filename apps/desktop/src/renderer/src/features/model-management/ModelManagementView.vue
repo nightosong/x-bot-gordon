@@ -206,18 +206,14 @@
 
                 <button
                   type="button"
-                  class="model-status-toggle model-default-switch"
+                  class="model-status-toggle model-default-radio"
                   :class="{ 'is-active': isActiveModelProfile(profile) }"
                   :aria-pressed="isActiveModelProfile(profile) ? 'true' : 'false'"
                   :title="isActiveModelProfile(profile) ? '取消默认模型' : '设为默认模型'"
+                  :aria-label="isActiveModelProfile(profile) ? `${profile.displayName} 当前为默认模型` : `设 ${profile.displayName} 为默认模型`"
                   @click="handleModelStatusToggle(profile.id)"
                 >
-                  <span class="model-status-switch-track" aria-hidden="true">
-                    <span class="model-status-switch-thumb"></span>
-                  </span>
-                  <span class="model-status-switch-copy">
-                    {{ isActiveModelProfile(profile) ? "默认" : "设为默认" }}
-                  </span>
+                  <span class="model-default-radio-mark" aria-hidden="true"></span>
                 </button>
 
                 <button
