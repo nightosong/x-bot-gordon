@@ -43,6 +43,18 @@ function createLedger(overrides: Partial<AgentTaskLedger> = {}): AgentTaskLedger
           evidenceRefs: ["mcp:1"]
         }
       ],
+      evidenceGraph: [
+        {
+          id: "fact:runtime-task-ledger",
+          kind: "fact",
+          claim: "runtime.ts 已有任务账本",
+          source: "Workspace Tools / read_file",
+          evidenceRefs: ["mcp:1"],
+          confidence: 0.8,
+          durability: "durable",
+          createdAt: "2026-06-01T00:00:00.000Z"
+        }
+      ],
       structuredSuccessCriteria: [
         {
           type: "tool_result",
@@ -89,6 +101,7 @@ test("buildAgentContextPacket groups goal, evidence, recovery and open questions
   assert.equal(packet.plan.length, 2);
   assert.equal(packet.decisionMemory[0]?.decision, "避免重复读取整个仓库");
   assert.equal(packet.evidence.discoveredFacts[0], "runtime.ts 已有任务账本");
+  assert.equal(packet.evidence.evidenceGraph[0]?.claim, "runtime.ts 已有任务账本");
   assert.equal(packet.evidence.recentToolCalls[0]?.serverId, "builtin:mcp:workspace");
   assert.equal(packet.evidence.recentToolCalls[0]?.toolName, "read_file");
   assert.match(packet.openQuestions[0] ?? "", /待验证成功条件/);

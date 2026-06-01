@@ -124,6 +124,17 @@ export interface AgentTaskLedgerObservation {
   evidenceRefs: string[];
 }
 
+export interface AgentTaskLedgerEvidenceNode {
+  id: string;
+  kind: "fact" | "artifact" | "tool_result" | "file_ref" | "verification";
+  claim: string;
+  source: string;
+  evidenceRefs: string[];
+  confidence: number;
+  durability: "durable" | "ephemeral";
+  createdAt: string;
+}
+
 export interface AgentTaskLedgerSuccessCriterion {
   type: "text_response" | "tool_result" | "file_contains" | "url_opened" | "command_passed" | "ui_state" | "artifact_created" | "custom";
   target?: string;
@@ -156,6 +167,7 @@ export interface AgentTaskLedger {
   decisionTrace: AgentTaskLedgerDecisionTraceEntry[];
   decisionMemory: AgentTaskLedgerDecisionMemoryEntry[];
   observations: AgentTaskLedgerObservation[];
+  evidenceGraph: AgentTaskLedgerEvidenceNode[];
   discoveredFacts: string[];
   failedAttempts: AgentTaskLedgerFailedAttempt[];
   environmentState: string[];

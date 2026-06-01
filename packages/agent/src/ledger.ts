@@ -3,6 +3,7 @@ import type {
   AgentTaskLedger,
   AgentTaskLedgerDecisionMemoryEntry,
   AgentTaskLedgerDecisionTraceEntry,
+  AgentTaskLedgerEvidenceNode,
   AgentTaskLedgerFailedAttempt,
   AgentTaskLedgerObservation,
   AgentTaskLedgerPlanStep,
@@ -11,6 +12,12 @@ import type {
   SkillDefinition
 } from "../../shared/src/index.js";
 import { isRecord } from "./runtime-utils.js";
+import {
+  createEvidenceNodesFromToolCall,
+  createEvidenceNodesFromVerificationResults,
+  mergeEvidenceGraph,
+  normalizeEvidenceGraph
+} from "./evidence-graph.js";
 import { getActiveVerificationCriteria, verifyCriteriaFromToolHistory } from "./verifier.js";
 
 const MAX_LEDGER_LIST_ITEMS = 8;
@@ -369,6 +376,7 @@ export function normalizeAgentTaskLedger(
     decisionMemory: normalizeDecisionMemory(source.decisionMemory),
     decisionTrace: normalizeDecisionTrace(source.decisionTrace),
     observations: normalizeLedgerObservations(source.observations),
+    evidenceGraph: normalizeEvidenceGraph(source.evidenceGraph),
     discoveredFacts: normalizeLedgerStringList(source.discoveredFacts),
     failedAttempts: normalizeLedgerFailedAttempts(source.failedAttempts),
     environmentState: normalizeLedgerStringList(source.environmentState),
@@ -501,6 +509,7 @@ export function mergeAgentTaskLedgerPatch(
       decisionMemory: mergeDecisionMemory(currentLedger.decisionMemory, patch.decisionMemory),
       decisionTrace: patch.decisionTrace ?? currentLedger.decisionTrace,
       observations: patch.observations ?? currentLedger.observations,
+      evidenceGraph: currentLedger.evidenceGraph,
       discoveredFacts: patch.discoveredFacts ?? currentLedger.discoveredFacts,
       failedAttempts: patch.failedAttempts ?? currentLedger.failedAttempts,
       environmentState: patch.environmentState ?? currentLedger.environmentState,
@@ -562,6 +571,13 @@ export function createObservationFromToolCall(call: AgentMcpCallRecord): AgentTa
   };
 }
 
+export function createEvidenceGraphFromToolCall(
+  call: AgentMcpCallRecord,
+  observation?: AgentTaskLedgerObservation
+): AgentTaskLedgerEvidenceNode[] {
+  return createEvidenceNodesFromToolCall(call, observation);
+}
+
 export function createDecisionMemoryFromToolCall(call: AgentMcpCallRecord): AgentTaskLedgerDecisionMemoryEntry | null {
   if (!call.isError) {
     return null;
@@ -595,6 +611,25 @@ export function appendLedgerObservation(ledger: AgentTaskLedger, observation: Ag
     {
       ...ledger,
       observations: [...ledger.observations, observation].slice(-MAX_LEDGER_OBSERVATION_ITEMS)
+    },
+    ledger.objective
+  );
+}
+
+export function appendEvidenceGraph(
+  ledger: AgentTaskLedger,
+  evidenceNodes: AgentTaskLedgerEvidenceNode[] | AgentTaskLedgerEvidenceNode
+): AgentTaskLedger {
+  const nodes = Array.isArray(evidenceNodes) ? evidenceNodes : [evidenceNodes];
+
+  if (!nodes.length) {
+    return normalizeAgentTaskLedger(ledger, ledger.objective);
+  }
+
+  return normalizeAgentTaskLedger(
+    {
+      ...ledger,
+      evidenceGraph: mergeEvidenceGraph(ledger.evidenceGraph, nodes)
     },
     ledger.objective
   );
@@ -636,12 +671,14 @@ export function verifyTaskLedgerSuccessCriteria(ledger: AgentTaskLedger, mcpCall
   const verificationFacts = verificationResults
     .flatMap((result) => result.evidence.map((evidence) => `${evidence.reason}：${evidence.serverName} / ${evidence.toolName}`))
     .filter(Boolean);
+  const verificationEvidenceNodes = createEvidenceNodesFromVerificationResults(verificationResults);
 
   return normalizeAgentTaskLedger(
     {
       ...ledger,
       taskPhase,
       discoveredFacts: [...ledger.discoveredFacts, ...verificationFacts],
+      evidenceGraph: mergeEvidenceGraph(ledger.evidenceGraph, verificationEvidenceNodes),
       structuredSuccessCriteria: verifiedCriteria,
       nextActionHint: hasPending
         ? "仍有成功条件未被独立验证，最终回复需明确未验证状态或继续选择验证工具"

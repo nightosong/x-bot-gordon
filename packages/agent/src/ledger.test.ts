@@ -7,6 +7,7 @@ import {
   createDecisionMemoryFromToolCall,
   mergeAgentTaskLedgerPatch,
   normalizeAgentTaskLedger,
+  normalizeAgentTaskLedgerPatch,
   verifyTaskLedgerSuccessCriteria
 } from "./ledger.js";
 
@@ -67,6 +68,7 @@ test("normalizeAgentTaskLedger trims and deduplicates stable ledger fields", () 
   assert.equal(ledger.taskPhase, "executing");
   assert.deepEqual(ledger.constraints, ["keep model-led"]);
   assert.equal(ledger.pendingSubtasks[0], "write tests");
+  assert.deepEqual(ledger.evidenceGraph, []);
   assert.deepEqual(ledger.decisionMemory, [
     {
       decision: "放弃重复读取不存在路径",
@@ -97,7 +99,48 @@ test("mergeAgentTaskLedgerPatch preserves fields absent from patch", () => {
   assert.deepEqual(merged.constraints, ledger.constraints);
   assert.deepEqual(merged.activePlan, ledger.activePlan);
   assert.deepEqual(merged.decisionMemory, ledger.decisionMemory);
+  assert.deepEqual(merged.evidenceGraph, ledger.evidenceGraph);
   assert.equal(merged.nextActionHint, "继续补测试");
+});
+
+test("mergeAgentTaskLedgerPatch ignores model-authored evidence graph patches", () => {
+  const ledger = normalizeAgentTaskLedger(
+    {
+      objective: "验证证据图谱",
+      evidenceGraph: [
+        {
+          id: "fact:runtime",
+          kind: "fact",
+          claim: "runtime has ledger",
+          source: "Workspace Tools / read_file",
+          evidenceRefs: ["mcp:1"],
+          confidence: 0.8,
+          durability: "durable",
+          createdAt: "2026-06-01T00:00:00.000Z"
+        }
+      ]
+    },
+    "验证证据图谱"
+  );
+  const parsedPatch = normalizeAgentTaskLedgerPatch({
+      evidenceGraph: [
+        {
+          id: "fact:runtime",
+          kind: "fact",
+          claim: "runtime has evidence graph",
+          source: "Workspace Tools / read_file",
+          evidenceRefs: ["mcp:2"],
+          confidence: 0.9,
+          durability: "durable",
+          createdAt: "2026-06-01T00:00:01.000Z"
+        }
+      ]
+    });
+  const merged = mergeAgentTaskLedgerPatch(ledger, parsedPatch, "验证证据图谱");
+
+  assert.equal(merged.evidenceGraph.length, 1);
+  assert.equal(merged.evidenceGraph[0]?.claim, "runtime has ledger");
+  assert.deepEqual(merged.evidenceGraph[0]?.evidenceRefs, ["mcp:1"]);
 });
 
 test("mergeAgentTaskLedgerPatch merges decisionMemory by decision and scope", () => {
@@ -193,6 +236,8 @@ test("verifyTaskLedgerSuccessCriteria updates ledger phase and stores verificati
   assert.equal(verified.structuredSuccessCriteria[0]?.status, "passed");
   assert.equal(verified.taskPhase, "finalizing");
   assert.deepEqual(verified.discoveredFacts, ["工具结果匹配成功条件：Workspace Tools / read_file"]);
+  assert.equal(verified.evidenceGraph[0]?.kind, "verification");
+  assert.match(verified.evidenceGraph[0]?.claim ?? "", /file read/u);
 });
 
 test("verifyTaskLedgerSuccessCriteria fails missing tool result when a tool already errored", () => {

@@ -32,11 +32,14 @@ import { callToolOnMcpServer, listToolsFromMcpServer } from "./mcp.js";
 import { buildAgentContextPacket, buildAgentContextPacketText } from "./context-packet.js";
 import { classifyMcpError, classifyMcpMessage } from "./failure-classifier.js";
 import { critiqueMcpToolPlan } from "./plan-critic.js";
+import { createEvidenceNodeFromVerificationEvaluation } from "./evidence-graph.js";
 import {
+  appendEvidenceGraph,
   appendDecisionMemory,
   appendLedgerObservation,
   buildTaskLedgerText,
   buildToolObservationText,
+  createEvidenceGraphFromToolCall,
   createDecisionMemoryFromToolCall,
   createInitialTaskLedger,
   createObservationFromToolCall,
@@ -471,6 +474,7 @@ JSON 结构必须为：
 - decisionMemory 是工作记忆，记录本任务内已放弃路线、已证伪假设、已采纳判断和关键恢复策略；active 项后续规划必须参考，除非新证据使其 superseded
 - decisionTrace 记录关键决策：为什么选择当前动作，拒绝了哪些替代动作，预期结果是什么
 - observations 采用分层压缩：summary 是短摘要，durableFacts 是长期有效事实，ephemeralFacts 是短期 UI/环境状态，evidenceRefs 指向工具结果、截图、artifact 或命令输出引用
+- evidenceGraph 由运行时根据工具结果、artifact、文件引用或验证结果自动生成；你不要在 JSON patch 中手写 evidenceGraph，避免把推测当证据
 - discoveredFacts 只保留对后续行动有用的事实
 - environmentState 记录页面、文件、权限、路径、应用状态等外部世界状态
 - userInterruptions 记录用户在运行期间追加的新约束、转向、停止或修正意图；没有则保持空数组
@@ -2251,7 +2255,9 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
         callRecord,
         options.signal
       );
-      taskLedger = appendLedgerObservation(taskLedger, createObservationFromToolCall(callRecord));
+      const observation = createObservationFromToolCall(callRecord);
+      taskLedger = appendLedgerObservation(taskLedger, observation);
+      taskLedger = appendEvidenceGraph(taskLedger, createEvidenceGraphFromToolCall(callRecord, observation));
       taskLedger = appendDecisionMemory(taskLedger, createDecisionMemoryFromToolCall(callRecord));
       taskLedger = normalizeAgentTaskLedger(
         {
@@ -2764,6 +2770,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
         strategiesBeforeVerification,
         verificationTool
       );
+      taskLedger = appendEvidenceGraph(taskLedger, createEvidenceNodeFromVerificationEvaluation(verificationEvaluation, verificationRecord));
       taskLedger = normalizeAgentTaskLedger(
         {
           ...taskLedger,

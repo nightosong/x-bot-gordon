@@ -18,6 +18,7 @@ function createContextPacket(overrides: Partial<AgentContextPacket> = {}): Agent
     evidence: {
       discoveredFacts: [],
       observations: [],
+      evidenceGraph: [],
       environmentState: [],
       recentToolCalls: []
     },

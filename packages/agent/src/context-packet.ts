@@ -2,6 +2,7 @@ import type {
   AgentMcpCallRecord,
   AgentTaskLedger,
   AgentTaskLedgerDecisionMemoryEntry,
+  AgentTaskLedgerEvidenceNode,
   AgentTaskLedgerFailedAttempt,
   AgentTaskLedgerObservation,
   AgentTaskLedgerPlanStep,
@@ -30,6 +31,7 @@ export interface AgentContextPacket {
   evidence: {
     discoveredFacts: string[];
     observations: AgentTaskLedgerObservation[];
+    evidenceGraph: AgentTaskLedgerEvidenceNode[];
     environmentState: string[];
     recentToolCalls: AgentContextPacketToolCall[];
   };
@@ -154,6 +156,7 @@ export function buildAgentContextPacket(params: {
     evidence: {
       discoveredFacts: trimStringList(taskLedger.discoveredFacts),
       observations: taskLedger.observations.slice(-MAX_CONTEXT_ITEMS),
+      evidenceGraph: taskLedger.evidenceGraph.slice(-MAX_CONTEXT_ITEMS),
       environmentState: trimStringList(taskLedger.environmentState),
       recentToolCalls: buildRecentToolCalls(mcpCalls)
     },
