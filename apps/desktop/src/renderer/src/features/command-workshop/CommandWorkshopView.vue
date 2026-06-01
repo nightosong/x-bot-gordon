@@ -101,6 +101,17 @@
                       </div>
                       <p class="command-response-process-title" :title="item.title">{{ item.title }}</p>
                       <p v-if="item.detail" class="command-response-process-detail" :title="item.detail">{{ item.detail }}</p>
+                      <div v-if="item.tags?.length" class="command-response-process-tags" aria-label="执行状态">
+                        <span
+                          v-for="tag in item.tags"
+                          :key="`${item.id}:${tag.label}`"
+                          class="command-response-process-tag"
+                          :class="tag.className"
+                          :title="tag.detail || tag.label"
+                        >
+                          {{ tag.label }}
+                        </span>
+                      </div>
                       <ol v-if="item.items?.length" class="command-response-plan-list">
                         <li v-for="planItem in item.items" :key="planItem">{{ planItem }}</li>
                       </ol>
@@ -213,6 +224,17 @@
                       </div>
                       <p class="command-response-process-title" :title="item.title">{{ item.title }}</p>
                       <p v-if="item.detail" class="command-response-process-detail" :title="item.detail">{{ item.detail }}</p>
+                      <div v-if="item.tags?.length" class="command-response-process-tags" aria-label="执行状态">
+                        <span
+                          v-for="tag in item.tags"
+                          :key="`${item.id}:${tag.label}`"
+                          class="command-response-process-tag"
+                          :class="tag.className"
+                          :title="tag.detail || tag.label"
+                        >
+                          {{ tag.label }}
+                        </span>
+                      </div>
                       <ol v-if="item.items?.length" class="command-response-plan-list">
                         <li v-for="planItem in item.items" :key="planItem">{{ planItem }}</li>
                       </ol>
@@ -232,9 +254,20 @@
 
                 <div
                   v-else-if="!getCommandResponseProcessItems(ui.command.liveProgress?.artifact).length"
-                  class="command-message-body command-rich-text"
-                  v-html="renderRichText(getCommandLiveStatusText(ui.command.liveProgress))"
-                ></div>
+                  class="command-live-waiting"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <span class="command-live-waiting-mark" aria-hidden="true">
+                    <span></span>
+                  </span>
+                  <span class="command-live-waiting-copy">{{ getCommandLiveStatusText(ui.command.liveProgress) }}</span>
+                  <span class="command-live-waiting-dots" aria-hidden="true">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </span>
+                </div>
 
                 <div v-if="getCommandArtifactProducts(ui.command.liveProgress?.artifact).length" class="command-generated-products">
                   <article
