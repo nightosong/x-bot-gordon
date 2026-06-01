@@ -8634,6 +8634,64 @@ canvas {
   min-height: 38px;
 }
 
+.extensions-shell .extension-editor-select {
+  position: relative;
+  display: grid;
+  width: 100%;
+  min-height: 38px;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  font-size: 12.5px;
+}
+
+.extensions-shell .extension-editor-select .compact-select-trigger {
+  min-height: 38px;
+  padding: 0 10px 0 12px;
+  border-color: rgba(151, 182, 216, 0.16);
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.055), rgba(92, 225, 194, 0.026)),
+    rgba(8, 15, 24, 0.62);
+  color: rgba(247, 243, 235, 0.9);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.extensions-shell .extension-editor-select:hover .compact-select-trigger,
+.extensions-shell .extension-editor-select.is-open .compact-select-trigger,
+.extensions-shell .extension-editor-select .compact-select-trigger:focus-visible {
+  border-color: rgba(92, 225, 194, 0.32);
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.12), rgba(245, 200, 107, 0.045)),
+    rgba(8, 15, 24, 0.78);
+}
+
+.extensions-shell .extension-editor-select .compact-select-menu {
+  z-index: 75;
+  width: max(100%, 220px);
+  max-height: 220px;
+  border-color: rgba(151, 182, 216, 0.2);
+  background:
+    linear-gradient(145deg, rgba(92, 225, 194, 0.08), rgba(245, 200, 107, 0.04)),
+    rgba(8, 15, 24, 0.98);
+}
+
+.extensions-shell .extension-editor-select .compact-select-option {
+  min-height: 30px;
+  padding: 0 10px;
+  color: rgba(247, 243, 235, 0.78);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 28px;
+}
+
+.extensions-shell .extension-model-select .compact-select-menu {
+  width: max(100%, min(480px, 62vw));
+}
+
 .extensions-shell .field-textarea {
   min-height: 76px;
 }
