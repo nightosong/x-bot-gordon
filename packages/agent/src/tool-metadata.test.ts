@@ -33,8 +33,12 @@ test("buildPlannerToolPayload exposes structured capability metadata", () => {
   ]);
 
   assert.deepEqual(payload.capability, ["read", "execute", "verify"]);
+  assert.deepEqual(payload.verbs, ["read", "operate", "verify"]);
   assert.equal(payload.executionDomain, "desktop");
   assert.equal(payload.riskLevel, "high");
+  assert.equal(payload.cost, "medium");
+  assert.equal(payload.sideEffects, "stateful");
+  assert.equal(payload.reversibility, "partially_reversible");
   assert.match(String(payload.schemaSummary), /required=x, y/u);
   assert.deepEqual(payload.inputSchema, {
     type: "object",

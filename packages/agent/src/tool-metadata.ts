@@ -125,14 +125,92 @@ export function inferToolCapabilities(tool: McpToolDefinition): string[] {
   return capabilities.length ? Array.from(new Set(capabilities)) : ["unknown"];
 }
 
+export function inferToolVerbs(tool: McpToolDefinition): string[] {
+  const source = `${tool.serverName} ${tool.name} ${tool.description ?? ""}`.toLowerCase();
+  const verbs: string[] = [];
+  const addVerb = (verb: string, patterns: RegExp[]): void => {
+    if (patterns.some((pattern) => pattern.test(source))) {
+      verbs.push(verb);
+    }
+  };
+
+  addVerb("read", [/read|list|inspect|query|screenshot|status|读取|查看|列出|查询|截图|状态/u]);
+  addVerb("search", [/search|research|github|web|搜索|调研|联网/u]);
+  addVerb("open", [/open|navigate|browser|url|打开|访问|浏览器/u]);
+  addVerb("write", [/write|update|replace|create|save|写入|更新|创建|保存/u]);
+  addVerb("delete", [/delete|remove|删除|移除/u]);
+  addVerb("execute", [/run|execute|shell|command|运行|执行|命令/u]);
+  addVerb("operate", [/click|type|press|drag|点击|输入|按键|拖拽/u]);
+  addVerb("generate", [/generate|image|video|music|生成|图片|视频|音乐/u]);
+  addVerb("verify", [/validate|diff|status|inspect|验证|校验|对比|状态/u]);
+
+  return verbs.length ? Array.from(new Set(verbs)) : ["unknown"];
+}
+
+export function inferToolCost(tool: McpToolDefinition): "low" | "medium" | "high" {
+  const domain = inferToolExecutionDomain(tool);
+  const capabilities = inferToolCapabilities(tool);
+  const source = `${tool.serverName} ${tool.name} ${tool.description ?? ""}`.toLowerCase();
+
+  if (domain === "generation" || capabilities.includes("generate") || /deep|research|video|music|image|生成|视频|音乐|图片/u.test(source)) {
+    return "high";
+  }
+
+  if (domain === "desktop" || capabilities.includes("execute") || capabilities.includes("write")) {
+    return "medium";
+  }
+
+  return "low";
+}
+
+export function inferToolSideEffects(tool: McpToolDefinition): "none" | "read_only" | "stateful" | "destructive" {
+  const source = `${tool.name} ${tool.description ?? ""}`.toLowerCase();
+
+  if (/delete|remove|move|rename|删除|移除|移动|重命名/u.test(source)) {
+    return "destructive";
+  }
+
+  if (/write|update|replace|create|save|run_shell|execute|click|type|press|drag|generate|写入|更新|修改|创建|保存|执行|点击|输入|生成/u.test(source)) {
+    return "stateful";
+  }
+
+  if (/read|list|inspect|query|search|screenshot|status|读取|查看|列出|查询|搜索|截图|状态/u.test(source)) {
+    return "read_only";
+  }
+
+  return "none";
+}
+
+export function inferToolReversibility(tool: McpToolDefinition): "reversible" | "partially_reversible" | "irreversible" | "unknown" {
+  const sideEffects = inferToolSideEffects(tool);
+
+  if (sideEffects === "destructive") {
+    return "irreversible";
+  }
+
+  if (sideEffects === "stateful") {
+    return "partially_reversible";
+  }
+
+  if (sideEffects === "read_only" || sideEffects === "none") {
+    return "reversible";
+  }
+
+  return "unknown";
+}
+
 export function buildPlannerToolPayload(candidateTools: McpToolDefinition[]): Array<Record<string, unknown>> {
   return candidateTools.map((tool) => ({
     serverId: tool.serverId,
     serverName: tool.serverName,
     name: tool.name,
     capability: inferToolCapabilities(tool),
+    verbs: inferToolVerbs(tool),
     executionDomain: inferToolExecutionDomain(tool),
     riskLevel: inferToolRiskLevel(tool),
+    cost: inferToolCost(tool),
+    sideEffects: inferToolSideEffects(tool),
+    reversibility: inferToolReversibility(tool),
     descriptionSummary: sanitizeToolDescription(tool.description),
     schemaSummary: buildToolSchemaSummary(tool),
     inputSchema: tool.inputSchema ?? {}

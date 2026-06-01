@@ -26,7 +26,7 @@
 | 模型管理 | 已完成 | 已支持配置列表、供应商切换、编辑、优先模型、余额查询、用量统计、Chat Completions / Responses 接口格式、流式输出开关与真实文本调用；多模态生成不进入模型管理，改由能力拓展 TOOL 配置承接 |
 | 模型配置持久化 | 已完成 | 当前走本地 JSON 仓储 |
 | 任务笔记 | 已完成三阶段 | 已形成“本周驾驶舱 + 历史记录 + 项目推进/汇报双视图”的当前形态，汇报视图支持日报、周报和按日期范围生成述职报告 |
-| 命令工坊 | 已完成首版 | 已支持多轮会话、默认 Agent、附件上传、按需工具调用和按需过程流展示；简单问答不再展示开场思考 / 执行计划卡片，真实工具执行、授权、参数修复、重试 / fallback、中间输出和停止原因才进入可见时间线，并按 harness Agent 语义区分本地工具和外部 MCP；默认 Agent 已接入 Workspace Tools、Search Tools、Gordon Tools 与 Application Tools，可进行高质量联网研究、GitHub 仓库搜索、发现已启用的 TOOL 配置，并可新建或联动应用广场的墨笔生花小说资产；自动工具循环已引入任务账本、Context Packet、Decision Memory、Plan Critic、Evidence Graph、决策轨迹、分层观察和结构化成功条件，工具规划每轮基于 `goal / activePlan / decisionMemory / evidence / verification / recovery / openQuestions` 决定下一步，并为工具调用记录预期结果与验证方式；同一会话会把上一轮助手消息 artifact 中的 `taskLedger` 注入下一轮 Agent 请求，支持长期任务跨轮延续；当前以 Gordon 持续执行型工程 Agent 为唯一默认内置 Agent，科研协作通过 `arthur-research` Skill 加载，显然需要工具的任务会自动进入工具编排和验证闭环 |
+| 命令工坊 | 已完成首版 | 已支持多轮会话、默认 Agent、附件上传、按需工具调用和按需过程流展示；简单问答不再展示开场思考 / 执行计划卡片，真实工具执行、授权、参数修复、重试 / fallback、中间输出和停止原因才进入可见时间线，并按 harness Agent 语义区分本地工具和外部 MCP；默认 Agent 已接入 Workspace Tools、Search Tools、Computer Use、Gordon Tools 与 Application Tools，可进行高质量联网研究、GitHub 仓库搜索、桌面应用读取 / 控制、发现已启用的 TOOL 配置，并可新建或联动应用广场的墨笔生花小说资产；自动工具循环已引入任务账本、Context Packet、Capability Routing、Decision Memory、Plan Critic、Evidence Graph、决策轨迹、分层观察和结构化成功条件，工具规划每轮基于 `goal / activePlan / decisionMemory / evidence / verification / recovery / openQuestions` 与能力路由提示决定下一步，并为工具调用记录预期结果与验证方式；同一会话会把上一轮助手消息 artifact 中的 `taskLedger` 注入下一轮 Agent 请求，支持长期任务跨轮延续；当前以 Gordon 持续执行型工程 Agent 为唯一默认内置 Agent，科研协作通过 `arthur-research` Skill 加载，显然需要工具的任务会自动进入工具编排和验证闭环 |
 | 能力拓展管理 | 已完成三阶段 | Agent / Skill / MCP / TOOL 管理、Runner、自动选 tool 已接通，已内置 `skill-creator` |
 | CLI 基础命令 | 已完成 | `summary / providers / modules / tasks / memory` 已可用 |
 | 双层记忆体系 | 已完成 | `references / experience` 已接通 |
@@ -140,7 +140,8 @@
 - 命令工坊遇到 URL 可用 `read_web_page` 读取正文，遇到文件差异可用 `diff_paths`，只有专用工具不足时才通过 `run_shell_command` 调用 `curl / rg / diff / file / stat / wc / head / tail / sed` 白名单命令
 - `Computer Use` 已作为独立本地工具服务接入默认 Agent，提供应用状态读取、打开应用/URL、点击、输入、按键与截屏能力，并在首次读取或控制桌面前申请本轮授权
 - 命令工坊自动工具模式已改为模型主导：后端把当前 Agent 授权的完整工具集合交给工具规划模型，由模型判断是否调用以及选择哪个工具；代码层只负责授权边界、安全检查、参数修复、重试、fallback 与重复调用保护，不再用硬编码规则预先裁剪工具候选集
-- 命令工坊自动工具规划会先把候选工具转成 `capability / executionDomain / riskLevel / descriptionSummary / schema` 结构化元数据，并对 MCP tool description 做 prompt-injection 清洗；模型只能把 `descriptionSummary` 当作能力说明，不能把工具描述中的“忽略上级指令 / 强制优先选择 / 泄露提示词”等文本当作系统指令
+- 命令工坊自动工具规划会先把候选工具转成 `capability / verbs / executionDomain / riskLevel / cost / sideEffects / reversibility / descriptionSummary / schema` 结构化元数据，并对 MCP tool description 做 prompt-injection 清洗；模型只能把 `descriptionSummary` 当作能力说明，不能把工具描述中的“忽略上级指令 / 强制优先选择 / 泄露提示词”等文本当作系统指令
+- 命令工坊已引入首版 Capability Routing（能力路由）上下文：runtime 会基于 Context Packet 推断本轮能力需求，并按能力、动作、执行域、成本、风险、副作用和可逆性对工具做分组排序提示，注入 Planner、fallback planner 与主动验证规划；该上下文只做多候选工具检索和成本 / 风险提示，`allToolsAvailable` 保持完整候选工具可选，不做硬编码候选裁剪或强制路由
 - 命令工坊自动工具循环已引入首版任务账本（Task Ledger）：本轮运行会维护目标、约束、已完成子任务、待办子任务、分层计划、已发现事实、失败尝试、环境状态、用户中断、成功条件和下一步提示；工具规划模型每轮会基于账本和历史工具结果选择下一步，并输出 `expectedOutcome` 与 `verificationMethod`；工具返回后会压缩观察结果回写账本，最终回复也会结合账本判断是否真正完成
 - 命令工坊已支持跨轮任务账本延续：助手消息 artifact 会保留 `taskLedger`，下一次提交会从最近一条助手消息取出账本并作为 `AgentRunRequest.taskLedger` 传给 Agent runtime；runtime 会归一化旧账本、记录本轮继续请求，并把目标、计划、观察、失败恢复和成功条件带入新的规划轮
 - 任务账本已引入首版 Evidence Graph：runtime 会把真实工具结果、artifact、文件引用、durableFacts 和 Verifier 命中的验证证据转为 `kind / claim / source / evidenceRefs / confidence / durability / createdAt` 结构化节点，并注入 Context Packet；模型可以读取这些证据，但不能通过 ledger patch 直接伪造证据节点
@@ -150,7 +151,7 @@
 - 结构化成功条件已升级到 v2：新增 `file_exists / command_exit_zero / artifact_exists / url_matches / ui_contains / json_path_equals` 等更确定的断言类型，Planner 新任务优先产出这些机器可验证条件；Verifier 会对文件存在、命令退出码、artifact 可引用、URL 匹配、UI 文本和简单 JSON 点路径做确定性判断，并继续兼容旧的宽泛类型
 - Verifier 已新增验证策略上下文：按成功条件类型生成 intent、能力偏好、执行域偏好、风险边界、参数提示、证据要求和失败信号，并注入主动验证规划；该上下文只作为模型规划偏置，不裁剪候选工具，继续保持模型主导工具选择
 - 主动验证已新增质量评分与账本回写：每轮主动验证会基于工具画像、成功条件状态变化和 evidence 质量生成 `qualityScore / riskLevel / evidenceGrade`，并把评分摘要写入 `discoveredFacts`；失败或仍未确认时会更新 `nextActionHint`，帮助后续恢复或最终回复准确标注未验证状态
-- Agent runtime 关键纯逻辑已从 `runtime.ts` 拆到 `ledger.ts`、`context-packet.ts`、`evidence-graph.ts`、`plan-critic.ts`、`tool-metadata.ts`、`failure-classifier.ts`、`verifier.ts` 与 `runtime-utils.ts`，并新增 `pnpm run test:agent` 覆盖工具描述清洗、工具画像、失败分类、账本归一化 / 合并、Context Packet、Evidence Graph、Plan Critic、结构化成功条件验证和 evidence 生成
+- Agent runtime 关键纯逻辑已从 `runtime.ts` 拆到 `ledger.ts`、`context-packet.ts`、`capability-router.ts`、`evidence-graph.ts`、`plan-critic.ts`、`tool-metadata.ts`、`failure-classifier.ts`、`verifier.ts` 与 `runtime-utils.ts`，并新增 `pnpm run test:agent` 覆盖工具描述清洗、工具画像、Capability Routing、失败分类、账本归一化 / 合并、Context Packet、Evidence Graph、Plan Critic、结构化成功条件验证和 evidence 生成
 - 工具失败分类已从“schema / 不可用 / 执行失败”扩展到权限受限、环境状态变化、工具不匹配、时序过早和目标不存在，便于后续 fallback、账本恢复和前端过程流更准确表达失败本质
 - `Gordon Tools` 已作为独立本地工具服务接入默认 Agent，会按能力拓展 TOOL 配置动态暴露已启用工具；当前 `image_gen` 可读取 OpenAI 系列图片配置并调用 `imagen` / `imagen/edit`，`music_gen` 可读取 Mureka / Suno 配置调用歌曲 / 纯音乐生成和任务查询，并把音频 URL 归一化为可展示产物
 - `Application Tools` 已作为独立本地应用工具服务接入默认 Agent，首版把命令工坊联到应用广场的 `墨笔生花` 资产，支持新建小说、小说列表、书稿读取、关键词检索、章节修改 dryRun 预览 / 写回、小说字段 dryRun 预览 / 写回，以及结构化故事资产写回；新建小说可一次性写入简介、大纲、分卷 / 章节目录、补充设定区块、`storyAssets` 与 `narrativeState`，已有小说可通过 `writing_update_story_assets` 合并或替换世界观、人物、关系、伏笔、规则、风格档案、连续性备注和 Narrative State 节点；命令工坊提交时会注入当前应用广场上下文，用户提到“这个小说 / 当前章节”时可优先定位当前资源
@@ -274,7 +275,7 @@
 - 为模型配置补齐连接测试或校验能力
 - 为流程中心补充更多 workflow 卡片与本地维护能力
 - 为 MCP Server 增加独立测试页、连接诊断与更明确的错误提示
-- 为 Agent runtime 继续推进 Capability Routing / embedding 召回、长期任务持久化和更细的验证执行器；当前 Decision Memory、Context Packet、Plan Critic、Evidence Graph 与结构化成功条件 v2 已先落地，用于把目标、计划、证据、验证状态、已证伪路线、开放问题、执行前质量审查、可引用证据节点和可机器验证断言注入后续规划
+- 为 Agent runtime 继续推进 embedding 召回、长期任务持久化和更细的验证执行器；当前 Decision Memory、Context Packet、Capability Routing、Plan Critic、Evidence Graph 与结构化成功条件 v2 已先落地，用于把目标、计划、候选工具能力分组、证据、验证状态、已证伪路线、开放问题、执行前质量审查、可引用证据节点和可机器验证断言注入后续规划
 - 继续扩展 `Gordon Tools` 的真实多模态生成能力，下一步重点补齐 `video_gen` 的供应商调用协议，并为 `music_gen` 增加更多供应商返回结构样本的专项回归
 - 为能力拓展继续补齐按 tool / capability 语义分层的恢复策略
 
