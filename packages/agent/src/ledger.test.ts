@@ -4,6 +4,7 @@ import test from "node:test";
 import type { AgentMcpCallRecord } from "../../shared/src/index.js";
 import {
   createInitialTaskLedger,
+  createDecisionMemoryFromToolCall,
   mergeAgentTaskLedgerPatch,
   normalizeAgentTaskLedger,
   verifyTaskLedgerSuccessCriteria
@@ -33,6 +34,24 @@ test("normalizeAgentTaskLedger trims and deduplicates stable ledger fields", () 
       taskPhase: "executing",
       constraints: [" keep model-led ", "keep model-led", ""],
       pendingSubtasks: ["write tests"],
+      decisionMemory: [
+        {
+          decision: "  放弃重复读取不存在路径  ",
+          reason: "路径不存在",
+          confidence: 2,
+          scope: "invalid",
+          status: "invalid",
+          evidenceRefs: [" mcp:1 "]
+        },
+        {
+          decision: "放弃重复读取不存在路径",
+          reason: "路径不存在",
+          confidence: 0.2,
+          scope: "current_task",
+          status: "active",
+          evidenceRefs: ["mcp:1"]
+        }
+      ],
       structuredSuccessCriteria: [
         {
           type: "tool_result",
@@ -48,6 +67,16 @@ test("normalizeAgentTaskLedger trims and deduplicates stable ledger fields", () 
   assert.equal(ledger.taskPhase, "executing");
   assert.deepEqual(ledger.constraints, ["keep model-led"]);
   assert.equal(ledger.pendingSubtasks[0], "write tests");
+  assert.deepEqual(ledger.decisionMemory, [
+    {
+      decision: "放弃重复读取不存在路径",
+      reason: "路径不存在",
+      confidence: 1,
+      scope: "current_task",
+      status: "active",
+      evidenceRefs: ["mcp:1"]
+    }
+  ]);
   assert.equal(ledger.structuredSuccessCriteria[0]?.status, "pending");
 });
 
@@ -67,7 +96,75 @@ test("mergeAgentTaskLedgerPatch preserves fields absent from patch", () => {
   assert.deepEqual(merged.completedSubtasks, ["完成模块化拆分"]);
   assert.deepEqual(merged.constraints, ledger.constraints);
   assert.deepEqual(merged.activePlan, ledger.activePlan);
+  assert.deepEqual(merged.decisionMemory, ledger.decisionMemory);
   assert.equal(merged.nextActionHint, "继续补测试");
+});
+
+test("mergeAgentTaskLedgerPatch merges decisionMemory by decision and scope", () => {
+  const ledger = normalizeAgentTaskLedger(
+    {
+      objective: "读取文件",
+      decisionMemory: [
+        {
+          decision: "本任务内暂时放弃重复使用 Workspace Tools / read_file 的相同失败路线",
+          reason: "路径不存在",
+          confidence: 0.8,
+          scope: "current_task",
+          status: "active",
+          evidenceRefs: ["mcp:1"]
+        }
+      ]
+    },
+    "读取文件"
+  );
+  const merged = mergeAgentTaskLedgerPatch(
+    ledger,
+    {
+      decisionMemory: [
+        {
+          decision: "本任务内暂时放弃重复使用 Workspace Tools / read_file 的相同失败路线",
+          reason: "用户提供了新路径，旧路径失败记忆不再适用",
+          confidence: 0.9,
+          scope: "current_task",
+          status: "superseded",
+          evidenceRefs: ["mcp:2"]
+        }
+      ]
+    },
+    "读取文件"
+  );
+
+  assert.equal(merged.decisionMemory.length, 1);
+  assert.equal(merged.decisionMemory[0]?.status, "superseded");
+  assert.equal(merged.decisionMemory[0]?.reason, "用户提供了新路径，旧路径失败记忆不再适用");
+});
+
+test("createDecisionMemoryFromToolCall records non-repeatable failed routes", () => {
+  const memory = createDecisionMemoryFromToolCall(
+    createCallRecord({
+      isError: true,
+      failureKind: "wrong_tool",
+      failureReason: "工具不覆盖当前能力"
+    })
+  );
+
+  assert.ok(memory);
+  assert.equal(memory.scope, "current_task");
+  assert.equal(memory.status, "active");
+  assert.match(memory.decision, /Workspace Tools \/ read_file/);
+  assert.deepEqual(memory.evidenceRefs, ["mcp:1:builtin:mcp:workspace:read_file:2026-05-29T00:00:00.000Z"]);
+});
+
+test("createDecisionMemoryFromToolCall ignores retryable execution failures", () => {
+  const memory = createDecisionMemoryFromToolCall(
+    createCallRecord({
+      isError: true,
+      failureKind: "tool_execution",
+      failureReason: "临时超时"
+    })
+  );
+
+  assert.equal(memory, null);
 });
 
 test("verifyTaskLedgerSuccessCriteria updates ledger phase and stores verification facts", () => {

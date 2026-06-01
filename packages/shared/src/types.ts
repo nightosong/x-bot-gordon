@@ -106,6 +106,15 @@ export interface AgentTaskLedgerDecisionTraceEntry {
   expectedOutcome?: string;
 }
 
+export interface AgentTaskLedgerDecisionMemoryEntry {
+  decision: string;
+  reason: string;
+  confidence: number;
+  scope: "current_task" | "session" | "project";
+  status: "active" | "superseded";
+  evidenceRefs: string[];
+}
+
 export interface AgentTaskLedgerObservation {
   source: string;
   rawRef?: string;
@@ -145,6 +154,7 @@ export interface AgentTaskLedger {
   pendingSubtasks: string[];
   activePlan: AgentTaskLedgerPlanStep[];
   decisionTrace: AgentTaskLedgerDecisionTraceEntry[];
+  decisionMemory: AgentTaskLedgerDecisionMemoryEntry[];
   observations: AgentTaskLedgerObservation[];
   discoveredFacts: string[];
   failedAttempts: AgentTaskLedgerFailedAttempt[];

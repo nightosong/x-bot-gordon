@@ -31,9 +31,11 @@ import type {
 import { callToolOnMcpServer, listToolsFromMcpServer } from "./mcp.js";
 import { classifyMcpError, classifyMcpMessage } from "./failure-classifier.js";
 import {
+  appendDecisionMemory,
   appendLedgerObservation,
   buildTaskLedgerText,
   buildToolObservationText,
+  createDecisionMemoryFromToolCall,
   createInitialTaskLedger,
   createObservationFromToolCall,
   inferTaskPhaseAfterCall,
@@ -446,6 +448,7 @@ JSON 结构必须为：
   "completedSubtasks": string[],
   "pendingSubtasks": string[],
   "activePlan": [{"step": string, "toolHint": string, "successCriteria": string, "status": "pending" | "in_progress" | "completed" | "blocked"}],
+  "decisionMemory": [{"decision": string, "reason": string, "confidence": number, "scope": "current_task" | "session" | "project", "status": "active" | "superseded", "evidenceRefs": string[]}],
   "decisionTrace": [{"step": string, "intent": string, "chosenAction": string, "rejectedAlternatives": string[], "why": string, "expectedOutcome": string}],
   "observations": [{"source": string, "rawRef": string, "summary": string, "durableFacts": string[], "ephemeralFacts": string[], "evidenceRefs": string[]}],
   "discoveredFacts": string[],
@@ -463,6 +466,7 @@ JSON 结构必须为：
 - completedSubtasks 只记录工具结果已经支持的完成项
 - pendingSubtasks 记录仍需推进或验证的下一步，不要泛泛而谈
 - activePlan 维护 1-8 个分层计划步骤，用 status 标注当前推进状态；复杂任务不要只保留单步动作
+- decisionMemory 是工作记忆，记录本任务内已放弃路线、已证伪假设、已采纳判断和关键恢复策略；active 项后续规划必须参考，除非新证据使其 superseded
 - decisionTrace 记录关键决策：为什么选择当前动作，拒绝了哪些替代动作，预期结果是什么
 - observations 采用分层压缩：summary 是短摘要，durableFacts 是长期有效事实，ephemeralFacts 是短期 UI/环境状态，evidenceRefs 指向工具结果、截图、artifact 或命令输出引用
 - discoveredFacts 只保留对后续行动有用的事实
@@ -495,7 +499,7 @@ ${buildToolObservationText(callRecord, stringifyDisplayArguments)}
   );
 
   const parsed = JSON.parse(extractJsonBlock(ledgerResponse.text)) as Partial<AgentTaskLedger>;
-  return normalizeAgentTaskLedger(parsed, currentLedger.objective || userInput);
+  return mergeAgentTaskLedgerPatch(currentLedger, normalizeAgentTaskLedgerPatch(parsed), currentLedger.objective || userInput);
 }
 
 function normalizeSkillHandlerRef(value: string | undefined): string | null {
@@ -1013,6 +1017,7 @@ JSON 结构必须为：
     "completedSubtasks": string[],
     "pendingSubtasks": string[],
     "activePlan": [{"step": string, "toolHint": string, "successCriteria": string, "status": "pending" | "in_progress" | "completed" | "blocked"}],
+    "decisionMemory": [{"decision": string, "reason": string, "confidence": number, "scope": "current_task" | "session" | "project", "status": "active" | "superseded", "evidenceRefs": string[]}],
     "decisionTrace": [{"step": string, "intent": string, "chosenAction": string, "rejectedAlternatives": string[], "why": string, "expectedOutcome": string}],
     "observations": [{"source": string, "rawRef": string, "summary": string, "durableFacts": string[], "ephemeralFacts": string[], "evidenceRefs": string[]}],
     "discoveredFacts": string[],
@@ -1029,6 +1034,7 @@ JSON 结构必须为：
 - 纯解释、闲聊、无需当前上下文的常识问题可以不调用工具
 - 你必须把“任务账本”作为当前世界状态：优先推进 taskPhase、activePlan、pendingSubtasks、structuredSuccessCriteria 和 successCriteria，避免忘记最初目标
 - 如果任务复杂，先用 ledgerPatch.activePlan 维护分层计划；每次只选择最能推进当前计划的一步工具，不要变成看到什么点什么
+- active 的 decisionMemory 是下一步规划必须参考的工作记忆，尤其是已放弃路线、已证伪假设和恢复策略；不要重复 active 决策里明确放弃的同一路线，除非有新证据，并在 ledgerPatch.decisionMemory 中把旧记忆标记为 superseded
 - 每次选择工具时，都要通过 ledgerPatch.decisionTrace 记录 intent、chosenAction、rejectedAlternatives、why 和 expectedOutcome
 - 如果任务进入验证或恢复阶段，应优先选择能验证 successCriteria 或绕开已证伪路径的动作，不要重复同一失败假设
 - 用户要求你实际读取、检查、搜索、调研、打开、点击、输入、修改、创建、生成、运行或验证时，应优先调用工具；没有工具结果前，不要声称已经完成这些动作
@@ -1568,7 +1574,7 @@ function buildTaskLedgerResultText(taskLedger: AgentTaskLedger): string {
   return `本轮任务账本：
 ${buildTaskLedgerText(taskLedger)}
 
-请根据任务账本判断哪些目标已经完成、哪些仍有风险。最终回复必须服务于 objective、taskPhase、activePlan、structuredSuccessCriteria 和 successCriteria；涉及未完成或未验证事项时，需要明确说明状态，不要把 pendingSubtasks 说成已完成。`;
+请根据任务账本判断哪些目标已经完成、哪些仍有风险。最终回复必须服务于 objective、taskPhase、activePlan、decisionMemory、structuredSuccessCriteria 和 successCriteria；涉及未完成或未验证事项时，需要明确说明状态，不要把 pendingSubtasks 说成已完成，也不要忽略 active decisionMemory 中仍未被 superseded 的失败路线或已证伪假设。`;
 }
 
 function buildUserMessages(
@@ -2253,6 +2259,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
         options.signal
       );
       taskLedger = appendLedgerObservation(taskLedger, createObservationFromToolCall(callRecord));
+      taskLedger = appendDecisionMemory(taskLedger, createDecisionMemoryFromToolCall(callRecord));
       taskLedger = normalizeAgentTaskLedger(
         {
           ...taskLedger,

@@ -1,6 +1,7 @@
 import type {
   AgentMcpCallRecord,
   AgentTaskLedger,
+  AgentTaskLedgerDecisionMemoryEntry,
   AgentTaskLedgerDecisionTraceEntry,
   AgentTaskLedgerFailedAttempt,
   AgentTaskLedgerObservation,
@@ -14,6 +15,7 @@ import { getActiveVerificationCriteria, verifyCriteriaFromToolHistory } from "./
 
 const MAX_LEDGER_LIST_ITEMS = 8;
 const MAX_LEDGER_PLAN_STEPS = 8;
+const MAX_LEDGER_DECISION_MEMORY_ITEMS = 8;
 const MAX_LEDGER_DECISION_TRACE_ITEMS = 8;
 const MAX_LEDGER_OBSERVATION_ITEMS = 8;
 const MAX_LEDGER_SUCCESS_CRITERIA_ITEMS = 8;
@@ -28,6 +30,7 @@ export interface AgentTaskLedgerPatch {
   completedSubtasks?: string[];
   pendingSubtasks?: string[];
   activePlan?: AgentTaskLedgerPlanStep[];
+  decisionMemory?: AgentTaskLedgerDecisionMemoryEntry[];
   decisionTrace?: AgentTaskLedgerDecisionTraceEntry[];
   observations?: AgentTaskLedgerObservation[];
   discoveredFacts?: string[];
@@ -156,6 +159,72 @@ function normalizeTaskPhase(value: unknown, fallback: AgentTaskPhase = "understa
   return ["understanding", "planning", "executing", "verifying", "recovering", "finalizing"].includes(phase)
     ? (phase as AgentTaskPhase)
     : fallback;
+}
+
+function normalizeDecisionMemory(value: unknown): AgentTaskLedgerDecisionMemoryEntry[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const output: AgentTaskLedgerDecisionMemoryEntry[] = [];
+  const seen = new Set<string>();
+  const validScopes = new Set(["current_task", "session", "project"]);
+  const validStatuses = new Set(["active", "superseded"]);
+
+  for (const item of value) {
+    if (!isRecord(item)) {
+      continue;
+    }
+
+    const decision = truncateLedgerText(item.decision);
+    const reason = truncateLedgerText(item.reason);
+    const rawConfidence = typeof item.confidence === "number" ? item.confidence : Number(item.confidence);
+    const confidence = Number.isFinite(rawConfidence) ? Math.max(0, Math.min(1, rawConfidence)) : 0.5;
+    const rawScope = typeof item.scope === "string" ? item.scope.trim() : "";
+    const rawStatus = typeof item.status === "string" ? item.status.trim() : "";
+    const scope = validScopes.has(rawScope) ? (rawScope as AgentTaskLedgerDecisionMemoryEntry["scope"]) : "current_task";
+    const status = validStatuses.has(rawStatus) ? (rawStatus as AgentTaskLedgerDecisionMemoryEntry["status"]) : "active";
+    const evidenceRefs = normalizeLedgerStringList(item.evidenceRefs, 5);
+    const key = `${decision.toLowerCase()}|${reason.toLowerCase()}|${scope}`;
+
+    if (!decision || !reason || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    output.push({
+      decision,
+      reason,
+      confidence,
+      scope,
+      status,
+      evidenceRefs
+    });
+
+    if (output.length >= MAX_LEDGER_DECISION_MEMORY_ITEMS) {
+      break;
+    }
+  }
+
+  return output;
+}
+
+function mergeDecisionMemory(
+  currentValue: AgentTaskLedgerDecisionMemoryEntry[],
+  patchValue: AgentTaskLedgerDecisionMemoryEntry[] | undefined
+): AgentTaskLedgerDecisionMemoryEntry[] {
+  if (!patchValue) {
+    return currentValue;
+  }
+
+  const entries = new Map<string, AgentTaskLedgerDecisionMemoryEntry>();
+
+  for (const item of [...currentValue, ...patchValue]) {
+    const key = `${item.decision.toLowerCase()}|${item.scope}`;
+    entries.set(key, item);
+  }
+
+  return [...entries.values()].slice(-MAX_LEDGER_DECISION_MEMORY_ITEMS);
 }
 
 function normalizeDecisionTrace(value: unknown): AgentTaskLedgerDecisionTraceEntry[] {
@@ -297,6 +366,7 @@ export function normalizeAgentTaskLedger(
     completedSubtasks: normalizeLedgerStringList(source.completedSubtasks),
     pendingSubtasks: normalizeLedgerStringList(source.pendingSubtasks),
     activePlan: normalizeLedgerPlanSteps(source.activePlan),
+    decisionMemory: normalizeDecisionMemory(source.decisionMemory),
     decisionTrace: normalizeDecisionTrace(source.decisionTrace),
     observations: normalizeLedgerObservations(source.observations),
     discoveredFacts: normalizeLedgerStringList(source.discoveredFacts),
@@ -348,6 +418,10 @@ export function normalizeAgentTaskLedgerPatch(value: unknown): AgentTaskLedgerPa
 
   if ("activePlan" in value) {
     patch.activePlan = normalizeLedgerPlanSteps(value.activePlan);
+  }
+
+  if ("decisionMemory" in value) {
+    patch.decisionMemory = normalizeDecisionMemory(value.decisionMemory);
   }
 
   if ("decisionTrace" in value) {
@@ -424,6 +498,7 @@ export function mergeAgentTaskLedgerPatch(
       completedSubtasks: patch.completedSubtasks ?? currentLedger.completedSubtasks,
       pendingSubtasks: patch.pendingSubtasks ?? currentLedger.pendingSubtasks,
       activePlan: patch.activePlan ?? currentLedger.activePlan,
+      decisionMemory: mergeDecisionMemory(currentLedger.decisionMemory, patch.decisionMemory),
       decisionTrace: patch.decisionTrace ?? currentLedger.decisionTrace,
       observations: patch.observations ?? currentLedger.observations,
       discoveredFacts: patch.discoveredFacts ?? currentLedger.discoveredFacts,
@@ -487,11 +562,56 @@ export function createObservationFromToolCall(call: AgentMcpCallRecord): AgentTa
   };
 }
 
+export function createDecisionMemoryFromToolCall(call: AgentMcpCallRecord): AgentTaskLedgerDecisionMemoryEntry | null {
+  if (!call.isError) {
+    return null;
+  }
+
+  const shouldAvoidRepeat = ["schema_mismatch", "tool_unavailable", "wrong_tool", "nonexistent_entity", "permission_denied"].includes(
+    call.failureKind ?? ""
+  );
+
+  if (!shouldAvoidRepeat) {
+    return null;
+  }
+
+  const rawRef = `mcp:${call.round}:${call.serverId}:${call.toolName}:${call.createdAt}`;
+  const reason =
+    truncateLedgerText(call.failureReason || call.resultText, 180) ||
+    `工具失败分类：${call.failureKind ?? "unknown"}`;
+
+  return {
+    decision: `本任务内暂时放弃重复使用 ${call.serverName} / ${call.toolName} 的相同失败路线`,
+    reason,
+    confidence: 0.8,
+    scope: "current_task",
+    status: "active",
+    evidenceRefs: [rawRef]
+  };
+}
+
 export function appendLedgerObservation(ledger: AgentTaskLedger, observation: AgentTaskLedgerObservation): AgentTaskLedger {
   return normalizeAgentTaskLedger(
     {
       ...ledger,
       observations: [...ledger.observations, observation].slice(-MAX_LEDGER_OBSERVATION_ITEMS)
+    },
+    ledger.objective
+  );
+}
+
+export function appendDecisionMemory(
+  ledger: AgentTaskLedger,
+  decisionMemory: AgentTaskLedgerDecisionMemoryEntry | null
+): AgentTaskLedger {
+  if (!decisionMemory) {
+    return normalizeAgentTaskLedger(ledger, ledger.objective);
+  }
+
+  return normalizeAgentTaskLedger(
+    {
+      ...ledger,
+      decisionMemory: [...ledger.decisionMemory, decisionMemory].slice(-MAX_LEDGER_DECISION_MEMORY_ITEMS)
     },
     ledger.objective
   );
