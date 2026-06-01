@@ -1,6 +1,7 @@
 import { computed } from "vue";
 
 import {
+  WRITING_AI_PHASES,
   WRITING_AI_TASKS,
   WRITING_APP_TABS,
   WRITING_AUTOSAVE_DELAY,
@@ -80,9 +81,20 @@ const filteredWritingChapterEntries = computed(() =>
   getFilteredWritingChapterEntries(activeWritingChapters.value, ui.marketplace.writing.chapterSearchQuery)
 );
 const activeWritingTaskOptions = computed(() => WRITING_AI_TASKS[ui.marketplace.writing.activeTab] ?? WRITING_AI_TASKS.intro);
+const activeWritingSelectedTaskOption = computed(
+  () => activeWritingTaskOptions.value.find((task) => task.id === ui.marketplace.writing.aiTaskId) ?? null
+);
+const activeWritingPhaseOptions = computed(() => getWritingPhaseOptionsForTab(ui.marketplace.writing.activeTab));
+const activeWritingPhaseId = computed(() =>
+  getWritingActivePhaseId(ui.marketplace.writing.activeTab, ui.marketplace.writing.aiPhaseId, activeWritingSelectedTaskOption.value)
+);
+const activeWritingPhaseTaskOptions = computed(() =>
+  activeWritingTaskOptions.value.filter((task) => normalizeWritingTaskPhase(task) === activeWritingPhaseId.value)
+);
 const activeWritingTask = computed(
   () =>
-    activeWritingTaskOptions.value.find((task) => task.id === ui.marketplace.writing.aiTaskId) ??
+    activeWritingSelectedTaskOption.value ??
+    activeWritingPhaseTaskOptions.value[0] ??
     activeWritingTaskOptions.value[0] ??
     null
 );
@@ -279,6 +291,34 @@ function normalizeWritingStoryAssetKey(value) {
     .toLowerCase();
 }
 
+function normalizeWritingTaskPhase(task) {
+  const phaseId = String(task?.phase ?? "").trim();
+  return WRITING_AI_PHASES.some((phase) => phase.id === phaseId) ? phaseId : "foundation";
+}
+
+function getWritingPhaseOptionsForTab(tabId) {
+  const tasks = WRITING_AI_TASKS[tabId] ?? WRITING_AI_TASKS.intro;
+  const phaseIds = new Set(tasks.map((task) => normalizeWritingTaskPhase(task)));
+  return WRITING_AI_PHASES.filter((phase) => phaseIds.has(phase.id));
+}
+
+function getWritingDefaultPhaseIdForTab(tabId) {
+  const tasks = WRITING_AI_TASKS[tabId] ?? WRITING_AI_TASKS.intro;
+  return normalizeWritingTaskPhase(tasks[0]);
+}
+
+function getWritingActivePhaseId(tabId, phaseId, task = null) {
+  const options = getWritingPhaseOptionsForTab(tabId);
+  const optionIds = new Set(options.map((phase) => phase.id));
+  const taskPhaseId = task ? normalizeWritingTaskPhase(task) : "";
+
+  if (taskPhaseId && optionIds.has(taskPhaseId)) {
+    return taskPhaseId;
+  }
+
+  return optionIds.has(phaseId) ? phaseId : options[0]?.id ?? getWritingDefaultPhaseIdForTab(tabId);
+}
+
 function normalizeOptionalStoryChapterIndex(value) {
   return value === null || value === undefined || value === "" ? undefined : normalizeWritingChapterIndex(value, 0);
 }
@@ -381,12 +421,20 @@ function normalizeWritingForeshadowAssets(entries = [], bookId = "writing_book")
 
 function normalizeWritingStyleProfileForUi(profile = {}) {
   const source = profile && typeof profile === "object" ? profile : {};
+  const pacingCurve = normalizeStringList(source.pacingCurve);
 
   return {
     voice: String(source.voice ?? "").trim(),
     pacing: String(source.pacing ?? "").trim(),
     genreSignals: normalizeStringList(source.genreSignals),
-    taboos: normalizeStringList(source.taboos)
+    taboos: normalizeStringList(source.taboos),
+    ...(source.proseDensity ? { proseDensity: String(source.proseDensity).trim() } : {}),
+    ...(source.dialogueRatio ? { dialogueRatio: String(source.dialogueRatio).trim() } : {}),
+    ...(source.narrationDistance ? { narrationDistance: String(source.narrationDistance).trim() } : {}),
+    ...(source.emotionalTemperature ? { emotionalTemperature: String(source.emotionalTemperature).trim() } : {}),
+    ...(source.humorLevel ? { humorLevel: String(source.humorLevel).trim() } : {}),
+    ...(source.violenceExplicitness ? { violenceExplicitness: String(source.violenceExplicitness).trim() } : {}),
+    ...(pacingCurve.length ? { pacingCurve } : {})
   };
 }
 
@@ -403,6 +451,218 @@ function normalizeWritingStoryAssetsForUi(assets = {}, bookId = "writing_book") 
     rules: normalizeWritingStoryAssetEntries(source.rules, bookId, "rule"),
     styleProfile: normalizeWritingStyleProfileForUi(source.styleProfile),
     memoryNotes: normalizeWritingStoryAssetEntries(source.memoryNotes, bookId, "memory"),
+    updatedAt: String(source.updatedAt ?? new Date().toISOString())
+  };
+}
+
+const WRITING_NARRATIVE_STATE_NODE_KINDS = new Set([
+  "character",
+  "worldRule",
+  "resource",
+  "region",
+  "foreshadow",
+  "arc",
+  "timelineEvent",
+  "continuityWarning",
+  "planDrift"
+]);
+const WRITING_NARRATIVE_RISK_LEVELS = new Set(["low", "medium", "high"]);
+
+function normalizeWritingNarrativeStateNodeKind(value, fallback = "arc") {
+  const kind = String(value ?? "").trim();
+  return WRITING_NARRATIVE_STATE_NODE_KINDS.has(kind) ? kind : fallback;
+}
+
+function normalizeWritingNarrativeRiskLevel(value) {
+  const level = String(value ?? "").trim();
+  return WRITING_NARRATIVE_RISK_LEVELS.has(level) ? level : "low";
+}
+
+function normalizeWritingNarrativeStateNode(entry, index = 0, bookId = "writing_book", kind = "arc") {
+  const source = entry && typeof entry === "object" ? entry : {};
+  const label = String(source.label ?? source.title ?? source.name ?? "").trim();
+  const summary = String(source.summary ?? source.detail ?? source.description ?? source.setup ?? "").trim();
+  const introducedAtChapterIndex = normalizeOptionalStoryChapterIndex(source.introducedAtChapterIndex ?? source.chapterIndex);
+  const payoffDeadlineChapterIndex = normalizeOptionalStoryChapterIndex(source.payoffDeadlineChapterIndex);
+  const resolvedAtChapterIndex = normalizeOptionalStoryChapterIndex(source.resolvedAtChapterIndex);
+
+  if (!label && !summary) {
+    return null;
+  }
+
+  return {
+    id: String(source.id ?? "").trim() || `${bookId}_${kind}_${index + 1}`,
+    kind: normalizeWritingNarrativeStateNodeKind(source.kind, kind),
+    label: label || `未命名${kind} ${index + 1}`,
+    summary,
+    status: String(source.status ?? "active").trim() || "active",
+    ...(introducedAtChapterIndex ? { introducedAtChapterIndex } : {}),
+    ...(payoffDeadlineChapterIndex ? { payoffDeadlineChapterIndex } : {}),
+    ...(resolvedAtChapterIndex ? { resolvedAtChapterIndex } : {}),
+    evidenceChapterIds: normalizeStringList(source.evidenceChapterIds),
+    relatedNodeIds: normalizeStringList(source.relatedNodeIds),
+    riskLevel: normalizeWritingNarrativeRiskLevel(source.riskLevel),
+    updatedAt: String(source.updatedAt ?? new Date().toISOString())
+  };
+}
+
+function normalizeWritingNarrativeStateNodeList(entries = [], bookId = "writing_book", kind = "arc") {
+  return (Array.isArray(entries) ? entries : [])
+    .map((entry, index) => normalizeWritingNarrativeStateNode(entry, index, bookId, kind))
+    .filter(Boolean);
+}
+
+function hasWritingNarrativeStateContent(state = {}) {
+  if (!state || typeof state !== "object") {
+    return false;
+  }
+
+  return [
+    state.characters,
+    state.worldRules,
+    state.resources,
+    state.regions,
+    state.foreshadows,
+    state.arcs,
+    state.timelineEvents,
+    state.continuityWarnings,
+    state.planDriftNotes
+  ].some((entries) => Array.isArray(entries) && entries.length > 0);
+}
+
+function dedupeWritingNarrativeStateNodes(entries = []) {
+  const seen = new Set();
+  const result = [];
+
+  entries.forEach((entry) => {
+    const key = normalizeWritingStoryAssetKey(entry.id || entry.label);
+
+    if (!key || seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+    result.push(entry);
+  });
+
+  return result;
+}
+
+function deriveWritingNarrativeStateFromStoryAssets(assets = {}, bookId = "writing_book") {
+  const normalizedAssets = normalizeWritingStoryAssetsForUi(assets, bookId);
+  const now = String(normalizedAssets.updatedAt ?? new Date().toISOString());
+  const makeNode = (kind, label, summary, index, options = {}) => ({
+    id: String(options.id ?? `${bookId}_${kind}_${index + 1}`),
+    kind,
+    label: label || `未命名${kind} ${index + 1}`,
+    summary: String(summary ?? "").trim(),
+    status: String(options.status ?? "active"),
+    ...(options.introducedAtChapterIndex ? { introducedAtChapterIndex: options.introducedAtChapterIndex } : {}),
+    ...(options.payoffDeadlineChapterIndex ? { payoffDeadlineChapterIndex: options.payoffDeadlineChapterIndex } : {}),
+    ...(options.resolvedAtChapterIndex ? { resolvedAtChapterIndex: options.resolvedAtChapterIndex } : {}),
+    evidenceChapterIds: normalizeStringList(options.evidenceChapterIds),
+    relatedNodeIds: normalizeStringList(options.relatedNodeIds),
+    riskLevel: normalizeWritingNarrativeRiskLevel(options.riskLevel),
+    updatedAt: String(options.updatedAt ?? now)
+  });
+
+  const memoryResourcePattern = /资源|物件|伤痕|债务|权限|名声|证据/;
+  const regionPattern = /地区|区域|地点|城|域|地图/;
+
+  return {
+    characters: normalizedAssets.characters.map((character, index) =>
+      makeNode(
+        "character",
+        character.name,
+        [
+          character.role ? `身份：${character.role}` : "",
+          character.goal ? `目标：${character.goal}` : "",
+          character.growthArc ? `弧线：${character.growthArc}` : "",
+          character.relationships?.length ? `关系：${character.relationships.join("；")}` : ""
+        ].filter(Boolean).join(" / "),
+        index,
+        { id: character.id, status: character.status, updatedAt: character.updatedAt }
+      )
+    ),
+    worldRules: [...normalizedAssets.rules, ...normalizedAssets.worldview].map((entry, index) =>
+      makeNode("worldRule", entry.title, entry.detail, index, {
+        id: entry.id,
+        status: entry.status ?? "active",
+        introducedAtChapterIndex: entry.chapterIndex,
+        updatedAt: entry.updatedAt
+      })
+    ),
+    resources: normalizedAssets.memoryNotes
+      .filter((entry) => (entry.tags ?? []).some((tag) => memoryResourcePattern.test(tag)) || memoryResourcePattern.test(`${entry.title}${entry.detail}`))
+      .map((entry, index) =>
+        makeNode("resource", entry.title, entry.detail, index, {
+          id: entry.id,
+          status: entry.status ?? "active",
+          introducedAtChapterIndex: entry.chapterIndex,
+          updatedAt: entry.updatedAt
+        })
+      ),
+    regions: normalizedAssets.worldview
+      .filter((entry) => (entry.tags ?? []).some((tag) => regionPattern.test(tag)) || regionPattern.test(`${entry.title}${entry.detail}`))
+      .map((entry, index) =>
+        makeNode("region", entry.title, entry.detail, index, {
+          id: `${entry.id}_region`,
+          status: entry.status ?? "active",
+          introducedAtChapterIndex: entry.chapterIndex,
+          updatedAt: entry.updatedAt
+        })
+      ),
+    foreshadows: normalizedAssets.foreshadows.map((entry, index) =>
+      makeNode("foreshadow", entry.title, [entry.setup, entry.payoff ? `回收计划：${entry.payoff}` : ""].filter(Boolean).join(" / "), index, {
+        id: entry.id,
+        status: entry.status,
+        introducedAtChapterIndex: entry.chapterIndex,
+        payoffDeadlineChapterIndex: entry.payoffChapterIndex,
+        riskLevel: entry.status === "open" ? "medium" : "low",
+        updatedAt: entry.updatedAt
+      })
+    ),
+    arcs: normalizedAssets.characters
+      .filter((character) => character.growthArc)
+      .map((character, index) =>
+        makeNode("arc", `${character.name}：成长弧`, character.growthArc, index, {
+          id: `${character.id}_arc`,
+          relatedNodeIds: [character.id],
+          status: character.status,
+          updatedAt: character.updatedAt
+        })
+      ),
+    timelineEvents: normalizedAssets.timeline.map((entry, index) =>
+      makeNode("timelineEvent", entry.title, entry.detail, index, {
+        id: entry.id,
+        status: entry.status ?? "active",
+        introducedAtChapterIndex: entry.chapterIndex,
+        updatedAt: entry.updatedAt
+      })
+    ),
+    continuityWarnings: [],
+    planDriftNotes: [],
+    updatedAt: now
+  };
+}
+
+function normalizeWritingNarrativeStateForUi(state = {}, storyAssets = {}, bookId = "writing_book") {
+  const source = state && typeof state === "object" ? state : {};
+
+  if (!hasWritingNarrativeStateContent(source)) {
+    return deriveWritingNarrativeStateFromStoryAssets(storyAssets, bookId);
+  }
+
+  return {
+    characters: normalizeWritingNarrativeStateNodeList(source.characters, bookId, "character"),
+    worldRules: normalizeWritingNarrativeStateNodeList(source.worldRules, bookId, "worldRule"),
+    resources: normalizeWritingNarrativeStateNodeList(source.resources, bookId, "resource"),
+    regions: normalizeWritingNarrativeStateNodeList(source.regions, bookId, "region"),
+    foreshadows: normalizeWritingNarrativeStateNodeList(source.foreshadows, bookId, "foreshadow"),
+    arcs: normalizeWritingNarrativeStateNodeList(source.arcs, bookId, "arc"),
+    timelineEvents: normalizeWritingNarrativeStateNodeList(source.timelineEvents, bookId, "timelineEvent"),
+    continuityWarnings: normalizeWritingNarrativeStateNodeList(source.continuityWarnings, bookId, "continuityWarning"),
+    planDriftNotes: normalizeWritingNarrativeStateNodeList(source.planDriftNotes, bookId, "planDrift"),
     updatedAt: String(source.updatedAt ?? new Date().toISOString())
   };
 }
@@ -476,6 +736,7 @@ function normalizeWritingBookForUi(book, index = 0) {
   const now = new Date().toISOString();
   const bookId = String(book?.id ?? "").trim() || createLocalId("writing_book");
   const legacyDetailedOutline = String(book?.seriesPlan ?? "").trim();
+  const storyAssets = normalizeWritingStoryAssetsForUi(book?.storyAssets, bookId);
   const normalized = {
     id: bookId,
     title: String(book?.title ?? "").trim() || "未命名故事",
@@ -491,7 +752,8 @@ function normalizeWritingBookForUi(book, index = 0) {
     extraIntroSections: normalizeWritingBookExtraIntroSectionsForUi(book?.extraIntroSections, bookId),
     directoryName: typeof book?.directoryName === "string" ? book.directoryName : undefined,
     parts: normalizeWritingBookPartsForUi(book?.parts, bookId),
-    storyAssets: normalizeWritingStoryAssetsForUi(book?.storyAssets, bookId),
+    storyAssets,
+    narrativeState: normalizeWritingNarrativeStateForUi(book?.narrativeState, storyAssets, bookId),
     outlinePlannerJob: normalizeWritingOutlinePlannerJobForUi(book?.outlinePlannerJob),
     chapters: []
   };
@@ -1046,7 +1308,14 @@ function buildWritingStyleProfileContent(profile = {}) {
     profile.voice ? `- voice：${profile.voice}` : "",
     profile.pacing ? `- pacing：${profile.pacing}` : "",
     profile.genreSignals?.length ? `- genreSignals：${profile.genreSignals.join("、")}` : "",
-    profile.taboos?.length ? `- taboos：${profile.taboos.join("、")}` : ""
+    profile.taboos?.length ? `- taboos：${profile.taboos.join("、")}` : "",
+    profile.proseDensity ? `- proseDensity：${profile.proseDensity}` : "",
+    profile.dialogueRatio ? `- dialogueRatio：${profile.dialogueRatio}` : "",
+    profile.narrationDistance ? `- narrationDistance：${profile.narrationDistance}` : "",
+    profile.emotionalTemperature ? `- emotionalTemperature：${profile.emotionalTemperature}` : "",
+    profile.humorLevel ? `- humorLevel：${profile.humorLevel}` : "",
+    profile.violenceExplicitness ? `- violenceExplicitness：${profile.violenceExplicitness}` : "",
+    profile.pacingCurve?.length ? `- pacingCurve：${profile.pacingCurve.join(" -> ")}` : ""
   ]
     .filter(Boolean)
     .join("\n");
@@ -1071,6 +1340,89 @@ function buildWritingStoryAssetsContent(book) {
   return sections.length
     ? sections.join("\n\n")
     : "暂无结构化故事资产；本轮如产生必须长期遵守的事实，需要写入 storyAssets。";
+}
+
+function buildWritingNarrativeStateNodeLines(nodes = [], maxCount = 8) {
+  return nodes
+    .slice(0, maxCount)
+    .map((node) => {
+      const chapter = node.introducedAtChapterIndex ? ` / 第${node.introducedAtChapterIndex}章` : "";
+      const deadline = node.payoffDeadlineChapterIndex ? ` / 截止第${node.payoffDeadlineChapterIndex}章` : "";
+      const resolved = node.resolvedAtChapterIndex ? ` / 已回收第${node.resolvedAtChapterIndex}章` : "";
+      const risk = node.riskLevel && node.riskLevel !== "low" ? ` / ${node.riskLevel}` : "";
+      const status = node.status ? ` / ${node.status}` : "";
+      return `- ${node.label}${chapter}${deadline}${resolved}${status}${risk}${node.summary ? `：${truncateWritingStoryAssetText(node.summary)}` : ""}`;
+    })
+    .join("\n");
+}
+
+function buildWritingNarrativeStateContent(book) {
+  const state = normalizeWritingNarrativeStateForUi(book?.narrativeState, book?.storyAssets, book?.id ?? "writing_book");
+  const sections = [
+    state.characters.length ? `【人物状态】\n${buildWritingNarrativeStateNodeLines(state.characters)}` : "",
+    state.worldRules.length ? `【世界规则】\n${buildWritingNarrativeStateNodeLines(state.worldRules)}` : "",
+    state.resources.length ? `【资源与债务】\n${buildWritingNarrativeStateNodeLines(state.resources)}` : "",
+    state.regions.length ? `【区域状态】\n${buildWritingNarrativeStateNodeLines(state.regions)}` : "",
+    state.foreshadows.length ? `【伏笔压力】\n${buildWritingNarrativeStateNodeLines(state.foreshadows)}` : "",
+    state.arcs.length ? `【故事弧】\n${buildWritingNarrativeStateNodeLines(state.arcs)}` : "",
+    state.timelineEvents.length ? `【时间线事件】\n${buildWritingNarrativeStateNodeLines(state.timelineEvents)}` : "",
+    state.continuityWarnings.length ? `【连续性风险】\n${buildWritingNarrativeStateNodeLines(state.continuityWarnings)}` : "",
+    state.planDriftNotes.length ? `【计划漂移】\n${buildWritingNarrativeStateNodeLines(state.planDriftNotes)}` : ""
+  ].filter(Boolean);
+
+  return sections.length
+    ? sections.join("\n\n")
+    : "暂无 Narrative State；本轮如产生长期状态，请沉淀为人物状态、世界规则、资源、区域、伏笔、故事弧、时间线或风险节点。";
+}
+
+function getWritingNarrativeStateSummary(book) {
+  const state = normalizeWritingNarrativeStateForUi(book?.narrativeState, book?.storyAssets, book?.id ?? "writing_book");
+  const riskCount = [...state.continuityWarnings, ...state.planDriftNotes, ...state.foreshadows].filter(
+    (node) => node.riskLevel === "medium" || node.riskLevel === "high"
+  ).length;
+
+  return [
+    { label: "人物", value: state.characters.length },
+    { label: "规则", value: state.worldRules.length },
+    { label: "伏笔", value: state.foreshadows.length },
+    { label: "故事弧", value: state.arcs.length },
+    { label: "风险", value: riskCount }
+  ];
+}
+
+function getWritingNarrativeNodeKindLabel(kind) {
+  const labels = {
+    character: "人物",
+    worldRule: "规则",
+    resource: "资源",
+    region: "区域",
+    foreshadow: "伏笔",
+    arc: "故事弧",
+    timelineEvent: "时间线",
+    continuityWarning: "连续性",
+    planDrift: "漂移"
+  };
+
+  return labels[kind] ?? "状态";
+}
+
+function getWritingNarrativeStatePreview(book, limit = 5) {
+  const state = normalizeWritingNarrativeStateForUi(book?.narrativeState, book?.storyAssets, book?.id ?? "writing_book");
+  const nodes = [
+    ...state.continuityWarnings,
+    ...state.planDriftNotes,
+    ...state.foreshadows.filter((node) => node.status !== "resolved"),
+    ...state.arcs,
+    ...state.characters
+  ];
+
+  return dedupeWritingNarrativeStateNodes(nodes)
+    .slice(0, limit)
+    .map((node) => ({
+      ...node,
+      kindLabel: getWritingNarrativeNodeKindLabel(node.kind),
+      summary: truncateWritingStoryAssetText(node.summary, 96)
+    }));
 }
 
 function mergeWritingStoryAssetEntries(existingEntries = [], incomingEntries = [], bookId = "writing_book", group = "asset") {
@@ -1182,8 +1534,78 @@ function mergeWritingStyleProfile(existingProfile = {}, incomingProfile = {}) {
     voice: incoming.voice || existing.voice,
     pacing: incoming.pacing || existing.pacing,
     genreSignals: uniqueStringList(existing.genreSignals, incoming.genreSignals),
-    taboos: uniqueStringList(existing.taboos, incoming.taboos)
+    taboos: uniqueStringList(existing.taboos, incoming.taboos),
+    proseDensity: incoming.proseDensity || existing.proseDensity || "",
+    dialogueRatio: incoming.dialogueRatio || existing.dialogueRatio || "",
+    narrationDistance: incoming.narrationDistance || existing.narrationDistance || "",
+    emotionalTemperature: incoming.emotionalTemperature || existing.emotionalTemperature || "",
+    humorLevel: incoming.humorLevel || existing.humorLevel || "",
+    violenceExplicitness: incoming.violenceExplicitness || existing.violenceExplicitness || "",
+    pacingCurve: uniqueStringList(existing.pacingCurve, incoming.pacingCurve)
   };
+}
+
+function mergeWritingNarrativeStateNodes(existingNodes = [], incomingNodes = [], bookId = "writing_book", kind = "arc") {
+  const existing = normalizeWritingNarrativeStateNodeList(existingNodes, bookId, kind);
+  const incoming = normalizeWritingNarrativeStateNodeList(incomingNodes, bookId, kind);
+  const nodesByKey = new Map(existing.map((node) => [normalizeWritingStoryAssetKey(node.label || node.id), node]));
+
+  incoming.forEach((node) => {
+    const key = normalizeWritingStoryAssetKey(node.label || node.id);
+    const current = nodesByKey.get(key);
+
+    if (!key) {
+      return;
+    }
+
+    if (!current) {
+      nodesByKey.set(key, node);
+      return;
+    }
+
+    nodesByKey.set(key, {
+      ...current,
+      kind: normalizeWritingNarrativeStateNodeKind(node.kind, current.kind),
+      label: node.label || current.label,
+      summary: node.summary || current.summary,
+      status: node.status || current.status,
+      introducedAtChapterIndex: node.introducedAtChapterIndex ?? current.introducedAtChapterIndex,
+      payoffDeadlineChapterIndex: node.payoffDeadlineChapterIndex ?? current.payoffDeadlineChapterIndex,
+      resolvedAtChapterIndex: node.resolvedAtChapterIndex ?? current.resolvedAtChapterIndex,
+      evidenceChapterIds: uniqueStringList(current.evidenceChapterIds, node.evidenceChapterIds),
+      relatedNodeIds: uniqueStringList(current.relatedNodeIds, node.relatedNodeIds),
+      riskLevel: normalizeWritingNarrativeRiskLevel(node.riskLevel || current.riskLevel),
+      updatedAt: new Date().toISOString()
+    });
+  });
+
+  return Array.from(nodesByKey.values());
+}
+
+function mergeWritingNarrativeState(book, incomingState = {}) {
+  if (!book) {
+    return null;
+  }
+
+  const bookId = book.id ?? "writing_book";
+  const current = normalizeWritingNarrativeStateForUi(book.narrativeState, book.storyAssets, bookId);
+  const incoming = normalizeWritingNarrativeStateForUi(incomingState, {}, bookId);
+
+  book.narrativeState = {
+    characters: mergeWritingNarrativeStateNodes(current.characters, incoming.characters, bookId, "character"),
+    worldRules: mergeWritingNarrativeStateNodes(current.worldRules, incoming.worldRules, bookId, "worldRule"),
+    resources: mergeWritingNarrativeStateNodes(current.resources, incoming.resources, bookId, "resource"),
+    regions: mergeWritingNarrativeStateNodes(current.regions, incoming.regions, bookId, "region"),
+    foreshadows: mergeWritingNarrativeStateNodes(current.foreshadows, incoming.foreshadows, bookId, "foreshadow"),
+    arcs: mergeWritingNarrativeStateNodes(current.arcs, incoming.arcs, bookId, "arc"),
+    timelineEvents: mergeWritingNarrativeStateNodes(current.timelineEvents, incoming.timelineEvents, bookId, "timelineEvent"),
+    continuityWarnings: mergeWritingNarrativeStateNodes(current.continuityWarnings, incoming.continuityWarnings, bookId, "continuityWarning"),
+    planDriftNotes: mergeWritingNarrativeStateNodes(current.planDriftNotes, incoming.planDriftNotes, bookId, "planDrift"),
+    updatedAt: new Date().toISOString()
+  };
+
+  touchWritingBook(book, { persist: false });
+  return book.narrativeState;
 }
 
 function mergeWritingStoryAssets(book, incomingAssets = {}) {
@@ -1207,6 +1629,7 @@ function mergeWritingStoryAssets(book, incomingAssets = {}) {
     memoryNotes: mergeWritingStoryAssetEntries(current.memoryNotes, incoming.memoryNotes, bookId, "memory"),
     updatedAt: new Date().toISOString()
   };
+  book.narrativeState = normalizeWritingNarrativeStateForUi(book.narrativeState, book.storyAssets, bookId);
 
   touchWritingBook(book, { persist: false });
   return book.storyAssets;
@@ -1705,6 +2128,7 @@ function goWritingChapter(chapterId) {
   selectWritingChapter(chapterId);
   ui.marketplace.writing.activeTab = "chapter";
   ui.marketplace.writing.aiTaskId = WRITING_AI_TASKS.chapter[0].id;
+  ui.marketplace.writing.aiPhaseId = getWritingDefaultPhaseIdForTab("chapter");
   ui.marketplace.writing.aiOutput = "";
   ui.marketplace.writing.chapterSearchQuery = "";
   setWritingChapterPickerOpen(false);
@@ -1853,7 +2277,20 @@ function toggleWritingAiTaskPicker() {
 }
 
 function selectWritingAiTask(taskId) {
+  const task = activeWritingTaskOptions.value.find((entry) => entry.id === taskId);
+
   ui.marketplace.writing.aiTaskId = taskId;
+  ui.marketplace.writing.aiPhaseId = normalizeWritingTaskPhase(task);
+  setWritingAiTaskPickerOpen(false);
+}
+
+function selectWritingAiPhase(phaseId) {
+  const options = getWritingPhaseOptionsForTab(ui.marketplace.writing.activeTab);
+  const nextPhaseId = options.some((phase) => phase.id === phaseId) ? phaseId : options[0]?.id ?? "foundation";
+  const phaseTasks = activeWritingTaskOptions.value.filter((task) => normalizeWritingTaskPhase(task) === nextPhaseId);
+
+  ui.marketplace.writing.aiPhaseId = nextPhaseId;
+  ui.marketplace.writing.aiTaskId = phaseTasks[0]?.id ?? activeWritingTaskOptions.value[0]?.id ?? "";
   setWritingAiTaskPickerOpen(false);
 }
 
@@ -1918,6 +2355,7 @@ function openWritingBook(bookId) {
   selectPreferredWritingChapter(writingBooks.value.find((book) => book.id === bookId) ?? null);
   ui.marketplace.writing.activeTab = "intro";
   ui.marketplace.writing.aiTaskId = WRITING_AI_TASKS.intro[0].id;
+  ui.marketplace.writing.aiPhaseId = getWritingDefaultPhaseIdForTab("intro");
   ui.marketplace.writing.aiOutput = "";
   ui.marketplace.writing.isAiDrawerOpen = false;
   ui.marketplace.writing.isPromptPreviewOpen = false;
@@ -1948,6 +2386,7 @@ async function createWritingBook() {
     extraIntroSections: [],
     parts: [],
     storyAssets: normalizeWritingStoryAssetsForUi({}, createLocalId("writing_story_assets")),
+    narrativeState: normalizeWritingNarrativeStateForUi({}, {}, createLocalId("writing_narrative_state")),
     chapters: [
       {
         id: createLocalId("writing_chapter"),
@@ -1994,6 +2433,7 @@ async function handleWritingBookUpload(event) {
       extraIntroSections: [],
       parts: [],
       storyAssets: normalizeWritingStoryAssetsForUi({}, createLocalId("writing_story_assets")),
+      narrativeState: normalizeWritingNarrativeStateForUi({}, {}, createLocalId("writing_narrative_state")),
       chapters: [
         {
           id: createLocalId("writing_chapter_upload"),
@@ -2036,6 +2476,7 @@ function setWritingTab(tabId) {
 
   ui.marketplace.writing.activeTab = tabId;
   ui.marketplace.writing.aiTaskId = (WRITING_AI_TASKS[tabId] ?? WRITING_AI_TASKS.intro)[0]?.id ?? "";
+  ui.marketplace.writing.aiPhaseId = getWritingDefaultPhaseIdForTab(tabId);
   ui.marketplace.writing.aiOutput = "";
   setWritingAiTaskPickerOpen(false);
   setWritingFeedback("", "neutral");
@@ -2051,6 +2492,9 @@ function setWritingTab(tabId) {
     activeWritingDoneChapters,
     activeWritingExportFileName,
     activeWritingExtraIntroSections,
+    activeWritingPhaseId,
+    activeWritingPhaseOptions,
+    activeWritingPhaseTaskOptions,
     activeWritingIntroSections,
     activeWritingLengthProfile,
     activeWritingOutlinePlannerJob,
@@ -2062,6 +2506,7 @@ function setWritingTab(tabId) {
     backWritingShelf,
     buildWritingBookExportContent,
     buildWritingIntroContent,
+    buildWritingNarrativeStateContent,
     buildWritingOutlineContent,
     buildWritingStoryAssetsContent,
     canExportActiveWritingBook,
@@ -2095,6 +2540,8 @@ function setWritingTab(tabId) {
     getWritingIntroFieldValue,
     getWritingIntroSections,
     getWritingLengthLabel,
+    getWritingNarrativeStatePreview,
+    getWritingNarrativeStateSummary,
     getWritingPartDisplayLabel,
     getWritingTabTitle,
     getWritingTabWordCount,
@@ -2104,6 +2551,7 @@ function setWritingTab(tabId) {
     isActiveWritingBookAiRunning,
     isWritingChapterSubmitConfirmed,
     mergeWritingStoryAssets,
+    mergeWritingNarrativeState,
     normalizePositiveInteger,
     normalizeWritingBookForUi,
     normalizeWritingBookLengthForUi,
@@ -2115,6 +2563,7 @@ function setWritingTab(tabId) {
     normalizeWritingChapterStatusForUi,
     normalizeWritingExportFormat,
     normalizeWritingOutlinePlannerJobForUi,
+    normalizeWritingNarrativeStateForUi,
     normalizeWritingStoryAssetsForUi,
     openWritingAppShelf,
     openWritingBook,
@@ -2128,6 +2577,7 @@ function setWritingTab(tabId) {
     selectWritingChapterFromPicker,
     selectWritingExportDirectory,
     selectWritingAiTask,
+    selectWritingAiPhase,
     setWritingAiDrawerOpen,
     setWritingAiTaskPickerOpen,
     setWritingBookContent,

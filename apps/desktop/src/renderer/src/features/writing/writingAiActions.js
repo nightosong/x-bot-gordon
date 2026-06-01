@@ -23,8 +23,19 @@ import {
   getWritingTaskPromptSpec as getWritingTaskPromptSpecFromAssets
 } from "./writingPromptBuilder.js";
 
-const WRITING_REVIEW_ONLY_TASK_IDS = new Set(["openingAudit", "outlineAudit", "pacing", "hookDirector", "antiAIGenerated", "openingReview", "review"]);
-const WRITING_STORY_ASSET_TASK_IDS = new Set(["continuityMemory", "relationshipContinuity"]);
+const WRITING_REVIEW_ONLY_TASK_IDS = new Set([
+  "openingAudit",
+  "outlineAudit",
+  "pacing",
+  "hookDirector",
+  "arcTracker",
+  "planDrift",
+  "continuityAudit",
+  "antiAIGenerated",
+  "openingReview",
+  "review"
+]);
+const WRITING_STORY_ASSET_TASK_IDS = new Set(["continuityMemory", "relationshipContinuity", "narrativeState", "styleProfile"]);
 const WRITING_INTRO_PLANNING_TASK_IDS = new Set(["storySetup", "storyRefine", "world", "character", "storyBible"]);
 const WRITING_INTRO_SUMMARY_TASK_IDS = new Set(["premise"]);
 const WRITING_CHAPTER_SUMMARY_TASK_IDS = new Set(["chapterPlan"]);
@@ -39,6 +50,7 @@ export function createWritingAiActions({
   activeWritingTask,
   buildWritingIntroContent,
   buildWritingOutlineContent,
+  buildWritingNarrativeStateContent,
   buildWritingStoryAssetsContent,
   createLocalId,
   desktopApi,
@@ -55,6 +67,7 @@ export function createWritingAiActions({
   getWritingTabTitle,
   getPreferredWritingChapter,
   mergeWritingStoryAssets,
+  mergeWritingNarrativeState,
   normalizePositiveInteger,
   normalizeWritingBookPart,
   normalizeWritingBookPartTypeForUi,
@@ -338,8 +351,10 @@ function buildWritingStoryMemoryContext(book, currentChapter = null) {
     .map((part) => `${getWritingPartDisplayLabel(part)}：${truncateText(String(part.description ?? "").replace(/\s+/g, " ").trim(), 120) || "暂无描述"}`)
     .join("\n");
   const structuredAssets = typeof buildWritingStoryAssetsContent === "function" ? buildWritingStoryAssetsContent(book) : "";
+  const narrativeState = typeof buildWritingNarrativeStateContent === "function" ? buildWritingNarrativeStateContent(book) : "";
 
   return [
+    narrativeState ? `【Narrative State Graph】\n${narrativeState}` : "",
     structuredAssets ? `【结构化故事资产】\n${structuredAssets}` : "",
     parts ? `【幕/卷设定账本】\n${parts}` : "",
     recentChapters.length
@@ -359,6 +374,28 @@ function buildWritingStoryMemoryContext(book, currentChapter = null) {
     .join("\n\n");
 }
 
+function buildWritingStyleProfileRuntimeContent(book) {
+  const assets = typeof normalizeWritingStoryAssetsForUi === "function"
+    ? normalizeWritingStoryAssetsForUi(book?.storyAssets, book?.id ?? "writing_book")
+    : book?.storyAssets ?? {};
+  const profile = assets.styleProfile ?? {};
+  const lines = [
+    profile.voice ? `voice：${profile.voice}` : "",
+    profile.pacing ? `pacing：${profile.pacing}` : "",
+    profile.genreSignals?.length ? `genreSignals：${profile.genreSignals.join("、")}` : "",
+    profile.taboos?.length ? `taboos：${profile.taboos.join("、")}` : "",
+    profile.proseDensity ? `proseDensity：${profile.proseDensity}` : "",
+    profile.dialogueRatio ? `dialogueRatio：${profile.dialogueRatio}` : "",
+    profile.narrationDistance ? `narrationDistance：${profile.narrationDistance}` : "",
+    profile.emotionalTemperature ? `emotionalTemperature：${profile.emotionalTemperature}` : "",
+    profile.humorLevel ? `humorLevel：${profile.humorLevel}` : "",
+    profile.violenceExplicitness ? `violenceExplicitness：${profile.violenceExplicitness}` : "",
+    profile.pacingCurve?.length ? `pacingCurve：${profile.pacingCurve.join(" -> ")}` : ""
+  ].filter(Boolean);
+
+  return lines.length ? lines.map((line) => `- ${line}`).join("\n") : "";
+}
+
 function buildWritingAssistantPrompt({ book, tabId, task, instruction }) {
   if (!book) {
     return "";
@@ -373,6 +410,8 @@ function buildWritingAssistantPrompt({ book, tabId, task, instruction }) {
   const shouldIgnoreOutline = !longOutlineRequest && shouldIgnoreExistingWritingOutline(instruction, task?.id);
   const introContent = buildWritingIntroContent(book) || "(空)";
   const storyMemoryContent = buildWritingStoryMemoryContext(book, currentChapter);
+  const narrativeStateContent = typeof buildWritingNarrativeStateContent === "function" ? buildWritingNarrativeStateContent(book) : "";
+  const styleProfileContent = buildWritingStyleProfileRuntimeContent(book);
   const outlineContent = longOutlineRequest
     ? buildWritingLongOutlineSeedContent(book)
     : shouldIgnoreOutline
@@ -409,6 +448,8 @@ function buildWritingAssistantPrompt({ book, tabId, task, instruction }) {
     chapterOutputDefaults: tabId === "chapter" ? writingPromptAssets.chapterOutputDefaults : [],
     longOutlineContent: longOutlineRequest ? buildWritingLongOutlineTargetContent(longOutlineRequest) : "",
     storyMemoryContent,
+    narrativeStateContent,
+    styleProfileContent,
     introContent,
     outlineContent,
     chapterContext,
@@ -826,6 +867,7 @@ function buildWritingLongOutlineMasterPrompt(book, request) {
     partLabel,
     targetContent: buildWritingLongOutlineTargetContent(request),
     introContent: buildWritingIntroContent(book) || "(空)",
+    narrativeStateContent: typeof buildWritingNarrativeStateContent === "function" ? buildWritingNarrativeStateContent(book) : "",
     seedContent: buildWritingLongOutlineSeedContent(book, 36),
     promptAssets: writingPromptAssets
   });
@@ -844,6 +886,7 @@ function buildWritingLongOutlineBatchPrompt(book, request, part, batchStartIndex
     batchEndIndex,
     targetContent: buildWritingLongOutlineTargetContent(request),
     introContent: buildWritingIntroContent(book) || "(空)",
+    narrativeStateContent: typeof buildWritingNarrativeStateContent === "function" ? buildWritingNarrativeStateContent(book) : "",
     partsContext: buildWritingPartsContext(book),
     partDisplayLabel: getWritingPartDisplayLabel(part),
     recentChapterContext: buildWritingRecentChapterContext(book, part.index, batchStartIndex),
@@ -931,6 +974,9 @@ function buildWritingStoryMemoryUpdatePrompt(book, chapter, appliedOutput) {
     "已有结构化故事资产：",
     typeof buildWritingStoryAssetsContent === "function" ? buildWritingStoryAssetsContent(book) : "(空)",
     "",
+    "已有 Narrative State：",
+    typeof buildWritingNarrativeStateContent === "function" ? buildWritingNarrativeStateContent(book) : "(空)",
+    "",
     "故事介绍与规划：",
     buildWritingIntroContent(book) || "(空)",
     "",
@@ -944,8 +990,8 @@ function buildWritingStoryMemoryUpdatePrompt(book, chapter, appliedOutput) {
     "刚写入的正文：",
     truncateText(String(appliedOutput ?? ""), 9000),
     "",
-    "输出 JSON 代码块，且只允许包含 storyAssets 字段：",
-    `{"storyAssets":{"premise":"","worldview":[{"title":"","detail":"","tags":[],"chapterIndex":${chapter?.index ?? 1}}],"characters":[{"name":"","role":"","goal":"","fear":"","secret":"","growthArc":"","relationships":[],"tags":[],"status":"active"}],"relationships":[{"title":"","detail":"","tags":[]}],"timeline":[{"title":"","detail":"","tags":[],"chapterIndex":${chapter?.index ?? 1}}],"foreshadows":[{"title":"","setup":"","payoff":"","status":"open","chapterIndex":${chapter?.index ?? 1},"tags":["证据载体","信息差","反制","待回收"]}],"rules":[{"title":"","detail":"","tags":[]}],"styleProfile":{"voice":"","pacing":"","genreSignals":[],"taboos":[]},"memoryNotes":[{"title":"","detail":"","tags":["证据载体","人物状态","资源消耗","信息差"],"chapterIndex":${chapter?.index ?? 1}}]}}`
+    "输出 JSON 代码块，且只允许包含 storyAssets 与 narrativeState 字段：",
+    `{"storyAssets":{"premise":"","worldview":[{"title":"","detail":"","tags":[],"chapterIndex":${chapter?.index ?? 1}}],"characters":[{"name":"","role":"","goal":"","fear":"","secret":"","growthArc":"","relationships":[],"tags":[],"status":"active"}],"relationships":[{"title":"","detail":"","tags":[]}],"timeline":[{"title":"","detail":"","tags":[],"chapterIndex":${chapter?.index ?? 1}}],"foreshadows":[{"title":"","setup":"","payoff":"","status":"open","chapterIndex":${chapter?.index ?? 1},"tags":["证据载体","信息差","反制","待回收"]}],"rules":[{"title":"","detail":"","tags":[]}],"styleProfile":{"voice":"","pacing":"","genreSignals":[],"taboos":[],"proseDensity":"","dialogueRatio":"","narrationDistance":"","emotionalTemperature":"","pacingCurve":[]},"memoryNotes":[{"title":"","detail":"","tags":["证据载体","人物状态","资源消耗","信息差"],"chapterIndex":${chapter?.index ?? 1}}]},"narrativeState":{"characters":[{"label":"","summary":"","status":"active","introducedAtChapterIndex":${chapter?.index ?? 1},"evidenceChapterIds":["${chapter?.id ?? ""}"],"relatedNodeIds":[],"riskLevel":"low"}],"worldRules":[],"resources":[],"regions":[],"foreshadows":[],"arcs":[],"timelineEvents":[],"continuityWarnings":[],"planDriftNotes":[]}}`
   ].join("\n");
 }
 
@@ -979,6 +1025,7 @@ function parseWritingJsonObjectPayload(value) {
 function parseWritingStoryMemoryPayload(value, book) {
   const parsed = parseWritingJsonObjectPayload(value);
   const source = parsed?.storyAssets && typeof parsed.storyAssets === "object" ? parsed.storyAssets : parsed;
+  const narrativeStateSource = parsed?.narrativeState && typeof parsed.narrativeState === "object" ? parsed.narrativeState : null;
 
   if (!source || typeof source !== "object") {
     return null;
@@ -1002,7 +1049,40 @@ function parseWritingStoryMemoryPayload(value, book) {
       normalizedAssets.memoryNotes?.length
   );
 
-  return hasContent ? normalizedAssets : null;
+  const normalizedState = narrativeStateSource
+    ? {
+        characters: Array.isArray(narrativeStateSource.characters) ? narrativeStateSource.characters : [],
+        worldRules: Array.isArray(narrativeStateSource.worldRules) ? narrativeStateSource.worldRules : [],
+        resources: Array.isArray(narrativeStateSource.resources) ? narrativeStateSource.resources : [],
+        regions: Array.isArray(narrativeStateSource.regions) ? narrativeStateSource.regions : [],
+        foreshadows: Array.isArray(narrativeStateSource.foreshadows) ? narrativeStateSource.foreshadows : [],
+        arcs: Array.isArray(narrativeStateSource.arcs) ? narrativeStateSource.arcs : [],
+        timelineEvents: Array.isArray(narrativeStateSource.timelineEvents) ? narrativeStateSource.timelineEvents : [],
+        continuityWarnings: Array.isArray(narrativeStateSource.continuityWarnings) ? narrativeStateSource.continuityWarnings : [],
+        planDriftNotes: Array.isArray(narrativeStateSource.planDriftNotes) ? narrativeStateSource.planDriftNotes : []
+      }
+    : null;
+  const hasStateContent = Boolean(
+    normalizedState &&
+      (
+        normalizedState.characters.length ||
+        normalizedState.worldRules.length ||
+        normalizedState.resources.length ||
+        normalizedState.regions.length ||
+        normalizedState.foreshadows.length ||
+        normalizedState.arcs.length ||
+        normalizedState.timelineEvents.length ||
+        normalizedState.continuityWarnings.length ||
+        normalizedState.planDriftNotes.length
+      )
+  );
+
+  return hasContent || hasStateContent
+    ? {
+        storyAssets: hasContent ? normalizedAssets : null,
+        narrativeState: hasStateContent ? normalizedState : null
+      }
+    : null;
 }
 
 async function updateWritingStoryMemoryFromChapter(book, chapter, appliedOutput) {
@@ -1023,7 +1103,12 @@ async function updateWritingStoryMemoryFromChapter(book, chapter, appliedOutput)
       return "empty";
     }
 
-    mergeWritingStoryAssets(book, nextAssets);
+    if (nextAssets.storyAssets) {
+      mergeWritingStoryAssets(book, nextAssets.storyAssets);
+    }
+    if (nextAssets.narrativeState && typeof mergeWritingNarrativeState === "function") {
+      mergeWritingNarrativeState(book, nextAssets.narrativeState);
+    }
     await persistWritingBookById(book.id, { silent: true });
     return "updated";
   } catch (error) {
@@ -1835,14 +1920,19 @@ async function applyWritingAssistantOutput(mode = "append") {
     const nextAssets = parseWritingStoryMemoryPayload(output, book);
 
     if (!nextAssets) {
-      setWritingFeedback("没有解析到可写入的连续性资料 JSON。", "warning");
+      setWritingFeedback("没有解析到可写入的连续性 / 状态图 JSON。", "warning");
       return;
     }
 
-    mergeWritingStoryAssets(book, nextAssets);
+    if (nextAssets.storyAssets) {
+      mergeWritingStoryAssets(book, nextAssets.storyAssets);
+    }
+    if (nextAssets.narrativeState && typeof mergeWritingNarrativeState === "function") {
+      mergeWritingNarrativeState(book, nextAssets.narrativeState);
+    }
     touchWritingBook(book, { persist: false });
     await persistWritingBookById(book.id, { silent: true });
-    setWritingFeedback("已写入结构化连续性资料。", "success");
+    setWritingFeedback("已写入结构化连续性资料与 Narrative State。", "success");
     return;
   }
 

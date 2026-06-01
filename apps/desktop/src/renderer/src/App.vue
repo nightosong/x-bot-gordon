@@ -196,7 +196,6 @@
               :handle-rich-text-click="handleRichTextClick"
               :open-command-session="openCommandSession"
               :remove-command-attachment="removeCommandAttachment"
-              :resolve-agent-name="resolveAgentName"
             />
           </template>
 
@@ -556,6 +555,7 @@ const {
   activeWritingTask,
   applyWritingBooksFromStorage,
   buildWritingIntroContent,
+  buildWritingNarrativeStateContent,
   buildWritingOutlineContent,
   buildWritingStoryAssetsContent,
   clearWritingAutosaveTimer,
@@ -571,12 +571,14 @@ const {
   getWritingIntroFieldValue,
   getWritingPartDisplayLabel,
   getWritingTabTitle,
+  mergeWritingNarrativeState,
   mergeWritingStoryAssets,
   normalizePositiveInteger,
   normalizeWritingBookPart,
   normalizeWritingBookPartTypeForUi,
   normalizeWritingChapterDraftOutput,
   normalizeWritingChapterIndex,
+  normalizeWritingNarrativeStateForUi,
   normalizeWritingOutlinePlannerJobForUi,
   normalizeWritingStoryAssetsForUi,
   parseWritingChapterIndex,
@@ -600,6 +602,7 @@ const writingAiActions = createWritingAiActions({
   activeWritingLengthProfile,
   activeWritingOutlinePlannerJob,
   activeWritingTask,
+  buildWritingNarrativeStateContent,
   buildWritingStoryAssetsContent,
   buildWritingIntroContent,
   buildWritingOutlineContent,
@@ -617,12 +620,14 @@ const writingAiActions = createWritingAiActions({
   getWritingPartDisplayLabel,
   getWritingTabTitle,
   getPreferredWritingChapter,
+  mergeWritingNarrativeState,
   mergeWritingStoryAssets,
   normalizePositiveInteger,
   normalizeWritingBookPart,
   normalizeWritingBookPartTypeForUi,
   normalizeWritingChapterDraftOutput,
   normalizeWritingChapterIndex,
+  normalizeWritingNarrativeStateForUi,
   normalizeWritingOutlinePlannerJobForUi,
   normalizeWritingStoryAssetsForUi,
   parseWritingChapterIndex,
@@ -846,10 +851,6 @@ function resolveBoundModelName(modelProfileId) {
   }
 
   return workbench.modelSettings.profiles.find((profile) => profile.id === modelProfileId)?.displayName ?? "未绑定模型";
-}
-
-function resolveAgentName(agentId) {
-  return getAgentById(agentId)?.name ?? "Gordon";
 }
 
 function getAgentById(agentId) {

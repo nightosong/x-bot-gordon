@@ -11,7 +11,10 @@
       </div>
 
       <div class="model-section-actions">
-        <button type="button" class="model-action" @click="beginNewCommandSession">开始协作</button>
+        <button type="button" class="model-action command-hero-action" @click="beginNewCommandSession">
+          <GIcon name="messagePlus" :size="15" />
+          <span>新建会话</span>
+        </button>
       </div>
     </section>
 
@@ -61,10 +64,6 @@
                   'is-error': message.state === 'error'
                 }"
               >
-                <div class="command-message-head">
-                  <span class="command-message-role">{{ message.role === "user" ? "你" : resolveAgentName(ui.command.form.agentProfileId) }}</span>
-                </div>
-
                 <div
                   v-if="message.role !== 'assistant' && message.content"
                   class="command-message-body command-rich-text"
@@ -101,6 +100,17 @@
                       </div>
                       <p class="command-response-process-title" :title="item.title">{{ item.title }}</p>
                       <p v-if="item.detail" class="command-response-process-detail" :title="item.detail">{{ item.detail }}</p>
+                      <div v-if="item.tags?.length" class="command-response-process-tags" aria-label="执行状态">
+                        <span
+                          v-for="tag in item.tags"
+                          :key="`${item.id}:${tag.label}`"
+                          class="command-response-process-tag"
+                          :class="tag.className"
+                          :title="tag.detail || tag.label"
+                        >
+                          {{ tag.label }}
+                        </span>
+                      </div>
                       <ol v-if="item.items?.length" class="command-response-plan-list">
                         <li v-for="planItem in item.items" :key="planItem">{{ planItem }}</li>
                       </ol>
@@ -192,10 +202,6 @@
               </article>
 
               <article v-if="ui.command.isRunning" class="command-message is-assistant is-pending">
-                <div class="command-message-head">
-                  <span class="command-message-role">{{ resolveAgentName(ui.command.form.agentProfileId) }}</span>
-                </div>
-
                 <div v-if="getCommandResponseProcessItems(ui.command.liveProgress?.artifact).length" class="command-response-process is-live">
                   <article
                     v-for="item in getCommandResponseProcessItems(ui.command.liveProgress?.artifact)"
@@ -213,6 +219,17 @@
                       </div>
                       <p class="command-response-process-title" :title="item.title">{{ item.title }}</p>
                       <p v-if="item.detail" class="command-response-process-detail" :title="item.detail">{{ item.detail }}</p>
+                      <div v-if="item.tags?.length" class="command-response-process-tags" aria-label="执行状态">
+                        <span
+                          v-for="tag in item.tags"
+                          :key="`${item.id}:${tag.label}`"
+                          class="command-response-process-tag"
+                          :class="tag.className"
+                          :title="tag.detail || tag.label"
+                        >
+                          {{ tag.label }}
+                        </span>
+                      </div>
                       <ol v-if="item.items?.length" class="command-response-plan-list">
                         <li v-for="planItem in item.items" :key="planItem">{{ planItem }}</li>
                       </ol>
@@ -232,9 +249,20 @@
 
                 <div
                   v-else-if="!getCommandResponseProcessItems(ui.command.liveProgress?.artifact).length"
-                  class="command-message-body command-rich-text"
-                  v-html="renderRichText(getCommandLiveStatusText(ui.command.liveProgress))"
-                ></div>
+                  class="command-live-waiting"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <span class="command-live-waiting-mark" aria-hidden="true">
+                    <span></span>
+                  </span>
+                  <span class="command-live-waiting-copy">{{ getCommandLiveStatusText(ui.command.liveProgress) }}</span>
+                  <span class="command-live-waiting-dots" aria-hidden="true">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </span>
+                </div>
 
                 <div v-if="getCommandArtifactProducts(ui.command.liveProgress?.artifact).length" class="command-generated-products">
                   <article
@@ -358,25 +386,7 @@
               </div>
             </div>
 
-            <div v-else class="command-input-shell command-input-shell-float">
-              <div class="command-input-toolbar">
-                <p class="command-input-label">输入消息</p>
-
-                <div class="command-input-toolbar-actions">
-                  <p class="command-input-shortcut">Enter 发送 · Shift + Enter 换行</p>
-
-                  <button
-                    type="button"
-                    class="model-icon-button command-input-settings-trigger"
-                    aria-label="打开高级设置"
-                    title="高级设置"
-                    @click="ui.command.composerView = 'settings'"
-                  >
-                    <GIcon name="gear" />
-                  </button>
-                </div>
-              </div>
-
+            <div v-else class="command-input-shell command-input-shell-plain">
               <div class="command-input-frame">
                 <div v-if="ui.command.attachments.length" class="command-attachment-tray">
                   <span
@@ -410,6 +420,16 @@
                   @compositionend="handleCommandInputCompositionEnd"
                   @keydown.enter.exact="handleCommandInputEnterKeydown"
                 ></textarea>
+
+                <button
+                  type="button"
+                  class="model-icon-button command-input-settings-trigger"
+                  aria-label="打开高级设置"
+                  title="高级设置"
+                  @click="ui.command.composerView = 'settings'"
+                >
+                  <GIcon name="gear" />
+                </button>
 
                 <button
                   type="button"
@@ -461,47 +481,43 @@
             <p class="model-section-title">会话列表</p>
           </div>
 
+          <div class="model-section-actions command-session-head-actions">
+            <span class="pill pill-neutral">{{ workbench.commandSessions.length }} 条</span>
+          </div>
         </div>
 
         <div class="model-section-body command-session-list-shell">
-          <div class="command-session-group">
-            <div class="command-session-group-head">
-              <p class="command-session-group-title">最近会话</p>
-              <span class="pill pill-neutral">{{ workbench.commandSessions.length }} 条</span>
-            </div>
+          <div v-if="workbench.commandSessions.length" class="command-session-list">
+            <article
+              v-for="session in workbench.commandSessions"
+              :key="session.id"
+              class="command-session-card"
+              :class="{ 'is-active': ui.command.activeSessionId === session.id }"
+            >
+              <button type="button" class="command-session-main" @click="openCommandSession(session.id)">
+                <div class="command-session-topline">
+                  <p class="command-session-title">{{ session.title || "新对话" }}</p>
+                  <p class="command-session-meta">
+                    {{ formatLocalDateTime(session.updatedAt) }} · {{ session.messages.length }} 条消息 ·
+                    {{ session.messages.filter((message) => message.role === "assistant").length }} 次响应
+                  </p>
+                </div>
+              </button>
 
-            <div v-if="workbench.commandSessions.length" class="command-session-list">
-              <article
-                v-for="session in workbench.commandSessions"
-                :key="session.id"
-                class="command-session-card"
-                :class="{ 'is-active': ui.command.activeSessionId === session.id }"
+              <button
+                type="button"
+                class="model-icon-button model-icon-button-danger command-session-delete"
+                :aria-label="`删除 ${session.title || '当前会话'}`"
+                title="删除会话"
+                @click.stop="handleCommandSessionDelete(session.id)"
               >
-                <button type="button" class="command-session-main" @click="openCommandSession(session.id)">
-                  <div class="command-session-topline">
-                    <p class="command-session-title">{{ session.title || "新对话" }}</p>
-                    <p class="command-session-meta">
-                      {{ formatLocalDateTime(session.updatedAt) }} · {{ session.messages.length }} 条消息 ·
-                      {{ session.messages.filter((message) => message.role === "assistant").length }} 次响应
-                    </p>
-                  </div>
-                </button>
+                <GIcon name="delete" />
+              </button>
+            </article>
+          </div>
 
-                <button
-                  type="button"
-                  class="model-icon-button model-icon-button-danger command-session-delete"
-                  :aria-label="`删除 ${session.title || '当前会话'}`"
-                  title="删除会话"
-                  @click.stop="handleCommandSessionDelete(session.id)"
-                >
-                  <GIcon name="delete" />
-                </button>
-              </article>
-            </div>
-
-            <div v-else class="command-empty-card">
-              <p class="model-empty-copy">还没有历史会话。点击上方“开始协作”，直接进入命令工坊。</p>
-            </div>
+          <div v-else class="command-empty-card">
+            <p class="model-empty-copy">还没有历史会话。点击右上角“新建会话”，直接进入命令工坊。</p>
           </div>
         </div>
       </section>
@@ -550,8 +566,7 @@ const props = defineProps({
   handleCommandSubmit: { type: Function, required: true },
   handleRichTextClick: { type: Function, required: true },
   openCommandSession: { type: Function, required: true },
-  removeCommandAttachment: { type: Function, required: true },
-  resolveAgentName: { type: Function, required: true }
+  removeCommandAttachment: { type: Function, required: true }
 });
 
 const commandInputRef = ref(null);

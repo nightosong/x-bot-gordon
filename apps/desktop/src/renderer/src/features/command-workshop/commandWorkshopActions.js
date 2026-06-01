@@ -14,7 +14,8 @@ import {
   buildCommandApplicationContext,
   buildCommandUserInputForAgent,
   buildCommandWorkshopLiveArtifact,
-  buildConversationMessagesForAgentRun
+  buildConversationMessagesForAgentRun,
+  findLatestCommandTaskLedger
 } from "./commandWorkshopRuntime.js";
 
 function readRef(value) {
@@ -46,6 +47,26 @@ function formatCommandFailureKind(failureKind) {
 
   if (failureKind === "tool_execution") {
     return "工具执行失败";
+  }
+
+  if (failureKind === "permission_denied") {
+    return "权限受限";
+  }
+
+  if (failureKind === "environment_state") {
+    return "环境状态变化";
+  }
+
+  if (failureKind === "wrong_tool") {
+    return "工具不匹配";
+  }
+
+  if (failureKind === "action_too_early") {
+    return "时序过早";
+  }
+
+  if (failureKind === "nonexistent_entity") {
+    return "目标不存在";
   }
 
   return "未知失败";
@@ -801,6 +822,7 @@ export function createCommandWorkshopActions({
     const startedAt = new Date().toISOString();
     const progressEventId = `command_progress_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const baseMessages = toPlainIpcData(activeSession?.messages ?? [], []);
+    const latestTaskLedger = findLatestCommandTaskLedger(baseMessages);
     const userMessage = {
       id: `command_message_${Date.now()}`,
       role: "user",
@@ -845,6 +867,7 @@ export function createCommandWorkshopActions({
         mcpResultText: "",
         mcpCalls: [],
         stopReason: "",
+        taskLedger: null,
         steps: [],
         createdAt: startedAt
       })
@@ -869,6 +892,7 @@ export function createCommandWorkshopActions({
         agentProfileId: agent.id,
         userInput: agentUserInput,
         conversationMessages: buildConversationMessagesForAgentRun(baseMessages),
+        ...(latestTaskLedger ? { taskLedger: latestTaskLedger } : {}),
         progressEventId,
         ...(ui.command.form.skillId ? { skillId: ui.command.form.skillId } : {}),
         ...(effectiveAutoSelectMcp ? { autoSelectMcp: true } : {}),
@@ -1202,12 +1226,6 @@ export function createCommandWorkshopActions({
     return chars.length > maxLength ? `${chars.slice(0, maxLength).join("")}\n...（已截断）` : text;
   }
 
-  function getCommandStepRound(step) {
-    const source = `${step?.title ?? ""} ${step?.detail ?? ""}`;
-    const match = source.match(/第\s*(\d+)\s*轮/u);
-    return match?.[1] ?? "";
-  }
-
   function getCommandProcessCallDetail(call) {
     const detailParts = [];
     const argumentText = truncateCommandProcessText(stringifyCommandArtifactArguments(getCommandArtifactResolvedCallArguments(call)), 180);
@@ -1243,25 +1261,158 @@ export function createCommandWorkshopActions({
     return detailParts.join(" · ");
   }
 
-  function normalizeCommandResponseProcessCall(call, index = 0) {
+  function isCommandPermissionProcessStep(step) {
+    return [
+      "workspace_permission_requested",
+      "workspace_permission_granted",
+      "workspace_permission_denied",
+      "computer_use_permission_requested",
+      "computer_use_permission_granted",
+      "computer_use_permission_denied"
+    ].includes(step?.type);
+  }
+
+  function getCommandPermissionDomainLabel(step) {
+    if (String(step?.type ?? "").startsWith("computer_use_")) {
+      return "桌面控制";
+    }
+
+    return "外部路径";
+  }
+
+  function getCommandPermissionStatus(step) {
+    if (String(step?.type ?? "").endsWith("_requested")) {
+      return {
+        priority: 1,
+        label: `${getCommandPermissionDomainLabel(step)} · 待授权`,
+        className: "is-waiting"
+      };
+    }
+
+    if (String(step?.type ?? "").endsWith("_granted")) {
+      return {
+        priority: 2,
+        label: `${getCommandPermissionDomainLabel(step)} · 已授权`,
+        className: "is-done"
+      };
+    }
+
+    if (String(step?.type ?? "").endsWith("_denied")) {
+      return {
+        priority: 3,
+        label: `${getCommandPermissionDomainLabel(step)} · 已拒绝`,
+        className: "is-error"
+      };
+    }
+
+    return null;
+  }
+
+  function getCommandToolPermissionSteps(steps, toolIndex = 0) {
+    const selectedToolSteps = steps.filter((step) => step?.type === "mcp_tool_selected");
+    const selectedStep = selectedToolSteps[toolIndex];
+
+    if (!selectedStep) {
+      return [];
+    }
+
+    const selectedStepIndex = steps.indexOf(selectedStep);
+    const nextSelectedStep = selectedToolSteps[toolIndex + 1];
+    const nextSelectedStepIndex = nextSelectedStep ? steps.indexOf(nextSelectedStep) : steps.length;
+
+    return steps
+      .slice(selectedStepIndex + 1, nextSelectedStepIndex)
+      .filter(isCommandPermissionProcessStep);
+  }
+
+  function getCommandToolPermissionTags(steps, toolIndex = 0) {
+    const latestByDomain = new Map();
+
+    for (const step of getCommandToolPermissionSteps(steps, toolIndex)) {
+      const status = getCommandPermissionStatus(step);
+
+      if (!status) {
+        continue;
+      }
+
+      const domain = getCommandPermissionDomainLabel(step);
+      const detail = truncateCommandProcessText(step.detail, 120);
+      latestByDomain.set(domain, {
+        label: status.label,
+        className: status.className,
+        priority: status.priority,
+        detail,
+        createdAt: step.createdAt ?? ""
+      });
+    }
+
+    return Array.from(latestByDomain.values()).sort((left, right) => right.priority - left.priority);
+  }
+
+  function getCommandToolPermissionTone(tags) {
+    if (!Array.isArray(tags) || !tags.length) {
+      return "";
+    }
+
+    if (tags.some((tag) => tag.className === "is-error")) {
+      return "error";
+    }
+
+    if (tags.some((tag) => tag.className === "is-waiting")) {
+      return "waiting";
+    }
+
+    if (tags.some((tag) => tag.className === "is-done")) {
+      return "done";
+    }
+
+    return "";
+  }
+
+  function getCommandToolTerminalStep(steps, toolIndex = 0) {
+    const selectedToolSteps = steps.filter((step) => step?.type === "mcp_tool_selected");
+    const selectedStep = selectedToolSteps[toolIndex];
+
+    if (!selectedStep) {
+      return null;
+    }
+
+    const selectedStepIndex = steps.indexOf(selectedStep);
+    const nextSelectedStep = selectedToolSteps[toolIndex + 1];
+    const nextSelectedStepIndex = nextSelectedStep ? steps.indexOf(nextSelectedStep) : steps.length;
+
+    return (
+      steps
+        .slice(selectedStepIndex + 1, nextSelectedStepIndex)
+        .reverse()
+        .find((step) => step?.type === "mcp_tool_called" || step?.type === "mcp_tool_failed") ?? null
+    );
+  }
+
+  function normalizeCommandResponseProcessCall(call, index = 0, options = {}) {
     if (!call || typeof call !== "object") {
       return null;
     }
 
-    const roundText = call.round ? `步骤 ${call.round}` : `步骤 ${index + 1}`;
     const output = truncateCommandProcessOutput(call.resultText);
+    const selectedStep = options.selectedStep ?? null;
+    const terminalStep = options.terminalStep ?? null;
+    const tags = options.tags ?? [];
 
     return {
-      id: `process_call_${call.createdAt ?? "tool"}_${call.toolName ?? index}`,
+      id: selectedStep?.id ? `${selectedStep.id}_process_tool` : `process_call_${call.createdAt ?? "tool"}_${call.toolName ?? index}`,
       kind: "execute",
-      marker: call.isError ? "!" : "执",
-      label: call.isError ? `执行失败 · ${roundText}` : `执行 · ${roundText}`,
+      sequenceMode: "tool",
+      marker: `${index + 1}`,
+      label: call.isError ? "执行失败" : "执行",
       className: call.isError ? "is-execute is-error" : "is-execute is-done",
       title: `${call.serverName ?? "工具服务"} / ${call.toolName ?? "工具"}`,
       detail: getCommandProcessCallDetail(call),
+      tags,
       output,
       outputLabel: call.isError ? "错误输出" : "中间输出",
-      createdAt: call.createdAt ?? ""
+      createdAt: terminalStep?.createdAt ?? call.createdAt ?? selectedStep?.createdAt ?? "",
+      sortIndex: options.sortIndex >= 0 ? options.sortIndex : index
     };
   }
 
@@ -1278,22 +1429,27 @@ export function createCommandWorkshopActions({
       .slice(0, selectedStepIndex)
       .reverse()
       .find((step) => step?.type === "mcp_server_selected");
-    const round = getCommandStepRound(selectedStep);
     const toolName = getCommandArtifactToolNameFromStep(selectedStep) || "工具";
     const serverName = getCommandArtifactServerNameFromStep(serverStep) || "工具服务";
     const argumentText = String(selectedStep?.detail ?? "").split(" / 参数：")[1] ?? "";
+    const tags = getCommandToolPermissionTags(steps, selectedToolSteps.length - 1);
+    const permissionTone = getCommandToolPermissionTone(tags);
+    const hasDeniedPermission = permissionTone === "error";
 
     return {
-      id: `${selectedStep?.id ?? selectedStep?.createdAt ?? "tool"}_process_pending`,
+      id: `${selectedStep?.id ?? selectedStep?.createdAt ?? "tool"}_process_tool`,
       kind: "execute",
-      marker: "执",
-      label: `执行中 · 步骤 ${round || calls.length + 1}`,
-      className: "is-execute is-running",
+      sequenceMode: "tool",
+      marker: `${calls.length + 1}`,
+      label: hasDeniedPermission ? "执行受阻" : "执行中",
+      className: hasDeniedPermission ? "is-execute is-error" : "is-execute is-running",
       title: `${serverName} / ${toolName}`,
       detail: argumentText ? `参数：${truncateCommandProcessText(argumentText, 180)}` : "参数已确定，正在等待工具返回。",
-      output: "工具正在运行，返回后会把中间输出接在这里。",
-      outputLabel: "中间输出",
-      createdAt: selectedStep?.createdAt ?? ""
+      tags,
+      output: hasDeniedPermission ? "授权被拒绝，Gordon 会尝试调整路线或停止当前工具调用。" : "工具正在运行，返回后会把中间输出接在这里。",
+      outputLabel: hasDeniedPermission ? "授权状态" : "中间输出",
+      createdAt: selectedStep?.createdAt ?? "",
+      sortIndex: steps.indexOf(selectedStep)
     };
   }
 
@@ -1368,43 +1524,8 @@ export function createCommandWorkshopActions({
       };
     }
 
-    if (step.type === "workspace_permission_requested" || step.type === "computer_use_permission_requested") {
-      return {
-        id,
-        kind: "permission",
-        marker: "权",
-        label: "等待授权",
-        className: "is-permission is-running",
-        title: step.title ?? "请求授权",
-        detail,
-        createdAt
-      };
-    }
-
-    if (step.type === "workspace_permission_granted" || step.type === "computer_use_permission_granted") {
-      return {
-        id,
-        kind: "permission",
-        marker: "权",
-        label: "授权完成",
-        className: "is-permission is-done",
-        title: step.title ?? "授权完成",
-        detail,
-        createdAt
-      };
-    }
-
-    if (step.type === "workspace_permission_denied" || step.type === "computer_use_permission_denied") {
-      return {
-        id,
-        kind: "permission",
-        marker: "!",
-        label: "授权拒绝",
-        className: "is-permission is-error",
-        title: step.title ?? "授权被拒绝",
-        detail,
-        createdAt
-      };
+    if (isCommandPermissionProcessStep(step)) {
+      return null;
     }
 
     if (step.type === "skill_handler_started") {
@@ -1513,6 +1634,24 @@ export function createCommandWorkshopActions({
     });
   }
 
+  function normalizeCommandProcessVisibleSequence(items) {
+    let toolStepIndex = 0;
+
+    return items.map((item) => {
+      if (item?.sequenceMode !== "tool") {
+        return item;
+      }
+
+      toolStepIndex += 1;
+
+      return {
+        ...item,
+        marker: `${toolStepIndex}`,
+        label: `${item.label} · 步骤 ${toolStepIndex}`
+      };
+    });
+  }
+
   function isCommandOperationalProcessStep(step) {
     if (step?.type === "mcp_auto_stopped") {
       return /失败|停止|重复|最大/u.test(`${step.title ?? ""} ${step.detail ?? ""}`);
@@ -1550,9 +1689,30 @@ export function createCommandWorkshopActions({
     const hasToolCalls = calls.length > 0;
     const hasOperationalSteps = steps.some(isCommandOperationalProcessStep);
     const showFinalStage = hasToolCalls || hasOperationalSteps || Boolean(artifact.stopReason);
+    const selectedToolSteps = steps.filter((step) => step?.type === "mcp_tool_selected");
     const timelineItems = [
-      ...steps.map((step, index) => normalizeCommandResponseProcessStep(step, index, { hasToolCalls, showFinalStage })).filter(Boolean),
-      ...calls.map((call, index) => normalizeCommandResponseProcessCall(call, index)).filter(Boolean)
+      ...steps
+        .map((step, index) => {
+          const normalizedStep = normalizeCommandResponseProcessStep(step, index, { hasToolCalls, showFinalStage });
+
+          return normalizedStep
+            ? {
+                ...normalizedStep,
+                sortIndex: index
+              }
+            : null;
+        })
+        .filter(Boolean),
+      ...calls
+        .map((call, index) =>
+          normalizeCommandResponseProcessCall(call, index, {
+            selectedStep: selectedToolSteps[index] ?? null,
+            terminalStep: getCommandToolTerminalStep(steps, index),
+            tags: getCommandToolPermissionTags(steps, index),
+            sortIndex: steps.indexOf(getCommandToolTerminalStep(steps, index) ?? selectedToolSteps[index] ?? null)
+          })
+        )
+        .filter(Boolean)
     ];
     const pendingTool = normalizeCommandResponsePendingTool(steps, calls);
 
@@ -1569,17 +1729,27 @@ export function createCommandWorkshopActions({
         className: "is-reflect is-error",
         title: "运行停止",
         detail: truncateCommandProcessText(artifact.stopReason),
-        createdAt: artifact.createdAt ?? ""
+        createdAt: artifact.createdAt ?? "",
+        sortIndex: steps.length + calls.length + 1
       });
     }
 
-    const visibleItems = timelineItems.sort((left, right) => String(left.createdAt || "").localeCompare(String(right.createdAt || "")));
+    const visibleItems = timelineItems.sort((left, right) => {
+      const leftSortIndex = left.sortIndex;
+      const rightSortIndex = right.sortIndex;
+
+      if (leftSortIndex >= 0 && rightSortIndex >= 0 && leftSortIndex !== rightSortIndex) {
+        return leftSortIndex - rightSortIndex;
+      }
+
+      return String(left.createdAt || "").localeCompare(String(right.createdAt || ""));
+    });
 
     if (!visibleItems.length) {
       return [];
     }
 
-    return normalizeCommandProcessRunningState(visibleItems);
+    return normalizeCommandProcessVisibleSequence(normalizeCommandProcessRunningState(visibleItems));
   }
 
   function getCommandArtifactToolNameFromStep(step) {
@@ -1675,20 +1845,20 @@ export function createCommandWorkshopActions({
     const latestStep = Array.isArray(artifact?.steps) ? artifact.steps[artifact.steps.length - 1] : null;
 
     if (latestStep?.type === "workspace_permission_requested") {
-      return "正在等待外部路径访问授权...";
+      return "正在等待外部路径访问授权";
     }
 
     if (latestStep?.type === "computer_use_permission_requested") {
-      return "正在等待桌面控制授权...";
+      return "正在等待桌面控制授权";
     }
 
     const statusText = normalizeCommandArtifactInlineText(liveProgress?.statusText);
 
     if (/最终回复|整理输出|模型调用完成|运行完成/u.test(statusText)) {
-      return "正在整理回复...";
+      return "正在整理回复";
     }
 
-    return "正在处理请求...";
+    return "正在处理请求";
   }
 
   return {

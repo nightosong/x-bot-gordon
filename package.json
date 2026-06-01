@@ -1,6 +1,6 @@
 {
   "name": "x-bot-gordon",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "main": "dist/apps/desktop/src/main.js",
@@ -10,6 +10,7 @@
     "build:main": "tsc -p tsconfig.json",
     "build:renderer": "vite build --config ./apps/desktop/vite.config.mjs",
     "check": "tsc --noEmit -p tsconfig.json",
+    "test:agent": "tsx --test packages/agent/src/**/*.test.ts",
     "dev:cli": "node --import tsx ./apps/cli/src/index.ts",
     "dev:desktop": "pnpm build && electron ./dist/apps/desktop/src/main.js",
     "pack:mac": "pnpm run build && electron-builder --mac dir",

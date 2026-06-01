@@ -364,6 +364,7 @@ export function createMarketplaceState() {
       activeBookId: null,
       activeTab: "intro",
       activeChapterId: "",
+      aiPhaseId: "foundation",
       aiTaskId: "storySetup",
       aiInstruction: "",
       aiOutput: "",

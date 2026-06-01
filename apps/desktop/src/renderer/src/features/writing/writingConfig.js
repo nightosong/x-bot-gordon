@@ -7,6 +7,13 @@ export const WRITING_APP_TABS = [
   { id: "chapter", label: "章节编写", kicker: "Chapter", fieldLabel: "当前章节正文" }
 ];
 
+export const WRITING_AI_PHASES = [
+  { id: "foundation", label: "搭底盘", shortLabel: "底盘" },
+  { id: "structure", label: "规划结构", shortLabel: "结构" },
+  { id: "production", label: "生产章节", shortLabel: "生产" },
+  { id: "review", label: "审阅修正", shortLabel: "审阅" }
+];
+
 export const WRITING_LENGTH_PROFILES = {
   short: {
     label: "短篇",
@@ -30,6 +37,7 @@ export const WRITING_AI_TASKS = {
     {
       id: "storySetup",
       label: "搭建故事设定",
+      phase: "foundation",
       stage: "起草",
       goal: "从一句想法或零散要求搭建世界、主角、主线阶段、伏笔和风格边界。",
       target: "写入：大纲指导"
@@ -37,6 +45,7 @@ export const WRITING_AI_TASKS = {
     {
       id: "storyRefine",
       label: "打磨故事设定",
+      phase: "foundation",
       stage: "迭代",
       goal: "基于已有设定做补强、纠偏、重排和取舍，适合多轮微调。",
       target: "写入：大纲指导"
@@ -44,20 +53,15 @@ export const WRITING_AI_TASKS = {
     {
       id: "premise",
       label: "生成书籍介绍",
+      phase: "foundation",
       stage: "成稿",
       goal: "在设定稳定后，把核心命题、主角处境、主要矛盾和读者钩子包装成简介。",
       target: "写入：简短介绍"
     },
     {
-      id: "openingAudit",
-      label: "开篇体检",
-      stage: "审阅",
-      goal: "按黄金一章/三章检查主角聚焦、人物数量、群像开局、设定倾倒和追读期待。",
-      target: "仅审阅，不自动写入"
-    },
-    {
       id: "continuityMemory",
       label: "沉淀连续性",
+      phase: "foundation",
       stage: "沉淀",
       goal: "从当前设定中抽取会影响后续的世界状态、人物状态、资源、伏笔和规则边界。",
       target: "写入：连续性资料"
@@ -65,47 +69,91 @@ export const WRITING_AI_TASKS = {
     {
       id: "relationshipContinuity",
       label: "关系连续性",
+      phase: "foundation",
       stage: "沉淀",
       goal: "检查角色关系的债务、信任、羞辱、依赖和未解决 tension，并沉淀后续爆发点。",
       target: "写入：关系资产"
+    },
+    {
+      id: "narrativeState",
+      label: "叙事状态图",
+      phase: "foundation",
+      stage: "状态",
+      goal: "把世界规则、人物关系、资源、区域、伏笔、事件和风险合成可追踪 Narrative State。",
+      target: "写入：Narrative State"
+    },
+    {
+      id: "styleProfile",
+      label: "风格画像",
+      phase: "foundation",
+      stage: "风格",
+      goal: "为当前作品建立独立叙事风格画像，降低不同书之间的编辑腔同质化。",
+      target: "写入：风格档案"
+    },
+    {
+      id: "openingAudit",
+      label: "开篇体检",
+      phase: "review",
+      stage: "审阅",
+      goal: "按黄金一章/三章检查主角聚焦、人物数量、群像开局、设定倾倒和追读期待。",
+      target: "仅审阅，不自动写入"
     }
   ],
   outline: [
     {
       id: "structure",
       label: "规划章节目录",
+      phase: "structure",
       goal: "按篇幅拆分幕、卷、章；前三章、节奏、伏笔和一致性会内置到目录规划中。",
       target: "写入：书籍目录"
     },
     {
+      id: "arcTracker",
+      label: "故事弧跟踪",
+      phase: "structure",
+      goal: "检查主角弧、关系弧、世界弧和卷级推进是否持续前进，避免每章精彩但整本停滞。",
+      target: "仅审阅，不自动写入"
+    },
+    {
+      id: "planDrift",
+      label: "计划漂移分析",
+      phase: "structure",
+      goal: "在重大修改后分析后续章节、伏笔、人物动机和卷级结构受影响范围。",
+      target: "仅审阅，不自动写入"
+    },
+    {
       id: "outlineAudit",
       label: "目录体检",
+      phase: "review",
       goal: "集中检查目录的节奏、因果、伏笔、前三章追读和设定一致性，只给可执行修法。",
       target: "仅审阅，不自动写入"
     },
     {
       id: "pacing",
       label: "节奏导演",
+      phase: "review",
       goal: "检查卷章节奏是否长期同质，识别连续信息、战斗、赶路或情绪章节造成的疲劳点。",
       target: "仅审阅，不自动写入"
     },
     {
       id: "hookDirector",
       label: "追读钩子",
+      phase: "review",
       goal: "检查每章是否留下具体未解决问题、情绪挂点、风险承诺和下一章打开理由。",
       target: "仅审阅，不自动写入"
     }
   ],
   chapter: [
-    { id: "chapterPlan", label: "章内计划", goal: "先拆清本章问题、信息差、反制、证据载体、代价和结尾钩子，再进入正文。", target: "写入：当前章节简介" },
-    { id: "draft", label: "章节初稿", goal: "根据当前目录与设定生成章节正文，要求场景具体、对白有锋芒、段落有推进。", target: "写入：当前章节正文" },
-    { id: "expand", label: "内容扩写", goal: "丰富感官细节、行动链、心理暗流和人物互动，不改变既有剧情方向。", target: "写入：当前章节正文" },
-    { id: "dialogue", label: "对白增强", goal: "稳定人物声口，补强潜台词、冲突递进和对话中的行动变化。", target: "写入：当前章节正文" },
-    { id: "climax", label: "高潮场面", goal: "生成战斗、对峙、打脸、反转或情绪爆发场面，保证爽点来自因果和代价。", target: "写入：当前章节正文" },
-    { id: "polish", label: "压缩润色", goal: "删掉空泛解释和无功能辞藻，把抽象情绪改成动作、证据和场景后果。", target: "写入：当前章节正文" },
-    { id: "antiAIGenerated", label: "AI 味检测", goal: "识别空泛哲学句、重复排比、解释性旁白和无功能环境描写，并给出最小替换片段。", target: "仅审阅，不自动写入" },
-    { id: "openingReview", label: "开篇自评", goal: "按黄金一章/三章和商业追读标准检查当前章节，识别人物过多、群像开局和设定倾倒。", target: "仅审阅，不自动写入" },
-    { id: "review", label: "章节质检", goal: "按人物动机、因果链、节奏、伏笔、设定一致性和可读性检查当前章节。", target: "仅审阅，不自动写入" }
+    { id: "chapterPlan", label: "章内计划", phase: "production", goal: "先拆清本章问题、信息差、反制、证据载体、代价和结尾钩子，再进入正文。", target: "写入：当前章节简介" },
+    { id: "draft", label: "章节初稿", phase: "production", goal: "根据当前目录与设定生成章节正文，要求场景具体、对白有锋芒、段落有推进。", target: "写入：当前章节正文" },
+    { id: "expand", label: "内容扩写", phase: "production", goal: "丰富感官细节、行动链、心理暗流和人物互动，不改变既有剧情方向。", target: "写入：当前章节正文" },
+    { id: "dialogue", label: "对白增强", phase: "production", goal: "稳定人物声口，补强潜台词、冲突递进和对话中的行动变化。", target: "写入：当前章节正文" },
+    { id: "climax", label: "高潮场面", phase: "production", goal: "生成战斗、对峙、打脸、反转或情绪爆发场面，保证爽点来自因果和代价。", target: "写入：当前章节正文" },
+    { id: "polish", label: "压缩润色", phase: "production", goal: "删掉空泛解释和无功能辞藻，把抽象情绪改成动作、证据和场景后果。", target: "写入：当前章节正文" },
+    { id: "continuityAudit", label: "连续性校验", phase: "review", goal: "检查当前章节生成前后的战力、时间线、资源、伤势、伏笔和人物状态冲突。", target: "仅审阅，不自动写入" },
+    { id: "antiAIGenerated", label: "AI 味检测", phase: "review", goal: "识别空泛哲学句、重复排比、解释性旁白和无功能环境描写，并给出最小替换片段。", target: "仅审阅，不自动写入" },
+    { id: "openingReview", label: "开篇自评", phase: "review", goal: "按黄金一章/三章和商业追读标准检查当前章节，识别人物过多、群像开局和设定倾倒。", target: "仅审阅，不自动写入" },
+    { id: "review", label: "章节质检", phase: "review", goal: "按人物动机、因果链、节奏、伏笔、设定一致性和可读性检查当前章节。", target: "仅审阅，不自动写入" }
   ]
 };
 

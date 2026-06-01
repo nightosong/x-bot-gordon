@@ -15,9 +15,27 @@
         <p class="feature-kicker">Model Management</p>
         <p class="models-title">模型管理</p>
       </div>
-      <span class="status-pill models-badge">
-        {{ workbench.modelSettings.activeProfileId ? "当前已有优先模型" : "尚未设置优先模型" }}
-      </span>
+      <div class="models-hero-metrics" aria-label="模型配置概览">
+        <span class="models-metric-chip models-metric-chip-primary">
+          <GIcon name="sparkles" :size="14" />
+          <span class="models-metric-copy">
+            <small>默认模型</small>
+            <strong>{{ activeModelProfile?.displayName ?? "未设置" }}</strong>
+          </span>
+        </span>
+        <span class="models-metric-chip">
+          <span class="models-metric-copy">
+            <small>配置</small>
+            <strong>{{ workbench.modelSettings.profiles.length }} 条</strong>
+          </span>
+        </span>
+        <span class="models-metric-chip">
+          <span class="models-metric-copy">
+            <small>供应商</small>
+            <strong>{{ configuredProviderCount }} 个</strong>
+          </span>
+        </span>
+      </div>
     </section>
 
     <div
@@ -37,7 +55,10 @@
           </div>
 
           <div class="model-section-actions">
-            <span class="pill pill-neutral">{{ workbench.modelSettings.profiles.length }} 条配置</span>
+            <span class="pill pill-neutral model-count-pill">
+              <GIcon name="stats" :size="13" />
+              {{ workbench.modelSettings.profiles.length }} 条配置
+            </span>
             <button
               type="button"
               class="model-icon-button model-add-config-button"
@@ -62,6 +83,7 @@
             :key="profile.id"
             class="model-config-card model-config-draggable-card"
             :class="{
+              'is-model-preferred': isActiveModelProfile(profile),
               'is-model-dragging': draggingModelProfileId === profile.id,
               'is-model-drag-over-before':
                 dragOverModelProfileId === profile.id &&
@@ -112,10 +134,18 @@
                   <template v-else>{{ getProviderMeta(profile.provider).short }}</template>
                 </div>
 
-                <div>
-                  <p class="model-card-title">{{ profile.displayName }}</p>
+                <div class="model-card-identity">
+                  <div class="model-card-title-row">
+                    <p class="model-card-title">{{ profile.displayName }}</p>
+                    <span v-if="isActiveModelProfile(profile)" class="model-default-badge">
+                      <GIcon name="sparkles" :size="12" />
+                      默认
+                    </span>
+                  </div>
                   <p class="model-card-meta">
-                    {{ getProviderMeta(profile.provider).label }} / {{ profile.model }}
+                    <span class="model-card-provider">{{ getProviderMeta(profile.provider).label }}</span>
+                    <span class="model-card-meta-separator">/</span>
+                    <span class="model-card-code">{{ profile.model }}</span>
                   </p>
                 </div>
               </div>
@@ -164,8 +194,6 @@
                   <p v-else class="model-balance-widget-placeholder">点击刷新查询余额</p>
                 </div>
 
-                <span v-if="workbench.modelSettings.activeProfileId === profile.id" class="model-priority-tag">优先使用</span>
-
                 <button
                   type="button"
                   class="model-icon-button"
@@ -178,12 +206,14 @@
 
                 <button
                   type="button"
-                  class="model-status-toggle"
-                  :class="{ 'is-active': workbench.modelSettings.activeProfileId === profile.id }"
-                  :aria-pressed="workbench.modelSettings.activeProfileId === profile.id ? 'true' : 'false'"
+                  class="model-status-toggle model-default-radio"
+                  :class="{ 'is-active': isActiveModelProfile(profile) }"
+                  :aria-pressed="isActiveModelProfile(profile) ? 'true' : 'false'"
+                  :title="isActiveModelProfile(profile) ? '取消默认模型' : '设为默认模型'"
+                  :aria-label="isActiveModelProfile(profile) ? `${profile.displayName} 当前为默认模型` : `设 ${profile.displayName} 为默认模型`"
                   @click="handleModelStatusToggle(profile.id)"
                 >
-                  {{ workbench.modelSettings.activeProfileId === profile.id ? "已启用" : "未启用" }}
+                  <span class="model-default-radio-mark" aria-hidden="true"></span>
                 </button>
 
                 <button
@@ -581,7 +611,7 @@
 </template>
 
 <script setup>
-import { ref } from "vue";
+import { computed, ref } from "vue";
 
 import GCompactSelect from "../../components/GCompactSelect.vue";
 import GIcon from "../../components/GIcon.vue";
@@ -591,7 +621,7 @@ const MODEL_API_FORMAT_OPTIONS = [
   { value: "responses", label: "Responses" }
 ];
 
-defineProps({
+const props = defineProps({
   ui: { type: Object, required: true },
   workbench: { type: Object, required: true },
   activeModelUsageProfile: { type: Object, default: null },
@@ -629,6 +659,16 @@ const emit = defineEmits(["reorder-model-profiles"]);
 const draggingModelProfileId = ref("");
 const dragOverModelProfileId = ref("");
 const dragOverModelProfilePlacement = ref("before");
+const activeModelProfile = computed(
+  () =>
+    props.workbench.modelSettings.profiles.find((profile) => profile.id === props.workbench.modelSettings.activeProfileId) ??
+    null
+);
+const configuredProviderCount = computed(() => new Set(props.workbench.modelSettings.profiles.map((profile) => profile.provider)).size);
+
+function isActiveModelProfile(profile) {
+  return props.workbench.modelSettings.activeProfileId === profile.id;
+}
 
 function updateModelProfileDragPlacement(event, profileId) {
   if (!draggingModelProfileId.value || draggingModelProfileId.value === profileId) {

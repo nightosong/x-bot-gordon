@@ -22,7 +22,7 @@
             :aria-selected="ui.extensions.listTab === 'agent' ? 'true' : 'false'"
             @click="ui.extensions.listTab = 'agent'"
           >
-            Agent 配置
+            Agent
           </button>
           <button
             type="button"
@@ -31,7 +31,7 @@
             :aria-selected="ui.extensions.listTab === 'skill' ? 'true' : 'false'"
             @click="ui.extensions.listTab = 'skill'"
           >
-            Skill 配置
+            Skill
           </button>
           <button
             type="button"
@@ -40,7 +40,7 @@
             :aria-selected="ui.extensions.listTab === 'mcp' ? 'true' : 'false'"
             @click="ui.extensions.listTab = 'mcp'"
           >
-            MCP 配置
+            MCP
           </button>
           <button
             type="button"
@@ -49,7 +49,7 @@
             :aria-selected="ui.extensions.listTab === 'tool' ? 'true' : 'false'"
             @click="ui.extensions.listTab = 'tool'"
           >
-            TOOL 配置
+            TOOL
           </button>
         </div>
       </div>
@@ -444,23 +444,26 @@
                   <input v-model="ui.extensions.editor.values.name" class="field-input" placeholder="例如：周报助手" required />
                 </label>
 
-                <label class="field">
+                <div class="field">
                   <span class="field-label">执行模式</span>
-                  <select v-model="ui.extensions.editor.values.mode" class="field-input">
-                    <option value="task">task</option>
-                    <option value="chat">chat</option>
-                  </select>
-                </label>
+                  <GCompactSelect
+                    v-model="ui.extensions.editor.values.mode"
+                    class="extension-editor-select"
+                    aria-label="执行模式"
+                    :options="AGENT_MODE_OPTIONS"
+                  />
+                </div>
 
-                <label class="field field-full">
+                <div class="field field-full">
                   <span class="field-label">模型绑定</span>
-                  <select v-model="ui.extensions.editor.values.modelProfileId" class="field-input">
-                    <option value="">暂不绑定</option>
-                    <option v-for="profile in workbench.modelSettings.profiles" :key="profile.id" :value="profile.id">
-                      {{ profile.displayName }} / {{ profile.model }}
-                    </option>
-                  </select>
-                </label>
+                  <GCompactSelect
+                    v-model="ui.extensions.editor.values.modelProfileId"
+                    class="extension-editor-select extension-model-select"
+                    aria-label="模型绑定"
+                    :options="agentModelSelectOptions"
+                    placeholder="暂不绑定"
+                  />
+                </div>
 
                 <label class="field field-full">
                   <span class="field-label">说明</span>
@@ -712,13 +715,15 @@
                   <input v-model="ui.extensions.editor.values.name" class="field-input" placeholder="例如：Feishu Docs" required />
                 </label>
 
-                <label class="field">
+                <div class="field">
                   <span class="field-label">传输方式</span>
-                  <select v-model="ui.extensions.editor.values.transport" class="field-input">
-                    <option value="stdio">stdio</option>
-                    <option value="http">http</option>
-                  </select>
-                </label>
+                  <GCompactSelect
+                    v-model="ui.extensions.editor.values.transport"
+                    class="extension-editor-select"
+                    aria-label="传输方式"
+                    :options="MCP_TRANSPORT_OPTIONS"
+                  />
+                </div>
 
                 <label class="field field-full">
                   <span class="field-label">说明</span>
@@ -771,14 +776,14 @@
                 <button type="submit" class="model-action">
                   {{
                     ui.extensions.editor.kind === "agent"
-                      ? "保存 Agent"
+                      ? "保存"
                       : ui.extensions.editor.kind === "skill"
-                        ? "保存 Skill"
+                        ? "保存"
                         : ui.extensions.editor.kind === "skill-import"
                           ? "加载 Skill"
                           : ui.extensions.editor.kind === "tool"
                             ? "保存"
-                            : "保存 MCP"
+                            : "保存"
                   }}
                 </button>
               </div>
@@ -1001,9 +1006,22 @@
 </template>
 
 <script setup>
+import { computed } from "vue";
+
+import GCompactSelect from "../../components/GCompactSelect.vue";
 import GIcon from "../../components/GIcon.vue";
 
-defineProps({
+const AGENT_MODE_OPTIONS = [
+  { value: "task", label: "task" },
+  { value: "chat", label: "chat" }
+];
+
+const MCP_TRANSPORT_OPTIONS = [
+  { value: "stdio", label: "stdio" },
+  { value: "http", label: "http" }
+];
+
+const props = defineProps({
   ui: { type: Object, required: true },
   workbench: { type: Object, required: true },
   runnerAgent: { type: Object, default: null },
@@ -1039,4 +1057,12 @@ defineProps({
   resolveBoundModelName: { type: Function, required: true },
   truncateText: { type: Function, required: true }
 });
+
+const agentModelSelectOptions = computed(() => [
+  { value: "", label: "暂不绑定" },
+  ...props.workbench.modelSettings.profiles.map((profile) => ({
+    value: profile.id,
+    label: `${profile.displayName} / ${profile.model}`
+  }))
+]);
 </script>

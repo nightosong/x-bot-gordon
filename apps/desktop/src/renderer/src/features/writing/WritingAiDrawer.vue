@@ -7,6 +7,24 @@
       </div>
     </div>
 
+    <div v-if="activeWritingPhaseOptions.length > 1" class="writing-ai-phase-field">
+      <span class="field-label">创作阶段</span>
+      <div class="writing-ai-phase-tabs" role="tablist" aria-label="创作阶段">
+        <button
+          v-for="phase in activeWritingPhaseOptions"
+          :key="phase.id"
+          type="button"
+          class="writing-ai-phase-tab"
+          :class="{ 'is-active': activeWritingPhaseId === phase.id }"
+          :aria-selected="activeWritingPhaseId === phase.id ? 'true' : 'false'"
+          role="tab"
+          @click="selectWritingAiPhase(phase.id)"
+        >
+          {{ phase.shortLabel ?? phase.label }}
+        </button>
+      </div>
+    </div>
+
     <div class="field writing-ai-task-field">
       <span class="field-label">写作动作</span>
       <div class="writing-ai-task-dropdown" :class="{ 'is-open': state.isAiTaskPickerOpen }">
@@ -24,7 +42,7 @@
 
         <div v-if="state.isAiTaskPickerOpen" class="writing-ai-task-dropdown-menu" role="listbox">
           <button
-            v-for="task in activeWritingTaskOptions"
+            v-for="task in visibleWritingTaskOptions"
             :key="task.id"
             type="button"
             class="writing-ai-task-dropdown-item"
@@ -169,12 +187,15 @@ const props = defineProps({
   state: { type: Object, required: true },
   activeWritingTask: { type: Object, default: null },
   activeWritingTaskOptions: { type: Array, default: () => [] },
+  activeWritingPhaseOptions: { type: Array, default: () => [] },
+  activeWritingPhaseId: { type: String, default: "" },
   activeWritingPromptPreview: { type: String, default: "" },
   activeWritingLongOutlineRequest: { type: Object, default: null },
   activeWritingOutlinePlannerJob: { type: Object, default: null },
   activeWritingBook: { type: Object, default: null },
   toggleWritingAiTaskPicker: { type: Function, required: true },
   selectWritingAiTask: { type: Function, required: true },
+  selectWritingAiPhase: { type: Function, required: true },
   toggleWritingPromptPreview: { type: Function, required: true },
   buildWritingLongOutlineTargetContent: { type: Function, required: true },
   getWritingOutlinePlannerStatusLabel: { type: Function, required: true },
@@ -192,6 +213,11 @@ const props = defineProps({
 const isAiInstructionOpen = ref(Boolean(props.state.aiInstruction?.trim()));
 const hasAiInstruction = computed(() => Boolean(props.state.aiInstruction?.trim()));
 const activeWritingTaskTarget = computed(() => getWritingTaskTarget(props.activeWritingTask));
+const visibleWritingTaskOptions = computed(() => {
+  const phaseId = String(props.activeWritingPhaseId ?? "").trim();
+  const filtered = props.activeWritingTaskOptions.filter((task) => String(task?.phase ?? "foundation") === phaseId);
+  return filtered.length ? filtered : props.activeWritingTaskOptions;
+});
 const writingAiOutputStatusMessage = computed(() => {
   const feedback = String(props.state.aiFeedback ?? "").trim();
 

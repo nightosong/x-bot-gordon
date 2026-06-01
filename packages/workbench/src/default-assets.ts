@@ -4,7 +4,6 @@ import { readPromptAsset } from "./prompt-assets.js";
 
 export const BUILTIN_WORKBENCH_ID_PREFIX = "builtin:";
 export const BUILTIN_GORDON_AGENT_ID = "builtin:agent:gordon";
-export const BUILTIN_ARTHUR_AGENT_ID = "builtin:agent:arthur";
 export const BUILTIN_WORKSPACE_MCP_ID = "builtin:mcp:workspace";
 export const BUILTIN_SEARCH_TOOLS_MCP_ID = "builtin:mcp:search-tools";
 export const BUILTIN_COMPUTER_USE_MCP_ID = "builtin:mcp:computer-use";
@@ -37,7 +36,6 @@ const BUILTIN_DEEP_RESEARCH_SKILL_PROMPT = readPromptAsset("builtinSkillDeepRese
 const BUILTIN_SKILL_CREATOR_SKILL_PROMPT = readPromptAsset("builtinSkillCreatorPrompt");
 const BUILTIN_WRITING_SKILL_PROMPT = readPromptAsset("builtinSkillWritingPrompt");
 const BUILTIN_GORDON_AGENT_SYSTEM_PROMPT = readPromptAsset("builtinAgentGordonSystem");
-const BUILTIN_ARTHUR_AGENT_SYSTEM_PROMPT = readPromptAsset("builtinAgentArthurSystem");
 
 function shellEscape(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
@@ -263,19 +261,6 @@ export function getBuiltinAgentProfiles(
       mode: "chat",
       modelProfileId,
       systemPrompt: BUILTIN_GORDON_AGENT_SYSTEM_PROMPT,
-      allowedSkillIds: skillIds,
-      allowedMcpServerIds: mcpServerIds,
-      enabled: true,
-      updatedAt: BUILTIN_UPDATED_AT
-    },
-    {
-      id: BUILTIN_ARTHUR_AGENT_ID,
-      name: "Arthur",
-      description:
-        "内置 Research OS 型科研合作者 Agent，以决策优先级、假设剪枝和最小区分实验推进问题发现、证据验证、早期错误方向识别与论文审稿，并内置化工结晶研究适配。",
-      mode: "chat",
-      modelProfileId,
-      systemPrompt: BUILTIN_ARTHUR_AGENT_SYSTEM_PROMPT,
       allowedSkillIds: skillIds,
       allowedMcpServerIds: mcpServerIds,
       enabled: true,

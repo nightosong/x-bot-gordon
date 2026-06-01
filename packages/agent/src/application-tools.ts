@@ -12,6 +12,8 @@ import type {
   WritingChapter,
   WritingCharacterAsset,
   WritingForeshadowAsset,
+  WritingNarrativeRiskLevel,
+  WritingNarrativeStateNode,
   WritingStoryAssetEntry
 } from "../../shared/src/index.js";
 
@@ -90,7 +92,14 @@ const STORY_ASSETS_SCHEMA = {
         voice: { type: "string" },
         pacing: { type: "string" },
         genreSignals: { type: "array", items: { type: "string" } },
-        taboos: { type: "array", items: { type: "string" } }
+        taboos: { type: "array", items: { type: "string" } },
+        proseDensity: { type: "string" },
+        dialogueRatio: { type: "string" },
+        narrationDistance: { type: "string" },
+        emotionalTemperature: { type: "string" },
+        humorLevel: { type: "string" },
+        violenceExplicitness: { type: "string" },
+        pacingCurve: { type: "array", items: { type: "string" } }
       },
       additionalProperties: true
     },
@@ -99,6 +108,40 @@ const STORY_ASSETS_SCHEMA = {
       description: "连续性备注、资源状态、后续必须记住的事实",
       items: { type: "object", additionalProperties: true }
     }
+  },
+  additionalProperties: true
+} as const;
+
+const NARRATIVE_STATE_NODE_SCHEMA = {
+  type: "object",
+  properties: {
+    label: { type: "string" },
+    summary: { type: "string" },
+    status: { type: "string" },
+    introducedAtChapterIndex: { type: "integer", minimum: 1 },
+    payoffDeadlineChapterIndex: { type: "integer", minimum: 1 },
+    resolvedAtChapterIndex: { type: "integer", minimum: 1 },
+    evidenceChapterIds: { type: "array", items: { type: "string" } },
+    relatedNodeIds: { type: "array", items: { type: "string" } },
+    riskLevel: { type: "string", enum: ["low", "medium", "high"] }
+  },
+  additionalProperties: true
+} as const;
+
+const NARRATIVE_STATE_SCHEMA = {
+  type: "object",
+  description:
+    "可选，统一叙事状态图。用于写入人物状态、世界规则、资源/债务/伤势、区域状态、伏笔压力、故事弧、时间线、连续性风险和计划漂移。",
+  properties: {
+    characters: { type: "array", items: NARRATIVE_STATE_NODE_SCHEMA },
+    worldRules: { type: "array", items: NARRATIVE_STATE_NODE_SCHEMA },
+    resources: { type: "array", items: NARRATIVE_STATE_NODE_SCHEMA },
+    regions: { type: "array", items: NARRATIVE_STATE_NODE_SCHEMA },
+    foreshadows: { type: "array", items: NARRATIVE_STATE_NODE_SCHEMA },
+    arcs: { type: "array", items: NARRATIVE_STATE_NODE_SCHEMA },
+    timelineEvents: { type: "array", items: NARRATIVE_STATE_NODE_SCHEMA },
+    continuityWarnings: { type: "array", items: NARRATIVE_STATE_NODE_SCHEMA },
+    planDriftNotes: { type: "array", items: NARRATIVE_STATE_NODE_SCHEMA }
   },
   additionalProperties: true
 } as const;
@@ -217,6 +260,11 @@ function asOptionalPositiveInteger(value: unknown): number | undefined {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
+function asNarrativeRiskLevel(value: unknown): WritingNarrativeRiskLevel {
+  const normalized = asString(value);
+  return ["low", "medium", "high"].includes(normalized) ? (normalized as WritingNarrativeRiskLevel) : "low";
+}
+
 function createLocalId(prefix: string): string {
   return `${prefix}_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
 }
@@ -237,6 +285,86 @@ function createEmptyWritingStoryAssets(bookId: string, premise: string, timestam
       taboos: []
     },
     memoryNotes: [],
+    updatedAt: timestamp
+  };
+}
+
+function normalizeNarrativeStateNode(
+  value: unknown,
+  index: number,
+  bookId: string,
+  kind: WritingNarrativeStateNode["kind"],
+  timestamp: string
+): WritingNarrativeStateNode | null {
+  const source = isObject(value) ? value : { summary: value };
+  const label = asString(source.label ?? source.title ?? source.name);
+  const summary = asString(source.summary ?? source.detail ?? source.description ?? source.setup);
+
+  if (!label && !summary) {
+    return null;
+  }
+
+  return {
+    id: asString(source.id) || `${bookId}_${kind}_${index + 1}`,
+    kind,
+    label: label || `未命名${kind} ${index + 1}`,
+    summary,
+    status: asString(source.status) || "active",
+    ...(asOptionalPositiveInteger(source.introducedAtChapterIndex ?? source.chapterIndex) ? {
+      introducedAtChapterIndex: asOptionalPositiveInteger(source.introducedAtChapterIndex ?? source.chapterIndex)
+    } : {}),
+    ...(asOptionalPositiveInteger(source.payoffDeadlineChapterIndex) ? {
+      payoffDeadlineChapterIndex: asOptionalPositiveInteger(source.payoffDeadlineChapterIndex)
+    } : {}),
+    ...(asOptionalPositiveInteger(source.resolvedAtChapterIndex) ? {
+      resolvedAtChapterIndex: asOptionalPositiveInteger(source.resolvedAtChapterIndex)
+    } : {}),
+    evidenceChapterIds: asStringList(source.evidenceChapterIds),
+    relatedNodeIds: asStringList(source.relatedNodeIds),
+    riskLevel: asNarrativeRiskLevel(source.riskLevel),
+    updatedAt: asString(source.updatedAt) || timestamp
+  };
+}
+
+function normalizeNarrativeStateNodeList(
+  value: unknown,
+  bookId: string,
+  kind: WritingNarrativeStateNode["kind"],
+  timestamp: string
+): WritingNarrativeStateNode[] {
+  return (Array.isArray(value) ? value : [])
+    .map((entry, index) => normalizeNarrativeStateNode(entry, index, bookId, kind, timestamp))
+    .filter((entry): entry is WritingNarrativeStateNode => Boolean(entry));
+}
+
+function createEmptyWritingNarrativeState(bookId: string, timestamp: string): WritingBook["narrativeState"] {
+  return {
+    characters: [],
+    worldRules: [],
+    resources: [],
+    regions: [],
+    foreshadows: [],
+    arcs: [],
+    timelineEvents: [],
+    continuityWarnings: [],
+    planDriftNotes: [],
+    updatedAt: timestamp
+  };
+}
+
+function normalizeWritingNarrativeStateInput(value: unknown, bookId: string, timestamp: string): WritingBook["narrativeState"] {
+  const source = isObject(value) ? value : {};
+
+  return {
+    characters: normalizeNarrativeStateNodeList(source.characters, bookId, "character", timestamp),
+    worldRules: normalizeNarrativeStateNodeList(source.worldRules, bookId, "worldRule", timestamp),
+    resources: normalizeNarrativeStateNodeList(source.resources, bookId, "resource", timestamp),
+    regions: normalizeNarrativeStateNodeList(source.regions, bookId, "region", timestamp),
+    foreshadows: normalizeNarrativeStateNodeList(source.foreshadows, bookId, "foreshadow", timestamp),
+    arcs: normalizeNarrativeStateNodeList(source.arcs, bookId, "arc", timestamp),
+    timelineEvents: normalizeNarrativeStateNodeList(source.timelineEvents, bookId, "timelineEvent", timestamp),
+    continuityWarnings: normalizeNarrativeStateNodeList(source.continuityWarnings, bookId, "continuityWarning", timestamp),
+    planDriftNotes: normalizeNarrativeStateNodeList(source.planDriftNotes, bookId, "planDrift", timestamp),
     updatedAt: timestamp
   };
 }
@@ -368,7 +496,14 @@ function normalizeWritingStoryAssetsInput(value: unknown, bookId: string, timest
       voice: asString(isObject(source.styleProfile) ? source.styleProfile.voice : ""),
       pacing: asString(isObject(source.styleProfile) ? source.styleProfile.pacing : ""),
       genreSignals: asStringList(isObject(source.styleProfile) ? source.styleProfile.genreSignals : []),
-      taboos: asStringList(isObject(source.styleProfile) ? source.styleProfile.taboos : [])
+      taboos: asStringList(isObject(source.styleProfile) ? source.styleProfile.taboos : []),
+      ...(isObject(source.styleProfile) && asString(source.styleProfile.proseDensity) ? { proseDensity: asString(source.styleProfile.proseDensity) } : {}),
+      ...(isObject(source.styleProfile) && asString(source.styleProfile.dialogueRatio) ? { dialogueRatio: asString(source.styleProfile.dialogueRatio) } : {}),
+      ...(isObject(source.styleProfile) && asString(source.styleProfile.narrationDistance) ? { narrationDistance: asString(source.styleProfile.narrationDistance) } : {}),
+      ...(isObject(source.styleProfile) && asString(source.styleProfile.emotionalTemperature) ? { emotionalTemperature: asString(source.styleProfile.emotionalTemperature) } : {}),
+      ...(isObject(source.styleProfile) && asString(source.styleProfile.humorLevel) ? { humorLevel: asString(source.styleProfile.humorLevel) } : {}),
+      ...(isObject(source.styleProfile) && asString(source.styleProfile.violenceExplicitness) ? { violenceExplicitness: asString(source.styleProfile.violenceExplicitness) } : {}),
+      ...(isObject(source.styleProfile) && asStringList(source.styleProfile.pacingCurve).length ? { pacingCurve: asStringList(source.styleProfile.pacingCurve) } : {})
     },
     memoryNotes: normalizeStoryAssetEntries(source.memoryNotes, bookId, "memory", timestamp),
     updatedAt: timestamp
@@ -544,7 +679,14 @@ function mergeWritingStoryAssets(
       voice: incomingAssets.styleProfile.voice || currentAssets.styleProfile.voice,
       pacing: incomingAssets.styleProfile.pacing || currentAssets.styleProfile.pacing,
       genreSignals: Array.from(new Set([...currentAssets.styleProfile.genreSignals, ...incomingAssets.styleProfile.genreSignals])),
-      taboos: Array.from(new Set([...currentAssets.styleProfile.taboos, ...incomingAssets.styleProfile.taboos]))
+      taboos: Array.from(new Set([...currentAssets.styleProfile.taboos, ...incomingAssets.styleProfile.taboos])),
+      proseDensity: incomingAssets.styleProfile.proseDensity || currentAssets.styleProfile.proseDensity || "",
+      dialogueRatio: incomingAssets.styleProfile.dialogueRatio || currentAssets.styleProfile.dialogueRatio || "",
+      narrationDistance: incomingAssets.styleProfile.narrationDistance || currentAssets.styleProfile.narrationDistance || "",
+      emotionalTemperature: incomingAssets.styleProfile.emotionalTemperature || currentAssets.styleProfile.emotionalTemperature || "",
+      humorLevel: incomingAssets.styleProfile.humorLevel || currentAssets.styleProfile.humorLevel || "",
+      violenceExplicitness: incomingAssets.styleProfile.violenceExplicitness || currentAssets.styleProfile.violenceExplicitness || "",
+      pacingCurve: Array.from(new Set([...(currentAssets.styleProfile.pacingCurve ?? []), ...(incomingAssets.styleProfile.pacingCurve ?? [])]))
     },
     memoryNotes: mergeStoryAssetEntries(currentAssets.memoryNotes, incomingAssets.memoryNotes),
     updatedAt: timestamp
@@ -594,6 +736,83 @@ function mergeExtraIntroSections(
   return Array.from(byKey.values());
 }
 
+function mergeNarrativeStateNodes(
+  currentNodes: WritingNarrativeStateNode[],
+  incomingNodes: WritingNarrativeStateNode[],
+  mode: string
+): WritingNarrativeStateNode[] {
+  if (mode === "replace") {
+    return incomingNodes;
+  }
+
+  const byKey = new Map<string, WritingNarrativeStateNode>();
+
+  for (const node of currentNodes) {
+    const key = normalizeAssetMergeKey(node.label);
+
+    if (key) {
+      byKey.set(key, node);
+    }
+  }
+
+  for (const node of incomingNodes) {
+    const key = normalizeAssetMergeKey(node.label);
+    const current = byKey.get(key);
+
+    if (!key) {
+      continue;
+    }
+
+    byKey.set(
+      key,
+      current
+        ? {
+            ...current,
+            label: node.label || current.label,
+            summary: node.summary || current.summary,
+            status: node.status || current.status,
+            introducedAtChapterIndex: node.introducedAtChapterIndex ?? current.introducedAtChapterIndex,
+            payoffDeadlineChapterIndex: node.payoffDeadlineChapterIndex ?? current.payoffDeadlineChapterIndex,
+            resolvedAtChapterIndex: node.resolvedAtChapterIndex ?? current.resolvedAtChapterIndex,
+            evidenceChapterIds: Array.from(new Set([...current.evidenceChapterIds, ...node.evidenceChapterIds])),
+            relatedNodeIds: Array.from(new Set([...current.relatedNodeIds, ...node.relatedNodeIds])),
+            riskLevel: node.riskLevel || current.riskLevel,
+            updatedAt: node.updatedAt
+          }
+        : node
+    );
+  }
+
+  return Array.from(byKey.values());
+}
+
+function mergeWritingNarrativeState(
+  currentState: WritingBook["narrativeState"],
+  incomingState: WritingBook["narrativeState"],
+  mode: string,
+  timestamp: string
+): WritingBook["narrativeState"] {
+  if (mode === "replace") {
+    return {
+      ...incomingState,
+      updatedAt: timestamp
+    };
+  }
+
+  return {
+    characters: mergeNarrativeStateNodes(currentState.characters, incomingState.characters, mode),
+    worldRules: mergeNarrativeStateNodes(currentState.worldRules, incomingState.worldRules, mode),
+    resources: mergeNarrativeStateNodes(currentState.resources, incomingState.resources, mode),
+    regions: mergeNarrativeStateNodes(currentState.regions, incomingState.regions, mode),
+    foreshadows: mergeNarrativeStateNodes(currentState.foreshadows, incomingState.foreshadows, mode),
+    arcs: mergeNarrativeStateNodes(currentState.arcs, incomingState.arcs, mode),
+    timelineEvents: mergeNarrativeStateNodes(currentState.timelineEvents, incomingState.timelineEvents, mode),
+    continuityWarnings: mergeNarrativeStateNodes(currentState.continuityWarnings, incomingState.continuityWarnings, mode),
+    planDriftNotes: mergeNarrativeStateNodes(currentState.planDriftNotes, incomingState.planDriftNotes, mode),
+    updatedAt: timestamp
+  };
+}
+
 function summarizeStoryAssets(assets: WritingBook["storyAssets"]): JsonObject {
   return {
     premise: Boolean(assets.premise),
@@ -608,8 +827,29 @@ function summarizeStoryAssets(assets: WritingBook["storyAssets"]): JsonObject {
       assets.styleProfile.voice ||
         assets.styleProfile.pacing ||
         assets.styleProfile.genreSignals.length ||
-        assets.styleProfile.taboos.length
+        assets.styleProfile.taboos.length ||
+        assets.styleProfile.proseDensity ||
+        assets.styleProfile.dialogueRatio ||
+        assets.styleProfile.narrationDistance ||
+        assets.styleProfile.emotionalTemperature ||
+        assets.styleProfile.humorLevel ||
+        assets.styleProfile.violenceExplicitness ||
+        assets.styleProfile.pacingCurve?.length
     )
+  };
+}
+
+function summarizeNarrativeState(state: WritingBook["narrativeState"]): JsonObject {
+  return {
+    characters: state.characters.length,
+    worldRules: state.worldRules.length,
+    resources: state.resources.length,
+    regions: state.regions.length,
+    foreshadows: state.foreshadows.length,
+    arcs: state.arcs.length,
+    timelineEvents: state.timelineEvents.length,
+    continuityWarnings: state.continuityWarnings.length,
+    planDriftNotes: state.planDriftNotes.length
   };
 }
 
@@ -647,6 +887,7 @@ function summarizeBook(book: WritingBook, includeChapters = false): JsonObject {
     directoryName: book.directoryName,
     chapterCount: book.chapters.length,
     doneChapterCount: book.chapters.filter((chapter) => chapter.status === "done").length,
+    narrativeState: summarizeNarrativeState(book.narrativeState),
     ...(includeChapters
       ? {
           chapters: book.chapters.map((chapter) => ({
@@ -803,6 +1044,7 @@ function getApplicationToolDefinitions(server: McpServerConfig): McpToolDefiniti
           premise: { type: "string", description: "可选，故事命题，会写入 storyAssets.premise" },
           extraIntroSections: EXTRA_INTRO_SECTIONS_SCHEMA,
           storyAssets: STORY_ASSETS_SCHEMA,
+          narrativeState: NARRATIVE_STATE_SCHEMA,
           dryRun: { type: "boolean", description: "可选，默认 false。true 只预览，false 直接写入本地书稿" }
         },
         additionalProperties: false
@@ -834,6 +1076,7 @@ function getApplicationToolDefinitions(server: McpServerConfig): McpToolDefiniti
           chapterIndex: { type: "integer", minimum: 1, description: "可选，目标章节序号" },
           chapterTitle: { type: "string", description: "可选，目标章节标题或可唯一匹配片段" },
           includeStoryAssets: { type: "boolean", description: "可选，是否返回结构化故事资产，默认 true" },
+          includeNarrativeState: { type: "boolean", description: "可选，是否返回 Narrative State，默认 true" },
           includeRecentChapters: { type: "integer", minimum: 0, maximum: 10, description: "可选，额外返回最近章节正文数量，默认 0" },
           maxContentChars: { type: "integer", minimum: 1000, maximum: 60000, description: "可选，单段正文最大返回字数，默认 24000" }
         },
@@ -908,6 +1151,7 @@ function getApplicationToolDefinitions(server: McpServerConfig): McpToolDefiniti
           bookIdOrTitle: { type: "string", description: "小说 id、完整书名或可唯一匹配的书名片段" },
           mode: { type: "string", enum: ["merge", "replace"], description: "可选，merge 合并同名资产，replace 替换全部故事资产与补充区块；默认 merge" },
           storyAssets: STORY_ASSETS_SCHEMA,
+          narrativeState: NARRATIVE_STATE_SCHEMA,
           extraIntroSections: EXTRA_INTRO_SECTIONS_SCHEMA,
           dryRun: { type: "boolean", description: "可选，默认 true。true 只预览，false 写回本地书稿" },
           expectedBookUpdatedAt: { type: "string", description: "可选，乐观锁：若书籍更新时间不一致则拒绝写回" }
@@ -1015,6 +1259,7 @@ async function handleWritingCreateBook(args: JsonObject) {
   const emptyStoryAssets = createEmptyWritingStoryAssets(bookId, premise, timestamp);
   const incomingStoryAssets = normalizeWritingStoryAssetsInput(args.storyAssets, bookId, timestamp);
   const storyAssets = mergeWritingStoryAssets(emptyStoryAssets, incomingStoryAssets, "merge", timestamp);
+  const narrativeState = normalizeWritingNarrativeStateInput(args.narrativeState, bookId, timestamp);
   const book: WritingBook = {
     id: bookId,
     title,
@@ -1030,6 +1275,7 @@ async function handleWritingCreateBook(args: JsonObject) {
     extraIntroSections: normalizeExtraIntroSections(args.extraIntroSections, bookId, timestamp),
     parts: normalizeInitialBookParts(args, bookId),
     storyAssets,
+    narrativeState,
     chapters: normalizeInitialBookChapters(args, bookId, timestamp)
   };
 
@@ -1040,6 +1286,9 @@ async function handleWritingCreateBook(args: JsonObject) {
 篇幅：${book.length}
 初始章节：${book.chapters.length} 章
 故事资产：${Object.entries(summarizeStoryAssets(book.storyAssets))
+        .map(([key, value]) => `${key}=${value}`)
+        .join("，")}
+叙事状态：${Object.entries(summarizeNarrativeState(book.narrativeState))
         .map(([key, value]) => `${key}=${value}`)
         .join("，")}
 
@@ -1054,7 +1303,8 @@ async function handleWritingCreateBook(args: JsonObject) {
           intro: truncateText(book.intro, MAX_TEXT_CHARS),
           outlineGuide: truncateText(book.outlineGuide, MAX_TEXT_CHARS),
           extraIntroSections: book.extraIntroSections,
-          storyAssets: book.storyAssets
+          storyAssets: book.storyAssets,
+          narrativeState: book.narrativeState
         }
       }
     );
@@ -1072,6 +1322,9 @@ id=${savedBook.id}
 故事资产=${Object.entries(summarizeStoryAssets(savedBook.storyAssets))
       .map(([key, value]) => `${key}=${value}`)
       .join("，")}
+叙事状态=${Object.entries(summarizeNarrativeState(savedBook.narrativeState))
+      .map(([key, value]) => `${key}=${value}`)
+      .join("，")}
 更新时间=${savedBook.updatedAt}`,
     {
       applicationId: "writing",
@@ -1084,7 +1337,8 @@ id=${savedBook.id}
         intro: truncateText(savedBook.intro, MAX_TEXT_CHARS),
         outlineGuide: truncateText(getUnifiedWritingOutlineGuide(savedBook), MAX_TEXT_CHARS),
         extraIntroSections: savedBook.extraIntroSections,
-        storyAssets: savedBook.storyAssets
+        storyAssets: savedBook.storyAssets,
+        narrativeState: savedBook.narrativeState
       }
     }
   );
@@ -1094,6 +1348,7 @@ async function handleWritingReadBook(args: JsonObject) {
   const books = await listWritingBooks();
   const book = findWritingBook(books, asString(args.bookIdOrTitle));
   const includeStoryAssets = asBoolean(args.includeStoryAssets, true);
+  const includeNarrativeState = asBoolean(args.includeNarrativeState, true);
   const recentCount = Math.max(0, Math.min(10, Math.floor(Number(args.includeRecentChapters ?? 0) || 0)));
   const maxContentChars = asPositiveInteger(args.maxContentChars, MAX_TEXT_CHARS, 60_000);
   const hasChapterTarget = Boolean(args.chapterId || args.chapterIndex || args.chapterTitle);
@@ -1145,6 +1400,7 @@ ${selectedChapterText ? `\n\n选中章节正文：\n${selectedChapterText}` : ""
         intro: book.intro,
         outlineGuide: getUnifiedWritingOutlineGuide(book),
         ...(includeStoryAssets ? { storyAssets: book.storyAssets } : {}),
+        ...(includeNarrativeState ? { narrativeState: book.narrativeState } : {}),
         chapters: chapterSummaries,
         selectedChapters: selectedChapters.map((chapter) => ({
           ...chapter,
@@ -1156,7 +1412,14 @@ ${selectedChapterText ? `\n\n选中章节正文：\n${selectedChapterText}` : ""
 }
 
 function buildStoryAssetSearchText(book: WritingBook): string {
-  return JSON.stringify(book.storyAssets ?? {}, null, 2);
+  return JSON.stringify(
+    {
+      storyAssets: book.storyAssets ?? {},
+      narrativeState: book.narrativeState ?? {}
+    },
+    null,
+    2
+  );
 }
 
 function makeSnippet(text: string, query: string): string {
@@ -1447,6 +1710,7 @@ async function handleWritingUpdateStoryAssets(args: JsonObject) {
   const mode = asString(args.mode) === "replace" ? "replace" : "merge";
   const timestamp = new Date().toISOString();
   const incomingStoryAssets = normalizeWritingStoryAssetsInput(args.storyAssets, book.id, timestamp);
+  const incomingNarrativeState = normalizeWritingNarrativeStateInput(args.narrativeState, book.id, timestamp);
   const incomingExtraIntroSections = normalizeExtraIntroSections(args.extraIntroSections, book.id, timestamp);
   const hasStoryAssets =
     incomingStoryAssets.premise ||
@@ -1460,11 +1724,28 @@ async function handleWritingUpdateStoryAssets(args: JsonObject) {
     incomingStoryAssets.styleProfile.voice ||
     incomingStoryAssets.styleProfile.pacing ||
     incomingStoryAssets.styleProfile.genreSignals.length ||
-    incomingStoryAssets.styleProfile.taboos.length;
+    incomingStoryAssets.styleProfile.taboos.length ||
+    incomingStoryAssets.styleProfile.proseDensity ||
+    incomingStoryAssets.styleProfile.dialogueRatio ||
+    incomingStoryAssets.styleProfile.narrationDistance ||
+    incomingStoryAssets.styleProfile.emotionalTemperature ||
+    incomingStoryAssets.styleProfile.humorLevel ||
+    incomingStoryAssets.styleProfile.violenceExplicitness ||
+    incomingStoryAssets.styleProfile.pacingCurve?.length;
+  const hasNarrativeState =
+    incomingNarrativeState.characters.length ||
+    incomingNarrativeState.worldRules.length ||
+    incomingNarrativeState.resources.length ||
+    incomingNarrativeState.regions.length ||
+    incomingNarrativeState.foreshadows.length ||
+    incomingNarrativeState.arcs.length ||
+    incomingNarrativeState.timelineEvents.length ||
+    incomingNarrativeState.continuityWarnings.length ||
+    incomingNarrativeState.planDriftNotes.length;
   const hasExtraIntroSections = incomingExtraIntroSections.length > 0;
 
-  if (!hasStoryAssets && !hasExtraIntroSections) {
-    throw new Error("没有提供任何故事资产变更。请至少传入 storyAssets 或 extraIntroSections。");
+  if (!hasStoryAssets && !hasNarrativeState && !hasExtraIntroSections) {
+    throw new Error("没有提供任何故事资产变更。请至少传入 storyAssets、narrativeState 或 extraIntroSections。");
   }
 
   assertExpectedTimestamp("小说", asString(args.expectedBookUpdatedAt), book.updatedAt);
@@ -1478,9 +1759,16 @@ async function handleWritingUpdateStoryAssets(args: JsonObject) {
   const nextExtraIntroSections = hasExtraIntroSections
     ? mergeExtraIntroSections(book.extraIntroSections ?? [], incomingExtraIntroSections, mode)
     : book.extraIntroSections ?? [];
+  const nextNarrativeState = hasNarrativeState
+    ? mergeWritingNarrativeState(book.narrativeState ?? createEmptyWritingNarrativeState(book.id, timestamp), incomingNarrativeState, mode, timestamp)
+    : {
+        ...(book.narrativeState ?? createEmptyWritingNarrativeState(book.id, timestamp)),
+        updatedAt: timestamp
+      };
   const nextBook: WritingBook = {
     ...book,
     storyAssets: nextStoryAssets,
+    narrativeState: nextNarrativeState,
     extraIntroSections: nextExtraIntroSections,
     updatedAt: timestamp
   };
@@ -1488,6 +1776,10 @@ async function handleWritingUpdateStoryAssets(args: JsonObject) {
 
   if (hasStoryAssets) {
     fields.storyAssets = buildStructuredFieldPreview(book.storyAssets, nextStoryAssets);
+  }
+
+  if (hasNarrativeState) {
+    fields.narrativeState = buildStructuredFieldPreview(book.narrativeState, nextNarrativeState);
   }
 
   if (hasExtraIntroSections) {
@@ -1506,6 +1798,9 @@ async function handleWritingUpdateStoryAssets(args: JsonObject) {
 故事资产=${Object.entries(summarizeStoryAssets(savedBook.storyAssets))
         .map(([key, value]) => `${key}=${value}`)
         .join("，")}
+叙事状态=${Object.entries(summarizeNarrativeState(savedBook.narrativeState))
+        .map(([key, value]) => `${key}=${value}`)
+        .join("，")}
 更新时间：${savedBook.updatedAt}`,
       {
         applicationId: "writing",
@@ -1518,7 +1813,8 @@ async function handleWritingUpdateStoryAssets(args: JsonObject) {
         savedBook: {
           ...summarizeBook(savedBook),
           extraIntroSections: savedBook.extraIntroSections,
-          storyAssets: savedBook.storyAssets
+          storyAssets: savedBook.storyAssets,
+          narrativeState: savedBook.narrativeState
         }
       }
     );
@@ -1530,6 +1826,9 @@ async function handleWritingUpdateStoryAssets(args: JsonObject) {
 变更字段：${Object.keys(fields).join("、")}
 补充设定区块：${book.extraIntroSections.length} -> ${nextExtraIntroSections.length}
 故事资产：${Object.entries(summarizeStoryAssets(nextStoryAssets))
+      .map(([key, value]) => `${key}=${value}`)
+      .join("，")}
+叙事状态：${Object.entries(summarizeNarrativeState(nextNarrativeState))
       .map(([key, value]) => `${key}=${value}`)
       .join("，")}
 
@@ -1547,7 +1846,8 @@ async function handleWritingUpdateStoryAssets(args: JsonObject) {
         title: nextBook.title,
         updatedAt: nextBook.updatedAt,
         extraIntroSections: nextExtraIntroSections,
-        storyAssets: nextStoryAssets
+        storyAssets: nextStoryAssets,
+        narrativeState: nextNarrativeState
       }
     }
   );

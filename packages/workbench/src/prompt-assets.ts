@@ -4,7 +4,6 @@ import { resolveFromRoot } from "../../shared/src/index.js";
 
 const PROMPT_ASSET_PATHS = {
   builtinAgentGordonSystem: ["prompts", "builtins", "agents", "gordon.system.md"],
-  builtinAgentArthurSystem: ["prompts", "builtins", "agents", "arthur.system.md"],
   builtinSkillPlanPrompt: ["skills", "plan", "SKILL.md"],
   builtinSkillCodePrompt: ["skills", "code", "SKILL.md"],
   builtinSkillReviewPrompt: ["skills", "review", "SKILL.md"],
