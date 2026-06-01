@@ -32,6 +32,32 @@ function parseTaskPrompts(value) {
   }
 }
 
+function hasStorySettingRewriteIntent(task, instruction) {
+  if (task?.id !== "storyRefine") {
+    return false;
+  }
+
+  return /(全新|重新|重写|重做|替换|改成|剔除|去掉|排除|删除|不希望|不要|不能|别|纯粹|只保留|保留纯粹)/u.test(
+    normalizeText(instruction)
+  );
+}
+
+function buildStorySettingRewriteProtocol(task, instruction) {
+  if (!hasStorySettingRewriteIntent(task, instruction)) {
+    return "";
+  }
+
+  return [
+    "故事设定替换协议：",
+    "- 作者本轮要求属于设定方向替换，不是评审报告。",
+    "- 最终输出必须是可直接替换「大纲指导」的新设定稿；不要输出修改说明、保留/取舍判断、优化建议、执行记录或推理过程。",
+    "- 作者明确排除的元素及同义变体必须从新稿中消失；不要把被排除元素改名后保留为背景、伏笔、势力动机或隐藏主线。",
+    "- 如需保留旧设定，只能保留不违背作者要求的书名意象、人物动机、武力规则、地理氛围或冒险资源，并自然写进新设定。",
+    "- 如果作者要求纯粹类型体验，冲突必须围绕该类型的正面承诺展开，避免转向朝堂、阴谋、权谋、悬疑真相、文明反思或项目管理语言。",
+    "- 输出开头直接写作品设定小标题，例如“## 故事核心定位”；不要写“以下是”“保留”“删除”“调整为”等说明性开场。"
+  ].join("\n");
+}
+
 export function createWritingPromptAssets() {
   return {
     masterSystem: "",
@@ -99,6 +125,7 @@ export function buildWritingAssistantPrompt({
   const chapterOutputContent = defaults.length ? ["章节生成默认项：", ...defaults.map((item) => `- ${item}`)].join("\n") : "";
   const craftGuide = promptAssets?.narrativeCraftGuide || "(写作知识资产尚未加载。)";
   const selfReviewGuide = promptAssets?.selfReviewGuide || "(自评知识资产尚未加载。)";
+  const storySettingRewriteProtocol = buildStorySettingRewriteProtocol(task, instruction);
 
   return [
     `你正在执行「${appName}」的一次写作辅助任务。通用标准：大师级小说总编 + 故事架构师 + 文字教练。`,
@@ -114,6 +141,7 @@ export function buildWritingAssistantPrompt({
     "",
     "任务专属提示词：",
     taskSpec.strategy,
+    storySettingRewriteProtocol ? "\n" + storySettingRewriteProtocol : "",
     "",
     "创作知识内核：",
     craftGuide,
@@ -163,7 +191,7 @@ export function buildWritingAssistantPrompt({
     "- 如果是章节正文，必须有场景动作、对白张力、信息差、对手反制、证据载体、心理暗流和段落节奏；正文开头不要带章节标题。",
     "- 章节中的关键变化必须落到可验证对象或后果上，例如物件、伤痕、账目、公开结果、地点破坏、能力边界或关系破裂；不要只用抽象心理总结替代剧情推进。",
     "- 如果是故事设定搭建，优先从作者输入里提炼故事发动机、主角行动方向、世界压力、人物关系、阶段主线和后续目录可用的创作基准。",
-    "- 如果是故事设定打磨，必须先尊重现有设定，再指出取舍、补强、纠偏和可直接替换/追加的优化稿；不要把已有设定整块推翻，除非作者明确要求重做。",
+    "- 如果是故事设定打磨，默认输出可直接替换/追加的成稿，不输出编辑说明；作者明确要求重做、替换、剔除或纯化方向时，必须按本轮要求生成新的完整设定稿。",
     "- 如果是书籍介绍生成，默认基于已经稳定的故事设定进行读者向包装；优先写清核心命题、主角处境、主要矛盾和读者钩子，不要把简介写成设定清单。",
     "- 连续性资料、设定账本、storyAssets 和 memoryNotes 是内部写作资料，不是作品主题；除非作者明确要求或当前项目已写明，不要默认把“记忆、失忆、遗忘、档案”设为核心设定。",
     "- 新建或扩展故事介绍时，优先为当前作品选择区别于已有项目的核心机制；书名意象可保留为氛围，不要自动扩展成同质世界观。",
