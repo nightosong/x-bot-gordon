@@ -29,6 +29,7 @@ import type {
   SkillHandlerResponse
 } from "../../shared/src/index.js";
 import { callToolOnMcpServer, listToolsFromMcpServer } from "./mcp.js";
+import { buildAgentContextPacket, buildAgentContextPacketText } from "./context-packet.js";
 import { classifyMcpError, classifyMcpMessage } from "./failure-classifier.js";
 import {
   appendDecisionMemory,
@@ -423,7 +424,7 @@ ${userInput}`;
 async function updateTaskLedgerAfterToolCall(
   modelProfile: ModelProfile,
   agent: AgentProfile,
-  userInput: string,
+  contextPacketText: string,
   currentLedger: AgentTaskLedger,
   callRecord: AgentMcpCallRecord,
   signal?: AbortSignal
@@ -482,11 +483,8 @@ JSON 结构必须为：
           content: `当前 Agent：
 ${agent.name}
 
-用户任务：
-${userInput}
-
-当前任务账本：
-${buildTaskLedgerText(currentLedger)}
+当前上下文包：
+${contextPacketText}
 
 最新工具观察：
 ${buildToolObservationText(callRecord, stringifyDisplayArguments)}
@@ -499,7 +497,7 @@ ${buildToolObservationText(callRecord, stringifyDisplayArguments)}
   );
 
   const parsed = JSON.parse(extractJsonBlock(ledgerResponse.text)) as Partial<AgentTaskLedger>;
-  return mergeAgentTaskLedgerPatch(currentLedger, normalizeAgentTaskLedgerPatch(parsed), currentLedger.objective || userInput);
+  return mergeAgentTaskLedgerPatch(currentLedger, normalizeAgentTaskLedgerPatch(parsed), currentLedger.objective);
 }
 
 function normalizeSkillHandlerRef(value: string | undefined): string | null {
@@ -972,10 +970,8 @@ ${call.expectedOutcome ? `expectedOutcome=${call.expectedOutcome}\n` : ""}${call
 async function planMcpToolSelection(
   modelProfile: ModelProfile,
   agent: AgentProfile,
-  userInput: string,
+  contextPacketText: string,
   candidateTools: McpToolDefinition[],
-  mcpCalls: AgentMcpCallRecord[],
-  taskLedger: AgentTaskLedger,
   iteration: number,
   signal?: AbortSignal
 ): Promise<McpToolSelectionPlan> {
@@ -1057,17 +1053,11 @@ JSON 结构必须为：
           content: `当前 Agent：
 ${agent.name}
 
-用户任务：
-${userInput}
+当前上下文包：
+${contextPacketText}
 
 当前规划轮次：
 第 ${iteration} 轮
-
-当前任务账本：
-${buildTaskLedgerText(taskLedger)}
-
-已有工具调用历史：
-${buildMcpHistoryText(mcpCalls)}
 
 可用工具列表：
 ${JSON.stringify(
@@ -1302,11 +1292,9 @@ function extractGeneratedArtifacts(structuredContent: Record<string, unknown> | 
 async function planFallbackMcpToolSelection(
   modelProfile: ModelProfile,
   agent: AgentProfile,
-  userInput: string,
+  contextPacketText: string,
   candidateTools: McpToolDefinition[],
-  mcpCalls: AgentMcpCallRecord[],
   failedCall: AgentMcpCallRecord,
-  taskLedger: AgentTaskLedger,
   round: number,
   signal?: AbortSignal
 ): Promise<McpFallbackPlan> {
@@ -1358,8 +1346,8 @@ ${agent.name}
 当前轮次：
 第 ${round} 轮
 
-用户任务：
-${userInput}
+当前上下文包：
+${contextPacketText}
 
 刚失败的工具调用：
 server=${failedCall.serverName}
@@ -1367,12 +1355,6 @@ tool=${failedCall.toolName}
 arguments=${stringifyArguments(failedCall.arguments)}
 failureKind=${failedCall.failureKind ?? "unknown"}
 failureReason=${failedCall.failureReason ?? failedCall.resultText}
-
-当前任务账本：
-${buildTaskLedgerText(taskLedger)}
-
-已有工具调用历史：
-${buildMcpHistoryText(mcpCalls)}
 
 可用 fallback 工具列表：
 ${JSON.stringify(buildPlannerToolPayload(candidateTools), null, 2)}`
@@ -1424,9 +1406,8 @@ ${JSON.stringify(buildPlannerToolPayload(candidateTools), null, 2)}`
 async function planActiveMcpVerification(
   modelProfile: ModelProfile,
   agent: AgentProfile,
-  userInput: string,
+  contextPacketText: string,
   candidateTools: McpToolDefinition[],
-  mcpCalls: AgentMcpCallRecord[],
   taskLedger: AgentTaskLedger,
   round: number,
   signal?: AbortSignal
@@ -1484,23 +1465,17 @@ JSON 结构必须为：
           content: `当前 Agent：
 ${agent.name}
 
-用户任务：
-${userInput}
+当前上下文包：
+${contextPacketText}
 
 主动验证轮次：
 第 ${round} 轮
-
-当前任务账本：
-${buildTaskLedgerText(taskLedger)}
 
 待验证成功条件：
 ${JSON.stringify(pendingCriteria, null, 2)}
 
 验证策略上下文：
 ${JSON.stringify(verificationStrategies, null, 2)}
-
-已有工具调用历史：
-${buildMcpHistoryText(mcpCalls)}
 
 可用工具列表：
 ${JSON.stringify(buildPlannerToolPayload(candidateTools), null, 2)}`
@@ -1570,11 +1545,18 @@ function buildSystemPrompt(agent: AgentProfile, skill: SkillDefinition | null, a
   return sections.filter(Boolean).join("\n\n");
 }
 
-function buildTaskLedgerResultText(taskLedger: AgentTaskLedger): string {
-  return `本轮任务账本：
-${buildTaskLedgerText(taskLedger)}
+function buildFinalContextResultText(contextPacketText: string, mcpResultText: string, hasToolCalls: boolean): string {
+  return `以下是本轮上下文包。它已经把最近会话、任务账本、工作记忆、证据、工具历史、验证状态和开放问题压缩成结构化上下文：
+${contextPacketText}
 
-请根据任务账本判断哪些目标已经完成、哪些仍有风险。最终回复必须服务于 objective、taskPhase、activePlan、decisionMemory、structuredSuccessCriteria 和 successCriteria；涉及未完成或未验证事项时，需要明确说明状态，不要把 pendingSubtasks 说成已完成，也不要忽略 active decisionMemory 中仍未被 superseded 的失败路线或已证伪假设。`;
+${
+  hasToolCalls
+    ? `以下是本轮工具返回的可见结果，请结合上下文包判断哪些目标已经完成、哪些仍有风险：
+${mcpResultText || "本轮没有成功或可展示的工具返回文本。"}`
+    : "本轮没有工具调用，请只基于上下文包和用户请求回复，不要声称执行了外部动作。"
+}
+
+最终回复必须服务于 goal.objective、goal.taskPhase、plan、decisionMemory、verification.structuredSuccessCriteria 和 openQuestions；涉及未完成或未验证事项时，需要明确说明状态。`;
 }
 
 function buildUserMessages(
@@ -2241,6 +2223,16 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
     );
   };
 
+  const buildCurrentContextPacketText = (): string =>
+    buildAgentContextPacketText(
+      buildAgentContextPacket({
+        userInput,
+        conversationMessages,
+        taskLedger,
+        mcpCalls
+      })
+    );
+
   const pushStep = (type: AgentRunStep["type"], title: string, detail: string): AgentRunStep => {
     const step = createRunStep(type, title, detail);
     steps.push(step);
@@ -2253,7 +2245,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
       taskLedger = await updateTaskLedgerAfterToolCall(
         modelProfile,
         agent,
-        contextualUserInput,
+        buildCurrentContextPacketText(),
         taskLedger,
         callRecord,
         options.signal
@@ -2392,10 +2384,8 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
         plannedSelection = await planMcpToolSelection(
           modelProfile,
           agent,
-          contextualUserInput,
+          buildCurrentContextPacketText(),
           candidateTools,
-          mcpCalls,
-          taskLedger,
           round,
           options.signal
         );
@@ -2501,11 +2491,9 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
             const fallbackPlan = await planFallbackMcpToolSelection(
               modelProfile,
               agent,
-              contextualUserInput,
+              buildCurrentContextPacketText(),
               fallbackCandidateTools,
-              mcpCalls,
               callRecord,
-              taskLedger,
               round,
               options.signal
             );
@@ -2648,9 +2636,8 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
         verificationPlan = await planActiveMcpVerification(
           modelProfile,
           agent,
-          contextualUserInput,
+          buildCurrentContextPacketText(),
           activeVerificationTools,
-          mcpCalls,
           taskLedger,
           verificationRound,
           options.signal
@@ -2790,16 +2777,8 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
               role: "system",
               content: buildSystemPrompt(agent, selectedSkill, authorizedMcpServers)
             },
-            ...conversationMessages,
             ...buildUserMessages(
-              mcpResultText || mcpCalls.length
-                ? `${userInput}
-
-以下是本轮工具返回结果，请结合结果继续完成任务：
-${mcpResultText ?? "本轮没有成功或可展示的工具返回文本。"}
-
-${buildTaskLedgerResultText(taskLedger)}`
-                : userInput,
+              buildFinalContextResultText(buildCurrentContextPacketText(), mcpResultText ?? "", mcpCalls.length > 0),
               selectedSkill,
               skillResultText
             )

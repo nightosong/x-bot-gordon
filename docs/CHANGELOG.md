@@ -26,7 +26,7 @@
 | 模型管理 | 已完成 | 已支持配置列表、供应商切换、编辑、优先模型、余额查询、用量统计、Chat Completions / Responses 接口格式、流式输出开关与真实文本调用；多模态生成不进入模型管理，改由能力拓展 TOOL 配置承接 |
 | 模型配置持久化 | 已完成 | 当前走本地 JSON 仓储 |
 | 任务笔记 | 已完成三阶段 | 已形成“本周驾驶舱 + 历史记录 + 项目推进/汇报双视图”的当前形态，汇报视图支持日报、周报和按日期范围生成述职报告 |
-| 命令工坊 | 已完成首版 | 已支持多轮会话、默认 Agent、附件上传、按需工具调用和按需过程流展示；简单问答不再展示开场思考 / 执行计划卡片，真实工具执行、授权、参数修复、重试 / fallback、中间输出和停止原因才进入可见时间线，并按 harness Agent 语义区分本地工具和外部 MCP；默认 Agent 已接入 Workspace Tools、Search Tools、Gordon Tools 与 Application Tools，可进行高质量联网研究、GitHub 仓库搜索、发现已启用的 TOOL 配置，并可新建或联动应用广场的墨笔生花小说资产；自动工具循环已引入任务账本、Decision Memory、决策轨迹、分层观察和结构化成功条件，工具规划每轮基于 `taskPhase / activePlan / decisionMemory / structuredSuccessCriteria / observations / failedAttempts` 决定下一步，并为工具调用记录预期结果与验证方式；同一会话会把上一轮助手消息 artifact 中的 `taskLedger` 注入下一轮 Agent 请求，支持长期任务跨轮延续；当前以 Gordon 持续执行型工程 Agent 为唯一默认内置 Agent，科研协作通过 `arthur-research` Skill 加载，显然需要工具的任务会自动进入工具编排和验证闭环 |
+| 命令工坊 | 已完成首版 | 已支持多轮会话、默认 Agent、附件上传、按需工具调用和按需过程流展示；简单问答不再展示开场思考 / 执行计划卡片，真实工具执行、授权、参数修复、重试 / fallback、中间输出和停止原因才进入可见时间线，并按 harness Agent 语义区分本地工具和外部 MCP；默认 Agent 已接入 Workspace Tools、Search Tools、Gordon Tools 与 Application Tools，可进行高质量联网研究、GitHub 仓库搜索、发现已启用的 TOOL 配置，并可新建或联动应用广场的墨笔生花小说资产；自动工具循环已引入任务账本、Context Packet、Decision Memory、决策轨迹、分层观察和结构化成功条件，工具规划每轮基于 `goal / activePlan / decisionMemory / evidence / verification / recovery / openQuestions` 决定下一步，并为工具调用记录预期结果与验证方式；同一会话会把上一轮助手消息 artifact 中的 `taskLedger` 注入下一轮 Agent 请求，支持长期任务跨轮延续；当前以 Gordon 持续执行型工程 Agent 为唯一默认内置 Agent，科研协作通过 `arthur-research` Skill 加载，显然需要工具的任务会自动进入工具编排和验证闭环 |
 | 能力拓展管理 | 已完成三阶段 | Agent / Skill / MCP / TOOL 管理、Runner、自动选 tool 已接通，已内置 `skill-creator` |
 | CLI 基础命令 | 已完成 | `summary / providers / modules / tasks / memory` 已可用 |
 | 双层记忆体系 | 已完成 | `references / experience` 已接通 |
@@ -272,7 +272,7 @@
 - 为模型配置补齐连接测试或校验能力
 - 为流程中心补充更多 workflow 卡片与本地维护能力
 - 为 MCP Server 增加独立测试页、连接诊断与更明确的错误提示
-- 为 Agent runtime 继续推进 Plan Critic、Evidence Graph、Capability Routing / embedding 召回、机器可验证成功条件扩展、上下文工程和长期任务持久化；当前 Decision Memory 已先落地，用于把已放弃路线、已证伪假设和恢复策略注入后续规划
+- 为 Agent runtime 继续推进 Plan Critic、Evidence Graph、Capability Routing / embedding 召回、机器可验证成功条件扩展和长期任务持久化；当前 Decision Memory 与 Context Packet 已先落地，用于把目标、计划、证据、验证状态、已证伪路线和开放问题注入后续规划
 - 继续扩展 `Gordon Tools` 的真实多模态生成能力，下一步重点补齐 `video_gen` 的供应商调用协议，并为 `music_gen` 增加更多供应商返回结构样本的专项回归
 - 为能力拓展继续补齐按 tool / capability 语义分层的恢复策略
 
