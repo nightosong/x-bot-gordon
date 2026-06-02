@@ -9,9 +9,12 @@ import type {
   WritingBook,
   WritingBookIntroSection,
   WritingBookLength,
+  WritingCharacterArc,
   WritingChapter,
   WritingCharacterAsset,
+  WritingEvidenceRef,
   WritingForeshadowAsset,
+  WritingGenreProfile,
   WritingNarrativeRiskLevel,
   WritingNarrativeStateNode,
   WritingStoryAssetEntry
@@ -80,6 +83,11 @@ const STORY_ASSETS_SCHEMA = {
       description: "伏笔资产。每项可包含 title、setup、payoff、status、chapterIndex、payoffChapterIndex、tags",
       items: { type: "object", additionalProperties: true }
     },
+    characterArcs: {
+      type: "array",
+      description: "人物弧线。每项包含 characterName、want、need、currentStage、nextPressure、endpoint、evidenceRefs",
+      items: { type: "object", additionalProperties: true }
+    },
     rules: {
       type: "array",
       description: "必须长期遵守的规则边界，例如战斗体系、禁忌、设定硬约束",
@@ -122,6 +130,8 @@ const NARRATIVE_STATE_NODE_SCHEMA = {
     payoffDeadlineChapterIndex: { type: "integer", minimum: 1 },
     resolvedAtChapterIndex: { type: "integer", minimum: 1 },
     evidenceChapterIds: { type: "array", items: { type: "string" } },
+    evidenceRefs: { type: "array", items: { type: "object", additionalProperties: true } },
+    impact: { type: "string" },
     relatedNodeIds: { type: "array", items: { type: "string" } },
     riskLevel: { type: "string", enum: ["low", "medium", "high"] }
   },
@@ -142,6 +152,19 @@ const NARRATIVE_STATE_SCHEMA = {
     timelineEvents: { type: "array", items: NARRATIVE_STATE_NODE_SCHEMA },
     continuityWarnings: { type: "array", items: NARRATIVE_STATE_NODE_SCHEMA },
     planDriftNotes: { type: "array", items: NARRATIVE_STATE_NODE_SCHEMA }
+  },
+  additionalProperties: true
+} as const;
+
+const GENRE_PROFILE_SCHEMA = {
+  type: "object",
+  description: "可选，题材画像。用于让墨笔生花按题材和 storyEngine 选择不同创作策略。",
+  properties: {
+    primaryGenre: { type: "string" },
+    subGenres: { type: "array", items: { type: "string" } },
+    storyEngine: { type: "string" },
+    audience: { type: "string" },
+    tone: { type: "string" }
   },
   additionalProperties: true
 } as const;
@@ -278,6 +301,7 @@ function createEmptyWritingStoryAssets(bookId: string, premise: string, timestam
     timeline: [],
     foreshadows: [],
     rules: [],
+    characterArcs: [],
     styleProfile: {
       voice: "",
       pacing: "",
@@ -287,6 +311,74 @@ function createEmptyWritingStoryAssets(bookId: string, premise: string, timestam
     memoryNotes: [],
     updatedAt: timestamp
   };
+}
+
+function normalizeGenreProfileInput(value: unknown, fallbackGenre: string, timestamp: string): WritingGenreProfile {
+  const source = isObject(value) ? value : {};
+  const fallbackParts = asStringList(fallbackGenre);
+  const primaryGenre = asString(source.primaryGenre ?? source.genre ?? fallbackParts[0] ?? fallbackGenre);
+
+  return {
+    primaryGenre: primaryGenre || "小说",
+    subGenres: asStringList(source.subGenres ?? source.subgenres ?? fallbackParts.slice(1)),
+    storyEngine: asString(source.storyEngine ?? source.engine),
+    ...(asString(source.audience) ? { audience: asString(source.audience) } : {}),
+    ...(asString(source.tone) ? { tone: asString(source.tone) } : {}),
+    updatedAt: asString(source.updatedAt) || timestamp
+  };
+}
+
+function normalizeEvidenceRef(value: unknown, index: number, bookId: string): WritingEvidenceRef | null {
+  const source = isObject(value) ? value : { note: value };
+  const note = asString(source.note ?? source.summary ?? source.detail ?? source.evidence);
+  const quote = asString(source.quote ?? source.text);
+  const chapterIndex = asOptionalPositiveInteger(source.chapterIndex ?? source.chapter);
+  const chapterId = asString(source.chapterId);
+
+  if (!note && !quote && !chapterIndex && !chapterId) {
+    return null;
+  }
+
+  return {
+    id: asString(source.id) || `${bookId}_evidence_${index + 1}`,
+    ...(chapterIndex ? { chapterIndex } : {}),
+    ...(chapterId ? { chapterId } : {}),
+    ...(quote ? { quote } : {}),
+    note: note || quote || (chapterIndex ? `第${chapterIndex}章证据` : "证据")
+  };
+}
+
+function normalizeEvidenceRefs(value: unknown, bookId: string): WritingEvidenceRef[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry, index) => normalizeEvidenceRef(entry, index, bookId))
+      .filter((entry): entry is WritingEvidenceRef => Boolean(entry));
+  }
+
+  const normalized = normalizeEvidenceRef(value, 0, bookId);
+  return normalized ? [normalized] : [];
+}
+
+function normalizeEvidenceRefsFromSource(source: JsonObject, bookId: string): WritingEvidenceRef[] {
+  const explicit = normalizeEvidenceRefs(source.evidenceRefs, bookId);
+  const legacyEvidence = normalizeEvidenceRefs(source.evidence ?? source.evidenceText, bookId);
+  const chapterIndex = asOptionalPositiveInteger(source.chapterIndex ?? source.chapter);
+  const chapterId = asString(source.chapterId);
+
+  if (!chapterIndex && !chapterId) {
+    return [...explicit, ...legacyEvidence];
+  }
+
+  return [
+    ...explicit,
+    ...legacyEvidence,
+    {
+      id: `${bookId}_chapter_evidence_${chapterId || chapterIndex || explicit.length + legacyEvidence.length + 1}`,
+      ...(chapterIndex ? { chapterIndex } : {}),
+      ...(chapterId ? { chapterId } : {}),
+      note: chapterIndex ? `第${chapterIndex}章出现或更新` : "章节证据"
+    }
+  ];
 }
 
 function normalizeNarrativeStateNode(
@@ -320,6 +412,8 @@ function normalizeNarrativeStateNode(
       resolvedAtChapterIndex: asOptionalPositiveInteger(source.resolvedAtChapterIndex)
     } : {}),
     evidenceChapterIds: asStringList(source.evidenceChapterIds),
+    evidenceRefs: normalizeEvidenceRefsFromSource(source, bookId),
+    ...(asString(source.impact) ? { impact: asString(source.impact) } : {}),
     relatedNodeIds: asStringList(source.relatedNodeIds),
     riskLevel: asNarrativeRiskLevel(source.riskLevel),
     updatedAt: asString(source.updatedAt) || timestamp
@@ -392,6 +486,8 @@ function normalizeStoryAssetEntry(
     tags: asStringList(source.tags),
     ...(chapterIndex ? { chapterIndex } : {}),
     ...(asString(source.status) ? { status: asString(source.status) } : {}),
+    evidenceRefs: normalizeEvidenceRefsFromSource(source, bookId),
+    ...(asString(source.impact) ? { impact: asString(source.impact) } : {}),
     updatedAt: asString(source.updatedAt) || timestamp
   };
 }
@@ -435,6 +531,8 @@ function normalizeCharacterAsset(
     relationships,
     tags: asStringList(source.tags),
     status: asString(source.status) || "active",
+    evidenceRefs: normalizeEvidenceRefsFromSource(source, bookId),
+    ...(asString(source.impact) ? { impact: asString(source.impact) } : {}),
     updatedAt: asString(source.updatedAt) || timestamp
   };
 }
@@ -471,6 +569,8 @@ function normalizeForeshadowAsset(
     ...(chapterIndex ? { chapterIndex } : {}),
     ...(payoffChapterIndex ? { payoffChapterIndex } : {}),
     tags: asStringList(source.tags),
+    evidenceRefs: normalizeEvidenceRefsFromSource(source, bookId),
+    ...(asString(source.impact) ? { impact: asString(source.impact) } : {}),
     updatedAt: asString(source.updatedAt) || timestamp
   };
 }
@@ -479,6 +579,38 @@ function normalizeForeshadowAssets(value: unknown, bookId: string, timestamp: st
   return (Array.isArray(value) ? value : [])
     .map((entry, index) => normalizeForeshadowAsset(entry, index, bookId, timestamp))
     .filter((entry): entry is WritingForeshadowAsset => Boolean(entry));
+}
+
+function normalizeCharacterArc(value: unknown, index: number, bookId: string, timestamp: string): WritingCharacterArc | null {
+  const source = isObject(value) ? value : { characterName: value };
+  const characterName = asString(source.characterName ?? source.name ?? source.title);
+  const want = asString(source.want ?? source.goal);
+  const need = asString(source.need);
+  const currentStage = asString(source.currentStage ?? source.stage);
+  const nextPressure = asString(source.nextPressure ?? source.pressure);
+  const endpoint = asString(source.endpoint ?? source.endState ?? source.payoff);
+
+  if (!characterName && !want && !need && !currentStage && !nextPressure && !endpoint) {
+    return null;
+  }
+
+  return {
+    id: asString(source.id) || `${bookId}_character_arc_${index + 1}`,
+    characterName: characterName || `未命名人物 ${index + 1}`,
+    want,
+    need,
+    currentStage,
+    nextPressure,
+    endpoint,
+    evidenceRefs: normalizeEvidenceRefsFromSource(source, bookId),
+    updatedAt: asString(source.updatedAt) || timestamp
+  };
+}
+
+function normalizeCharacterArcs(value: unknown, bookId: string, timestamp: string): WritingCharacterArc[] {
+  return (Array.isArray(value) ? value : [])
+    .map((entry, index) => normalizeCharacterArc(entry, index, bookId, timestamp))
+    .filter((entry): entry is WritingCharacterArc => Boolean(entry));
 }
 
 function normalizeWritingStoryAssetsInput(value: unknown, bookId: string, timestamp: string): WritingBook["storyAssets"] {
@@ -492,6 +624,7 @@ function normalizeWritingStoryAssetsInput(value: unknown, bookId: string, timest
     timeline: normalizeStoryAssetEntries(source.timeline, bookId, "timeline", timestamp),
     foreshadows: normalizeForeshadowAssets(source.foreshadows, bookId, timestamp),
     rules: normalizeStoryAssetEntries(source.rules, bookId, "rule", timestamp),
+    characterArcs: normalizeCharacterArcs(source.characterArcs, bookId, timestamp),
     styleProfile: {
       voice: asString(isObject(source.styleProfile) ? source.styleProfile.voice : ""),
       pacing: asString(isObject(source.styleProfile) ? source.styleProfile.pacing : ""),
@@ -535,6 +668,26 @@ function normalizeAssetMergeKey(value: unknown): string {
   return asString(value).replace(/\s+/g, "").toLowerCase();
 }
 
+function mergeEvidenceRefs(existingRefs: WritingEvidenceRef[], incomingRefs: WritingEvidenceRef[]): WritingEvidenceRef[] {
+  const byKey = new Map<string, WritingEvidenceRef>();
+
+  for (const ref of [...existingRefs, ...incomingRefs]) {
+    const key = normalizeAssetMergeKey(ref.id || `${ref.chapterId || ""}:${ref.chapterIndex || ""}:${ref.quote || ""}:${ref.note || ""}`);
+
+    if (!key) {
+      continue;
+    }
+
+    byKey.set(key, {
+      ...byKey.get(key),
+      ...ref,
+      note: ref.note || byKey.get(key)?.note || "证据"
+    });
+  }
+
+  return Array.from(byKey.values());
+}
+
 function mergeStoryAssetEntries(existingEntries: WritingStoryAssetEntry[], incomingEntries: WritingStoryAssetEntry[]): WritingStoryAssetEntry[] {
   const byKey = new Map<string, WritingStoryAssetEntry>();
 
@@ -564,6 +717,8 @@ function mergeStoryAssetEntries(existingEntries: WritingStoryAssetEntry[], incom
             tags: Array.from(new Set([...current.tags, ...entry.tags])),
             chapterIndex: entry.chapterIndex ?? current.chapterIndex,
             status: entry.status || current.status,
+            evidenceRefs: mergeEvidenceRefs(current.evidenceRefs, entry.evidenceRefs),
+            impact: entry.impact || current.impact,
             updatedAt: entry.updatedAt
           }
         : entry
@@ -605,6 +760,8 @@ function mergeCharacterAssets(existingEntries: WritingCharacterAsset[], incoming
             relationships: Array.from(new Set([...current.relationships, ...entry.relationships])),
             tags: Array.from(new Set([...current.tags, ...entry.tags])),
             status: entry.status || current.status,
+            evidenceRefs: mergeEvidenceRefs(current.evidenceRefs, entry.evidenceRefs),
+            impact: entry.impact || current.impact,
             updatedAt: entry.updatedAt
           }
         : entry
@@ -645,6 +802,47 @@ function mergeForeshadowAssets(existingEntries: WritingForeshadowAsset[], incomi
             chapterIndex: entry.chapterIndex ?? current.chapterIndex,
             payoffChapterIndex: entry.payoffChapterIndex ?? current.payoffChapterIndex,
             tags: Array.from(new Set([...current.tags, ...entry.tags])),
+            evidenceRefs: mergeEvidenceRefs(current.evidenceRefs, entry.evidenceRefs),
+            impact: entry.impact || current.impact,
+            updatedAt: entry.updatedAt
+          }
+        : entry
+    );
+  }
+
+  return Array.from(byKey.values());
+}
+
+function mergeCharacterArcs(existingEntries: WritingCharacterArc[], incomingEntries: WritingCharacterArc[]): WritingCharacterArc[] {
+  const byKey = new Map<string, WritingCharacterArc>();
+
+  for (const entry of existingEntries) {
+    const key = normalizeAssetMergeKey(entry.characterName);
+
+    if (key) {
+      byKey.set(key, entry);
+    }
+  }
+
+  for (const entry of incomingEntries) {
+    const key = normalizeAssetMergeKey(entry.characterName);
+    const current = key ? byKey.get(key) : null;
+
+    if (!key) {
+      continue;
+    }
+
+    byKey.set(
+      key,
+      current
+        ? {
+            ...current,
+            want: entry.want || current.want,
+            need: entry.need || current.need,
+            currentStage: entry.currentStage || current.currentStage,
+            nextPressure: entry.nextPressure || current.nextPressure,
+            endpoint: entry.endpoint || current.endpoint,
+            evidenceRefs: mergeEvidenceRefs(current.evidenceRefs, entry.evidenceRefs),
             updatedAt: entry.updatedAt
           }
         : entry
@@ -675,6 +873,7 @@ function mergeWritingStoryAssets(
     timeline: mergeStoryAssetEntries(currentAssets.timeline, incomingAssets.timeline),
     foreshadows: mergeForeshadowAssets(currentAssets.foreshadows, incomingAssets.foreshadows),
     rules: mergeStoryAssetEntries(currentAssets.rules, incomingAssets.rules),
+    characterArcs: mergeCharacterArcs(currentAssets.characterArcs, incomingAssets.characterArcs),
     styleProfile: {
       voice: incomingAssets.styleProfile.voice || currentAssets.styleProfile.voice,
       pacing: incomingAssets.styleProfile.pacing || currentAssets.styleProfile.pacing,
@@ -775,6 +974,8 @@ function mergeNarrativeStateNodes(
             payoffDeadlineChapterIndex: node.payoffDeadlineChapterIndex ?? current.payoffDeadlineChapterIndex,
             resolvedAtChapterIndex: node.resolvedAtChapterIndex ?? current.resolvedAtChapterIndex,
             evidenceChapterIds: Array.from(new Set([...current.evidenceChapterIds, ...node.evidenceChapterIds])),
+            evidenceRefs: mergeEvidenceRefs(current.evidenceRefs, node.evidenceRefs),
+            impact: node.impact || current.impact,
             relatedNodeIds: Array.from(new Set([...current.relatedNodeIds, ...node.relatedNodeIds])),
             riskLevel: node.riskLevel || current.riskLevel,
             updatedAt: node.updatedAt
@@ -822,6 +1023,7 @@ function summarizeStoryAssets(assets: WritingBook["storyAssets"]): JsonObject {
     timeline: assets.timeline.length,
     foreshadows: assets.foreshadows.length,
     rules: assets.rules.length,
+    characterArcs: assets.characterArcs.length,
     memoryNotes: assets.memoryNotes.length,
     styleProfile: Boolean(
       assets.styleProfile.voice ||
@@ -881,6 +1083,7 @@ function summarizeBook(book: WritingBook, includeChapters = false): JsonObject {
     title: book.title,
     author: book.author,
     genre: book.genre,
+    genreProfile: book.genreProfile,
     status: book.status,
     length: book.length,
     updatedAt: book.updatedAt,
@@ -1010,6 +1213,7 @@ function getApplicationToolDefinitions(server: McpServerConfig): McpToolDefiniti
           author: { type: "string", description: "可选，作者名，默认 Song" },
           length: { type: "string", enum: ["short", "medium", "long"], description: "可选，篇幅，默认 medium" },
           genre: { type: "string", description: "可选，类型/题材" },
+          genreProfile: GENRE_PROFILE_SCHEMA,
           status: { type: "string", description: "可选，书籍状态，默认 新建" },
           intro: { type: "string", description: "可选，简短介绍" },
           outlineGuide: { type: "string", description: "可选，大纲指导/创作方向" },
@@ -1133,6 +1337,7 @@ function getApplicationToolDefinitions(server: McpServerConfig): McpToolDefiniti
           outlineGuide: { type: "string", description: "可选，新大纲指导" },
           seriesPlan: { type: "string", description: "可选，旧版 seriesPlan 兼容别名；提供后会合并写入大纲指导" },
           genre: { type: "string", description: "可选，新类型" },
+          genreProfile: GENRE_PROFILE_SCHEMA,
           status: { type: "string", description: "可选，新书籍状态" },
           dryRun: { type: "boolean", description: "可选，默认 true。true 只预览，false 写回本地书稿" },
           expectedBookUpdatedAt: { type: "string", description: "可选，乐观锁：若书籍更新时间不一致则拒绝写回" }
@@ -1256,6 +1461,7 @@ async function handleWritingCreateBook(args: JsonObject) {
   const timestamp = new Date().toISOString();
   const bookId = createLocalId("writing_book");
   const premise = asString(args.premise) || asString(args.intro);
+  const genre = asString(args.genre) || "小说 / 待定类型";
   const emptyStoryAssets = createEmptyWritingStoryAssets(bookId, premise, timestamp);
   const incomingStoryAssets = normalizeWritingStoryAssetsInput(args.storyAssets, bookId, timestamp);
   const storyAssets = mergeWritingStoryAssets(emptyStoryAssets, incomingStoryAssets, "merge", timestamp);
@@ -1265,7 +1471,8 @@ async function handleWritingCreateBook(args: JsonObject) {
     title,
     author: asString(args.author) || "Song",
     length: asWritingBookLength(args.length),
-    genre: asString(args.genre) || "小说 / 待定类型",
+    genre,
+    genreProfile: normalizeGenreProfileInput(args.genreProfile, genre, timestamp),
     status: asString(args.status) || "新建",
     updatedAt: timestamp,
     coverTone: "teal",
@@ -1415,7 +1622,8 @@ function buildStoryAssetSearchText(book: WritingBook): string {
   return JSON.stringify(
     {
       storyAssets: book.storyAssets ?? {},
-      narrativeState: book.narrativeState ?? {}
+      narrativeState: book.narrativeState ?? {},
+      genreProfile: book.genreProfile ?? {}
     },
     null,
     2
@@ -1631,12 +1839,20 @@ async function handleWritingUpdateBookFields(args: JsonObject) {
   const fields: JsonObject = {};
   const outlineGuideFromArgs =
     args.outlineGuide !== undefined ? String(args.outlineGuide ?? "") : args.seriesPlan !== undefined ? String(args.seriesPlan ?? "") : undefined;
+  const nextGenre = args.genre !== undefined ? asString(args.genre) || book.genre : book.genre;
+  const nextGenreProfile =
+    args.genreProfile !== undefined
+      ? normalizeGenreProfileInput(args.genreProfile, nextGenre, timestamp)
+      : args.genre !== undefined
+        ? normalizeGenreProfileInput(book.genreProfile, nextGenre, timestamp)
+        : book.genreProfile;
   const nextBook: WritingBook = {
     ...book,
     ...(args.intro !== undefined ? { intro: String(args.intro ?? "") } : {}),
     ...(outlineGuideFromArgs !== undefined ? { outlineGuide: outlineGuideFromArgs } : { outlineGuide: getUnifiedWritingOutlineGuide(book) }),
     seriesPlan: "",
-    ...(args.genre !== undefined ? { genre: asString(args.genre) || book.genre } : {}),
+    genre: nextGenre,
+    genreProfile: nextGenreProfile,
     ...(args.status !== undefined ? { status: asString(args.status) || book.status } : {}),
     updatedAt: timestamp
   };
@@ -1647,12 +1863,16 @@ async function handleWritingUpdateBookFields(args: JsonObject) {
     }
   }
 
+  if (args.genreProfile !== undefined) {
+    fields.genreProfile = buildStructuredFieldPreview(book.genreProfile, nextBook.genreProfile);
+  }
+
   if (outlineGuideFromArgs !== undefined) {
     fields.outlineGuide = buildFieldPreview(getUnifiedWritingOutlineGuide(book), nextBook.outlineGuide);
   }
 
   if (!Object.keys(fields).length) {
-    throw new Error("没有提供任何小说字段变更。请至少传入 intro、outlineGuide、genre 或 status。");
+    throw new Error("没有提供任何小说字段变更。请至少传入 intro、outlineGuide、genre、genreProfile 或 status。");
   }
 
   assertExpectedTimestamp("小说", asString(args.expectedBookUpdatedAt), book.updatedAt);

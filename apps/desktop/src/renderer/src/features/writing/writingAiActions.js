@@ -5,6 +5,7 @@ import {
   WRITING_APP_NAME,
   WRITING_CHAPTER_MAX_OUTPUT_TOKENS,
   WRITING_DEFAULT_MAX_OUTPUT_TOKENS,
+  WRITING_GENRE_PROMPT_GUIDES,
   WRITING_INTRO_SECTION_DEFINITIONS,
   WRITING_LENGTH_PROFILES,
   WRITING_LONG_OUTLINE_BATCH_MAX_TOKENS,
@@ -48,6 +49,7 @@ export function createWritingAiActions({
   activeWritingLengthProfile,
   activeWritingOutlinePlannerJob,
   activeWritingTask,
+  buildWritingGenreProfileContent,
   buildWritingIntroContent,
   buildWritingOutlineContent,
   buildWritingNarrativeStateContent,
@@ -411,6 +413,7 @@ function buildWritingAssistantPrompt({ book, tabId, task, instruction }) {
   const introContent = buildWritingIntroContent(book) || "(空)";
   const storyMemoryContent = buildWritingStoryMemoryContext(book, currentChapter);
   const narrativeStateContent = typeof buildWritingNarrativeStateContent === "function" ? buildWritingNarrativeStateContent(book) : "";
+  const genreProfileContent = typeof buildWritingGenreProfileContent === "function" ? buildWritingGenreProfileContent(book) : "";
   const styleProfileContent = buildWritingStyleProfileRuntimeContent(book);
   const outlineContent = longOutlineRequest
     ? buildWritingLongOutlineSeedContent(book)
@@ -446,6 +449,8 @@ function buildWritingAssistantPrompt({ book, tabId, task, instruction }) {
     instruction,
     promptAssets: writingPromptAssets,
     chapterOutputDefaults: tabId === "chapter" ? writingPromptAssets.chapterOutputDefaults : [],
+    genrePromptGuides: WRITING_GENRE_PROMPT_GUIDES,
+    genreProfileContent,
     longOutlineContent: longOutlineRequest ? buildWritingLongOutlineTargetContent(longOutlineRequest) : "",
     storyMemoryContent,
     narrativeStateContent,
@@ -868,6 +873,8 @@ function buildWritingLongOutlineMasterPrompt(book, request) {
     targetContent: buildWritingLongOutlineTargetContent(request),
     introContent: buildWritingIntroContent(book) || "(空)",
     narrativeStateContent: typeof buildWritingNarrativeStateContent === "function" ? buildWritingNarrativeStateContent(book) : "",
+    genrePromptGuides: WRITING_GENRE_PROMPT_GUIDES,
+    genreProfileContent: typeof buildWritingGenreProfileContent === "function" ? buildWritingGenreProfileContent(book) : "",
     seedContent: buildWritingLongOutlineSeedContent(book, 36),
     promptAssets: writingPromptAssets
   });
@@ -887,6 +894,8 @@ function buildWritingLongOutlineBatchPrompt(book, request, part, batchStartIndex
     targetContent: buildWritingLongOutlineTargetContent(request),
     introContent: buildWritingIntroContent(book) || "(空)",
     narrativeStateContent: typeof buildWritingNarrativeStateContent === "function" ? buildWritingNarrativeStateContent(book) : "",
+    genrePromptGuides: WRITING_GENRE_PROMPT_GUIDES,
+    genreProfileContent: typeof buildWritingGenreProfileContent === "function" ? buildWritingGenreProfileContent(book) : "",
     partsContext: buildWritingPartsContext(book),
     partDisplayLabel: getWritingPartDisplayLabel(part),
     recentChapterContext: buildWritingRecentChapterContext(book, part.index, batchStartIndex),
@@ -964,12 +973,17 @@ function buildWritingStoryMemoryUpdatePrompt(book, chapter, appliedOutput) {
     "",
     "只记录稳定事实，不收录一次性辞藻、普通动作或不会影响后续的细节。",
     "优先抽取会影响后续写作的工程化台账：人物状态变化、规则边界、资源消耗、伤痕/物件/账目等证据载体、信息差变化、对手反制、未兑现承诺、已埋伏笔与可回收位置。",
+    "每个新增事实都必须尽量写入 evidenceRefs；证据可以是 chapterIndex、chapterId、正文短 quote 和 note。不要只写抽象判断。",
+    "人物弧线需要单独沉淀到 characterArcs：want 是外在想要，need 是内在需要，currentStage 是当前阶段，nextPressure 是下一次要压迫它的事件，endpoint 是长线终点方向。",
     "如果本章只出现抽象情绪，没有形成可追踪事实，不要强行写入。",
     "连续性资料、设定账本、storyAssets 和 memoryNotes 是内部管理资料，不要把这些资料名扩写成作品主题、角色能力或世界观机制。",
     "如果没有新增内容，对应数组返回空数组。",
     "",
     `作品：${book.title}`,
     `类型：${book.genre || "未设定"}`,
+    "",
+    "Genre Profile：",
+    typeof buildWritingGenreProfileContent === "function" ? buildWritingGenreProfileContent(book) : "(空)",
     "",
     "已有结构化故事资产：",
     typeof buildWritingStoryAssetsContent === "function" ? buildWritingStoryAssetsContent(book) : "(空)",
@@ -991,7 +1005,7 @@ function buildWritingStoryMemoryUpdatePrompt(book, chapter, appliedOutput) {
     truncateText(String(appliedOutput ?? ""), 9000),
     "",
     "输出 JSON 代码块，且只允许包含 storyAssets 与 narrativeState 字段：",
-    `{"storyAssets":{"premise":"","worldview":[{"title":"","detail":"","tags":[],"chapterIndex":${chapter?.index ?? 1}}],"characters":[{"name":"","role":"","goal":"","fear":"","secret":"","growthArc":"","relationships":[],"tags":[],"status":"active"}],"relationships":[{"title":"","detail":"","tags":[]}],"timeline":[{"title":"","detail":"","tags":[],"chapterIndex":${chapter?.index ?? 1}}],"foreshadows":[{"title":"","setup":"","payoff":"","status":"open","chapterIndex":${chapter?.index ?? 1},"tags":["证据载体","信息差","反制","待回收"]}],"rules":[{"title":"","detail":"","tags":[]}],"styleProfile":{"voice":"","pacing":"","genreSignals":[],"taboos":[],"proseDensity":"","dialogueRatio":"","narrationDistance":"","emotionalTemperature":"","pacingCurve":[]},"memoryNotes":[{"title":"","detail":"","tags":["证据载体","人物状态","资源消耗","信息差"],"chapterIndex":${chapter?.index ?? 1}}]},"narrativeState":{"characters":[{"label":"","summary":"","status":"active","introducedAtChapterIndex":${chapter?.index ?? 1},"evidenceChapterIds":["${chapter?.id ?? ""}"],"relatedNodeIds":[],"riskLevel":"low"}],"worldRules":[],"resources":[],"regions":[],"foreshadows":[],"arcs":[],"timelineEvents":[],"continuityWarnings":[],"planDriftNotes":[]}}`
+    `{"storyAssets":{"premise":"","worldview":[{"title":"","detail":"","tags":[],"chapterIndex":${chapter?.index ?? 1},"evidenceRefs":[{"chapterIndex":${chapter?.index ?? 1},"chapterId":"${chapter?.id ?? ""}","quote":"","note":""}],"impact":""}],"characters":[{"name":"","role":"","goal":"","fear":"","secret":"","growthArc":"","relationships":[],"tags":[],"status":"active","evidenceRefs":[{"chapterIndex":${chapter?.index ?? 1},"chapterId":"${chapter?.id ?? ""}","quote":"","note":""}],"impact":""}],"relationships":[{"title":"","detail":"","tags":[],"evidenceRefs":[],"impact":""}],"timeline":[{"title":"","detail":"","tags":[],"chapterIndex":${chapter?.index ?? 1},"evidenceRefs":[],"impact":""}],"foreshadows":[{"title":"","setup":"","payoff":"","status":"open","chapterIndex":${chapter?.index ?? 1},"tags":["证据载体","信息差","反制","待回收"],"evidenceRefs":[],"impact":""}],"rules":[{"title":"","detail":"","tags":[],"evidenceRefs":[],"impact":""}],"characterArcs":[{"characterName":"","want":"","need":"","currentStage":"","nextPressure":"","endpoint":"","evidenceRefs":[{"chapterIndex":${chapter?.index ?? 1},"chapterId":"${chapter?.id ?? ""}","quote":"","note":""}]}],"styleProfile":{"voice":"","pacing":"","genreSignals":[],"taboos":[],"proseDensity":"","dialogueRatio":"","narrationDistance":"","emotionalTemperature":"","pacingCurve":[]},"memoryNotes":[{"title":"","detail":"","tags":["证据载体","人物状态","资源消耗","信息差"],"chapterIndex":${chapter?.index ?? 1},"evidenceRefs":[],"impact":""}]},"narrativeState":{"characters":[{"label":"","summary":"","status":"active","introducedAtChapterIndex":${chapter?.index ?? 1},"evidenceChapterIds":["${chapter?.id ?? ""}"],"evidenceRefs":[{"chapterIndex":${chapter?.index ?? 1},"chapterId":"${chapter?.id ?? ""}","quote":"","note":""}],"relatedNodeIds":[],"riskLevel":"low","impact":""}],"worldRules":[],"resources":[],"regions":[],"foreshadows":[],"arcs":[],"timelineEvents":[],"continuityWarnings":[],"planDriftNotes":[]}}`
   ].join("\n");
 }
 
@@ -1042,6 +1056,7 @@ function parseWritingStoryMemoryPayload(value, book) {
       normalizedAssets.timeline?.length ||
       normalizedAssets.foreshadows?.length ||
       normalizedAssets.rules?.length ||
+      normalizedAssets.characterArcs?.length ||
       normalizedAssets.styleProfile?.voice ||
       normalizedAssets.styleProfile?.pacing ||
       normalizedAssets.styleProfile?.genreSignals?.length ||

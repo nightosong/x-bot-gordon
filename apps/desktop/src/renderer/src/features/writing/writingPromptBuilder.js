@@ -12,6 +12,9 @@ const FALLBACK_TASK_SPEC = {
   output: "输出可直接放进当前写作项目的内容，不写寒暄。"
 };
 
+const FALLBACK_GENRE_PROMPT_GUIDE =
+  "题材驱动：先识别当前作品真正的 storyEngine，再让冲突、人物变化、证据载体和章节节奏服从该题材；不要把所有作品强行写成探险升级流或真相揭露流。";
+
 function normalizeText(value) {
   return String(value ?? "").trim();
 }
@@ -56,6 +59,41 @@ function buildStorySettingRewriteProtocol(task, instruction) {
     "- 如果作者要求纯粹类型体验，冲突必须围绕该类型的正面承诺展开，避免转向朝堂、阴谋、权谋、悬疑真相、文明反思或项目管理语言。",
     "- 输出开头直接写作品设定小标题，例如“## 故事核心定位”；不要写“以下是”“保留”“删除”“调整为”等说明性开场。"
   ].join("\n");
+}
+
+function normalizeStringList(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item ?? "").trim()).filter(Boolean);
+  }
+
+  return String(value ?? "")
+    .split(/[,\n，、/]+/g)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function getGenrePromptGuide(genreGuides = {}, genreProfile = {}, fallbackGenre = "") {
+  const primaryGenre = normalizeText(genreProfile.primaryGenre || fallbackGenre);
+  const candidates = [primaryGenre, ...normalizeStringList(genreProfile.subGenres), fallbackGenre]
+    .map((item) => item.replace(/\s+/g, ""))
+    .filter(Boolean);
+  const guideKey = Object.keys(genreGuides ?? {}).find((key) => candidates.some((candidate) => candidate.includes(key) || key.includes(candidate)));
+  const guide = guideKey ? genreGuides[guideKey] : null;
+  const profileLines = [
+    `- primaryGenre：${primaryGenre || "未设定"}`,
+    normalizeStringList(genreProfile.subGenres).length ? `- subGenres：${normalizeStringList(genreProfile.subGenres).join("、")}` : "",
+    genreProfile.storyEngine ? `- storyEngine：${genreProfile.storyEngine}` : "",
+    genreProfile.audience ? `- audience：${genreProfile.audience}` : "",
+    genreProfile.tone ? `- tone：${genreProfile.tone}` : ""
+  ].filter(Boolean);
+
+  return [
+    "Genre Profile（题材画像）：",
+    profileLines.join("\n") || "- primaryGenre：未设定",
+    "",
+    guide?.guide || FALLBACK_GENRE_PROMPT_GUIDE,
+    guide?.engine || genreProfile.storyEngine ? `推荐 storyEngine：${genreProfile.storyEngine || guide?.engine}` : ""
+  ].filter(Boolean).join("\n");
 }
 
 export function createWritingPromptAssets() {
@@ -108,6 +146,8 @@ export function buildWritingAssistantPrompt({
   instruction,
   promptAssets,
   chapterOutputDefaults,
+  genrePromptGuides,
+  genreProfileContent,
   longOutlineContent,
   storyMemoryContent,
   narrativeStateContent,
@@ -126,6 +166,7 @@ export function buildWritingAssistantPrompt({
   const craftGuide = promptAssets?.narrativeCraftGuide || "(写作知识资产尚未加载。)";
   const selfReviewGuide = promptAssets?.selfReviewGuide || "(自评知识资产尚未加载。)";
   const storySettingRewriteProtocol = buildStorySettingRewriteProtocol(task, instruction);
+  const genreGuideContent = getGenrePromptGuide(genrePromptGuides, book.genreProfile, book.genre);
 
   return [
     `你正在执行「${appName}」的一次写作辅助任务。通用标准：大师级小说总编 + 故事架构师 + 文字教练。`,
@@ -133,6 +174,7 @@ export function buildWritingAssistantPrompt({
     `作品：${book.title}`,
     `篇幅：${lengthProfile.label}（${lengthProfile.scope}）`,
     `类型：${book.genre || "未设定"}`,
+    genreProfileContent || genreGuideContent,
     `当前模块：${tabTitle}`,
     `大师思路：${lengthProfile.method}`,
     `本次任务：${task?.label ?? "综合辅助"} - ${task?.goal ?? "提升当前内容"}`,
@@ -157,6 +199,11 @@ export function buildWritingAssistantPrompt({
     "连续性资料与一致性上下文：",
     storyMemoryContent,
     "",
+    "证据化写回规则：",
+    "- 新增或更新 storyAssets、Narrative State、人物弧线时，必须能追溯到正文、设定或作者要求；每个长期事实优先写 evidenceRefs（chapterIndex/chapterId/quote/note）和 impact。",
+    "- 不要写“主角成长了”“关系变复杂了”这种不可验证资产；要写成具体事实、证据载体和后续影响。",
+    "- 人物弧线必须区分 want（外在想要）、need（内在需要）、currentStage（当前阶段）、nextPressure（下一压力）和 endpoint（终点方向）。",
+    "",
     "Narrative Runtime（生成前必须遵守的统一故事状态）：",
     narrativeStateContent || "(暂无 Narrative State。)",
     "",
@@ -176,6 +223,7 @@ export function buildWritingAssistantPrompt({
     "- 不要寒暄，不要解释提示词。",
     "- 保留并强化人物动机、因果链、伏笔和冲突。",
     "- 生成前先读取 Narrative Runtime：人物状态、关系债务、资源/伤势、区域变化、世界规则、时间线和未回收伏笔必须延续；不得让下一章自动清零。",
+    "- 生成前先读取 Genre Profile：题材、子类型和 storyEngine 决定冲突组织方式；只有探险/开荒类才默认强调地图扩展，言情/都市/悬疑/历史等题材必须使用各自的关系、证据、时代或现实压力推进。",
     "- 如果发现战力、伤势、时间线、资源、关系或伏笔冲突，优先在输出中规避；审阅类任务必须点名冲突来源和修复顺序。",
     "- 每个章节必须推进至少一条 Story Arc：主角弧、关系弧、世界弧、资源弧或伏笔弧；避免只有局部爽点没有长期推进。",
     "- 长篇修改后必须留意 Plan Drift：后续章节、伏笔、人物动机、卷级目标受影响时要明确指出。",
@@ -209,6 +257,8 @@ export function buildWritingLongOutlineMasterPrompt({
   targetContent,
   introContent,
   narrativeStateContent,
+  genrePromptGuides,
+  genreProfileContent,
   seedContent,
   promptAssets
 }) {
@@ -218,6 +268,7 @@ export function buildWritingLongOutlineMasterPrompt({
     "",
     `作品：${book.title}`,
     `类型：${book.genre || "未设定"}`,
+    genreProfileContent || getGenrePromptGuide(genrePromptGuides, book.genreProfile, book.genre),
     `作者要求：${request.instruction || "无"}`,
     "",
     "长篇目标：",
@@ -256,6 +307,8 @@ export function buildWritingLongOutlineBatchPrompt({
   targetContent,
   introContent,
   narrativeStateContent,
+  genrePromptGuides,
+  genreProfileContent,
   partsContext,
   partDisplayLabel,
   recentChapterContext,
@@ -269,6 +322,7 @@ export function buildWritingLongOutlineBatchPrompt({
     "",
     `作品：${book.title}`,
     `类型：${book.genre || "未设定"}`,
+    genreProfileContent || getGenrePromptGuide(genrePromptGuides, book.genreProfile, book.genre),
     `作者要求：${request.instruction || "无"}`,
     "",
     "全书目标：",

@@ -2382,21 +2382,23 @@
                 </label>
                 <label class="field">
                   <span class="field-label">类型</span>
+                  <GCompactSelect
+                    :model-value="activeWritingBook.genreProfile.primaryGenre"
+                    class="writing-mini-select"
+                    aria-label="类型"
+                    :options="writingGenreProfileOptions"
+                    @update:model-value="setWritingGenreProfileField('primaryGenre', $event)"
+                  />
+                </label>
+                <label class="field">
+                  <span class="field-label">内容</span>
                   <input
                     :value="activeWritingBook.genre"
                     class="field-input writing-mini-input"
+                    aria-label="内容"
                     @input="setWritingBookGenre($event.target.value)"
                   />
                 </label>
-              </div>
-
-              <div class="writing-method-card">
-                <span class="field-label">篇幅策略</span>
-                <strong>{{ activeWritingLengthProfile.scope }}</strong>
-                <p>{{ activeWritingLengthProfile.method }}</p>
-                <div class="writing-method-card-foot">
-                  <span>{{ activeWritingDoneChapterCount }} 章已完成</span>
-                </div>
               </div>
 
               <div class="writing-stat-list">
@@ -2421,8 +2423,21 @@
             <section class="writing-editor-grid">
               <div class="writing-editor-surface">
                 <div v-if="ui.marketplace.writing.activeTab === 'intro'" class="writing-intro-stack">
-                  <section class="writing-intro-card writing-narrative-state-card">
+                  <section
+                    class="writing-intro-card writing-narrative-state-card"
+                    :class="{ 'is-collapsed': isWritingIntroSectionCollapsed('narrative-state', 'system') }"
+                  >
                     <div class="writing-intro-card-head">
+                      <button
+                        type="button"
+                        class="writing-intro-toggle"
+                        :aria-expanded="String(!isWritingIntroSectionCollapsed('narrative-state', 'system'))"
+                        :aria-label="isWritingIntroSectionCollapsed('narrative-state', 'system') ? '展开 Narrative State' : '折叠 Narrative State'"
+                        :title="isWritingIntroSectionCollapsed('narrative-state', 'system') ? '展开' : '折叠'"
+                        @click="toggleWritingIntroSectionCollapsed('narrative-state', 'system')"
+                      >
+                        <GIcon :name="isWritingIntroSectionCollapsed('narrative-state', 'system') ? 'chevronRight' : 'chevronDown'" />
+                      </button>
                       <div class="writing-intro-card-title">
                         <span class="field-label">Narrative State</span>
                       </div>
@@ -2437,7 +2452,7 @@
                       </div>
                     </div>
 
-                    <div class="writing-narrative-state-preview">
+                    <div v-if="!isWritingIntroSectionCollapsed('narrative-state', 'system')" class="writing-narrative-state-preview">
                       <article
                         v-for="node in getWritingNarrativeStatePreview(activeWritingBook)"
                         :key="node.id"
@@ -2447,6 +2462,9 @@
                         <span>{{ node.kindLabel }}</span>
                         <strong>{{ node.label }}</strong>
                         <p>{{ node.summary || node.status }}</p>
+                        <small v-if="node.evidenceLabel || node.impact" class="writing-narrative-state-evidence">
+                          {{ [node.evidenceLabel, node.impact ? `影响：${node.impact}` : ""].filter(Boolean).join(" / ") }}
+                        </small>
                       </article>
                       <p v-if="!getWritingNarrativeStatePreview(activeWritingBook).length" class="writing-narrative-state-empty">
                         暂无状态节点
@@ -3532,6 +3550,7 @@ const {
   getWritingNarrativeStateSummary,
   getWritingNarrativeStatePreview,
   getWritingTabWordCount,
+  writingGenreProfileOptions,
   goWritingChapter,
   handleWritingBookUpload,
   isActiveWritingBookAiRunning,
@@ -3549,6 +3568,7 @@ const {
   selectWritingExportDirectory,
   setWritingAiDrawerOpen,
   setWritingBookGenre,
+  setWritingGenreProfileField,
   setWritingBookLength,
   setWritingBookTitle,
   setWritingChapterContent,

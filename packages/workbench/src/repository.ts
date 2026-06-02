@@ -55,6 +55,7 @@ import type {
   WeeklyReportTemplateItem,
   WeeklyProgressTaskItem,
   WritingBook,
+  WritingCharacterArc,
   WritingBookIntroSection,
   WritingBookLength,
   WritingBookPart,
@@ -70,6 +71,8 @@ import type {
   WritingOutlinePlannerStatus,
   WritingBookSaveOptions,
   WritingChapterStatus,
+  WritingEvidenceRef,
+  WritingGenreProfile,
   WritingStoryAssetEntry,
   WritingStoryAssets,
   WritingStyleProfile,
@@ -2126,6 +2129,24 @@ function normalizeWritingBookPartType(value: unknown): WritingBookPartType {
   return WRITING_BOOK_PART_TYPES.has(type as WritingBookPartType) ? (type as WritingBookPartType) : "act";
 }
 
+function normalizeWritingGenreProfile(
+  input: Partial<WritingGenreProfile> | Record<string, unknown> | null | undefined,
+  fallbackGenre = ""
+): WritingGenreProfile {
+  const source = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  const fallbackParts = normalizeStringList(fallbackGenre);
+  const primaryGenre = String(source.primaryGenre ?? source.genre ?? fallbackParts[0] ?? fallbackGenre ?? "").trim();
+
+  return {
+    primaryGenre: primaryGenre || "小说",
+    subGenres: normalizeStringList(source.subGenres ?? source.subgenres ?? fallbackParts.slice(1)),
+    storyEngine: String(source.storyEngine ?? source.engine ?? "").trim(),
+    ...(source.audience ? { audience: String(source.audience).trim() } : {}),
+    ...(source.tone ? { tone: String(source.tone).trim() } : {}),
+    updatedAt: String(source.updatedAt ?? new Date().toISOString())
+  };
+}
+
 function parseStoredWritingChapterIndex(value: unknown): number | null {
   const normalizedValue = String(value ?? "")
     .trim()
@@ -2290,22 +2311,86 @@ function normalizeOptionalChapterIndex(value: unknown): number | undefined {
   return value === null || value === undefined || value === "" ? undefined : normalizeWritingChapterIndex(value, 0);
 }
 
+function normalizeWritingEvidenceRef(
+  input: Partial<WritingEvidenceRef> | Record<string, unknown> | string | null | undefined,
+  index: number,
+  bookId: string
+): WritingEvidenceRef | null {
+  const source = input && typeof input === "object" ? input : { note: input };
+  const note = String(
+    source.note ??
+      (source as Record<string, unknown>).summary ??
+      (source as Record<string, unknown>).detail ??
+      (source as Record<string, unknown>).evidence ??
+      ""
+  ).trim();
+  const quote = String((source as Record<string, unknown>).quote ?? (source as Record<string, unknown>).text ?? "").trim();
+  const chapterIndex = normalizeOptionalChapterIndex(
+    (source as Record<string, unknown>).chapterIndex ?? (source as Record<string, unknown>).chapter
+  );
+  const chapterId = String((source as Record<string, unknown>).chapterId ?? "").trim();
+
+  if (!note && !quote && !chapterIndex && !chapterId) {
+    return null;
+  }
+
+  return {
+    id: String((source as Record<string, unknown>).id ?? `${bookId}_evidence_${index + 1}`),
+    ...(chapterIndex ? { chapterIndex } : {}),
+    ...(chapterId ? { chapterId } : {}),
+    ...(quote ? { quote } : {}),
+    note: note || quote || (chapterIndex ? `第${chapterIndex}章证据` : "证据")
+  };
+}
+
+function normalizeWritingEvidenceRefs(input: unknown, bookId: string): WritingEvidenceRef[] {
+  if (Array.isArray(input)) {
+    return input
+      .map((entry, index) => normalizeWritingEvidenceRef(entry as Partial<WritingEvidenceRef>, index, bookId))
+      .filter((entry): entry is WritingEvidenceRef => Boolean(entry));
+  }
+
+  const normalized = normalizeWritingEvidenceRef(input as string, 0, bookId);
+  return normalized ? [normalized] : [];
+}
+
+function normalizeWritingEvidenceRefsFromSource(source: Record<string, unknown>, bookId: string): WritingEvidenceRef[] {
+  const explicit = normalizeWritingEvidenceRefs(source.evidenceRefs, bookId);
+  const legacyEvidence = normalizeWritingEvidenceRefs(source.evidence ?? source.evidenceText, bookId);
+  const chapterIndex = normalizeOptionalChapterIndex(source.chapterIndex ?? source.chapter);
+  const chapterId = String(source.chapterId ?? "").trim();
+
+  if (!chapterIndex && !chapterId) {
+    return [...explicit, ...legacyEvidence];
+  }
+
+  const chapterEvidence: WritingEvidenceRef = {
+    id: `${bookId}_chapter_evidence_${chapterId || chapterIndex || explicit.length + legacyEvidence.length + 1}`,
+    ...(chapterIndex ? { chapterIndex } : {}),
+    ...(chapterId ? { chapterId } : {}),
+    note: chapterIndex ? `第${chapterIndex}章出现或更新` : "章节证据"
+  };
+
+  return [...explicit, ...legacyEvidence, chapterEvidence];
+}
+
 function normalizeWritingStoryAssetEntry(
   input: Partial<WritingStoryAssetEntry> | Record<string, unknown> | null | undefined,
   index: number,
   bookId: string,
   group: string
 ): WritingStoryAssetEntry | null {
+  const source = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
   const timestamp = String(input?.updatedAt ?? new Date().toISOString());
-  const title = String(input?.title ?? (input as Record<string, unknown> | undefined)?.name ?? (input as Record<string, unknown> | undefined)?.key ?? "").trim();
+  const title = String(input?.title ?? source.name ?? source.key ?? "").trim();
   const detail = String(
     input?.detail ??
-      (input as Record<string, unknown> | undefined)?.description ??
-      (input as Record<string, unknown> | undefined)?.summary ??
-      (input as Record<string, unknown> | undefined)?.value ??
+      source.description ??
+      source.summary ??
+      source.value ??
       ""
   ).trim();
-  const chapterIndex = normalizeOptionalChapterIndex(input?.chapterIndex ?? (input as Record<string, unknown> | undefined)?.chapter);
+  const chapterIndex = normalizeOptionalChapterIndex(input?.chapterIndex ?? source.chapter);
 
   if (!title && !detail) {
     return null;
@@ -2318,6 +2403,8 @@ function normalizeWritingStoryAssetEntry(
     tags: normalizeStringList(input?.tags),
     ...(chapterIndex ? { chapterIndex } : {}),
     ...(input?.status ? { status: String(input.status) } : {}),
+    evidenceRefs: normalizeWritingEvidenceRefsFromSource(source, bookId),
+    ...(source.impact ? { impact: String(source.impact).trim() } : {}),
     updatedAt: timestamp
   };
 }
@@ -2333,7 +2420,8 @@ function normalizeWritingCharacterAsset(
   index: number,
   bookId: string
 ): WritingCharacterAsset | null {
-  const name = String(input?.name ?? (input as Record<string, unknown> | undefined)?.title ?? "").trim();
+  const source = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  const name = String(input?.name ?? source.title ?? "").trim();
   const relationships = normalizeStringList(input?.relationships);
 
   if (
@@ -2360,6 +2448,8 @@ function normalizeWritingCharacterAsset(
     relationships,
     tags: normalizeStringList(input?.tags),
     status: String(input?.status ?? "active"),
+    evidenceRefs: normalizeWritingEvidenceRefsFromSource(source, bookId),
+    ...(source.impact ? { impact: String(source.impact).trim() } : {}),
     updatedAt: String(input?.updatedAt ?? new Date().toISOString())
   };
 }
@@ -2375,15 +2465,16 @@ function normalizeWritingForeshadowAsset(
   index: number,
   bookId: string
 ): WritingForeshadowAsset | null {
-  const title = String(input?.title ?? (input as Record<string, unknown> | undefined)?.name ?? "").trim();
-  const setup = String(input?.setup ?? (input as Record<string, unknown> | undefined)?.detail ?? "").trim();
+  const source = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  const title = String(input?.title ?? source.name ?? "").trim();
+  const setup = String(input?.setup ?? source.detail ?? "").trim();
   const payoff = String(
     input?.payoff ??
-      (input as Record<string, unknown> | undefined)?.plannedPayoff ??
-      (input as Record<string, unknown> | undefined)?.payoffPlan ??
+      source.plannedPayoff ??
+      source.payoffPlan ??
       ""
   ).trim();
-  const chapterIndex = normalizeOptionalChapterIndex(input?.chapterIndex ?? (input as Record<string, unknown> | undefined)?.setupChapterIndex);
+  const chapterIndex = normalizeOptionalChapterIndex(input?.chapterIndex ?? source.setupChapterIndex);
   const payoffChapterIndex = normalizeOptionalChapterIndex(input?.payoffChapterIndex);
 
   if (!title && !setup && !payoff) {
@@ -2399,6 +2490,8 @@ function normalizeWritingForeshadowAsset(
     ...(chapterIndex ? { chapterIndex } : {}),
     ...(payoffChapterIndex ? { payoffChapterIndex } : {}),
     tags: normalizeStringList(input?.tags),
+    evidenceRefs: normalizeWritingEvidenceRefsFromSource(source, bookId),
+    ...(source.impact ? { impact: String(source.impact).trim() } : {}),
     updatedAt: String(input?.updatedAt ?? new Date().toISOString())
   };
 }
@@ -2425,6 +2518,42 @@ function normalizeWritingStyleProfile(input: Partial<WritingStyleProfile> | null
   };
 }
 
+function normalizeWritingCharacterArc(
+  input: Partial<WritingCharacterArc> | Record<string, unknown> | null | undefined,
+  index: number,
+  bookId: string
+): WritingCharacterArc | null {
+  const source = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  const characterName = String(source.characterName ?? source.name ?? source.title ?? "").trim();
+  const want = String(source.want ?? source.goal ?? "").trim();
+  const need = String(source.need ?? "").trim();
+  const currentStage = String(source.currentStage ?? source.stage ?? "").trim();
+  const nextPressure = String(source.nextPressure ?? source.pressure ?? "").trim();
+  const endpoint = String(source.endpoint ?? source.endState ?? source.payoff ?? "").trim();
+
+  if (!characterName && !want && !need && !currentStage && !nextPressure && !endpoint) {
+    return null;
+  }
+
+  return {
+    id: String(source.id ?? `${bookId}_character_arc_${index + 1}`),
+    characterName: characterName || `未命名人物 ${index + 1}`,
+    want,
+    need,
+    currentStage,
+    nextPressure,
+    endpoint,
+    evidenceRefs: normalizeWritingEvidenceRefsFromSource(source, bookId),
+    updatedAt: String(source.updatedAt ?? new Date().toISOString())
+  };
+}
+
+function normalizeWritingCharacterArcs(input: unknown, bookId: string): WritingCharacterArc[] {
+  return (Array.isArray(input) ? input : [])
+    .map((entry, index) => normalizeWritingCharacterArc(entry as Partial<WritingCharacterArc>, index, bookId))
+    .filter((entry): entry is WritingCharacterArc => Boolean(entry));
+}
+
 function normalizeWritingStoryAssets(input: Partial<WritingStoryAssets> | null | undefined, bookId: string): WritingStoryAssets {
   return {
     premise: String(input?.premise ?? "").trim(),
@@ -2434,6 +2563,7 @@ function normalizeWritingStoryAssets(input: Partial<WritingStoryAssets> | null |
     timeline: normalizeWritingStoryAssetEntries(input?.timeline, bookId, "timeline"),
     foreshadows: normalizeWritingForeshadowAssets(input?.foreshadows, bookId),
     rules: normalizeWritingStoryAssetEntries(input?.rules, bookId, "rule"),
+    characterArcs: normalizeWritingCharacterArcs(input?.characterArcs, bookId),
     styleProfile: normalizeWritingStyleProfile(input?.styleProfile),
     memoryNotes: normalizeWritingStoryAssetEntries(input?.memoryNotes, bookId, "memory"),
     updatedAt: String(input?.updatedAt ?? new Date().toISOString())
@@ -2490,6 +2620,8 @@ function normalizeWritingNarrativeStateNode(
       resolvedAtChapterIndex: normalizeOptionalChapterIndex(source.resolvedAtChapterIndex)
     } : {}),
     evidenceChapterIds: normalizeStringList(source.evidenceChapterIds),
+    evidenceRefs: normalizeWritingEvidenceRefsFromSource(source as Record<string, unknown>, bookId),
+    ...((source as Record<string, unknown>).impact ? { impact: String((source as Record<string, unknown>).impact).trim() } : {}),
     relatedNodeIds: normalizeStringList(source.relatedNodeIds),
     riskLevel: normalizeWritingNarrativeRiskLevel(source.riskLevel),
     updatedAt: String(source.updatedAt ?? new Date().toISOString())
@@ -2542,6 +2674,8 @@ function deriveWritingNarrativeStateFromStoryAssets(assets: WritingStoryAssets, 
     ...(options.payoffDeadlineChapterIndex ? { payoffDeadlineChapterIndex: options.payoffDeadlineChapterIndex } : {}),
     ...(options.resolvedAtChapterIndex ? { resolvedAtChapterIndex: options.resolvedAtChapterIndex } : {}),
     evidenceChapterIds: normalizeStringList(options.evidenceChapterIds),
+    evidenceRefs: normalizeWritingEvidenceRefs(options.evidenceRefs, bookId),
+    ...(options.impact ? { impact: String(options.impact).trim() } : {}),
     relatedNodeIds: normalizeStringList(options.relatedNodeIds),
     riskLevel: normalizeWritingNarrativeRiskLevel(options.riskLevel),
     updatedAt: String(options.updatedAt ?? now)
@@ -2559,7 +2693,7 @@ function deriveWritingNarrativeStateFromStoryAssets(assets: WritingStoryAssets, 
           character.relationships.length ? `关系：${character.relationships.join("；")}` : ""
         ].filter(Boolean).join(" / "),
         index,
-        { id: character.id, status: character.status, updatedAt: character.updatedAt }
+        { id: character.id, status: character.status, evidenceRefs: character.evidenceRefs, impact: character.impact, updatedAt: character.updatedAt }
       )
     ),
     worldRules: [...assets.rules, ...assets.worldview].map((entry, index) =>
@@ -2567,6 +2701,8 @@ function deriveWritingNarrativeStateFromStoryAssets(assets: WritingStoryAssets, 
         id: entry.id,
         status: entry.status ?? "active",
         introducedAtChapterIndex: entry.chapterIndex,
+        evidenceRefs: entry.evidenceRefs,
+        impact: entry.impact,
         updatedAt: entry.updatedAt
       })
     ),
@@ -2576,6 +2712,8 @@ function deriveWritingNarrativeStateFromStoryAssets(assets: WritingStoryAssets, 
         id: entry.id,
         status: entry.status ?? "active",
         introducedAtChapterIndex: entry.chapterIndex,
+        evidenceRefs: entry.evidenceRefs,
+        impact: entry.impact,
         updatedAt: entry.updatedAt
       })),
     regions: assets.worldview
@@ -2584,6 +2722,8 @@ function deriveWritingNarrativeStateFromStoryAssets(assets: WritingStoryAssets, 
         id: `${entry.id}_region`,
         status: entry.status ?? "active",
         introducedAtChapterIndex: entry.chapterIndex,
+        evidenceRefs: entry.evidenceRefs,
+        impact: entry.impact,
         updatedAt: entry.updatedAt
       })),
     foreshadows: assets.foreshadows.map((entry, index) =>
@@ -2592,23 +2732,40 @@ function deriveWritingNarrativeStateFromStoryAssets(assets: WritingStoryAssets, 
         status: entry.status,
         introducedAtChapterIndex: entry.chapterIndex,
         payoffDeadlineChapterIndex: entry.payoffChapterIndex,
+        evidenceRefs: entry.evidenceRefs,
+        impact: entry.impact,
         updatedAt: entry.updatedAt,
         riskLevel: entry.status === "open" ? "medium" : "low"
       })
     ),
-    arcs: assets.characters
+    arcs: [
+      ...assets.characterArcs.map((arc, index) =>
+        toNode("arc", `${arc.characterName}：人物弧线`, [arc.want ? `Want：${arc.want}` : "", arc.need ? `Need：${arc.need}` : "", arc.currentStage ? `阶段：${arc.currentStage}` : "", arc.nextPressure ? `下一压力：${arc.nextPressure}` : "", arc.endpoint ? `终点：${arc.endpoint}` : ""].filter(Boolean).join(" / "), index, {
+          id: arc.id,
+          status: "active",
+          evidenceRefs: arc.evidenceRefs,
+          relatedNodeIds: assets.characters.filter((character) => character.name === arc.characterName).map((character) => character.id),
+          updatedAt: arc.updatedAt
+        })
+      ),
+      ...assets.characters
       .filter((character) => character.growthArc)
       .map((character, index) => toNode("arc", `${character.name}：成长弧`, character.growthArc, index, {
         id: `${character.id}_arc`,
         relatedNodeIds: [character.id],
         status: character.status,
+        evidenceRefs: character.evidenceRefs,
+        impact: character.impact,
         updatedAt: character.updatedAt
-      })),
+      }))
+    ],
     timelineEvents: assets.timeline.map((entry, index) =>
       toNode("timelineEvent", entry.title, entry.detail, index, {
         id: entry.id,
         status: entry.status ?? "active",
         introducedAtChapterIndex: entry.chapterIndex,
+        evidenceRefs: entry.evidenceRefs,
+        impact: entry.impact,
         updatedAt: entry.updatedAt
       })
     ),
@@ -2691,13 +2848,15 @@ function normalizeWritingBookConfig(input: Partial<WritingBook> | null | undefin
   const outlinePlannerJob = normalizeWritingOutlinePlannerJob(input?.outlinePlannerJob);
   const legacyDetailedOutline = String(input?.seriesPlan ?? "").trim();
   const storyAssets = normalizeWritingStoryAssets(input?.storyAssets, id);
+  const genre = String(input?.genre ?? "小说 / 待定类型");
 
   return {
     id,
     title,
     author: String(input?.author ?? "Song"),
     length: normalizeWritingBookLength(input?.length),
-    genre: String(input?.genre ?? "小说 / 待定类型"),
+    genre,
+    genreProfile: normalizeWritingGenreProfile(input?.genreProfile, genre),
     status: String(input?.status ?? "新建"),
     updatedAt: timestamp,
     coverTone: String(input?.coverTone ?? "teal"),

@@ -765,6 +765,23 @@ export interface WritingBookIntroSection {
   updatedAt: string;
 }
 
+export interface WritingGenreProfile {
+  primaryGenre: string;
+  subGenres: string[];
+  storyEngine: string;
+  audience?: string;
+  tone?: string;
+  updatedAt: string;
+}
+
+export interface WritingEvidenceRef {
+  id: string;
+  chapterIndex?: number;
+  chapterId?: string;
+  quote?: string;
+  note: string;
+}
+
 export interface WritingStoryAssetEntry {
   id: string;
   title: string;
@@ -772,6 +789,8 @@ export interface WritingStoryAssetEntry {
   tags: string[];
   chapterIndex?: number;
   status?: string;
+  evidenceRefs: WritingEvidenceRef[];
+  impact?: string;
   updatedAt: string;
 }
 
@@ -786,6 +805,8 @@ export interface WritingCharacterAsset {
   relationships: string[];
   tags: string[];
   status: string;
+  evidenceRefs: WritingEvidenceRef[];
+  impact?: string;
   updatedAt: string;
 }
 
@@ -798,6 +819,20 @@ export interface WritingForeshadowAsset {
   chapterIndex?: number;
   payoffChapterIndex?: number;
   tags: string[];
+  evidenceRefs: WritingEvidenceRef[];
+  impact?: string;
+  updatedAt: string;
+}
+
+export interface WritingCharacterArc {
+  id: string;
+  characterName: string;
+  want: string;
+  need: string;
+  currentStage: string;
+  nextPressure: string;
+  endpoint: string;
+  evidenceRefs: WritingEvidenceRef[];
   updatedAt: string;
 }
 
@@ -823,6 +858,7 @@ export interface WritingStoryAssets {
   timeline: WritingStoryAssetEntry[];
   foreshadows: WritingForeshadowAsset[];
   rules: WritingStoryAssetEntry[];
+  characterArcs: WritingCharacterArc[];
   styleProfile: WritingStyleProfile;
   memoryNotes: WritingStoryAssetEntry[];
   updatedAt: string;
@@ -851,6 +887,8 @@ export interface WritingNarrativeStateNode {
   payoffDeadlineChapterIndex?: number;
   resolvedAtChapterIndex?: number;
   evidenceChapterIds: string[];
+  evidenceRefs: WritingEvidenceRef[];
+  impact?: string;
   relatedNodeIds: string[];
   riskLevel: WritingNarrativeRiskLevel;
   updatedAt: string;
@@ -912,6 +950,7 @@ export interface WritingBook {
   author: string;
   length: WritingBookLength;
   genre: string;
+  genreProfile: WritingGenreProfile;
   status: string;
   updatedAt: string;
   coverTone: string;
