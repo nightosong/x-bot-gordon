@@ -130,6 +130,11 @@ function normalizeWritingBookLengthForUi(value) {
   return WRITING_LENGTH_PROFILES[value] ? value : "long";
 }
 
+function normalizeWritingStoryEngineForUi(value) {
+  const label = String(value ?? "").trim();
+  return label === "成长升级" ? "成长沉淀" : label;
+}
+
 function normalizeWritingGenreProfileForUi(profile = {}, fallbackGenre = "") {
   const source = profile && typeof profile === "object" ? profile : {};
   const fallbackParts = normalizeStringList(fallbackGenre);
@@ -138,7 +143,7 @@ function normalizeWritingGenreProfileForUi(profile = {}, fallbackGenre = "") {
   return {
     primaryGenre: primaryGenre || "小说",
     subGenres: uniqueStringList(normalizeStringList(source.subGenres ?? source.subgenres ?? fallbackParts.slice(1))),
-    storyEngine: String(source.storyEngine ?? source.engine ?? "").trim(),
+    storyEngine: normalizeWritingStoryEngineForUi(source.storyEngine ?? source.engine),
     ...(source.audience ? { audience: String(source.audience).trim() } : {}),
     ...(source.tone ? { tone: String(source.tone).trim() } : {}),
     updatedAt: String(source.updatedAt ?? new Date().toISOString())
@@ -1211,7 +1216,12 @@ function setWritingGenreProfileField(field, value) {
   }
 
   const profile = normalizeWritingGenreProfileForUi(book.genreProfile, book.genre);
-  const nextValue = field === "subGenres" ? normalizeStringList(value) : String(value ?? "").trim();
+  const nextValue =
+    field === "subGenres"
+      ? normalizeStringList(value)
+      : field === "storyEngine"
+        ? normalizeWritingStoryEngineForUi(value)
+        : String(value ?? "").trim();
 
   book.genreProfile = {
     ...profile,

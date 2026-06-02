@@ -317,11 +317,12 @@ function normalizeGenreProfileInput(value: unknown, fallbackGenre: string, times
   const source = isObject(value) ? value : {};
   const fallbackParts = asStringList(fallbackGenre);
   const primaryGenre = asString(source.primaryGenre ?? source.genre ?? fallbackParts[0] ?? fallbackGenre);
+  const storyEngine = asString(source.storyEngine ?? source.engine);
 
   return {
     primaryGenre: primaryGenre || "小说",
     subGenres: asStringList(source.subGenres ?? source.subgenres ?? fallbackParts.slice(1)),
-    storyEngine: asString(source.storyEngine ?? source.engine),
+    storyEngine: storyEngine === "成长升级" ? "成长沉淀" : storyEngine,
     ...(asString(source.audience) ? { audience: asString(source.audience) } : {}),
     ...(asString(source.tone) ? { tone: asString(source.tone) } : {}),
     updatedAt: asString(source.updatedAt) || timestamp

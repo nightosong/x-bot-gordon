@@ -2136,11 +2136,12 @@ function normalizeWritingGenreProfile(
   const source = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
   const fallbackParts = normalizeStringList(fallbackGenre);
   const primaryGenre = String(source.primaryGenre ?? source.genre ?? fallbackParts[0] ?? fallbackGenre ?? "").trim();
+  const storyEngine = String(source.storyEngine ?? source.engine ?? "").trim();
 
   return {
     primaryGenre: primaryGenre || "小说",
     subGenres: normalizeStringList(source.subGenres ?? source.subgenres ?? fallbackParts.slice(1)),
-    storyEngine: String(source.storyEngine ?? source.engine ?? "").trim(),
+    storyEngine: storyEngine === "成长升级" ? "成长沉淀" : storyEngine,
     ...(source.audience ? { audience: String(source.audience).trim() } : {}),
     ...(source.tone ? { tone: String(source.tone).trim() } : {}),
     updatedAt: String(source.updatedAt ?? new Date().toISOString())

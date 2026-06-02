@@ -13,7 +13,7 @@ const FALLBACK_TASK_SPEC = {
 };
 
 const FALLBACK_GENRE_PROMPT_GUIDE =
-  "题材驱动：先识别当前作品真正的 storyEngine，再让冲突、人物变化、证据载体和章节节奏服从该题材；不要把所有作品强行写成探险升级流或真相揭露流。";
+  "题材驱动：先识别当前作品真正的 storyEngine，再让冲突、人物变化、证据载体和章节节奏服从该题材；不要把所有作品强行写成探险升级流、到站悟招流、真相揭露流、掌权统一流或天下第一流。";
 
 function normalizeText(value) {
   return String(value ?? "").trim();
@@ -57,6 +57,7 @@ function buildStorySettingRewriteProtocol(task, instruction) {
     "- 作者明确排除的元素及同义变体必须从新稿中消失；不要把被排除元素改名后保留为背景、伏笔、势力动机或隐藏主线。",
     "- 如需保留旧设定，只能保留不违背作者要求的书名意象、人物动机、武力规则、地理氛围或冒险资源，并自然写进新设定。",
     "- 如果作者要求纯粹类型体验，冲突必须围绕该类型的正面承诺展开，避免转向朝堂、阴谋、权谋、悬疑真相、文明反思或项目管理语言。",
+    "- 结局方向必须优先自然收束人物、关系、技艺、路线、地方余波和价值选择，不要把新方向又写回揭阴谋、掌权、统一天下或天下第一。",
     "- 输出开头直接写作品设定小标题，例如“## 故事核心定位”；不要写“以下是”“保留”“删除”“调整为”等说明性开场。"
   ].join("\n");
 }
@@ -72,8 +73,14 @@ function normalizeStringList(value) {
     .filter(Boolean);
 }
 
+function normalizeStoryEngineLabel(value) {
+  const label = normalizeText(value);
+  return label === "成长升级" ? "成长沉淀" : label;
+}
+
 function getGenrePromptGuide(genreGuides = {}, genreProfile = {}, fallbackGenre = "") {
   const primaryGenre = normalizeText(genreProfile.primaryGenre || fallbackGenre);
+  const storyEngine = normalizeStoryEngineLabel(genreProfile.storyEngine);
   const candidates = [primaryGenre, ...normalizeStringList(genreProfile.subGenres), fallbackGenre]
     .map((item) => item.replace(/\s+/g, ""))
     .filter(Boolean);
@@ -82,7 +89,7 @@ function getGenrePromptGuide(genreGuides = {}, genreProfile = {}, fallbackGenre 
   const profileLines = [
     `- primaryGenre：${primaryGenre || "未设定"}`,
     normalizeStringList(genreProfile.subGenres).length ? `- subGenres：${normalizeStringList(genreProfile.subGenres).join("、")}` : "",
-    genreProfile.storyEngine ? `- storyEngine：${genreProfile.storyEngine}` : "",
+    storyEngine ? `- storyEngine：${storyEngine}` : "",
     genreProfile.audience ? `- audience：${genreProfile.audience}` : "",
     genreProfile.tone ? `- tone：${genreProfile.tone}` : ""
   ].filter(Boolean);
@@ -92,7 +99,7 @@ function getGenrePromptGuide(genreGuides = {}, genreProfile = {}, fallbackGenre 
     profileLines.join("\n") || "- primaryGenre：未设定",
     "",
     guide?.guide || FALLBACK_GENRE_PROMPT_GUIDE,
-    guide?.engine || genreProfile.storyEngine ? `推荐 storyEngine：${genreProfile.storyEngine || guide?.engine}` : ""
+    guide?.engine || storyEngine ? `推荐 storyEngine：${storyEngine || guide?.engine}` : ""
   ].filter(Boolean).join("\n");
 }
 
