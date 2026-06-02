@@ -155,7 +155,7 @@
           </div>
         </section>
 
-        <section v-else-if="ui.extensions.listTab === 'skill'" class="model-section extension-section">
+        <section v-else-if="ui.extensions.listTab === 'skill'" class="model-section extension-section extension-section-skill">
           <div class="model-section-head">
             <div>
               <p class="feature-kicker">Skills</p>

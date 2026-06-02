@@ -2,12 +2,17 @@ import { computed } from "vue";
 
 import { WRITING_AUTOSAVE_DELAY } from "../writing/writingConfig.js";
 import {
+  VIDEO_APP_NAME,
   VIDEO_APP_TABS,
   VIDEO_PROJECT_ASPECT_RATIO_META,
   VIDEO_PROJECT_COVER_TONES,
   VIDEO_PROJECT_MODE_META,
   VIDEO_SHOT_STATUS_META
 } from "./marketplaceConfig.js";
+
+const VIDEO_SYSTEM_PROMPT = `你是 Gordon 应用广场里的「流光绘影」，负责视频项目策划、镜头规划、视频生成提示词整理和生成结果记录。
+你需要像分镜导演一样工作：先抓主体、动作、镜头运动、光线和时长，再输出可用于视频生成工具或人工复跑的提示词。
+输出中文，内容要能直接回填到当前镜头生成结果区，不要声称已经生成真实视频。`;
 
 function writeRef(target, value) {
   if (target && typeof target === "object" && "value" in target) {
@@ -71,6 +76,15 @@ export function createVideoActions({
   function normalizeVideoProjectModeForUi(value) {
     const mode = String(value ?? "").trim();
     return VIDEO_PROJECT_MODE_META[mode] ? mode : "textToVideo";
+  }
+
+  function setVideoFeedback(text, tone = "neutral") {
+    ui.marketplace.video.feedback = String(text ?? "").trim();
+    ui.marketplace.video.feedbackTone = tone;
+  }
+
+  function getVideoFeedbackClass() {
+    return ui.marketplace.video.feedbackTone ? `is-${ui.marketplace.video.feedbackTone}` : "";
   }
 
   function normalizeVideoProjectAspectRatioForUi(value) {
@@ -761,6 +775,88 @@ export function createVideoActions({
     setStatus("视频镜头已提交。", "success");
   }
 
+  function buildVideoQuickPrompt() {
+    const project = activeVideoProject.value;
+    const shot = activeVideoShot.value;
+
+    return [
+      `项目：${project?.title ?? "未命名视频"}`,
+      `模式：${getVideoProjectModeLabel(project?.mode)}`,
+      `画幅：${getVideoProjectAspectRatioLabel(project?.aspectRatio)}`,
+      `类型：${project?.genre || "未填写"}`,
+      `默认时长：${project?.durationSeconds || shot?.durationSeconds || 5} 秒`,
+      `主题与用途：${project?.summary || "未填写"}`,
+      `视觉与运动风格：${project?.visualStyle || "未填写"}`,
+      `分镜总规划：${project?.storyboardPlan || "未填写"}`,
+      "",
+      `当前镜头：${shot ? getVideoShotDisplayTitle(shot, activeVideoShotIndex.value) : "未选择"}`,
+      `镜头说明：${shot?.summary || "未填写"}`,
+      `参考素材 / 首帧说明：${shot?.reference || "未填写"}`,
+      `已有正向提示词：${shot?.prompt || "未填写"}`,
+      `已有反向提示词：${shot?.negativePrompt || "未填写"}`,
+      "",
+      "请为当前镜头生成一份可直接使用的视频生成方案。",
+      "必须包含：正向提示词、反向提示词、镜头运动、时长/节奏、画面稳定性注意点、复跑检查点。",
+      "不要输出寒暄，也不要说已经生成视频。"
+    ].join("\n");
+  }
+
+  async function generateVideoQuickMode() {
+    const shot = activeVideoShot.value;
+
+    if (ui.marketplace.video.isGenerating) {
+      return;
+    }
+
+    if (!shot) {
+      setVideoFeedback("请先选择一个镜头。", "warning");
+      return;
+    }
+
+    if (!desktopApi?.invokeModelText) {
+      setVideoFeedback("AI 桥接未就绪。", "danger");
+      return;
+    }
+
+    const requestId =
+      typeof createLocalId === "function" ? createLocalId("video_model_request") : `video_model_request_${Date.now()}`;
+
+    try {
+      ui.marketplace.video.isGenerating = true;
+      setVideoFeedback("正在生成快速方案...", "neutral");
+      setStatus(`${VIDEO_APP_NAME}正在生成快速方案。`, "neutral");
+
+      const result = await desktopApi.invokeModelText({
+        requestId,
+        temperature: 0.66,
+        maxOutputTokens: 1800,
+        messages: [
+          {
+            role: "system",
+            content: VIDEO_SYSTEM_PROMPT
+          },
+          {
+            role: "user",
+            content: buildVideoQuickPrompt()
+          }
+        ]
+      });
+
+      const output = String(result?.text ?? "").trim();
+      shot.output = output;
+      touchVideoShot(shot);
+      setVideoFeedback(result?.profileLabel ? `已由 ${result.profileLabel} 生成。` : "快速方案已生成。", "success");
+      setStatus(`${VIDEO_APP_NAME}已生成快速方案。`, "success");
+    } catch (error) {
+      console.error("Failed to generate video quick mode", error);
+      const message = getErrorMessage(error);
+      setVideoFeedback(`生成失败：${message}`, "danger");
+      setStatus(`${VIDEO_APP_NAME}生成失败：${message}`, "danger");
+    } finally {
+      ui.marketplace.video.isGenerating = false;
+    }
+  }
+
   function setVideoExportFeedback(text, tone = "neutral") {
     ui.marketplace.video.exportFeedback = String(text ?? "").trim();
     ui.marketplace.video.exportFeedbackTone = tone;
@@ -860,6 +956,8 @@ export function createVideoActions({
     deleteVideoProjectFromShelf,
     exportActiveVideoProject,
     filteredVideoShotEntries,
+    generateVideoQuickMode,
+    getVideoFeedbackClass,
     getVideoProjectAspectRatioLabel,
     getVideoProjectModeLabel,
     getVideoShotDisplayTitle,

@@ -269,6 +269,11 @@ export function createMarketplaceState() {
       isGenerating: false,
       requestId: ""
     },
+    agent: {
+      activeAppId: "",
+      activeProgressEventId: "",
+      progress: null
+    },
     comic: {
       projects: [],
       activeProjectId: null,
@@ -307,6 +312,9 @@ export function createMarketplaceState() {
       activeProjectId: null,
       activeTab: "concept",
       activeShotId: "",
+      feedback: "",
+      feedbackTone: "neutral",
+      isGenerating: false,
       isProfileCollapsed: false,
       isShotPickerOpen: false,
       shotSearchQuery: "",
@@ -371,6 +379,7 @@ export function createMarketplaceState() {
       aiFeedback: "",
       aiFeedbackTone: "neutral",
       isAiRunning: false,
+      agentProgress: null,
       aiRunningBookId: "",
       outlinePlannerCancelRequested: false,
       uploadFeedback: "",

@@ -142,26 +142,27 @@
     </section>
 
     <div class="writing-ai-output">
-      <div class="writing-ai-output-head">
-        <span class="field-label">AI 输出</span>
-        <div class="writing-ai-output-tools">
-          <button
-            type="button"
-            class="writing-ai-output-status"
-            :class="writingAiOutputStatusClass"
-            :aria-label="writingAiOutputStatusMessage"
-            aria-describedby="writing-ai-output-status-tooltip"
-          >
-            <GIcon name="circleAlert" :size="16" />
-            <span id="writing-ai-output-status-tooltip" class="writing-ai-output-status-tooltip" role="tooltip">
-              {{ writingAiOutputStatusMessage }}
-            </span>
-          </button>
-          <button type="button" class="model-action-secondary writing-ai-run" :disabled="state.isAiRunning" @click="generateWritingAssistantOutput">
-            {{ getWritingAiRunButtonLabel() }}
-          </button>
-        </div>
-      </div>
+      <AiAssistantActionBar
+        label="AI 输出"
+        :status-class="writingAiOutputStatusClass"
+        :status-message="writingAiOutputStatusMessage"
+        tooltip-id="writing-ai-output-status-tooltip"
+        :quick-disabled="state.isAiRunning"
+        :quick-label="getWritingAiRunButtonLabel()"
+        :agent-disabled="state.isAiRunning || !activeWritingBook"
+        :on-quick-run="generateWritingAssistantOutput"
+        :on-agent-run="runWritingAgentTask"
+      />
+
+      <GordonAgentProgress
+        :progress="state.agentProgress"
+        :items="writingAgentProgressItems"
+        :progress-class="writingAgentProgressClass"
+        :progress-time="writingAgentProgressTime"
+        fallback-status="正在处理写作任务"
+        :cancel-handler="cancelWritingAssistantRun"
+      />
+
       <textarea
         v-model="state.aiOutput"
         class="field-textarea writing-ai-output-textarea"
@@ -182,6 +183,8 @@
 <script setup>
 import { computed, ref, watch } from "vue";
 import GIcon from "../../components/GIcon.vue";
+import AiAssistantActionBar from "../marketplace/AiAssistantActionBar.vue";
+import GordonAgentProgress from "../marketplace/GordonAgentProgress.vue";
 
 const props = defineProps({
   state: { type: Object, required: true },
@@ -206,7 +209,11 @@ const props = defineProps({
   canResumeWritingOutlinePlanner: { type: Function, required: true },
   resumeWritingOutlinePlanningJob: { type: Function, required: true },
   getWritingAiRunButtonLabel: { type: Function, required: true },
+  getWritingAgentProgressItems: { type: Function, required: true },
+  formatLocalDateTime: { type: Function, default: null },
   generateWritingAssistantOutput: { type: Function, required: true },
+  cancelWritingAssistantRun: { type: Function, required: true },
+  runWritingAgentTask: { type: Function, required: true },
   applyWritingAssistantOutput: { type: Function, required: true }
 });
 
@@ -249,6 +256,29 @@ const writingAiOutputStatusClass = computed(() => {
   }
 
   return "is-neutral";
+});
+const writingAgentProgressItems = computed(() =>
+  props.getWritingAgentProgressItems(props.state.agentProgress)
+);
+const writingAgentProgressClass = computed(() => {
+  const phase = props.state.agentProgress?.phase ?? "running";
+  const tone = props.state.agentProgress?.tone ?? "";
+
+  return {
+    "is-running": phase === "running",
+    "is-completed": phase === "completed",
+    "is-warning": tone === "warning",
+    "is-error": phase === "failed" && tone !== "warning"
+  };
+});
+const writingAgentProgressTime = computed(() => {
+  const value = props.state.agentProgress?.updatedAt ?? props.state.agentProgress?.createdAt ?? "";
+
+  if (!value) {
+    return "";
+  }
+
+  return typeof props.formatLocalDateTime === "function" ? props.formatLocalDateTime(value) : value;
 });
 
 function getWritingTaskTarget(task) {

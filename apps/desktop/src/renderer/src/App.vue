@@ -276,6 +276,8 @@ import { createComicAiActions } from "./features/marketplace/comicAiActions.js";
 import { createComicActions } from "./features/marketplace/comicActions.js";
 import { createMarketplaceFieldAiActions } from "./features/marketplace/fieldAiActions.js";
 import { createFortuneActions } from "./features/marketplace/fortuneActions.js";
+import { createMarketplaceAgentActions } from "./features/marketplace/marketplaceAgentActions.js";
+import { createMarketplaceAgentContextProviders } from "./features/marketplace/marketplaceAgentContext.js";
 import { createMarketplaceViewContext } from "./features/marketplace/marketplaceContext.js";
 import MarketplaceView from "./features/marketplace/MarketplaceView.vue";
 import { createMarketplaceState } from "./features/marketplace/marketplaceConfig.js";
@@ -644,6 +646,7 @@ const writingAiActions = createWritingAiActions({
   splitWritingBookPartTitlePrefix,
   splitWritingChapterTitlePrefix,
   touchWritingBook,
+  toPlainIpcData,
   truncateText,
   ui,
   writingPromptAssets
@@ -656,12 +659,96 @@ const fieldAiActions = createMarketplaceFieldAiActions({
   ui
 });
 
+const marketplaceAgentContextProviders = createMarketplaceAgentContextProviders({
+  comicActions,
+  comicAiActions,
+  fortuneActions,
+  musicActions,
+  truncateText,
+  ui,
+  videoActions
+});
+
+const marketplaceAgentActions = createMarketplaceAgentActions({
+  appContextProviders: marketplaceAgentContextProviders,
+  createLocalId,
+  desktopApi,
+  resultHandlers: {
+    comic: ({ output, artifacts }) => {
+      ui.marketplace.comic.aiOutput = output;
+      const images = artifacts
+        .map((artifact, index) => marketplaceAgentActions.normalizeAgentImageArtifact(artifact, index))
+        .filter(Boolean);
+      if (images.length) {
+        ui.marketplace.comic.aiGeneratedImages = images;
+      }
+    },
+    video: ({ output }) => {
+      const shot = videoActions.activeVideoShot.value;
+      if (shot) {
+        videoActions.setVideoShotOutput(shot, output);
+      }
+    },
+    music: ({ result, output, artifacts }) => {
+      const track = musicActions.activeMusicTrack.value;
+      if (!track) {
+        return;
+      }
+
+      const audio = artifacts.map((artifact) => marketplaceAgentActions.normalizeAgentAudioArtifact(artifact)).find(Boolean);
+      musicActions.setMusicTrackField(track, "notes", output);
+      if (audio) {
+        musicActions.setMusicTrackField(track, "audioUrl", audio.url);
+        if (audio.provider) {
+          musicActions.setMusicTrackField(track, "provider", audio.provider);
+        }
+        if (audio.model) {
+          musicActions.setMusicTrackField(track, "model", audio.model);
+        }
+        musicActions.setMusicTrackField(track, "status", "finished");
+      }
+      const taskId = marketplaceAgentActions.findLatestMusicTaskId(result);
+      if (taskId) {
+        musicActions.setMusicTrackField(track, "taskId", taskId);
+      }
+    },
+    fortune: ({ output }) => {
+      const pendingInput = String(ui.marketplace.fortune.chatInput ?? "").trim();
+      const pendingAttachments = Array.isArray(ui.marketplace.fortune.chatAttachments)
+        ? [...ui.marketplace.fortune.chatAttachments]
+        : [];
+
+      if (pendingInput || pendingAttachments.length) {
+        fortuneActions.addFortuneMessage?.({
+          role: "user",
+          content: pendingInput || "我上传了一些参考资料，请先判断还需要我补充什么。",
+          attachments: pendingAttachments
+        });
+      }
+
+      fortuneActions.addFortuneMessage?.({
+        role: "assistant",
+        content: output,
+        state: "completed"
+      });
+      ui.marketplace.fortune.output = output;
+      ui.marketplace.fortune.chatInput = "";
+      ui.marketplace.fortune.chatAttachments = [];
+    }
+  },
+  setStatus,
+  toPlainIpcData,
+  ui
+});
+
 const marketplaceViewContext = createMarketplaceViewContext({
   comicActions,
   comicAiActions,
   comicChapterDropdownMenuRef,
   fieldAiActions,
+  formatLocalDateTime,
   fortuneActions,
+  marketplaceAgentActions,
   musicActions,
   truncateText,
   ui,
@@ -674,6 +761,12 @@ const marketplaceViewContext = createMarketplaceViewContext({
 const activeWeeklyRecord = computed(() =>
   workbench.weeklyProgress.find((record) => record.id === ui.weekly.activeRecordId) ?? null
 );
+
+function handleRootAgentRunProgress(payload) {
+  handleAgentRunProgress(payload);
+  writingAiActions.handleWritingAgentRunProgress(payload);
+  marketplaceAgentActions.handleMarketplaceAgentRunProgress(payload);
+}
 const {
   activeWorkflowApiKeyInputType,
   activeWorkflowBodyStepOptions,
@@ -1020,7 +1113,7 @@ setupRootWatchers({
   featureCommandWorkshopId: FEATURE_COMMAND_WORKSHOP,
   focusCommandInput,
   getWeeklyDraftSnapshot,
-  handleAgentRunProgress,
+  handleAgentRunProgress: handleRootAgentRunProgress,
   handleGordonDialogKeydown,
   handleWeeklyDraftSnapshotChange,
   handleWeeklySelectedReportTemplateIdChange,

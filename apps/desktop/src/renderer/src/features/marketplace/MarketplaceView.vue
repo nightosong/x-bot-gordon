@@ -689,17 +689,14 @@
               </div>
             </div>
 
-            <div class="writing-ai-run-row music-ai-run-row">
-              <button
-                type="button"
-                class="model-action-secondary writing-ai-run"
-                :disabled="!activeMusicTrack || ui.marketplace.music.isGenerating || ui.marketplace.music.isCallingTool"
-                @click="generateMusicDraft"
-              >
-                <GIcon :name="ui.marketplace.music.isGenerating ? 'loading' : 'sparkles'" :spin="ui.marketplace.music.isGenerating" :size="14" />
-                {{ ui.marketplace.music.isGenerating ? "谱写中" : "生成草案" }}
-              </button>
-            </div>
+            <GordonAgentProgress
+              :progress="getMarketplaceAgentProgress('music')"
+              :items="getMarketplaceAgentProgressItems(getMarketplaceAgentProgress('music'))"
+              :progress-class="getMarketplaceAgentProgressClass('music')"
+              :progress-time="getMarketplaceAgentProgressTime('music')"
+              fallback-status="正在处理音乐任务"
+              :cancel-handler="cancelMarketplaceAgentRun"
+            />
 
             <div class="music-ai-tool-row">
               <button
@@ -722,12 +719,18 @@
             </div>
 
             <div class="writing-ai-output music-ai-output">
-              <div class="writing-ai-output-head">
-                <span class="field-label">当前曲目</span>
-                <span v-if="ui.marketplace.music.feedback" class="status-pill" :class="getMusicFeedbackClass()">
-                  {{ ui.marketplace.music.feedback }}
-                </span>
-              </div>
+              <AiAssistantActionBar
+                label="当前曲目"
+                :status-class="getMusicFeedbackClass()"
+                :status-message="musicAiOutputStatusMessage"
+                :quick-disabled="!activeMusicTrack || ui.marketplace.music.isGenerating || ui.marketplace.music.isCallingTool"
+                :quick-icon="ui.marketplace.music.isGenerating ? 'loading' : 'sparkles'"
+                :quick-spin="ui.marketplace.music.isGenerating"
+                :quick-label="ui.marketplace.music.isGenerating ? '谱写中' : '快速模式'"
+                :agent-disabled="!activeMusicTrack || ui.marketplace.music.isGenerating || ui.marketplace.music.isCallingTool"
+                :on-quick-run="generateMusicDraft"
+                :on-agent-run="() => runMarketplaceAgentTask('music')"
+              />
               <div class="music-ai-current">
                 <span class="status-pill">{{ activeMusicTrack ? getMusicTrackStatusLabel(activeMusicTrack.status) : "未选择" }}</span>
                 <p>
@@ -741,174 +744,7 @@
     </template>
 
     <template v-else-if="ui.marketplace.view === 'fortune'">
-      <section class="writing-detail-shell fortune-detail-shell">
-        <header class="writing-detail-head fortune-detail-head">
-          <button type="button" class="model-icon-button weekly-back-button" aria-label="返回应用广场" title="返回应用广场" @click="backFortuneMarketplace">
-            <GIcon name="return" />
-          </button>
-
-          <div class="writing-detail-title">
-            <p class="fortune-title-text">{{ FORTUNE_APP_NAME }}</p>
-          </div>
-
-          <div class="model-section-actions">
-            <span class="pill">{{ activeFortuneModeMeta.label }}</span>
-            <span class="pill pill-neutral">灵感参考</span>
-          </div>
-        </header>
-
-        <section class="fortune-workbench">
-          <aside class="fortune-rail">
-            <div class="fortune-mark-large" aria-hidden="true">
-              <span>灵</span>
-            </div>
-
-            <div class="fortune-mode-list" role="tablist" aria-label="灵犀照命解读类型">
-              <button
-                v-for="mode in FORTUNE_READING_MODES"
-                :key="mode.id"
-                type="button"
-                class="fortune-mode-button"
-                :class="{ 'is-active': ui.marketplace.fortune.activeMode === mode.id }"
-                :aria-selected="ui.marketplace.fortune.activeMode === mode.id ? 'true' : 'false'"
-                @click="setFortuneMode(mode.id)"
-              >
-                <span>{{ mode.kicker }}</span>
-                <strong>{{ mode.label }}</strong>
-              </button>
-            </div>
-
-          </aside>
-
-          <main class="fortune-main-stage fortune-chat-stage">
-            <article class="writing-editor-card fortune-chat-card">
-              <div class="fortune-chat-head">
-                <div>
-                  <p class="feature-kicker">{{ activeFortuneModeMeta.kicker }}</p>
-                  <p class="model-section-title">{{ activeFortuneModeMeta.label }}</p>
-                </div>
-                <div class="fortune-chat-tools">
-                  <div class="fortune-method-strip" aria-label="当前解读框架">
-                    <span v-for="method in activeFortuneMethodLabels" :key="method" class="fortune-method-chip">{{ method }}</span>
-                  </div>
-                  <button
-                    type="button"
-                    class="model-icon-button fortune-clear-button"
-                    title="清空对话"
-                    aria-label="清空对话"
-                    :disabled="ui.marketplace.fortune.isGenerating || !ui.marketplace.fortune.messages?.length"
-                    @click="clearFortuneReading"
-                  >
-                    <GIcon name="close" :size="15" />
-                  </button>
-                </div>
-              </div>
-
-              <div class="fortune-chat-scroll">
-                <div v-if="!ui.marketplace.fortune.messages?.length" class="fortune-chat-empty">
-                  <strong>先说出你想问的事。</strong>
-                  <span>可以直接问今天运势、事业财运、感情关系，也可以上传手相、面相、户型或工位照片。灵犀会先追问必要信息，再给卦名和解读。</span>
-                </div>
-
-                <div v-else class="fortune-message-stream">
-                  <article
-                    v-for="message in ui.marketplace.fortune.messages || []"
-                    :key="message.id"
-                    class="fortune-message"
-                    :class="[`is-${message.role}`, message.state ? `is-${message.state}` : '']"
-                  >
-                    <div class="fortune-message-meta">
-                      <span>{{ message.role === "user" ? "你" : FORTUNE_APP_NAME }}</span>
-                      <small>{{ message.modeLabel || activeFortuneModeMeta.label }} · {{ formatFortuneTime(message.createdAt) }}</small>
-                    </div>
-                    <div class="fortune-message-text command-rich-text fortune-rich-text" v-html="renderRichText(message.content)"></div>
-                    <div v-if="message.attachments?.length" class="fortune-message-attachments">
-                      <span
-                        v-for="attachment in message.attachments"
-                        :key="attachment.id"
-                        class="fortune-attachment-chip"
-                        :class="{ 'is-image': attachment.kind === 'image', 'is-error': attachment.readStatus === 'error' }"
-                      >
-                        {{ attachment.kind === "image" ? "图片" : "附件" }} · {{ attachment.name }}
-                      </span>
-                    </div>
-                  </article>
-
-                  <article v-if="ui.marketplace.fortune.isGenerating" class="fortune-message is-assistant is-pending">
-                    <div class="fortune-message-meta">
-                      <span>{{ FORTUNE_APP_NAME }}</span>
-                      <small>正在推演</small>
-                    </div>
-                    <p class="fortune-thinking">
-                      <span></span>
-                      <span></span>
-                      <span></span>
-                    </p>
-                  </article>
-                </div>
-              </div>
-
-              <p
-                v-if="ui.marketplace.fortune.feedback"
-                class="writing-export-feedback fortune-feedback"
-                :class="getFortuneFeedbackClass()"
-                role="status"
-              >
-                {{ ui.marketplace.fortune.feedback }}
-              </p>
-
-              <div class="fortune-composer">
-                <div v-if="ui.marketplace.fortune.chatAttachments?.length" class="fortune-attachment-tray">
-                  <span
-                    v-for="attachment in ui.marketplace.fortune.chatAttachments || []"
-                    :key="attachment.id"
-                    class="fortune-attachment-chip"
-                    :class="{ 'is-image': attachment.kind === 'image', 'is-error': attachment.readStatus === 'error' }"
-                  >
-                    <span class="fortune-attachment-name">{{ attachment.kind === "image" ? "图片" : "附件" }} · {{ attachment.name }}</span>
-                    <button type="button" class="fortune-attachment-remove" aria-label="移除附件" @click="removeFortuneAttachment(attachment.id)">
-                      <GIcon name="close" :size="12" />
-                    </button>
-                  </span>
-                </div>
-                <textarea
-                  :value="ui.marketplace.fortune.chatInput"
-                  class="field-textarea fortune-chat-input"
-                  :placeholder="`问${activeFortuneModeMeta.label}，或补充出生时间、数字、手相/面相、户型方位...`"
-                  :disabled="ui.marketplace.fortune.isGenerating"
-                  @input="setFortuneChatInput($event.target.value)"
-                  @keydown.enter.exact.prevent="sendFortuneMessage"
-                ></textarea>
-                <button
-                  type="button"
-                  class="model-icon-button fortune-attach-button"
-                  title="上传图片或资料"
-                  aria-label="上传图片或资料"
-                  :disabled="ui.marketplace.fortune.isGenerating"
-                  @click="selectFortuneAttachments"
-                >
-                  <GIcon name="image" :size="17" />
-                </button>
-                <button
-                  type="button"
-                  class="model-icon-button fortune-send-button"
-                  :title="ui.marketplace.fortune.isGenerating ? '推演中' : '发送'"
-                  :aria-label="ui.marketplace.fortune.isGenerating ? '推演中' : '发送'"
-                  :disabled="ui.marketplace.fortune.isGenerating || (!(ui.marketplace.fortune.chatInput || '').trim() && !(ui.marketplace.fortune.chatAttachments || []).length)"
-                  @click="sendFortuneMessage"
-                >
-                  <GIcon
-                    :name="ui.marketplace.fortune.isGenerating ? 'loading' : 'enter'"
-                    :spin="ui.marketplace.fortune.isGenerating"
-                    :size="18"
-                    :stroke-width="2.2"
-                  />
-                </button>
-              </div>
-            </article>
-          </main>
-        </section>
-      </section>
+      <FortuneWorkbench :context="context" />
     </template>
 
     <template v-else-if="ui.marketplace.view === 'videoShelf'">
@@ -1460,6 +1296,40 @@
                     <strong>{{ getVideoShotDisplayTitle(activeVideoShot, activeVideoShotIndex) }}</strong>
                     <p>{{ activeVideoShot.summary || "这个镜头还没有说明。" }}</p>
                   </div>
+
+                  <AiAssistantActionBar
+                    v-if="activeVideoShot"
+                    label="生成模式"
+                    bar-class="video-agent-mode-strip"
+                    :status-class="getVideoFeedbackClass()"
+                    :status-message="videoAiOutputStatusMessage"
+                    :quick-disabled="ui.marketplace.video.isGenerating"
+                    :quick-icon="ui.marketplace.video.isGenerating ? 'loading' : 'sparkles'"
+                    :quick-spin="ui.marketplace.video.isGenerating"
+                    :quick-label="ui.marketplace.video.isGenerating ? '生成中' : '快速模式'"
+                    :agent-disabled="ui.marketplace.video.isGenerating"
+                    :on-quick-run="generateVideoQuickMode"
+                    :on-agent-run="() => runMarketplaceAgentTask('video')"
+                  />
+
+                  <GordonAgentProgress
+                    class="marketplace-agent-progress-inline"
+                    :progress="getMarketplaceAgentProgress('video')"
+                    :items="getMarketplaceAgentProgressItems(getMarketplaceAgentProgress('video'))"
+                    :progress-class="getMarketplaceAgentProgressClass('video')"
+                    :progress-time="getMarketplaceAgentProgressTime('video')"
+                    fallback-status="正在处理视频任务"
+                    :cancel-handler="cancelMarketplaceAgentRun"
+                  />
+
+                  <p
+                    v-if="ui.marketplace.video.feedback"
+                    class="writing-export-feedback video-feedback"
+                    :class="getVideoFeedbackClass()"
+                    role="status"
+                  >
+                    {{ ui.marketplace.video.feedback }}
+                  </p>
 
                   <div v-if="activeVideoShot" class="field writing-intro-field">
                     <span class="field-label">参考素材 / 首帧说明</span>
@@ -2286,9 +2156,13 @@
                 :set-comic-ai-image-size="setComicAiImageSize"
                 :set-comic-ai-image-quality="setComicAiImageQuality"
                 :generate-comic-ai-output="generateComicAiOutput"
+                :get-marketplace-agent-progress="getMarketplaceAgentProgress"
+                :get-marketplace-agent-progress-items="getMarketplaceAgentProgressItems"
                 :get-comic-ai-run-button-label="getComicAiRunButtonLabel"
                 :get-comic-ai-feedback-class="getComicAiFeedbackClass"
                 :apply-comic-ai-output="applyComicAiOutput"
+                :cancel-marketplace-agent-run="cancelMarketplaceAgentRun"
+                :run-marketplace-agent-task="runMarketplaceAgentTask"
               />
             </section>
           </main>
@@ -2791,7 +2665,11 @@
                 :can-resume-writing-outline-planner="canResumeWritingOutlinePlanner"
                 :resume-writing-outline-planning-job="resumeWritingOutlinePlanningJob"
                 :get-writing-ai-run-button-label="getWritingAiRunButtonLabel"
+                :get-writing-agent-progress-items="getWritingAgentProgressItems"
+                :format-local-date-time="formatLocalDateTime"
                 :generate-writing-assistant-output="generateWritingAssistantOutput"
+                :cancel-writing-assistant-run="cancelWritingAssistantRun"
+                :run-writing-agent-task="runWritingAgentTask"
                 :apply-writing-assistant-output="applyWritingAssistantOutput"
               />
             </section>
@@ -3200,11 +3078,13 @@
 
 <script setup>
 import ComicAiDrawer from "./ComicAiDrawer.vue";
+import AiAssistantActionBar from "./AiAssistantActionBar.vue";
 import FieldAiOptimizer from "./FieldAiOptimizer.vue";
+import FortuneWorkbench from "./FortuneWorkbench.vue";
+import GordonAgentProgress from "./GordonAgentProgress.vue";
 import GCompactSelect from "../../components/GCompactSelect.vue";
 import GIcon from "../../components/GIcon.vue";
 import WritingAiDrawer from "../writing/WritingAiDrawer.vue";
-import { renderRichText } from "../../lib/presenter.js";
 import {
   COMIC_APP_NAME,
   COMIC_APP_TABS,
@@ -3213,7 +3093,6 @@ import {
   COMIC_ASSET_TYPE_META,
   COMIC_ASSET_VIEW_KIND_META,
   FORTUNE_APP_NAME,
-  FORTUNE_READING_MODES,
   MARKETPLACE_APP_COUNT,
   MUSIC_APP_NAME,
   MUSIC_APP_TABS,
@@ -3237,7 +3116,7 @@ const props = defineProps({
   context: { type: Object, required: true }
 });
 
-const { comicActions, comicAiActions, fieldAiActions, fortuneActions, musicActions, refs, truncateText, ui, videoActions, writingActions, writingAiActions } =
+const { comicActions, comicAiActions, fieldAiActions, formatLocalDateTime, fortuneActions, marketplaceAgentActions, musicActions, refs, truncateText, ui, videoActions, writingActions, writingAiActions } =
   props.context;
 const { comicChapterDropdownMenuRef, videoShotDropdownMenuRef, writingChapterDropdownMenuRef } = refs;
 
@@ -3359,6 +3238,9 @@ const videoProjectAspectRatioOptions = Object.entries(VIDEO_PROJECT_ASPECT_RATIO
   value,
   label: meta.label
 }));
+const videoAiOutputStatusMessage = computed(() =>
+  String(ui.marketplace.video.feedback ?? "").trim() || (ui.marketplace.video.isGenerating ? "正在执行快速模式" : "暂无执行状态")
+);
 const musicTrackKindOptions = Object.entries(MUSIC_TRACK_KIND_META).map(([value, meta]) => ({
   value,
   label: meta.label
@@ -3367,6 +3249,9 @@ const musicTrackStatusOptions = Object.entries(MUSIC_TRACK_STATUS_META).map(([va
   value,
   label: meta.label
 }));
+const musicAiOutputStatusMessage = computed(() =>
+  String(ui.marketplace.music.feedback ?? "").trim() || (ui.marketplace.music.isGenerating ? "正在执行快速模式" : "暂无执行状态")
+);
 const musicGenerationProviderOptions = [
   { value: "default", label: "默认供应商" },
   { value: "mureka", label: MUSIC_PROVIDER_META.mureka.label },
@@ -3378,7 +3263,15 @@ const writingLengthOptions = Object.entries(WRITING_LENGTH_PROFILES).map(([value
 }));
 
 const {
+  cancelMarketplaceAgentRun,
+  getMarketplaceAgentProgress,
+  getMarketplaceAgentProgressItems,
+  runMarketplaceAgentTask
+} = marketplaceAgentActions;
+
+const {
   activeVideoExportFileName,
+  activeVideoTabMeta,
   activeVideoProject,
   activeVideoShot,
   activeVideoShotIndex,
@@ -3392,6 +3285,8 @@ const {
   deleteVideoProjectFromShelf,
   exportActiveVideoProject,
   filteredVideoShotEntries,
+  generateVideoQuickMode,
+  getVideoFeedbackClass,
   getVideoProjectAspectRatioLabel,
   getVideoProjectModeLabel,
   getVideoShotDisplayTitle,
@@ -3431,24 +3326,7 @@ const {
 const {
   activeFortuneMethodLabels,
   activeFortuneModeMeta,
-  backFortuneMarketplace,
-  clearFortuneReading,
-  formatFortuneTime,
-  generateFortuneReading,
-  getFortuneFeedbackClass,
-  openFortuneApp,
-  removeFortuneAttachment,
-  selectFortuneAttachments,
-  sendFortuneMessage,
-  setFortuneAppearanceInfo,
-  setFortuneBirthInfo,
-  setFortuneChatInput,
-  setFortuneContext,
-  setFortuneMode,
-  setFortuneNameInfo,
-  setFortuneProfileInfo,
-  setFortuneSpaceInfo,
-  setFortuneQuestion
+  openFortuneApp
 } = fortuneActions;
 
 const {
@@ -3598,6 +3476,7 @@ const {
   canResumeWritingOutlinePlanner,
   cancelWritingAssistantRun,
   generateWritingAssistantOutput,
+  getWritingAgentProgressItems,
   getWritingAiRunButtonLabel,
   getWritingBusyDescription,
   getWritingBusyTitle,
@@ -3607,7 +3486,8 @@ const {
   getWritingOutlinePlannerStatusClass,
   getWritingOutlinePlannerStatusLabel,
   isWritingOutlinePlannerRunning,
-  resumeWritingOutlinePlanningJob
+  resumeWritingOutlinePlanningJob,
+  runWritingAgentTask
 } = writingAiActions;
 
 function compactFieldAiContext(lines) {
@@ -3615,6 +3495,39 @@ function compactFieldAiContext(lines) {
     .map((line) => String(line ?? "").trim())
     .filter(Boolean)
     .join("\n");
+}
+
+function getMarketplaceAgentProgressClass(appId) {
+  const progress = getMarketplaceAgentProgress(appId);
+
+  if (!progress) {
+    return "";
+  }
+
+  if (progress.phase === "completed") {
+    return "is-completed";
+  }
+
+  if (progress.tone === "warning") {
+    return "is-warning";
+  }
+
+  if (progress.phase === "failed") {
+    return "is-error";
+  }
+
+  return "";
+}
+
+function getMarketplaceAgentProgressTime(appId) {
+  const progress = getMarketplaceAgentProgress(appId);
+  const value = progress?.updatedAt ?? progress?.createdAt ?? "";
+
+  if (!value) {
+    return "";
+  }
+
+  return new Date(value).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
 }
 
 function getComicAssetPreviewViews(asset, limit = 3) {

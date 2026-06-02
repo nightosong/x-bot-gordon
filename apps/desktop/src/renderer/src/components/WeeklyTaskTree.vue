@@ -108,7 +108,14 @@
           <GIcon name="add" />
         </button>
 
-        <details class="weekly-task-action-menu" :class="{ 'is-disabled': isTaskRewriting(task.id) }">
+        <details
+          class="weekly-task-action-menu"
+          :class="{
+            'is-disabled': isTaskRewriting(task.id),
+            'is-flipped': isTaskActionMenuFlipped(task.id)
+          }"
+          @toggle="handleTaskActionMenuToggle(task.id, $event)"
+        >
           <summary class="weekly-row-action weekly-row-action-more" aria-label="更多任务操作" title="更多任务操作">
             <GIcon name="more" />
           </summary>
@@ -195,7 +202,10 @@ const statusEntries = computed(() => Object.entries(props.statusMeta ?? {}));
 const isProjectRootTree = computed(() => props.path.length === 0);
 const activeEditorId = ref(null);
 const collapsedTaskIds = ref(new Set());
+const flippedActionMenuIds = ref(new Set());
 const taskTitleInputRefs = new Map();
+const actionMenuGap = 8;
+const actionMenuViewportMargin = 12;
 const weeklyTaskDragContextKey = Symbol.for("gordon.weeklyTaskTree.dragContext");
 const inheritedDragContext = inject(weeklyTaskDragContextKey, null);
 const localDragContext = {
@@ -246,6 +256,84 @@ function toggleTaskCollapsed(taskId) {
 
 function isTaskRewriting(taskId) {
   return props.rewritingIds.includes(taskId);
+}
+
+function isTaskActionMenuFlipped(taskId) {
+  return flippedActionMenuIds.value.has(taskId);
+}
+
+function setTaskActionMenuFlipped(taskId, shouldFlip) {
+  const nextFlippedActionMenuIds = new Set(flippedActionMenuIds.value);
+
+  if (shouldFlip) {
+    nextFlippedActionMenuIds.add(taskId);
+  } else {
+    nextFlippedActionMenuIds.delete(taskId);
+  }
+
+  flippedActionMenuIds.value = nextFlippedActionMenuIds;
+}
+
+async function handleTaskActionMenuToggle(taskId, event) {
+  const menu = event?.currentTarget;
+
+  if (!(menu instanceof HTMLDetailsElement)) {
+    return;
+  }
+
+  if (!menu.open) {
+    setTaskActionMenuFlipped(taskId, false);
+    return;
+  }
+
+  await nextTick();
+
+  const summary = menu.querySelector(".weekly-row-action-more");
+  const panel = menu.querySelector(".weekly-task-action-panel");
+
+  if (!(summary instanceof HTMLElement) || !(panel instanceof HTMLElement)) {
+    setTaskActionMenuFlipped(taskId, false);
+    return;
+  }
+
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+
+  if (!viewportHeight) {
+    setTaskActionMenuFlipped(taskId, false);
+    return;
+  }
+
+  const summaryRect = summary.getBoundingClientRect();
+  const panelHeight = panel.getBoundingClientRect().height;
+  const visibleBounds = getTaskActionMenuVisibleBounds(menu, viewportHeight);
+  const spaceBelow = visibleBounds.bottom - actionMenuViewportMargin - summaryRect.bottom - actionMenuGap;
+  const spaceAbove = summaryRect.top - visibleBounds.top - actionMenuViewportMargin - actionMenuGap;
+  const shouldFlip = panelHeight > spaceBelow && spaceAbove > spaceBelow;
+
+  setTaskActionMenuFlipped(taskId, shouldFlip);
+}
+
+function getTaskActionMenuVisibleBounds(menu, viewportHeight) {
+  const visibleBounds = {
+    top: 0,
+    bottom: viewportHeight
+  };
+  let element = menu.parentElement;
+
+  while (element && element !== document.body && element !== document.documentElement) {
+    const style = window.getComputedStyle(element);
+    const overflowY = `${style.overflowY} ${style.overflow}`.toLowerCase();
+
+    if (/(auto|scroll|hidden|clip)/u.test(overflowY)) {
+      const rect = element.getBoundingClientRect();
+      visibleBounds.top = Math.max(visibleBounds.top, rect.top);
+      visibleBounds.bottom = Math.min(visibleBounds.bottom, rect.bottom);
+    }
+
+    element = element.parentElement;
+  }
+
+  return visibleBounds;
 }
 
 function findTaskInTree(tasks = [], taskId) {

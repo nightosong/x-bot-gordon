@@ -172,19 +172,26 @@
       </div>
     </section>
 
-    <div class="writing-ai-run-row comic-ai-run-row">
-      <button type="button" class="model-action-secondary writing-ai-run" :disabled="state.isAiRunning" @click="generateComicAiOutput">
-        {{ getComicAiRunButtonLabel() }}
-      </button>
-    </div>
+    <GordonAgentProgress
+      :progress="comicAgentProgress"
+      :items="comicAgentProgressItems"
+      :progress-class="comicAgentProgressClass"
+      :progress-time="comicAgentProgressTime"
+      fallback-status="正在处理漫画任务"
+      :cancel-handler="cancelMarketplaceAgentRun"
+    />
 
     <div class="writing-ai-output comic-ai-output">
-      <div class="writing-ai-output-head">
-        <span class="field-label">生成结果</span>
-        <span v-if="state.aiFeedback" class="status-pill" :class="getComicAiFeedbackClass()">
-          {{ state.aiFeedback }}
-        </span>
-      </div>
+      <AiAssistantActionBar
+        label="生成结果"
+        :status-class="getComicAiFeedbackClass()"
+        :status-message="comicAiOutputStatusMessage"
+        :quick-disabled="state.isAiRunning"
+        :quick-label="state.isAiRunning ? getComicAiRunButtonLabel() : '快速模式'"
+        :agent-disabled="state.isAiRunning"
+        :on-quick-run="generateComicAiOutput"
+        :on-agent-run="() => runMarketplaceAgentTask('comic')"
+      />
 
       <div v-if="isImageTask && hasGeneratedImages" class="comic-ai-image-grid">
         <figure v-for="(image, index) in state.aiGeneratedImages" :key="image.id || index" class="comic-ai-image-card">
@@ -221,6 +228,8 @@
 <script setup>
 import { computed, ref, watch } from "vue";
 import GIcon from "../../components/GIcon.vue";
+import AiAssistantActionBar from "./AiAssistantActionBar.vue";
+import GordonAgentProgress from "./GordonAgentProgress.vue";
 
 const props = defineProps({
   state: { type: Object, required: true },
@@ -238,9 +247,13 @@ const props = defineProps({
   setComicAiImageSize: { type: Function, required: true },
   setComicAiImageQuality: { type: Function, required: true },
   generateComicAiOutput: { type: Function, required: true },
+  getMarketplaceAgentProgress: { type: Function, required: true },
+  getMarketplaceAgentProgressItems: { type: Function, required: true },
   getComicAiRunButtonLabel: { type: Function, required: true },
   getComicAiFeedbackClass: { type: Function, required: true },
-  applyComicAiOutput: { type: Function, required: true }
+  applyComicAiOutput: { type: Function, required: true },
+  cancelMarketplaceAgentRun: { type: Function, required: true },
+  runMarketplaceAgentTask: { type: Function, required: true }
 });
 
 const isAiInstructionOpen = ref(Boolean(props.state.aiInstruction?.trim()));
@@ -252,6 +265,39 @@ const isReviewTask = computed(() => props.activeComicAiTask?.writeMode === "revi
 const activeComicTaskTarget = computed(() => String(props.activeComicAiTask?.target ?? ""));
 const hasGeneratedImages = computed(() => Array.isArray(props.state.aiGeneratedImages) && props.state.aiGeneratedImages.length > 0);
 const canWriteContent = computed(() => (isImageTask.value ? hasGeneratedImages.value : Boolean(props.state.aiOutput?.trim())));
+const comicAiOutputStatusMessage = computed(() => String(props.state.aiFeedback ?? "").trim() || (props.state.isAiRunning ? "正在执行 AI 任务" : "暂无执行状态"));
+const comicAgentProgress = computed(() => props.getMarketplaceAgentProgress("comic"));
+const comicAgentProgressItems = computed(() => props.getMarketplaceAgentProgressItems(comicAgentProgress.value));
+const comicAgentProgressClass = computed(() => {
+  const progress = comicAgentProgress.value;
+
+  if (!progress) {
+    return "";
+  }
+
+  if (progress.phase === "completed") {
+    return "is-completed";
+  }
+
+  if (progress.tone === "warning") {
+    return "is-warning";
+  }
+
+  if (progress.phase === "failed") {
+    return "is-error";
+  }
+
+  return "";
+});
+const comicAgentProgressTime = computed(() => {
+  const value = comicAgentProgress.value?.updatedAt ?? comicAgentProgress.value?.createdAt ?? "";
+
+  if (!value) {
+    return "";
+  }
+
+  return new Date(value).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+});
 const activeImageSizeLabel = computed(
   () => props.comicAiImageSizeOptions.find((option) => option.value === props.state.aiImageSize)?.label ?? props.state.aiImageSize
 );
