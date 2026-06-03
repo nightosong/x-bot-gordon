@@ -8,6 +8,8 @@
 
       <section class="right-column">
         <section class="workspace-panel" :class="{ 'workspace-panel-flush': isWorkspaceImmersive }">
+          <div id="workspace-panel-dialog-root" class="workspace-panel-dialog-root"></div>
+
           <template v-if="activeFeature === FEATURE_HOME">
             <HomeRobotStage :set-status="setStatus" />
           </template>

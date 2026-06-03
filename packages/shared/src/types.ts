@@ -954,6 +954,9 @@ export interface WritingBook {
   status: string;
   updatedAt: string;
   coverTone: string;
+  coverUrl?: string;
+  coverPrompt?: string;
+  coverShouldShowTitle?: boolean;
   intro: string;
   outlineGuide: string;
   seriesPlan: string;
@@ -968,6 +971,17 @@ export interface WritingBook {
 
 export interface WritingBookSaveOptions {
   mergeChapters?: boolean;
+}
+
+export interface WritingBookCoverImageSaveRequest {
+  title?: string;
+  imageUrl: string;
+}
+
+export interface WritingBookCoverImageSaveResult {
+  filePath: string;
+  fileName: string;
+  writtenBytes: number;
 }
 
 export type ComicProjectFormat = "poster" | "serial";

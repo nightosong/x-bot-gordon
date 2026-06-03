@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell } from "electron";
 import { spawn } from "node:child_process";
 import { createHmac } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import JSZip from "jszip";
@@ -69,6 +69,7 @@ import type {
   WeeklyFeishuSettings,
   VideoProjectExportFormat,
   VideoProjectExportRequest,
+  WritingBookCoverImageSaveRequest,
   WritingBookExportFormat,
   WritingBookExportRequest
 } from "../../../packages/shared/src/index.js";
@@ -540,6 +541,87 @@ function sanitizeWritingBookExportFileName(value: unknown, format: WritingBookEx
     .replace(/[. ]+$/g, "")
     .trim();
   return `${baseName || "未命名书稿"}.${format}`;
+}
+
+function inferWritingCoverImageMimeType(filePath: string): string {
+  const extension = path.extname(filePath).toLowerCase();
+  const mimeTypes: Record<string, string> = {
+    ".gif": "image/gif",
+    ".jpeg": "image/jpeg",
+    ".jpg": "image/jpeg",
+    ".png": "image/png",
+    ".svg": "image/svg+xml",
+    ".webp": "image/webp"
+  };
+
+  return mimeTypes[extension] ?? "image/png";
+}
+
+function inferWritingCoverExtensionFromMimeType(mimeType: string): string {
+  const normalizedMimeType = String(mimeType ?? "").trim().toLowerCase().split(";")[0];
+  const extensions: Record<string, string> = {
+    "image/gif": "gif",
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/png": "png",
+    "image/svg+xml": "svg",
+    "image/webp": "webp"
+  };
+
+  return extensions[normalizedMimeType] ?? "png";
+}
+
+function sanitizeWritingCoverImageFileName(value: unknown, extension = "png"): string {
+  const normalizedExtension = String(extension ?? "").trim().toLowerCase().replace(/^\./, "") || "png";
+  const baseName = String(value ?? "")
+    .replace(/\.[^.]+$/, "")
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
+    .replace(/\s+/g, " ")
+    .replace(/[. ]+$/g, "")
+    .trim();
+
+  return `${baseName || "未命名封面"}.${normalizedExtension}`;
+}
+
+async function readWritingCoverImageSource(imageUrl: unknown): Promise<{ buffer: Buffer; extension: string; mimeType: string }> {
+  const source = String(imageUrl ?? "").trim();
+
+  if (!source) {
+    throw new Error("当前没有可下载的封面图片");
+  }
+
+  const dataUrlMatch = source.match(/^data:([^;,]+)?(?:;charset=[^;,]+)?;base64,(.+)$/i);
+
+  if (dataUrlMatch) {
+    const mimeType = dataUrlMatch[1] || "image/png";
+    return {
+      buffer: Buffer.from(dataUrlMatch[2], "base64"),
+      extension: inferWritingCoverExtensionFromMimeType(mimeType),
+      mimeType
+    };
+  }
+
+  if (/^https?:\/\//i.test(source)) {
+    const response = await fetch(source);
+
+    if (!response.ok) {
+      throw new Error(`远端封面下载失败：HTTP ${response.status}`);
+    }
+
+    const mimeType = response.headers.get("content-type") || "image/png";
+    const urlExtension = path.extname(new URL(source).pathname).replace(/^\./, "").toLowerCase();
+    const extension = urlExtension && ["gif", "jpeg", "jpg", "png", "svg", "webp"].includes(urlExtension)
+      ? urlExtension
+      : inferWritingCoverExtensionFromMimeType(mimeType);
+
+    return {
+      buffer: Buffer.from(await response.arrayBuffer()),
+      extension,
+      mimeType
+    };
+  }
+
+  throw new Error("只支持下载本地上传/生成的封面或 http(s) 图片 URL");
 }
 
 function resolveWritingBookExportPath(request: WritingBookExportRequest): {
@@ -2701,6 +2783,70 @@ app.whenReady().then(async () => {
     }
 
     return result.filePaths[0];
+  });
+  ipcMain.handle("gordon:writing-books:select-cover-image", async (event) => {
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+    const openDialogOptions = {
+      title: "选择墨笔生花封面图片",
+      properties: ["openFile"],
+      filters: [
+        {
+          name: "图片文件",
+          extensions: ["png", "jpg", "jpeg", "webp", "gif", "svg"]
+        },
+        { name: "所有文件", extensions: ["*"] }
+      ]
+    } satisfies Electron.OpenDialogOptions;
+    const result = ownerWindow
+      ? await dialog.showOpenDialog(ownerWindow, openDialogOptions)
+      : await dialog.showOpenDialog(openDialogOptions);
+
+    if (result.canceled || !result.filePaths.length) {
+      return null;
+    }
+
+    const filePath = result.filePaths[0];
+    const buffer = await readFile(filePath);
+    return `data:${inferWritingCoverImageMimeType(filePath)};base64,${buffer.toString("base64")}`;
+  });
+  ipcMain.handle("gordon:writing-books:save-cover-image", async (event, request: WritingBookCoverImageSaveRequest) => {
+    const imageSource = await readWritingCoverImageSource(request?.imageUrl);
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+    const fileName = sanitizeWritingCoverImageFileName(request?.title, imageSource.extension);
+    const saveDialogOptions = {
+      title: "下载墨笔生花封面",
+      defaultPath: path.join(app.getPath("documents"), fileName),
+      filters: [
+        {
+          name: "图片文件",
+          extensions: [imageSource.extension]
+        },
+        {
+          name: "所有文件",
+          extensions: ["*"]
+        }
+      ]
+    } satisfies Electron.SaveDialogOptions;
+    const dialogResult = ownerWindow
+      ? await dialog.showSaveDialog(ownerWindow, saveDialogOptions)
+      : await dialog.showSaveDialog(saveDialogOptions);
+
+    if (dialogResult.canceled || !dialogResult.filePath) {
+      return null;
+    }
+
+    const normalizedFilePath = path.extname(dialogResult.filePath)
+      ? dialogResult.filePath
+      : `${dialogResult.filePath}.${imageSource.extension}`;
+
+    await mkdir(path.dirname(normalizedFilePath), { recursive: true });
+    await writeFile(normalizedFilePath, imageSource.buffer);
+
+    return {
+      filePath: normalizedFilePath,
+      fileName: path.basename(normalizedFilePath),
+      writtenBytes: imageSource.buffer.byteLength
+    };
   });
   ipcMain.handle("gordon:writing-books:export", async (_event, request: WritingBookExportRequest) => {
     const exportTarget = resolveWritingBookExportPath(request);

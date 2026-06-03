@@ -30,6 +30,8 @@ import type {
   ToolConfig,
   WritingBookExportRequest,
   WritingBookExportResult,
+  WritingBookCoverImageSaveRequest,
+  WritingBookCoverImageSaveResult,
   WritingBookSaveOptions,
   SkillDefinition,
   WorkflowLibraryItem,
@@ -232,6 +234,12 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
     ipcRenderer.invoke("gordon:writing-books:delete", bookId),
   selectWritingBookExportDirectory: (): Promise<string | null> =>
     ipcRenderer.invoke("gordon:writing-books:select-export-directory"),
+  selectWritingBookCoverImage: (): Promise<string | null> =>
+    ipcRenderer.invoke("gordon:writing-books:select-cover-image"),
+  saveWritingBookCoverImage: (
+    request: WritingBookCoverImageSaveRequest
+  ): Promise<WritingBookCoverImageSaveResult | null> =>
+    ipcRenderer.invoke("gordon:writing-books:save-cover-image", toPlainIpcData(request)),
   exportWritingBook: (request: WritingBookExportRequest): Promise<WritingBookExportResult> =>
     ipcRenderer.invoke("gordon:writing-books:export", toPlainIpcData(request)),
   listWeeklyProgress: () => ipcRenderer.invoke("gordon:weekly-progress:list"),

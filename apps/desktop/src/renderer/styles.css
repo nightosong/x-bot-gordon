@@ -403,11 +403,19 @@ canvas {
 }
 
 .workspace-panel {
+  position: relative;
   padding: clamp(6px, 0.7vw, 10px);
 }
 
 .workspace-panel.workspace-panel-flush {
   padding: 0;
+}
+
+.workspace-panel-dialog-root {
+  position: absolute;
+  inset: 0;
+  z-index: calc(var(--z-dialog) + 2);
+  pointer-events: none;
 }
 
 .feature-card,
@@ -4216,6 +4224,14 @@ canvas {
   font-size: 22px;
 }
 
+.writing-book-cover img,
+.writing-cover-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
 .marketplace-app-copy,
 .writing-book-card-main,
 .writing-detail-title,
@@ -4794,6 +4810,29 @@ canvas {
   gap: 8px;
 }
 
+.writing-cover-control {
+  position: relative;
+  width: fit-content;
+  margin: 0 auto 2px;
+}
+
+.writing-cover-edit-button {
+  position: absolute;
+  right: -8px;
+  bottom: -8px;
+  z-index: 2;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.16), rgba(245, 200, 107, 0.12)),
+    rgba(8, 15, 24, 0.82);
+  box-shadow:
+    inset 0 0 16px rgba(92, 225, 194, 0.08),
+    0 10px 22px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(14px);
+}
+
 .writing-rail-title-field {
   gap: 4px;
 }
@@ -4843,7 +4882,6 @@ canvas {
 .writing-book-cover-large {
   width: 92px;
   height: 124px;
-  margin: 0 auto 2px;
   font-size: 34px;
 }
 
@@ -8328,6 +8366,20 @@ canvas {
   color: #bcf8ea;
 }
 
+.gordon-dialog-button-ghost {
+  border-color: transparent;
+  background: transparent;
+  color: rgba(247, 243, 235, 0.74);
+  box-shadow: none;
+}
+
+.gordon-dialog-button-ghost:hover,
+.gordon-dialog-button-ghost:focus-visible {
+  border-color: rgba(92, 225, 194, 0.12);
+  background: rgba(92, 225, 194, 0.065);
+  color: #dffff7;
+}
+
 .gordon-dialog.is-warning .gordon-dialog-button-primary,
 .gordon-dialog.is-danger .gordon-dialog-button-primary {
   border-color: rgba(255, 141, 119, 0.24);
@@ -8339,8 +8391,360 @@ canvas {
   z-index: calc(var(--z-dialog) + 2);
 }
 
+.writing-cover-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  padding: 12px;
+  pointer-events: auto;
+  background: rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(8px);
+}
+
 .writing-export-dialog {
   width: min(520px, calc(100vw - 36px));
+}
+
+.writing-cover-dialog {
+  width: min(620px, calc(100% - 24px));
+  max-height: min(620px, calc(100% - 24px));
+  padding: 14px;
+  overflow: auto;
+  border-radius: 18px;
+}
+
+.writing-cover-dialog .gordon-dialog-head {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.writing-cover-close-button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(247, 243, 235, 0.09);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(247, 243, 235, 0.72);
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.writing-cover-close-button:hover,
+.writing-cover-close-button:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(92, 225, 194, 0.22);
+  background: rgba(92, 225, 194, 0.09);
+  color: #dffff7;
+}
+
+.writing-cover-close-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+  transform: none;
+}
+
+.writing-cover-dialog-body {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.writing-cover-preview-panel,
+.writing-cover-editor-panel {
+  min-width: 0;
+  border: 1px solid rgba(247, 243, 235, 0.09);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.022)),
+    rgba(8, 15, 24, 0.42);
+  box-shadow: inset 0 0 24px rgba(255, 255, 255, 0.025);
+}
+
+.writing-cover-preview-panel {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 6px;
+  padding: 4px;
+}
+
+.writing-cover-preview {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  height: auto;
+  overflow: hidden;
+  border: 1px solid rgba(247, 243, 235, 0.15);
+  border-radius: 13px 13px 8px 8px;
+  background:
+    linear-gradient(90deg, rgba(7, 17, 29, 0.45) 0 18px, transparent 18px),
+    linear-gradient(135deg, rgba(92, 225, 194, 0.42), rgba(245, 200, 107, 0.2));
+  color: #fafff9;
+  font-family: "Iowan Old Style", "Songti SC", serif;
+  font-size: 32px;
+  font-weight: 900;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.3);
+}
+
+.writing-cover-download-button {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(247, 243, 235, 0.18);
+  border-radius: 999px;
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.18), rgba(245, 200, 107, 0.1)),
+    rgba(8, 15, 24, 0.76);
+  color: #dffff7;
+  box-shadow:
+    inset 0 0 16px rgba(92, 225, 194, 0.08),
+    0 10px 22px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(12px);
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.writing-cover-download-button:hover,
+.writing-cover-download-button:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(92, 225, 194, 0.36);
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.24), rgba(245, 200, 107, 0.14)),
+    rgba(8, 15, 24, 0.86);
+  color: #ffffff;
+  box-shadow:
+    inset 0 0 18px rgba(92, 225, 194, 0.12),
+    0 14px 28px rgba(0, 0, 0, 0.4);
+}
+
+.writing-cover-download-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+  transform: none;
+}
+
+.writing-cover-preview.is-ink {
+  background:
+    linear-gradient(90deg, rgba(7, 17, 29, 0.5) 0 18px, transparent 18px),
+    linear-gradient(135deg, rgba(151, 182, 216, 0.34), rgba(92, 225, 194, 0.12));
+}
+
+.writing-cover-preview-title {
+  width: 100%;
+  margin: 0;
+  overflow: hidden;
+  color: rgba(247, 243, 235, 0.9);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.writing-cover-editor-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  min-height: 276px;
+  height: 276px;
+  padding: 10px;
+}
+
+.writing-cover-mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid rgba(247, 243, 235, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.writing-cover-mode-tab {
+  min-height: 26px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: rgba(247, 243, 235, 0.64);
+  font-size: 11px;
+  font-weight: 850;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.writing-cover-mode-tab.is-active {
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.16), rgba(245, 200, 107, 0.1)),
+    rgba(255, 255, 255, 0.06);
+  color: #e8fff8;
+  box-shadow: inset 0 0 18px rgba(92, 225, 194, 0.08);
+}
+
+.writing-cover-upload-stack,
+.writing-cover-generate-stack {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 10px;
+  min-height: 0;
+  height: 100%;
+}
+
+.writing-cover-action-row {
+  display: flex;
+  align-self: end;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+}
+
+.writing-cover-action-left,
+.writing-cover-action-right {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.writing-cover-action-left {
+  justify-content: flex-start;
+}
+
+.writing-cover-action-right {
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+.writing-cover-action-row .gordon-dialog-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+.writing-cover-url-field {
+  gap: 6px;
+  align-self: start;
+}
+
+.writing-cover-url-field .gordon-dialog-field-label {
+  display: flex;
+  align-items: center;
+  min-height: 22px;
+}
+
+.writing-cover-url-input {
+  height: 112px;
+  min-height: 112px;
+  padding: 8px 38px 8px 10px;
+  resize: none;
+  line-height: 1.58;
+}
+
+.writing-cover-prompt-field {
+  position: relative;
+  display: grid;
+  gap: 6px;
+}
+
+.writing-cover-prompt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 22px;
+  min-width: 0;
+}
+
+.writing-cover-title-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 22px;
+  padding: 0 8px;
+  border: 1px solid rgba(247, 243, 235, 0.09);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(247, 243, 235, 0.66);
+  font-size: 10.5px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.writing-cover-title-toggle:hover,
+.writing-cover-title-toggle:focus-visible {
+  border-color: rgba(245, 200, 107, 0.22);
+  color: #ffe6b0;
+}
+
+.writing-cover-title-toggle.is-active {
+  border-color: rgba(245, 200, 107, 0.3);
+  background: rgba(245, 200, 107, 0.12);
+  color: #ffe6b0;
+  box-shadow: inset 0 0 14px rgba(245, 200, 107, 0.06);
+}
+
+.writing-cover-title-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.writing-cover-title-toggle-dot {
+  width: 8px;
+  height: 8px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.writing-cover-title-toggle.is-active .writing-cover-title-toggle-dot {
+  border-color: #ffe6b0;
+  background: #ffe6b0;
+  box-shadow: 0 0 0 3px rgba(245, 200, 107, 0.11);
+}
+
+.writing-cover-prompt-input {
+  height: 112px;
+  min-height: 112px;
+  margin: 0;
+  padding-right: 42px;
+  font-size: 11.5px;
+  resize: none;
+}
+
+.writing-cover-generate-stack .field-ai-target {
+  display: block;
+  align-self: start;
+}
+
+.writing-cover-generate-stack .field-ai-trigger {
+  top: 44px;
+  right: 8px;
+}
+
+.writing-cover-generate-stack .field-ai-popover {
+  right: 0;
+  width: min(340px, calc(100% - 16px));
 }
 
 .writing-export-mark {
@@ -15456,5 +15860,14 @@ canvas {
 
   .writing-tab-bar {
     flex-direction: column;
+  }
+
+  .writing-cover-dialog-body {
+    grid-template-columns: 1fr;
+  }
+
+  .writing-cover-preview {
+    width: 120px;
+    height: 172px;
   }
 }

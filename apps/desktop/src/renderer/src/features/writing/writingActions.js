@@ -1,5 +1,6 @@
 import { computed } from "vue";
 
+import { BUILTIN_GORDON_TOOLS_MCP_ID } from "../../lib/presenter.js";
 import {
   WRITING_AI_PHASES,
   WRITING_AI_TASKS,
@@ -25,6 +26,8 @@ const BEIJING_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
   hourCycle: "h23"
 });
 const EMPTY_TITLE_RESTORE_DELAY = 10000;
+const DEFAULT_WRITING_COVER_PROMPT =
+  "竖版小说封面，主体明确，留出书名题字空间，画面有东方文学质感，细腻光影，构图克制，适合长篇小说封面";
 
 function writeRef(target, value) {
   if (target && typeof target === "object" && "value" in target) {
@@ -285,6 +288,58 @@ function normalizeStringList(value) {
     .split(/[,\n，、]/g)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function normalizeText(value) {
+  return String(value ?? "").trim();
+}
+
+function clipText(value, maxLength = 1600) {
+  const text = normalizeText(value);
+
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  return `${text.slice(0, maxLength)}...`;
+}
+
+function getImageSource(artifact = {}) {
+  return (
+    normalizeText(artifact.src) ||
+    normalizeText(artifact.url) ||
+    normalizeText(artifact.dataUrl) ||
+    normalizeText(artifact.base64) ||
+    normalizeText(artifact.imageUrl)
+  );
+}
+
+function normalizeWritingCoverImageArtifact(artifact, index = 0) {
+  if (!artifact || typeof artifact !== "object") {
+    return null;
+  }
+
+  const kind = normalizeText(artifact.kind);
+  const src = getImageSource(artifact);
+
+  if (kind !== "image" || !src) {
+    return null;
+  }
+
+  return {
+    id: normalizeText(artifact.id) || `writing_cover_${index + 1}`,
+    title: normalizeText(artifact.title) || `封面 ${index + 1}`,
+    src,
+    provider: normalizeText(artifact.provider),
+    model: normalizeText(artifact.model),
+    prompt: normalizeText(artifact.prompt),
+    meta: [normalizeText(artifact.provider), normalizeText(artifact.model)].filter(Boolean).join(" / ")
+  };
+}
+
+function extractWritingCoverImageArtifacts(toolResult) {
+  const rawArtifacts = Array.isArray(toolResult?.structuredContent?.artifacts) ? toolResult.structuredContent.artifacts : [];
+  return rawArtifacts.map((artifact, index) => normalizeWritingCoverImageArtifact(artifact, index)).filter(Boolean);
 }
 
 function uniqueStringList(...lists) {
@@ -897,6 +952,9 @@ function normalizeWritingBookForUi(book, index = 0) {
     status: String(book?.status ?? "新建"),
     updatedAt: String(book?.updatedAt ?? now),
     coverTone: String(book?.coverTone ?? (index % 3 === 0 ? "teal" : index % 3 === 1 ? "coral" : "gold")),
+    coverUrl: String(book?.coverUrl ?? "").trim(),
+    coverPrompt: String(book?.coverPrompt ?? ""),
+    coverShouldShowTitle: book?.coverShouldShowTitle !== false,
     intro: String(book?.intro ?? ""),
     outlineGuide: legacyDetailedOutline || String(book?.outlineGuide ?? ""),
     seriesPlan: "",
@@ -2567,6 +2625,276 @@ function setWritingAiDrawerOpen(isOpen) {
   }
 }
 
+function setWritingCoverFeedback(text, tone = "neutral") {
+  const message = String(text ?? "").trim();
+  ui.marketplace.writing.coverFeedback = message;
+  ui.marketplace.writing.coverFeedbackTone = tone;
+
+  if (message) {
+    setStatus(message, tone);
+  }
+}
+
+function getWritingCoverPromptFallback(book = activeWritingBook.value) {
+  const title = normalizeText(book?.title);
+  const genre = normalizeText(book?.genre);
+  const intro = normalizeText(book?.intro);
+  return [
+    "竖版小说封面",
+    ui.marketplace.writing.coverShouldShowTitle ? `封面文字包含书名《${title || "未命名故事"}》，题字清晰端正，不要乱码` : "封面不出现书名文字，只保留干净画面",
+    genre ? `题材：${genre}` : "",
+    intro ? `故事气质：${clipText(intro, 260)}` : "",
+    "主体明确，留出书名题字区域，画面有文学感和辨识度，细腻光影，构图克制，避免水印、logo、乱码文字"
+  ]
+    .filter(Boolean)
+    .join("，");
+}
+
+function isWritingCoverDataUrl(value) {
+  return normalizeText(value).startsWith("data:image/");
+}
+
+function setWritingCoverDraftUrl(value) {
+  const coverUrl = normalizeText(value);
+  ui.marketplace.writing.coverDraftUrl = coverUrl;
+  ui.marketplace.writing.coverPreviewUrl = coverUrl;
+}
+
+function openWritingCoverDialog(mode = "upload") {
+  const book = activeWritingBook.value;
+
+  if (!book || isActiveWritingBookAiRunning.value) {
+    return;
+  }
+
+  const coverUrl = normalizeText(book.coverUrl);
+  ui.marketplace.writing.coverDialogMode = mode === "generate" ? "generate" : "upload";
+  ui.marketplace.writing.coverUrlInput = isWritingCoverDataUrl(coverUrl) ? "" : coverUrl;
+  ui.marketplace.writing.coverShouldShowTitle = book.coverShouldShowTitle !== false;
+  ui.marketplace.writing.coverPromptInput = normalizeText(book.coverPrompt) || getWritingCoverPromptFallback(book);
+  setWritingCoverDraftUrl(coverUrl);
+  setWritingCoverFeedback("", "neutral");
+  ui.marketplace.writing.isCoverDialogOpen = true;
+}
+
+function closeWritingCoverDialog() {
+  if (ui.marketplace.writing.isCoverGenerating) {
+    return;
+  }
+
+  ui.marketplace.writing.isCoverDialogOpen = false;
+  ui.marketplace.writing.coverDraftUrl = "";
+  ui.marketplace.writing.coverPreviewUrl = "";
+  setWritingCoverFeedback("", "neutral");
+}
+
+function setWritingCoverDialogMode(mode) {
+  ui.marketplace.writing.coverDialogMode = mode === "generate" ? "generate" : "upload";
+}
+
+function setWritingCoverUrlInput(value) {
+  ui.marketplace.writing.coverUrlInput = String(value ?? "");
+}
+
+function setWritingCoverPromptInput(value) {
+  ui.marketplace.writing.coverPromptInput = String(value ?? "");
+}
+
+function setWritingCoverShouldShowTitle(value) {
+  ui.marketplace.writing.coverShouldShowTitle = Boolean(value);
+}
+
+function getWritingCoverGenerationPrompt(book, prompt) {
+  const title = normalizeText(book?.title);
+  const titleInstruction = ui.marketplace.writing.coverShouldShowTitle
+    ? `封面上必须包含清晰可读的中文书名《${title || "未命名故事"}》，书名字体与画面风格协调，避免乱码、错字、额外水印或 logo。`
+    : "封面上不要出现书名、文字、水印或 logo，只生成纯画面构图。";
+
+  return [prompt, titleInstruction].filter(Boolean).join("\n\n");
+}
+
+async function applyWritingCoverUrl(value, options = {}) {
+  const book = activeWritingBook.value;
+  const coverUrl = normalizeText(value);
+
+  if (!book) {
+    setWritingCoverFeedback("请先打开一本书。", "warning");
+    return;
+  }
+
+  if (!coverUrl && !options.allowEmpty) {
+    setWritingCoverFeedback("请先填写或选择一张封面。", "warning");
+    return;
+  }
+
+  book.coverUrl = coverUrl;
+  book.coverPrompt = String(ui.marketplace.writing.coverPromptInput ?? book.coverPrompt ?? "");
+  book.coverShouldShowTitle = Boolean(ui.marketplace.writing.coverShouldShowTitle);
+  ui.marketplace.writing.coverPreviewUrl = coverUrl;
+  touchWritingBook(book, { persist: false });
+  await persistWritingBookById(book.id, { silent: true, keepLocal: true, mergeChapters: true });
+  setWritingCoverFeedback(options.message ?? "封面已写入当前书籍。", "success");
+}
+
+function applyWritingCoverUrlInput() {
+  const coverUrl = normalizeText(ui.marketplace.writing.coverUrlInput);
+
+  if (!coverUrl) {
+    setWritingCoverFeedback("请先填写图片 URL。", "warning");
+    return;
+  }
+
+  setWritingCoverDraftUrl(coverUrl);
+  setWritingCoverFeedback("已加载远端封面预览，确认后写入书籍。", "success");
+}
+
+async function selectWritingCoverLocalImage() {
+  if (!desktopApi?.selectWritingBookCoverImage) {
+    setWritingCoverFeedback("本地图片选择桥接未就绪。", "danger");
+    return;
+  }
+
+  try {
+    const dataUrl = await desktopApi.selectWritingBookCoverImage();
+
+    if (!dataUrl) {
+      return;
+    }
+
+    setWritingCoverDraftUrl(dataUrl);
+    ui.marketplace.writing.coverUrlInput = "";
+    setWritingCoverFeedback("已加载本地封面预览，确认后写入书籍。", "success");
+  } catch (error) {
+    console.error("Failed to select writing cover image", error);
+    setWritingCoverFeedback(`选择封面失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+  }
+}
+
+async function generateWritingCoverImage() {
+  const book = activeWritingBook.value;
+  const prompt = normalizeText(ui.marketplace.writing.coverPromptInput) || getWritingCoverPromptFallback(book);
+  const generationPrompt = getWritingCoverGenerationPrompt(book, prompt);
+
+  if (!book) {
+    setWritingCoverFeedback("请先打开一本书。", "warning");
+    return;
+  }
+
+  if (!desktopApi?.callMcpServerTool) {
+    setWritingCoverFeedback("Gordon Tools 桥接未就绪。", "danger");
+    return;
+  }
+
+  if (!prompt) {
+    setWritingCoverFeedback("请先填写封面生成提示词。", "warning");
+    return;
+  }
+
+  ui.marketplace.writing.isCoverGenerating = true;
+  setWritingCoverFeedback("正在调用 image_gen 生成封面...", "neutral");
+
+  try {
+    const toolResult = await desktopApi.callMcpServerTool({
+      serverId: BUILTIN_GORDON_TOOLS_MCP_ID,
+      toolName: "image_gen",
+      arguments: {
+        prompt: generationPrompt,
+        size: "1024x1536",
+        n: 1,
+        quality: "medium"
+      }
+    });
+
+    if (toolResult?.isError) {
+      throw new Error(normalizeText(toolResult.contentText) || "image_gen 调用失败");
+    }
+
+    const images = extractWritingCoverImageArtifacts(toolResult);
+    const firstImage = images[0] ?? null;
+
+    if (!firstImage?.src) {
+      setWritingCoverFeedback("工具没有返回可展示封面。", "warning");
+      return;
+    }
+
+    ui.marketplace.writing.coverPromptInput = firstImage.prompt || prompt;
+    setWritingCoverDraftUrl(firstImage.src);
+    ui.marketplace.writing.coverUrlInput = "";
+    setWritingCoverFeedback(firstImage.meta ? `封面已生成：${firstImage.meta}` : "封面已生成，确认后写入书籍。", "success");
+  } catch (error) {
+    console.error("Failed to generate writing cover", error);
+    setWritingCoverFeedback(`生成封面失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+  } finally {
+    ui.marketplace.writing.isCoverGenerating = false;
+  }
+}
+
+async function downloadWritingCoverImage() {
+  const book = activeWritingBook.value;
+  const imageUrl = normalizeText(ui.marketplace.writing.coverPreviewUrl);
+
+  if (!book) {
+    setWritingCoverFeedback("请先打开一本书。", "warning");
+    return;
+  }
+
+  if (!imageUrl) {
+    setWritingCoverFeedback("当前没有可下载的封面。", "warning");
+    return;
+  }
+
+  if (!desktopApi?.saveWritingBookCoverImage) {
+    setWritingCoverFeedback("封面下载桥接未就绪。", "danger");
+    return;
+  }
+
+  try {
+    const result = await desktopApi.saveWritingBookCoverImage({
+      title: book.title || "未命名封面",
+      imageUrl
+    });
+
+    if (!result) {
+      return;
+    }
+
+    setWritingCoverFeedback(`封面已下载：${result.fileName}`, "success");
+  } catch (error) {
+    console.error("Failed to download writing cover image", error);
+    setWritingCoverFeedback(`下载封面失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+  }
+}
+
+function clearWritingCoverImage() {
+  const book = activeWritingBook.value;
+
+  if (!book) {
+    return;
+  }
+
+  ui.marketplace.writing.coverUrlInput = "";
+  setWritingCoverDraftUrl("");
+  setWritingCoverFeedback("已清空封面预览，确认后写入书籍。", "success");
+}
+
+async function confirmWritingCoverDialog() {
+  if (ui.marketplace.writing.isCoverGenerating) {
+    return;
+  }
+
+  await applyWritingCoverUrl(ui.marketplace.writing.coverDraftUrl, {
+    allowEmpty: true,
+    message: "封面已写入当前书籍。"
+  });
+
+  if (ui.marketplace.writing.coverFeedbackTone === "success") {
+    ui.marketplace.writing.isCoverDialogOpen = false;
+    ui.marketplace.writing.coverDraftUrl = "";
+    ui.marketplace.writing.coverPreviewUrl = "";
+    setWritingCoverFeedback("", "neutral");
+  }
+}
+
 function setWritingAiTaskPickerOpen(isOpen) {
   ui.marketplace.writing.isAiTaskPickerOpen = Boolean(isOpen);
 }
@@ -2680,6 +3008,8 @@ async function createWritingBook() {
     status: "新建",
     updatedAt: now,
     coverTone: writingBooks.value.length % 2 === 0 ? "gold" : "teal",
+    coverUrl: "",
+    coverPrompt: DEFAULT_WRITING_COVER_PROMPT,
     intro: "在这里写下故事的核心命题、世界观、人物关系和主要矛盾。",
     outlineGuide: "把故事拆成开始、失控、反转和收束四个阶段，每个阶段都要写清冲突升级和人物变化。",
     seriesPlan: "",
@@ -2728,6 +3058,8 @@ async function handleWritingBookUpload(event) {
       status: "导入",
       updatedAt: new Date().toISOString(),
       coverTone: "ink",
+      coverUrl: "",
+      coverPrompt: DEFAULT_WRITING_COVER_PROMPT,
       intro: `从「${file.name}」导入。建议先让 AI 帮你整理故事简介、人物关系和世界观。`,
       outlineGuide: "待整理目录。可以在目录 Tab 里使用「章节规划」生成结构。",
       seriesPlan: "",
@@ -2812,13 +3144,18 @@ function setWritingTab(tabId) {
     buildWritingOutlineContent,
     buildWritingStoryAssetsContent,
     canExportActiveWritingBook,
+    applyWritingCoverUrlInput,
     clearWritingAutosaveTimer,
     clearWritingChapterSubmitConfirmation,
+    clearWritingCoverImage,
+    closeWritingCoverDialog,
     closeWritingExportDialog,
+    confirmWritingCoverDialog,
     addWritingExtraIntroSection,
     createWritingBook,
     createWritingChapter,
     deleteWritingBookFromShelf,
+    downloadWritingCoverImage,
     ensureWritingChapterSelection,
     exportActiveWritingBook,
     filteredWritingChapterEntries,
@@ -2849,6 +3186,7 @@ function setWritingTab(tabId) {
     getWritingTabWordCount,
     goWritingChapter,
     handleWritingBookUpload,
+    generateWritingCoverImage,
     isWritingIntroSectionCollapsed,
     isActiveWritingBookAiRunning,
     isWritingChapterSubmitConfirmed,
@@ -2870,6 +3208,7 @@ function setWritingTab(tabId) {
     normalizeWritingStoryAssetsForUi,
     openWritingAppShelf,
     openWritingBook,
+    openWritingCoverDialog,
     openWritingExportDialog,
     parseWritingChapterIndex,
     persistWritingBookById,
@@ -2879,6 +3218,7 @@ function setWritingTab(tabId) {
     selectWritingChapter,
     selectWritingChapterFromPicker,
     selectWritingExportDirectory,
+    selectWritingCoverLocalImage,
     selectWritingAiTask,
     selectWritingAiPhase,
     setWritingAiDrawerOpen,
@@ -2892,6 +3232,10 @@ function setWritingTab(tabId) {
     setWritingChapterPickerOpen,
     setWritingChapterSummary,
     setWritingChapterTitle,
+    setWritingCoverDialogMode,
+    setWritingCoverPromptInput,
+    setWritingCoverShouldShowTitle,
+    setWritingCoverUrlInput,
     setWritingExtraIntroSectionContent,
     setWritingExtraIntroSectionTitle,
     setWritingExportFormat,

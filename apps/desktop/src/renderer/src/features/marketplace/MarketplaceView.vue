@@ -922,7 +922,8 @@
             <GIcon name="delete" :size="12" />
           </button>
           <div class="writing-book-cover" aria-hidden="true">
-            <span>{{ book.title.slice(0, 1) }}</span>
+            <img v-if="book.coverUrl" :src="book.coverUrl" :alt="`${book.title} 封面`" />
+            <span v-else>{{ book.title.slice(0, 1) }}</span>
           </div>
           <div class="writing-book-card-main">
             <div>
@@ -2230,8 +2231,21 @@
 
             <div v-if="!ui.marketplace.writing.isProfileCollapsed" class="writing-rail-content">
               <div class="writing-book-profile">
-                <div class="writing-book-cover writing-book-cover-large" :class="`is-${activeWritingBook.coverTone}`" aria-hidden="true">
-                  <span>{{ activeWritingBook.title.slice(0, 1) || "书" }}</span>
+                <div class="writing-cover-control">
+                  <div class="writing-book-cover writing-book-cover-large" :class="`is-${activeWritingBook.coverTone}`">
+                    <img v-if="activeWritingBook.coverUrl" :src="activeWritingBook.coverUrl" :alt="`${activeWritingBook.title} 封面`" />
+                    <span v-else>{{ activeWritingBook.title.slice(0, 1) || "书" }}</span>
+                  </div>
+                  <button
+                    type="button"
+                    class="model-icon-button writing-cover-edit-button"
+                    aria-label="上传或生成封面"
+                    title="上传或生成封面"
+                    :disabled="isActiveWritingBookAiRunning"
+                    @click="openWritingCoverDialog('upload')"
+                  >
+                    <GIcon name="image" :size="14" />
+                  </button>
                 </div>
                 <label class="field writing-rail-title-field">
                   <span class="field-label">书名</span>
@@ -2979,6 +2993,211 @@
   </div>
 </Transition>
 
+<Teleport to="#workspace-panel-dialog-root">
+  <Transition name="gordon-dialog-fade">
+    <div
+      v-if="ui.marketplace.writing.isCoverDialogOpen && activeWritingBook"
+      class="gordon-dialog-backdrop writing-export-backdrop writing-cover-backdrop"
+      @click.self="closeWritingCoverDialog"
+    >
+      <section class="gordon-dialog writing-cover-dialog" role="dialog" aria-modal="true" aria-label="书籍封面">
+        <div class="gordon-dialog-head">
+          <div class="gordon-dialog-mark writing-export-mark" aria-hidden="true">封</div>
+          <div>
+            <p class="gordon-dialog-kicker">Cover</p>
+            <h2 class="gordon-dialog-title">书籍封面</h2>
+          </div>
+          <button
+            type="button"
+            class="writing-cover-close-button"
+            aria-label="关闭封面弹窗"
+            title="关闭"
+            :disabled="ui.marketplace.writing.isCoverGenerating"
+            @click="closeWritingCoverDialog"
+          >
+            <GIcon name="close" :size="13" />
+          </button>
+        </div>
+
+        <div class="writing-cover-dialog-body">
+          <aside class="writing-cover-preview-panel">
+            <div class="writing-cover-preview" :class="`is-${activeWritingBook.coverTone}`">
+              <img
+                v-if="ui.marketplace.writing.coverPreviewUrl"
+                :src="ui.marketplace.writing.coverPreviewUrl"
+                :alt="`${activeWritingBook.title} 封面预览`"
+              />
+              <span v-else>{{ activeWritingBook.title.slice(0, 1) || "书" }}</span>
+              <button
+                v-if="ui.marketplace.writing.coverPreviewUrl"
+                type="button"
+                class="writing-cover-download-button"
+                aria-label="下载封面"
+                title="下载封面"
+                :disabled="ui.marketplace.writing.isCoverGenerating"
+                @click="downloadWritingCoverImage"
+              >
+                <GIcon name="download" :size="14" />
+              </button>
+            </div>
+            <p class="writing-cover-preview-title">{{ activeWritingBook.title }}</p>
+          </aside>
+
+          <section class="writing-cover-editor-panel">
+            <div class="writing-cover-mode-tabs" role="tablist" aria-label="封面来源">
+              <button
+                type="button"
+                class="writing-cover-mode-tab"
+                :class="{ 'is-active': ui.marketplace.writing.coverDialogMode === 'upload' }"
+                @click="setWritingCoverDialogMode('upload')"
+              >
+                上传
+              </button>
+              <button
+                type="button"
+                class="writing-cover-mode-tab"
+                :class="{ 'is-active': ui.marketplace.writing.coverDialogMode === 'generate' }"
+                @click="setWritingCoverDialogMode('generate')"
+              >
+                生成
+              </button>
+            </div>
+
+            <div v-if="ui.marketplace.writing.coverDialogMode === 'upload'" class="writing-cover-upload-stack">
+              <label class="gordon-dialog-field writing-cover-url-field">
+                <span class="gordon-dialog-field-label">图片 URL</span>
+                <textarea
+                  class="gordon-dialog-input writing-cover-url-input"
+                  :value="ui.marketplace.writing.coverUrlInput"
+                  placeholder="https://example.com/cover.jpg"
+                  :disabled="ui.marketplace.writing.isCoverGenerating"
+                  @input="setWritingCoverUrlInput($event.target.value)"
+                ></textarea>
+              </label>
+              <div class="writing-cover-action-row">
+                <div class="writing-cover-action-left">
+                  <button
+                    type="button"
+                    class="gordon-dialog-button gordon-dialog-button-ghost"
+                    :disabled="ui.marketplace.writing.isCoverGenerating"
+                    @click="selectWritingCoverLocalImage"
+                  >
+                    本地上传
+                  </button>
+                  <button
+                    type="button"
+                    class="gordon-dialog-button gordon-dialog-button-ghost"
+                    :disabled="ui.marketplace.writing.isCoverGenerating || !ui.marketplace.writing.coverUrlInput.trim()"
+                    @click="applyWritingCoverUrlInput"
+                  >
+                    远端加载
+                  </button>
+                </div>
+                <div class="writing-cover-action-right">
+                  <button
+                    type="button"
+                    class="gordon-dialog-button gordon-dialog-button-secondary"
+                    :disabled="ui.marketplace.writing.isCoverGenerating"
+                    @click="closeWritingCoverDialog"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    class="gordon-dialog-button gordon-dialog-button-primary"
+                    :disabled="ui.marketplace.writing.isCoverGenerating"
+                    @click="confirmWritingCoverDialog"
+                  >
+                    确认
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div v-else class="writing-cover-generate-stack">
+              <FieldAiOptimizer
+                :actions="fieldAiActions"
+                app-name="墨笔生花"
+                :field-id="`writing-cover-prompt-${activeWritingBook.id}`"
+                label="封面提示词"
+                :state="ui.marketplace.fieldAi"
+                :value="ui.marketplace.writing.coverPromptInput"
+                :context="buildWritingCoverPromptAiContext()"
+                :disabled="ui.marketplace.writing.isCoverGenerating"
+                :set-value="setWritingCoverPromptInput"
+              >
+                <div class="gordon-dialog-field writing-cover-prompt-field">
+                  <span class="writing-cover-prompt-head">
+                    <span class="gordon-dialog-field-label">生成提示词</span>
+                    <button
+                      type="button"
+                      class="writing-cover-title-toggle"
+                      :class="{ 'is-active': ui.marketplace.writing.coverShouldShowTitle }"
+                      :aria-pressed="ui.marketplace.writing.coverShouldShowTitle"
+                      :disabled="ui.marketplace.writing.isCoverGenerating"
+                      @click="setWritingCoverShouldShowTitle(!ui.marketplace.writing.coverShouldShowTitle)"
+                    >
+                      <span class="writing-cover-title-toggle-dot" aria-hidden="true"></span>
+                      显示书名
+                    </button>
+                  </span>
+                  <textarea
+                    class="field-textarea writing-cover-prompt-input"
+                    aria-label="生成提示词"
+                    :value="ui.marketplace.writing.coverPromptInput"
+                    placeholder="描述封面主体、人物、场景、色彩、构图和留白区域"
+                    :disabled="ui.marketplace.writing.isCoverGenerating"
+                    @input="setWritingCoverPromptInput($event.target.value)"
+                  ></textarea>
+                </div>
+              </FieldAiOptimizer>
+              <div class="writing-cover-action-row">
+                <div class="writing-cover-action-left">
+                  <button
+                    type="button"
+                    class="gordon-dialog-button gordon-dialog-button-ghost"
+                    :disabled="ui.marketplace.writing.isCoverGenerating"
+                    @click="clearWritingCoverImage"
+                  >
+                    清空封面
+                  </button>
+                  <button
+                    type="button"
+                    class="gordon-dialog-button gordon-dialog-button-ghost"
+                    :disabled="ui.marketplace.writing.isCoverGenerating || !ui.marketplace.writing.coverPromptInput.trim()"
+                    @click="generateWritingCoverImage"
+                  >
+                    <GIcon :name="ui.marketplace.writing.isCoverGenerating ? 'loading' : 'sparkles'" :spin="ui.marketplace.writing.isCoverGenerating" :size="14" />
+                    {{ ui.marketplace.writing.isCoverGenerating ? "生成中" : "生成封面" }}
+                  </button>
+                </div>
+                <div class="writing-cover-action-right">
+                  <button
+                    type="button"
+                    class="gordon-dialog-button gordon-dialog-button-secondary"
+                    :disabled="ui.marketplace.writing.isCoverGenerating"
+                    @click="closeWritingCoverDialog"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    class="gordon-dialog-button gordon-dialog-button-primary"
+                    :disabled="ui.marketplace.writing.isCoverGenerating"
+                    @click="confirmWritingCoverDialog"
+                  >
+                    确认
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+    </div>
+  </Transition>
+</Teleport>
+
 <Transition name="gordon-dialog-fade">
   <div
     v-if="ui.marketplace.writing.isExportDialogOpen"
@@ -3406,14 +3625,19 @@ const {
   activeWritingOutlinePlannerJob,
   activeWritingTask,
   activeWritingTaskOptions,
+  applyWritingCoverUrlInput,
   backWritingMarketplace,
   backWritingShelf,
   canExportActiveWritingBook,
+  clearWritingCoverImage,
+  closeWritingCoverDialog,
   closeWritingExportDialog,
   addWritingExtraIntroSection,
+  confirmWritingCoverDialog,
   createWritingBook,
   createWritingChapter,
   deleteWritingBookFromShelf,
+  downloadWritingCoverImage,
   exportActiveWritingBook,
   filteredWritingChapterEntries,
   formatWritingBookUpdatedAt,
@@ -3433,11 +3657,13 @@ const {
   writingGenreProfileOptions,
   goWritingChapter,
   handleWritingBookUpload,
+  generateWritingCoverImage,
   isActiveWritingBookAiRunning,
   isWritingIntroSectionCollapsed,
   isWritingChapterSubmitConfirmed,
   openWritingAppShelf,
   openWritingBook,
+  openWritingCoverDialog,
   openWritingExportDialog,
   rememberWritingBookTitleBaseline,
   rememberWritingExtraIntroSectionTitleBaseline,
@@ -3445,6 +3671,7 @@ const {
   selectWritingAiPhase,
   selectWritingChapter,
   selectWritingChapterFromPicker,
+  selectWritingCoverLocalImage,
   selectWritingExportDirectory,
   setWritingAiDrawerOpen,
   setWritingBookGenre,
@@ -3455,6 +3682,10 @@ const {
   setWritingChapterPickerOpen,
   setWritingChapterSummary,
   setWritingChapterTitle,
+  setWritingCoverDialogMode,
+  setWritingCoverPromptInput,
+  setWritingCoverShouldShowTitle,
+  setWritingCoverUrlInput,
   setWritingExtraIntroSectionContent,
   setWritingExtraIntroSectionTitle,
   setWritingExportFormat,
@@ -3668,6 +3899,19 @@ function buildWritingExtraFieldAiContext(section) {
   return compactFieldAiContext([
     buildWritingBookFieldAiContext(section?.title || "补充设定"),
     `当前设定条目：${section?.title || "补充设定"}`
+  ]);
+}
+
+function buildWritingCoverPromptAiContext() {
+  return compactFieldAiContext([
+    "用途：增强小说封面图像生成提示词，结果会交给 image_gen 使用。",
+    `书名：${activeWritingBook.value?.title ?? ""}`,
+    `类型：${activeWritingBook.value?.genre ?? ""}`,
+    `篇幅：${getWritingLengthLabel(activeWritingBook.value?.length)}`,
+    `封面是否显示书名：${ui.marketplace.writing.coverShouldShowTitle ? "是" : "否"}`,
+    `简短介绍：${getWritingIntroFieldValue(activeWritingBook.value, "intro")}`,
+    `大纲指导：${getWritingIntroFieldValue(activeWritingBook.value, "outlineGuide")}`,
+    "要求：补强主体、人物/场景、构图、色彩、光影、材质、留白区域和避免项；不要解释，只输出提示词。"
   ]);
 }
 
