@@ -3077,6 +3077,8 @@
 </template>
 
 <script setup>
+import { computed } from "vue";
+
 import ComicAiDrawer from "./ComicAiDrawer.vue";
 import AiAssistantActionBar from "./AiAssistantActionBar.vue";
 import FieldAiOptimizer from "./FieldAiOptimizer.vue";
