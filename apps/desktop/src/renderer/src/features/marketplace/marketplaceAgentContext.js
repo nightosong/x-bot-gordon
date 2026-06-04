@@ -30,6 +30,8 @@ export function createMarketplaceAgentContextProviders({
       taskLabel: task?.label ?? "漫画 Gordon 处理",
       instruction: ui.marketplace.comic.aiInstruction,
       outputTarget: "回填到灵绘小筑输出区；如生成了图片产物，同步进入图片预览，不直接替换章节图片区。",
+      writeOutputTarget:
+        "用户明确要求写回时，优先使用 Application Tools 修改丹青溢彩项目 / 章节 / 分镜 / 素材字段，并读回验证；最终同时把执行摘要回填到灵绘小筑输出区。",
       applicationToolHint:
         "丹青溢彩任务优先使用 Application Tools：comic_read_project 读取当前项目；comic_update_project_fields 写项目字段；comic_update_assets 写素材库；comic_update_chapter 写章节标题、内容简介、章节正文和分镜提示；comic_update_chapter_images 写章节图片。实际出图使用 Gordon Tools / image_gen。",
       contextText: compactMarketplaceContext([

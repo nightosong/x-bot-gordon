@@ -83,7 +83,9 @@ const COMMAND_VISIBLE_AUXILIARY_STEP_TYPES = new Set([
   "workspace_permission_granted",
   "workspace_permission_denied",
   "computer_use_permission_granted",
-  "computer_use_permission_denied"
+  "computer_use_permission_denied",
+  "tool_permission_granted",
+  "tool_permission_denied"
 ]);
 
 function isSensitiveCommandArgumentKey(key) {
@@ -169,7 +171,10 @@ function getCommandArtifactResolvedCallArguments(call) {
 
 function shouldForceCommandApplicationTools(input, applicationContext) {
   const text = `${input ?? ""}\n${applicationContext ?? ""}`;
-  const mentionsApplication = /墨笔生花|writing|小说|书稿|书籍|当前小说|当前章节|应用广场/u.test(text);
+  const mentionsApplication =
+    /应用：(?:墨笔生花|丹青溢彩)|墨笔生花|writing|小说|书稿|书籍|当前小说|丹青溢彩|comic|漫画|分镜|素材库|当前项目|当前章节|应用广场/u.test(
+      text
+    );
   const wantsMutation = /创建|新建|新增|保存|写入|写回|导入|生成并写入|修改|更新|补充|整理到|落到|添加到|建立/u.test(text);
 
   return mentionsApplication && wantsMutation;
@@ -879,7 +884,7 @@ export function createCommandWorkshopActions({
 
     try {
       const runStatusText = forceApplicationTools
-        ? "检测到墨笔生花写入任务，已自动启用应用工具。"
+        ? "检测到应用资产写入任务，已自动启用应用工具。"
         : autoEnableTools && !ui.command.form.autoSelectMcp
           ? "检测到需要工具处理的任务，已自动启用工具编排。"
           : `命令工坊正在运行 Agent「${agent.name}」...`;
@@ -1268,13 +1273,20 @@ export function createCommandWorkshopActions({
       "workspace_permission_denied",
       "computer_use_permission_requested",
       "computer_use_permission_granted",
-      "computer_use_permission_denied"
+      "computer_use_permission_denied",
+      "tool_permission_requested",
+      "tool_permission_granted",
+      "tool_permission_denied"
     ].includes(step?.type);
   }
 
   function getCommandPermissionDomainLabel(step) {
     if (String(step?.type ?? "").startsWith("computer_use_")) {
       return "桌面控制";
+    }
+
+    if (String(step?.type ?? "").startsWith("tool_permission_")) {
+      return "工具授权";
     }
 
     return "外部路径";
@@ -1668,6 +1680,9 @@ export function createCommandWorkshopActions({
       "computer_use_permission_requested",
       "computer_use_permission_granted",
       "computer_use_permission_denied",
+      "tool_permission_requested",
+      "tool_permission_granted",
+      "tool_permission_denied",
       "skill_handler_started",
       "skill_handler_completed",
       "skill_handler_failed"
@@ -1850,6 +1865,10 @@ export function createCommandWorkshopActions({
 
     if (latestStep?.type === "computer_use_permission_requested") {
       return "正在等待桌面控制授权";
+    }
+
+    if (latestStep?.type === "tool_permission_requested") {
+      return "正在等待高风险工具授权";
     }
 
     const statusText = normalizeCommandArtifactInlineText(liveProgress?.statusText);

@@ -106,8 +106,59 @@ function createFakeModelServer(capturedRequests: CapturedRequest[]): Server {
 
     if (systemMessage.includes("工具规划器")) {
       plannerCalls += 1;
-      content =
-        plannerCalls === 1
+      const userMessage = getModelMessages(body).find((message) => message.role === "user")?.content ?? "";
+
+      if (userMessage.includes("test:mcp:application-tools") && userMessage.includes("comic_update_project_fields")) {
+        content = JSON.stringify({
+          shouldCall: true,
+          serverId: "test:mcp:application-tools",
+          toolName: "comic_update_project_fields",
+          arguments: {
+            projectIdOrTitle: "寂寞青梅",
+            summary: "《寂寞青梅》讲述刀梦和小梅的江湖故事。",
+            visualStyle: "古风武侠彩绘分镜",
+            episodePlan: "24 页首章规划",
+            dryRun: false
+          },
+          reason: "用户明确要求写回丹青溢彩项目 OVERVIEW，应使用应用资产写入工具并设置 dryRun=false。",
+          expectedOutcome: "项目 OVERVIEW 三个字段写回成功",
+          verificationMethod: "工具结果 applied=true，后续可读回项目验证字段内容",
+          ledgerPatch: {
+            objective: "写回丹青溢彩项目 OVERVIEW",
+            taskPhase: "executing",
+            pendingSubtasks: ["读回验证项目字段"],
+            activePlan: [
+              {
+                step: "写回 OVERVIEW 三字段",
+                toolHint: "Application Tools / comic_update_project_fields",
+                successCriteria: "工具结果 applied=true",
+                status: "in_progress"
+              }
+            ],
+            structuredSuccessCriteria: [
+              {
+                type: "tool_result",
+                target: "comic_update_project_fields",
+                expected: "applied=true",
+                verificationMethod: "检查工具 structuredContent.applied",
+                status: "pending"
+              }
+            ],
+            decisionTrace: [
+              {
+                step: "选择漫画项目字段写回工具",
+                intent: "完成用户要求的应用资产写入",
+                chosenAction: "test:mcp:application-tools / comic_update_project_fields",
+                rejectedAlternatives: ["text_response"],
+                why: "没有成功工具结果前不能声称写入完成",
+                expectedOutcome: "项目字段写回"
+              }
+            ]
+          }
+        });
+      } else {
+        content =
+          plannerCalls === 1
           ? JSON.stringify({
               shouldCall: true,
               serverId: "test:mcp:computer-use",
@@ -166,8 +217,39 @@ function createFakeModelServer(capturedRequests: CapturedRequest[]): Server {
                 nextActionHint: "根据工具结果验证 UI 文本"
               }
             });
+      }
     } else if (systemMessage.includes("任务账本维护器")) {
-      content = JSON.stringify({
+      const userMessage = getModelMessages(body).find((message) => message.role === "user")?.content ?? "";
+
+      if (userMessage.includes("comic_update_project_fields")) {
+        content = JSON.stringify({
+          objective: "写回丹青溢彩项目 OVERVIEW",
+          taskPhase: "verifying",
+          constraints: [],
+          completedSubtasks: ["已写回 OVERVIEW 三字段"],
+          pendingSubtasks: ["读回验证字段内容"],
+          activePlan: [],
+          decisionMemory: [],
+          decisionTrace: [],
+          observations: [],
+          discoveredFacts: ["comic_update_project_fields 返回 applied=true"],
+          failedAttempts: [],
+          environmentState: [],
+          userInterruptions: [],
+          successCriteria: ["项目 OVERVIEW 字段写回成功"],
+          structuredSuccessCriteria: [
+            {
+              type: "tool_result",
+              target: "comic_update_project_fields",
+              expected: "applied=true",
+              verificationMethod: "检查工具 structuredContent.applied",
+              status: "pending"
+            }
+          ],
+          nextActionHint: "读回项目验证"
+        });
+      } else {
+        content = JSON.stringify({
         objective: "验证 Gordon 自动工具链可以选择 Computer Use",
         taskPhase: "verifying",
         constraints: ["Capability Routing 只提示，不裁剪完整工具候选集"],
@@ -218,6 +300,7 @@ function createFakeModelServer(capturedRequests: CapturedRequest[]): Server {
         ],
         nextActionHint: "进入成功条件验证"
       });
+      }
     } else if (systemMessage.includes("主动验证规划器")) {
       content = JSON.stringify({
         shouldVerify: false,
@@ -256,6 +339,37 @@ function buildToolDefinitions(pathname: string): unknown[] {
               type: "string",
               description: "Target desktop application name"
             }
+          }
+        }
+      }
+    ];
+  }
+
+  if (pathname.includes("application")) {
+    return [
+      {
+        name: "comic_read_project",
+        description: "读取丹青溢彩漫画项目字段。",
+        inputSchema: {
+          type: "object",
+          required: ["projectIdOrTitle"],
+          properties: {
+            projectIdOrTitle: { type: "string" }
+          }
+        }
+      },
+      {
+        name: "comic_update_project_fields",
+        description: "写回丹青溢彩漫画项目级字段。默认 dryRun=true；用户明确保存/写回时设置 dryRun=false。",
+        inputSchema: {
+          type: "object",
+          required: ["projectIdOrTitle"],
+          properties: {
+            projectIdOrTitle: { type: "string" },
+            summary: { type: "string" },
+            visualStyle: { type: "string" },
+            episodePlan: { type: "string" },
+            dryRun: { type: "boolean" }
           }
         }
       }
@@ -338,6 +452,9 @@ function createFakeMcpServer(capturedRequests: CapturedRequest[]): Server {
     }
 
     if (method === "tools/call") {
+      const params = body.params && typeof body.params === "object" ? (body.params as Record<string, unknown>) : {};
+      const toolName = typeof params.name === "string" ? params.name : "";
+
       sendJson(response, {
         jsonrpc: "2.0",
         id,
@@ -347,7 +464,9 @@ function createFakeMcpServer(capturedRequests: CapturedRequest[]): Server {
               type: "text",
               text: pathname.includes("computer")
                 ? "activeApp=Google Chrome\nvisibleText=Chrome Ready"
-                : "workspace file content"
+                : pathname.includes("application") && toolName === "comic_update_project_fields"
+                  ? "applied=true\nproject=寂寞青梅\nsummary includes 刀梦 小梅\nvisualStyle=古风武侠彩绘分镜\nepisodePlan=24 页首章规划"
+                  : "workspace file content"
             }
           ],
           structuredContent: pathname.includes("computer")
@@ -355,6 +474,16 @@ function createFakeMcpServer(capturedRequests: CapturedRequest[]): Server {
                 activeApp: "Google Chrome",
                 visibleText: ["Chrome Ready"]
               }
+            : pathname.includes("application") && toolName === "comic_update_project_fields"
+              ? {
+                  applied: true,
+                  project: {
+                    title: "寂寞青梅",
+                    summary: "《寂寞青梅》讲述刀梦和小梅的江湖故事。",
+                    visualStyle: "古风武侠彩绘分镜",
+                    episodePlan: "24 页首章规划"
+                  }
+                }
             : {
                 content: "workspace file content"
               }
@@ -463,6 +592,96 @@ test("runAgent keeps Computer Use selectable through capability routing", async 
     assert.equal(log.taskLedger?.structuredSuccessCriteria[0]?.status, "passed");
     assert.match(log.text, /Computer Use/u);
     assert.ok(mcpRequests.some((request) => request.url.includes("/computer") && request.body.method === "tools/call"));
+  } finally {
+    process.env.GORDON_HOME = previousHome;
+    process.env.GORDON_DATA_ROOT = previousDataRoot;
+    await Promise.allSettled([closeServer(modelServer), closeServer(mcpServer)]);
+    await rm(tempHome, { recursive: true, force: true });
+  }
+});
+
+test("runAgent asks permission before executing high-risk application asset tools", async () => {
+  const previousHome = process.env.GORDON_HOME;
+  const previousDataRoot = process.env.GORDON_DATA_ROOT;
+  const tempHome = await mkdtemp(path.join(tmpdir(), "gordon-agent-runtime-permission-"));
+  const modelRequests: CapturedRequest[] = [];
+  const mcpRequests: CapturedRequest[] = [];
+  const permissionRequests: unknown[] = [];
+  const modelServer = createFakeModelServer(modelRequests);
+  const mcpServer = createFakeMcpServer(mcpRequests);
+
+  try {
+    const [modelBaseUrl, mcpBaseUrl] = await Promise.all([listen(modelServer), listen(mcpServer)]);
+    process.env.GORDON_HOME = tempHome;
+    process.env.GORDON_DATA_ROOT = path.join(tempHome, "data");
+
+    const timestamp = "2026-06-01T00:00:00.000Z";
+    const modelProfile: ModelProfile = {
+      id: "test:model:fake-permission",
+      provider: "openai_like",
+      displayName: "Fake Permission Model",
+      model: "fake-planner",
+      apiKey: "test-key",
+      baseUrl: modelBaseUrl,
+      apiFormat: "chat_completions",
+      supportsStreaming: false,
+      updatedAt: timestamp
+    };
+    const applicationServer: McpServerConfig = {
+      id: "test:mcp:application-tools",
+      name: "Application Tools",
+      description: "Read and write application assets",
+      transport: "http",
+      url: `${mcpBaseUrl}/application`,
+      env: {},
+      toolAllowlist: [],
+      enabled: true,
+      updatedAt: timestamp
+    };
+    const agentProfile: AgentProfile = {
+      id: "test:agent:permission",
+      name: "Permission Test Agent",
+      description: "Integration test agent",
+      mode: "chat",
+      modelProfileId: modelProfile.id,
+      systemPrompt: "Use tools when users ask to write application assets.",
+      allowedSkillIds: [],
+      allowedMcpServerIds: [applicationServer.id],
+      enabled: true,
+      updatedAt: timestamp
+    };
+
+    await saveModelSettings({
+      profiles: [modelProfile],
+      activeProfileId: modelProfile.id
+    });
+    await upsertMcpServer(applicationServer);
+    await upsertAgentProfile(agentProfile);
+
+    const log = await runAgent(
+      {
+        agentProfileId: agentProfile.id,
+        userInput: "把丹青溢彩项目寂寞青梅的 OVERVIEW 三字段写回，dryRun=false",
+        autoSelectMcp: true
+      },
+      {
+        onToolPermissionRequest: async (request) => {
+          permissionRequests.push(request);
+          return true;
+        }
+      }
+    );
+
+    assert.equal(permissionRequests.length, 1);
+    assert.deepEqual(
+      log.steps.filter((step) => step.type.startsWith("tool_permission_")).map((step) => step.type),
+      ["tool_permission_requested", "tool_permission_granted"]
+    );
+    assert.equal(log.mcpCalls?.[0]?.serverId, "test:mcp:application-tools");
+    assert.equal(log.mcpCalls?.[0]?.toolName, "comic_update_project_fields");
+    assert.equal(log.mcpCalls?.[0]?.isError, false);
+    assert.equal(log.mcpCalls?.[0]?.structuredContent?.applied, true);
+    assert.ok(mcpRequests.some((request) => request.url.includes("/application") && request.body.method === "tools/call"));
   } finally {
     process.env.GORDON_HOME = previousHome;
     process.env.GORDON_DATA_ROOT = previousDataRoot;

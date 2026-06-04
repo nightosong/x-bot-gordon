@@ -3944,17 +3944,15 @@ canvas {
   padding: 6px;
 }
 
-.comic-chapter-create-item {
-  border-color: rgba(92, 225, 194, 0.16);
-  border-right-color: transparent;
+.comic-chapter-head-add {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-color: rgba(92, 225, 194, 0.2);
   background:
-    linear-gradient(135deg, rgba(92, 225, 194, 0.09), rgba(245, 200, 107, 0.035)),
-    rgba(8, 16, 26, 0.28);
-  color: rgba(216, 255, 246, 0.92);
-}
-
-.comic-chapter-create-item .action-icon {
-  color: rgba(92, 225, 194, 0.78);
+    linear-gradient(135deg, rgba(92, 225, 194, 0.12), rgba(245, 200, 107, 0.055)),
+    rgba(255, 255, 255, 0.045);
+  color: rgba(188, 248, 234, 0.92);
 }
 
 .comic-chapter-visual-workspace {
@@ -3969,9 +3967,17 @@ canvas {
   grid-template-rows: auto minmax(0, 1fr);
 }
 
+.comic-detail-shell .writing-chapter-list {
+  overflow-x: hidden;
+}
+
+.comic-detail-shell .writing-chapter-list-item {
+  min-width: 0;
+}
+
 .comic-storyboard-workspace {
   display: grid;
-  grid-template-columns: minmax(190px, 0.72fr) minmax(0, 1.55fr) minmax(286px, 0.95fr);
+  grid-template-columns: 40px minmax(0, 1.62fr) minmax(292px, 0.92fr);
   gap: 10px;
   min-height: 0;
   overflow: hidden;
@@ -3992,13 +3998,15 @@ canvas {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
+  border-color: transparent;
+  background: transparent;
 }
 
 .comic-storyboard-rail-head,
 .comic-storyboard-stage-head,
 .comic-storyboard-editor-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
   min-width: 0;
@@ -4010,6 +4018,16 @@ canvas {
   border-bottom: 1px solid rgba(247, 243, 235, 0.08);
 }
 
+.comic-storyboard-rail-head {
+  justify-content: center;
+  padding: 8px 4px;
+  border-bottom: 0;
+}
+
+.comic-storyboard-rail-head > div {
+  display: none;
+}
+
 .comic-storyboard-rail-head .writing-panel-title {
   margin: 0;
   font-size: 13px;
@@ -4018,24 +4036,31 @@ canvas {
 .comic-storyboard-list {
   display: grid;
   align-content: start;
+  justify-items: center;
   gap: 7px;
   min-height: 0;
-  padding: 8px;
-  overflow: auto;
-  --g-scrollbar-thumb: rgba(92, 225, 194, 0.2);
+  padding: 2px 2px 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.comic-storyboard-list::-webkit-scrollbar {
+  display: none;
 }
 
 .comic-storyboard-card {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  gap: 8px;
+  place-items: center;
+  width: 32px;
+  height: 32px;
   min-width: 0;
-  padding: 8px;
-  border: 1px solid rgba(247, 243, 235, 0.09);
-  border-radius: 11px;
-  background: rgba(255, 255, 255, 0.034);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
   color: rgba(247, 243, 235, 0.74);
-  text-align: left;
+  text-align: center;
   transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
 }
 
@@ -4043,23 +4068,27 @@ canvas {
 .comic-storyboard-card:focus-visible,
 .comic-storyboard-card.is-active {
   transform: translateY(-1px);
-  border-color: rgba(92, 225, 194, 0.32);
+  border-color: rgba(92, 225, 194, 0.26);
   background:
-    linear-gradient(135deg, rgba(92, 225, 194, 0.11), rgba(245, 200, 107, 0.04)),
-    rgba(255, 255, 255, 0.05);
+    radial-gradient(circle at 35% 20%, rgba(245, 200, 107, 0.18), transparent 55%),
+    rgba(92, 225, 194, 0.09);
 }
 
 .comic-storyboard-order {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
-  border: 1px solid rgba(92, 225, 194, 0.14);
-  border-radius: 10px;
-  background: rgba(92, 225, 194, 0.07);
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
   color: rgba(188, 248, 234, 0.9);
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 900;
+}
+
+.comic-storyboard-card.is-active .comic-storyboard-order {
+  color: var(--text);
 }
 
 .comic-storyboard-card-main,
@@ -4138,6 +4167,10 @@ canvas {
   overflow: hidden;
 }
 
+.comic-storyboard-stage-copy {
+  min-width: 0;
+}
+
 .comic-storyboard-stage-head h3,
 .comic-storyboard-editor-head h3 {
   min-width: 0;
@@ -4147,6 +4180,18 @@ canvas {
   font-size: 14px;
   font-weight: 900;
   letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.comic-storyboard-editor-subtitle {
+  min-width: 0;
+  margin: 4px 0 0;
+  overflow: hidden;
+  color: rgba(247, 243, 235, 0.58);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.45;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -4162,6 +4207,30 @@ canvas {
 
 .comic-storyboard-inspector {
   align-content: start;
+}
+
+.comic-storyboard-editor-head > div {
+  min-width: 0;
+}
+
+.comic-storyboard-editor-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.comic-storyboard-editor-summary span {
+  min-height: 21px;
+  padding: 3px 7px;
+  border: 1px solid rgba(92, 225, 194, 0.11);
+  border-radius: 999px;
+  background: rgba(92, 225, 194, 0.05);
+  color: rgba(184, 248, 234, 0.72);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.2;
 }
 
 .comic-storyboard-editor {
@@ -4194,7 +4263,7 @@ canvas {
 .comic-storyboard-textarea.writing-editor-textarea {
   min-height: 72px;
   padding: 8px 9px;
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.55;
 }
 
@@ -6874,6 +6943,16 @@ canvas {
   transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
 }
 
+.writing-ai-task-dropdown-item > span:not(.writing-ai-task-item-head) {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11.5px;
+  font-weight: 800;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .writing-ai-task-dropdown-item:hover,
 .writing-ai-task-dropdown-item.is-active {
   border-color: rgba(92, 225, 194, 0.22);
@@ -7291,21 +7370,59 @@ canvas {
 
 .writing-agent-progress-list {
   display: grid;
-  gap: 7px;
+  overflow: hidden;
   margin: 0;
   padding: 0;
+  border: 1px solid rgba(151, 182, 216, 0.1);
+  border-radius: 9px;
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.065), transparent 40%),
+    rgba(3, 10, 18, 0.18);
   list-style: none;
 }
 
 .writing-agent-progress-item {
+  position: relative;
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
+  grid-template-columns: 28px minmax(0, 1fr);
   gap: 8px;
   align-items: flex-start;
   min-width: 0;
+  padding: 8px 9px 8px 6px;
+  border-bottom: 1px solid rgba(151, 182, 216, 0.075);
+}
+
+.writing-agent-progress-item:last-child {
+  border-bottom: 0;
+}
+
+.writing-agent-progress-rail {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  align-self: stretch;
+  padding-top: 1px;
+}
+
+.writing-agent-progress-rail::before {
+  content: "";
+  position: absolute;
+  top: 17px;
+  bottom: -13px;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: linear-gradient(to bottom, rgba(92, 225, 194, 0.32), rgba(151, 182, 216, 0.06));
+}
+
+.writing-agent-progress-item:last-child .writing-agent-progress-rail::before {
+  display: none;
 }
 
 .writing-agent-progress-marker {
+  position: relative;
+  z-index: 1;
   display: grid;
   place-items: center;
   width: 20px;
@@ -7349,6 +7466,31 @@ canvas {
   min-width: 0;
 }
 
+.writing-agent-progress-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.writing-agent-progress-label {
+  min-width: 0;
+  color: rgba(188, 248, 234, 0.8);
+  font-size: 9.5px;
+  font-weight: 850;
+  line-height: 1.1;
+}
+
+.writing-agent-progress-item-head time {
+  flex: 0 0 auto;
+  color: rgba(247, 243, 235, 0.34);
+  font-size: 9.5px;
+  font-weight: 750;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
 .writing-agent-progress-copy strong {
   color: rgba(247, 243, 235, 0.86);
   font-size: 11px;
@@ -7372,8 +7514,10 @@ canvas {
 .writing-agent-progress-tags em {
   display: inline-flex;
   align-items: center;
+  max-width: 100%;
   min-height: 18px;
   padding: 0 6px;
+  overflow: hidden;
   border: 1px solid rgba(92, 225, 194, 0.12);
   border-radius: 999px;
   background: rgba(92, 225, 194, 0.055);
@@ -7382,6 +7526,73 @@ canvas {
   font-style: normal;
   font-weight: 800;
   line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.writing-agent-progress-tags em.is-waiting {
+  border-color: rgba(245, 200, 107, 0.28);
+  background: rgba(245, 200, 107, 0.08);
+  color: #f7d88a;
+}
+
+.writing-agent-progress-tags em.is-done {
+  border-color: rgba(92, 225, 194, 0.26);
+  background: rgba(92, 225, 194, 0.08);
+  color: #bcf8ea;
+}
+
+.writing-agent-progress-tags em.is-error {
+  border-color: rgba(255, 139, 122, 0.32);
+  background: rgba(255, 139, 122, 0.095);
+  color: #ffd2ca;
+}
+
+.writing-agent-progress-output {
+  display: grid;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.writing-agent-progress-output span {
+  color: rgba(245, 200, 107, 0.8);
+  font-size: 9.5px;
+  font-weight: 850;
+  line-height: 1.2;
+}
+
+.writing-agent-progress-output pre {
+  max-height: 132px;
+  margin: 0;
+  overflow: auto;
+  padding: 7px 8px;
+  border: 1px solid rgba(151, 182, 216, 0.1);
+  border-radius: 8px;
+  background: rgba(3, 10, 18, 0.38);
+  color: rgba(247, 243, 235, 0.72);
+  font-family: "SFMono-Regular", "Menlo", "Consolas", monospace;
+  font-size: 10.2px;
+  line-height: 1.48;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.writing-agent-progress-item.is-plan {
+  background: rgba(245, 200, 107, 0.035);
+}
+
+.writing-agent-progress-item.is-plan .writing-agent-progress-marker {
+  border-color: rgba(245, 200, 107, 0.34);
+  color: #ffe6a2;
+}
+
+.writing-agent-progress-item.is-execute,
+.writing-agent-progress-item.is-tool {
+  background: rgba(92, 225, 194, 0.026);
+}
+
+.writing-agent-progress-item.is-final {
+  background: rgba(188, 248, 234, 0.026);
 }
 
 .writing-agent-progress-waiting {
@@ -7553,13 +7764,15 @@ canvas {
 }
 
 .comic-ai-drawer,
-.writing-assistant-drawer {
+.writing-assistant-drawer,
+.music-ai-drawer {
   gap: 7px;
   padding: 9px;
 }
 
 .comic-ai-drawer .writing-ai-head,
-.writing-assistant-drawer .writing-ai-head {
+.writing-assistant-drawer .writing-ai-head,
+.music-ai-drawer .writing-ai-head {
   align-items: center;
   flex-direction: row;
   min-height: 16px;
@@ -7569,7 +7782,8 @@ canvas {
 }
 
 .comic-ai-drawer .writing-ai-head > div,
-.writing-assistant-drawer .writing-ai-head > div {
+.writing-assistant-drawer .writing-ai-head > div,
+.music-ai-drawer .writing-ai-head > div {
   display: flex;
   align-items: baseline;
   gap: 7px;
@@ -7577,7 +7791,8 @@ canvas {
 }
 
 .comic-ai-drawer .writing-ai-head .feature-kicker,
-.writing-assistant-drawer .writing-ai-head .feature-kicker {
+.writing-assistant-drawer .writing-ai-head .feature-kicker,
+.music-ai-drawer .writing-ai-head .feature-kicker {
   margin: 0;
   color: rgba(245, 200, 107, 0.66);
   font-size: 8.5px;
@@ -7587,7 +7802,8 @@ canvas {
 }
 
 .comic-ai-drawer .writing-ai-head .model-section-title,
-.writing-assistant-drawer .writing-ai-head .model-section-title {
+.writing-assistant-drawer .writing-ai-head .model-section-title,
+.music-ai-drawer .writing-ai-head .model-section-title {
   margin: 0;
   color: #bcf8ea;
   font-size: 12px;
@@ -7599,7 +7815,9 @@ canvas {
 .comic-ai-drawer .writing-ai-task-field > .field-label,
 .comic-ai-drawer .writing-ai-output-head > .field-label,
 .writing-assistant-drawer .writing-ai-task-field > .field-label,
-.writing-assistant-drawer .writing-ai-output-head > .field-label {
+.writing-assistant-drawer .writing-ai-output-head > .field-label,
+.music-ai-drawer .writing-ai-task-field > .field-label,
+.music-ai-drawer .writing-ai-output-head > .field-label {
   color: rgba(245, 200, 107, 0.58);
   font-size: 10px;
   font-weight: 800;
@@ -7640,7 +7858,7 @@ canvas {
   justify-content: space-between;
   gap: 5px;
   width: 100%;
-  min-height: 27px;
+  min-height: 26px;
   padding: 0 7px 0 8px;
   border: 1px solid rgba(247, 243, 235, 0.1);
   border-radius: 9px;
@@ -7648,8 +7866,9 @@ canvas {
     linear-gradient(135deg, rgba(255, 255, 255, 0.052), rgba(255, 255, 255, 0.018)),
     rgba(8, 15, 24, 0.54);
   color: rgba(247, 243, 235, 0.82);
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 800;
+  line-height: 1;
   letter-spacing: 0;
   transition: border-color 160ms ease, background 160ms ease, color 160ms ease, box-shadow 160ms ease;
 }
@@ -7701,19 +7920,20 @@ canvas {
     linear-gradient(135deg, rgba(92, 225, 194, 0.07), rgba(245, 200, 107, 0.04)),
     #08101a;
   box-shadow: 0 18px 38px rgba(0, 0, 0, 0.32);
+  font-size: 10px;
   --g-scrollbar-thumb: rgba(247, 243, 235, 0.18);
 }
 
 .comic-ai-control-item {
   display: grid;
   gap: 1px;
-  min-height: 25px;
-  padding: 4px 6px;
+  min-height: 23px;
+  padding: 3px 6px;
   border: 1px solid transparent;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.028);
   color: rgba(247, 243, 235, 0.74);
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 800;
   line-height: 1.2;
   text-align: left;
@@ -7723,7 +7943,7 @@ canvas {
 .comic-ai-control-item small {
   overflow: hidden;
   color: rgba(247, 243, 235, 0.42);
-  font-size: 9px;
+  font-size: 8.8px;
   font-weight: 700;
   line-height: 1.15;
   text-overflow: ellipsis;

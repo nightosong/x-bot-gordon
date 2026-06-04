@@ -2538,6 +2538,25 @@ app.whenReady().then(async () => {
           }
 
           return granted;
+        },
+        onToolPermissionRequest: async (permissionRequest) => {
+          const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+          return showGordonConfirmWindow(ownerWindow, {
+            tone: permissionRequest.sideEffects === "destructive" ? "danger" : "warning",
+            eyebrow: "Tool Permission",
+            title: "Gordon 需要执行高风险工具",
+            message: "是否允许 Gordon 本次执行这个会改变本地状态的工具？授权只对当前参数生效。",
+            detailLines: [
+              `工具：${permissionRequest.serverName} / ${permissionRequest.toolName}`,
+              `风险：${permissionRequest.riskLevel}`,
+              `影响：${permissionRequest.sideEffects === "destructive" ? "可能删除或替换资产" : "会写入、生成或改变本地状态"}`,
+              `参数：${permissionRequest.argumentsPreview}`,
+              permissionRequest.expectedOutcome ? `预期：${permissionRequest.expectedOutcome}` : "",
+              permissionRequest.verificationMethod ? `验证：${permissionRequest.verificationMethod}` : ""
+            ].filter(Boolean),
+            confirmText: "允许本次执行",
+            cancelText: "拒绝"
+          });
         }
       });
 

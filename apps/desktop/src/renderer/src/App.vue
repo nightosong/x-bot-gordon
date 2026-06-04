@@ -1049,6 +1049,22 @@ function getAuthorizedMcpServersForAgent(agentId) {
   return workbench.mcpServers.filter((server) => agent.allowedMcpServerIds.includes(server.id) && server.enabled);
 }
 
+function restoreCommandWorkshopEntryState() {
+  ui.command.form = normalizeCommandWorkshopConfig(ui.command.form);
+  ui.command.composerView = "input";
+
+  if (ui.command.isRunning || ui.command.liveProgress || ui.command.activeProgressEventId) {
+    ui.command.view = "chat";
+    return;
+  }
+
+  if (ui.command.view === "chat" || (ui.command.view === "list" && workbench.commandSessions.length)) {
+    return;
+  }
+
+  ui.command.view = workbench.commandSessions.length ? "list" : "chat";
+}
+
 function setActiveFeature(featureId) {
   activeFeature.value = featureId;
 
@@ -1070,9 +1086,7 @@ function setActiveFeature(featureId) {
   }
 
   if (featureId === FEATURE_COMMAND_WORKSHOP) {
-    ui.command.form = normalizeCommandWorkshopConfig(ui.command.form);
-    ui.command.view = workbench.commandSessions.length ? "list" : "chat";
-    ui.command.composerView = "input";
+    restoreCommandWorkshopEntryState();
   }
 
   if (featureId === FEATURE_EXTENSIONS_MANAGEMENT) {

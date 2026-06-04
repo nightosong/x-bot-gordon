@@ -27,12 +27,29 @@
         class="writing-agent-progress-item"
         :class="item.className"
       >
-        <span class="writing-agent-progress-marker">{{ item.marker }}</span>
+        <span class="writing-agent-progress-rail" aria-hidden="true">
+          <span class="writing-agent-progress-marker">{{ item.marker }}</span>
+        </span>
         <div class="writing-agent-progress-copy">
+          <div class="writing-agent-progress-item-head">
+            <span v-if="item.label" class="writing-agent-progress-label">{{ item.label }}</span>
+            <time v-if="item.createdAt">{{ formatProgressTime(item.createdAt) }}</time>
+          </div>
           <strong>{{ item.title }}</strong>
           <p v-if="item.detail">{{ item.detail }}</p>
           <div v-if="item.tags?.length" class="writing-agent-progress-tags">
-            <em v-for="tag in item.tags" :key="`${item.id}-${tag}`">{{ tag }}</em>
+            <em
+              v-for="tag in normalizeTags(item.tags)"
+              :key="`${item.id}-${tag.label}`"
+              :class="tag.className"
+              :title="tag.detail || tag.label"
+            >
+              {{ tag.label }}
+            </em>
+          </div>
+          <div v-if="item.output" class="writing-agent-progress-output">
+            <span>{{ item.outputLabel || "中间输出" }}</span>
+            <pre>{{ item.output }}</pre>
           </div>
         </div>
       </li>
@@ -61,4 +78,24 @@ const props = defineProps({
 
 const safeItems = computed(() => (Array.isArray(props.items) ? props.items : []));
 const canCancel = computed(() => props.progress?.phase === "running" && typeof props.cancelHandler === "function");
+
+function normalizeTags(tags = []) {
+  return (Array.isArray(tags) ? tags : [])
+    .map((tag) => (typeof tag === "string" ? { label: tag, className: "", detail: "" } : tag))
+    .filter((tag) => String(tag?.label ?? "").trim());
+}
+
+function formatProgressTime(value) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  });
+}
 </script>

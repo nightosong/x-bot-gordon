@@ -113,7 +113,7 @@ export function buildCommandApplicationContext(ui, workbench) {
       project ? `当前项目：${project.title}（id=${project.id}）` : "当前项目：未选中",
       `当前 tab：${comicState.activeTab || "intro"}`,
       chapter ? `当前章节：第 ${chapter.index} 章 ${chapter.title}（id=${chapter.id}）` : "当前章节：未选中",
-      "当前 Application Tools 首版优先支持墨笔生花；其它应用可先基于上下文给出方案。"
+      "当用户要求读取、保存、写回或修改漫画项目 / 章节 / 分镜 / 素材时，优先使用 Application Tools 的 comic_* 工具，并在写后读回验证。"
     ].join("\n");
   }
 

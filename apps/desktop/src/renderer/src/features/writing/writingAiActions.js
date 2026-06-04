@@ -56,6 +56,12 @@ const WRITING_PRODUCT_OUTPUT_META_LINE_PATTERN =
 const WRITING_PRODUCT_OUTPUT_META_PHRASE_PATTERN =
   /(?:不再使用|不再采用|不要写成|不写成|不加入|不要加入|必须删除|必须降级|已被用户否定|用户明确要求(?:不要|不写|排除)|旧方案|旧设定残留|新版设定|本次调整|修改建议|review\s*建议|讨论上下文|保留与取舍判断|资产盘点|风险残留|待审备注)/iu;
 
+function isWritingWriteIntent(value) {
+  return /保存|写入|写回|改写|修改|更新|替换|覆盖|落盘|同步|提交|应用到|直接改|直接写/u.test(
+    String(value ?? "").trim()
+  );
+}
+
 export function createWritingAiActions({
   activeWritingBook,
   activeWritingChapter,
@@ -570,6 +576,7 @@ function buildWritingAgentRunInput({
   task = activeWritingTask.value,
   instruction = ui.marketplace.writing.aiInstruction,
   outputTarget = "预览，不直接写回",
+  writeIntent = false,
   conversationMessages = []
 } = {}) {
   const context = buildWritingAgentContext({ book, tabId, task, instruction });
@@ -594,7 +601,8 @@ function buildWritingAgentRunInput({
     outlineContent: context.outlineContent,
     chapterContext: context.chapterContext,
     currentModuleContent: context.currentModuleContent,
-    outputTarget
+    outputTarget,
+    writeIntent
   });
   const runRequest = {
     agentProfileId: BUILTIN_GORDON_AGENT_ID,
@@ -604,7 +612,10 @@ function buildWritingAgentRunInput({
       "Gordon Runtime Hint：",
       `- skillId：${BUILTIN_WRITING_SKILL_ID}`,
       `- preferredApplicationToolServer：${BUILTIN_APPLICATION_TOOLS_MCP_ID}`,
-      "- 工具集合仍由 Gordon runtime 完整授权后交给模型判断；不要用前端硬规则裁剪候选工具。"
+      "- 工具集合仍由 Gordon runtime 完整授权后交给模型判断；不要用前端硬规则裁剪候选工具。",
+      writeIntent
+        ? "- 本轮作者明确要求保存 / 写入 / 改写书稿资产：必须优先使用 Application Tools 的 writing_* 工具或可用 fallback 完成写回，并读回验证；没有成功工具结果前，不要把计划说成已完成。"
+        : ""
     ].join("\n"),
     conversationMessages,
     skillId: BUILTIN_WRITING_SKILL_ID,
@@ -827,19 +838,117 @@ function handleWritingAgentRunProgress(payload) {
 function getWritingAgentPermissionTag(steps = []) {
   const types = new Set((Array.isArray(steps) ? steps : []).map((step) => step?.type));
 
-  if (types.has("workspace_permission_denied") || types.has("computer_use_permission_denied")) {
+  if (types.has("workspace_permission_denied") || types.has("computer_use_permission_denied") || types.has("tool_permission_denied")) {
     return "授权被拒绝";
   }
 
-  if (types.has("workspace_permission_granted") || types.has("computer_use_permission_granted")) {
+  if (types.has("workspace_permission_granted") || types.has("computer_use_permission_granted") || types.has("tool_permission_granted")) {
     return "授权完成";
   }
 
-  if (types.has("workspace_permission_requested") || types.has("computer_use_permission_requested")) {
+  if (types.has("workspace_permission_requested") || types.has("computer_use_permission_requested") || types.has("tool_permission_requested")) {
     return "等待授权";
   }
 
   return "";
+}
+
+function getWritingAgentPermissionTagObject(step) {
+  if (!step || !String(step.type ?? "").includes("_permission_")) {
+    return null;
+  }
+
+  const domain = String(step.type).startsWith("computer_use_")
+    ? "桌面控制"
+    : String(step.type).startsWith("tool_permission_")
+      ? "工具授权"
+      : "外部路径";
+  const detail = truncateWritingProgressText(step.detail, 120);
+
+  if (String(step.type).endsWith("_requested")) {
+    return { label: `${domain} · 待授权`, className: "is-waiting", detail, priority: 1 };
+  }
+
+  if (String(step.type).endsWith("_granted")) {
+    return { label: `${domain} · 已授权`, className: "is-done", detail, priority: 2 };
+  }
+
+  return { label: `${domain} · 已拒绝`, className: "is-error", detail, priority: 3 };
+}
+
+function getWritingAgentToolPermissionTags(steps, toolIndex = 0) {
+  const selectedToolSteps = steps.filter((step) => step?.type === "mcp_tool_selected");
+  const selectedStep = selectedToolSteps[toolIndex];
+
+  if (!selectedStep) {
+    return [];
+  }
+
+  const selectedStepIndex = steps.indexOf(selectedStep);
+  const nextSelectedStep = selectedToolSteps[toolIndex + 1];
+  const nextSelectedStepIndex = nextSelectedStep ? steps.indexOf(nextSelectedStep) : steps.length;
+  const latestByDomain = new Map();
+
+  for (const step of steps.slice(selectedStepIndex + 1, nextSelectedStepIndex)) {
+    const tag = getWritingAgentPermissionTagObject(step);
+
+    if (!tag) {
+      continue;
+    }
+
+    const domain = String(step.type).startsWith("computer_use_")
+      ? "desktop"
+      : String(step.type).startsWith("tool_permission_")
+        ? "tool"
+        : "workspace";
+    latestByDomain.set(domain, tag);
+  }
+
+  return Array.from(latestByDomain.values()).sort((left, right) => right.priority - left.priority);
+}
+
+function getWritingAgentToolTerminalStep(steps, toolIndex = 0) {
+  const selectedToolSteps = steps.filter((step) => step?.type === "mcp_tool_selected");
+  const selectedStep = selectedToolSteps[toolIndex];
+
+  if (!selectedStep) {
+    return null;
+  }
+
+  const selectedStepIndex = steps.indexOf(selectedStep);
+  const nextSelectedStep = selectedToolSteps[toolIndex + 1];
+  const nextSelectedStepIndex = nextSelectedStep ? steps.indexOf(nextSelectedStep) : steps.length;
+
+  return (
+    steps
+      .slice(selectedStepIndex + 1, nextSelectedStepIndex)
+      .reverse()
+      .find((step) => step?.type === "mcp_tool_called" || step?.type === "mcp_tool_failed") ?? null
+  );
+}
+
+function getWritingAgentToolNameFromStep(step) {
+  return String(step?.detail ?? "")
+    .split(" / 参数：")[0]
+    .trim();
+}
+
+function getWritingAgentToolArgumentsFromStep(step) {
+  return String(step?.detail ?? "")
+    .split(" / 参数：")[1]
+    ?.trim() ?? "";
+}
+
+function getWritingAgentServerNameFromStep(step) {
+  const detail = String(step?.detail ?? "").trim();
+  return detail.split("（")[0]?.trim() || detail.split("/")[0]?.trim() || "";
+}
+
+function normalizeWritingAgentTags(tags = []) {
+  return tags
+    .filter(Boolean)
+    .map((tag) => (typeof tag === "string" ? { label: tag, className: "", detail: "" } : tag))
+    .filter((tag) => String(tag?.label ?? "").trim());
 }
 
 function getWritingAgentStepTitle(step) {
@@ -863,14 +972,40 @@ function getWritingAgentStepTitle(step) {
 }
 
 function normalizeWritingAgentProgressItemSequence(items) {
-  let index = 0;
+  let toolStepIndex = 0;
 
   return items.map((item) => {
-    index += 1;
+    if (item?.sequenceMode === "tool") {
+      toolStepIndex += 1;
+
+      return {
+        ...item,
+        marker: String(toolStepIndex),
+        label: `${item.label || "执行"} · 步骤 ${toolStepIndex}`
+      };
+    }
 
     return {
       ...item,
-      marker: String(index)
+      marker: item.marker || "•"
+    };
+  });
+}
+
+function normalizeWritingAgentRunningState(items) {
+  const latestIndex = items.length - 1;
+
+  return items.map((item, index) => {
+    if (index === latestIndex || !String(item?.className ?? "").split(/\s+/u).includes("is-running")) {
+      return item;
+    }
+
+    return {
+      ...item,
+      className: String(item.className ?? "")
+        .split(/\s+/u)
+        .filter((token) => token && token !== "is-running")
+        .join(" ")
     };
   });
 }
@@ -890,24 +1025,32 @@ function getWritingAgentProgressItems(progress = ui.marketplace.writing.agentPro
   const skillStep = steps.find((step) => step?.type === "skill_selected");
   const authorizedStep = [...steps].reverse().find((step) => step?.type === "mcp_authorized");
   const permissionTag = getWritingAgentPermissionTag(steps);
-  const planningSteps = steps.filter((step) =>
-    [
-      "mcp_auto_planning",
-      "mcp_args_repaired",
-      "mcp_retrying",
-      "mcp_fallback_planned",
-      "mcp_fallback_selected",
-      "mcp_auto_stopped"
-    ].includes(step?.type)
+  const selectedToolSteps = steps.filter((step) => step?.type === "mcp_tool_selected");
+  const hasWorkAfterContext = Boolean(
+    steps.some((step) =>
+      [
+        "mcp_auto_planning",
+        "mcp_args_repaired",
+        "mcp_retrying",
+        "mcp_fallback_planned",
+        "mcp_fallback_selected",
+        "mcp_auto_stopped",
+        "mcp_tool_selected",
+        "mcp_tool_called",
+        "mcp_tool_failed",
+        "skill_handler_started",
+        "skill_handler_completed",
+        "skill_handler_failed",
+        "model_invoked",
+        "completed"
+      ].includes(step?.type)
+    ) || calls.length || progress.text || phase !== "running"
   );
-  const skillRuntimeStep = [...steps].reverse().find((step) =>
-    ["skill_handler_started", "skill_handler_completed", "skill_handler_failed"].includes(step?.type)
-  );
-  const latestPlanningStep = planningSteps[planningSteps.length - 1];
-  const hasWorkAfterContext = Boolean(latestPlanningStep || calls.length || progress.text || phase !== "running");
 
   items.push({
     id: `writing_agent_context_${progress.progressEventId}`,
+    marker: "识",
+    label: "上下文",
     title: "建立写作上下文",
     detail: truncateWritingProgressText(
       [
@@ -922,101 +1065,275 @@ function getWritingAgentProgressItems(progress = ui.marketplace.writing.agentPro
     ),
     createdAt: progress.createdAt || contextStep?.createdAt || "",
     className: hasWorkAfterContext ? "is-context is-completed" : "is-context is-running",
-    tags: ["Gordon", progress.skillName ? "writing Skill" : ""].filter(Boolean)
+    tags: normalizeWritingAgentTags(["Gordon", progress.skillName ? "writing Skill" : ""].filter(Boolean)),
+    sortIndex: -1
   });
 
-  if (latestPlanningStep) {
-    const isPlanningError = latestPlanningStep.type === "mcp_auto_stopped" && /失败|停止|拒绝|重复|最大/u.test(`${latestPlanningStep.title ?? ""} ${latestPlanningStep.detail ?? ""}`);
+  steps.forEach((step, index) => {
+    const detail = truncateWritingProgressText(step.detail || progress.statusText, 180);
+    const createdAt = step.createdAt || progress.updatedAt || "";
 
-    items.push({
-      id: latestPlanningStep.id ?? `writing_agent_planning_${progress.progressEventId}`,
-      title: getWritingAgentStepTitle(latestPlanningStep),
-      detail: truncateWritingProgressText(latestPlanningStep.detail || progress.statusText, 150),
-      createdAt: latestPlanningStep.createdAt || progress.updatedAt || "",
-      className: [
-        "is-planning",
-        isPlanningError ? "is-error" : calls.length || phase !== "running" ? "is-completed" : "is-running"
-      ].join(" "),
-      tags: [permissionTag].filter(Boolean)
-    });
-  } else if (isRunning && !calls.length) {
-    items.push({
-      id: `writing_agent_waiting_${progress.progressEventId}`,
-      title: "等待 Gordon 推进",
-      detail: truncateWritingProgressText(progress.statusText, 150),
-      createdAt: progress.updatedAt || "",
-      className: "is-planning is-running",
-      tags: [permissionTag].filter(Boolean)
-    });
-  }
+    if (step.type === "mcp_auto_planning") {
+      items.push({
+        id: step.id ?? `writing_agent_plan_${progress.progressEventId}_${index}`,
+        marker: "判",
+        label: /主动验证/u.test(step.title ?? "") ? "验证规划" : "规划",
+        title: getWritingAgentStepTitle(step),
+        detail,
+        createdAt,
+        className: "is-plan is-running",
+        tags: normalizeWritingAgentTags(["Gordon 判断"]),
+        sortIndex: index
+      });
+      return;
+    }
+
+    if (step.type === "mcp_args_repaired") {
+      items.push({
+        id: step.id ?? `writing_agent_repair_${progress.progressEventId}_${index}`,
+        marker: "调",
+        label: "调整",
+        title: "修正工具参数",
+        detail,
+        createdAt,
+        className: "is-adjust is-running",
+        tags: normalizeWritingAgentTags(["参数修复"]),
+        sortIndex: index
+      });
+      return;
+    }
+
+    if (step.type === "mcp_retrying") {
+      items.push({
+        id: step.id ?? `writing_agent_retry_${progress.progressEventId}_${index}`,
+        marker: "重",
+        label: "重试",
+        title: "工具调用重试",
+        detail,
+        createdAt,
+        className: "is-adjust is-running",
+        tags: normalizeWritingAgentTags(["恢复"]),
+        sortIndex: index
+      });
+      return;
+    }
+
+    if (step.type === "mcp_fallback_planned" || step.type === "mcp_fallback_selected") {
+      items.push({
+        id: step.id ?? `writing_agent_fallback_${progress.progressEventId}_${index}`,
+        marker: "换",
+        label: "恢复策略",
+        title: getWritingAgentStepTitle(step),
+        detail,
+        createdAt,
+        className: "is-recover is-running",
+        tags: normalizeWritingAgentTags(["fallback"]),
+        sortIndex: index
+      });
+      return;
+    }
+
+    if (step.type === "mcp_auto_stopped") {
+      const hasFailure = /失败|停止|拒绝|重复|最大/u.test(`${step.title ?? ""} ${step.detail ?? ""}`);
+
+      if (!hasFailure && !calls.length) {
+        return;
+      }
+
+      items.push({
+        id: step.id ?? `writing_agent_stop_${progress.progressEventId}_${index}`,
+        marker: hasFailure ? "!" : "判",
+        label: hasFailure ? "复盘" : "继续判断",
+        title: getWritingAgentStepTitle(step),
+        detail,
+        createdAt,
+        className: hasFailure ? "is-reflect is-error" : "is-reflect",
+        tags: normalizeWritingAgentTags([hasFailure ? "需关注" : "判断完成"]),
+        sortIndex: index
+      });
+      return;
+    }
+
+    if (step.type === "skill_handler_started" || step.type === "skill_handler_completed" || step.type === "skill_handler_failed") {
+      const failed = step.type === "skill_handler_failed";
+      const started = step.type === "skill_handler_started";
+
+      items.push({
+        id: step.id ?? `writing_agent_skill_${progress.progressEventId}_${index}`,
+        marker: failed ? "!" : "执",
+        label: "执行 Skill",
+        title: getWritingAgentStepTitle(step),
+        detail,
+        createdAt,
+        className: `is-execute ${failed ? "is-error" : started ? "is-running" : "is-completed"}`,
+        tags: normalizeWritingAgentTags(["Skill"]),
+        sortIndex: index
+      });
+      return;
+    }
+
+    if (step.type === "model_invoked") {
+      items.push({
+        id: step.id ?? `writing_agent_model_${progress.progressEventId}_${index}`,
+        marker: "答",
+        label: "整理",
+        title: "整理最终答复",
+        detail: detail || "工具输出已经汇总，正在生成最终回复。",
+        createdAt,
+        className: "is-final is-running",
+        tags: normalizeWritingAgentTags(["输出"]),
+        sortIndex: index
+      });
+      return;
+    }
+
+    if (step.type === "completed") {
+      items.push({
+        id: step.id ?? `writing_agent_completed_${progress.progressEventId}_${index}`,
+        marker: "成",
+        label: "完成",
+        title: "本轮处理完成",
+        detail,
+        createdAt,
+        className: "is-final is-completed",
+        tags: normalizeWritingAgentTags(["完成"]),
+        sortIndex: index
+      });
+    }
+  });
 
   calls.forEach((call, index) => {
-    const tags = [
+    const selectedStep = selectedToolSteps[index] ?? null;
+    const terminalStep = getWritingAgentToolTerminalStep(steps, index);
+    const tags = normalizeWritingAgentTags([
       call.autoSelected ? "自动工具" : "",
       call.repairReason ? "参数修复" : "",
       call.recovered ? "已恢复" : "",
       call.fallbackFromToolName ? "fallback" : "",
-      permissionTag && index === calls.length - 1 ? permissionTag : ""
-    ].filter(Boolean);
+      ...getWritingAgentToolPermissionTags(steps, index)
+    ]);
+    const detailParts = [];
+    const argumentText = getWritingAgentToolArgumentsFromStep(selectedStep);
+
+    if (argumentText) {
+      detailParts.push(`参数：${truncateWritingProgressText(argumentText, 180)}`);
+    }
+
+    if (call.expectedOutcome) {
+      detailParts.push(`预期：${truncateWritingProgressText(call.expectedOutcome, 120)}`);
+    }
+
+    if (call.failureReason) {
+      detailParts.push(truncateWritingProgressText(call.failureReason, 140));
+    }
 
     items.push({
-      id: `writing_agent_tool_${progress.progressEventId}_${index}`,
+      id: selectedStep?.id ? `${selectedStep.id}_writing_tool` : `writing_agent_tool_${progress.progressEventId}_${index}`,
+      sequenceMode: "tool",
+      marker: `${index + 1}`,
+      label: call.isError ? "执行失败" : "执行",
       title: `${call.serverName || "工具服务"} / ${call.toolName || "工具"}`,
-      detail: truncateWritingProgressText(
-        call.isError
-          ? call.failureReason || call.resultText || "工具调用失败"
-          : call.expectedOutcome || call.resultText || "工具调用完成",
-        150
-      ),
-      createdAt: call.createdAt || progress.updatedAt || "",
+      detail: detailParts.join(" · "),
+      output: truncateWritingProgressText(call.resultText, 260),
+      outputLabel: call.isError ? "错误输出" : "中间输出",
+      createdAt: terminalStep?.createdAt || call.createdAt || selectedStep?.createdAt || progress.updatedAt || "",
       className: `is-tool ${call.isError ? "is-error" : index === calls.length - 1 && isRunning ? "is-running" : "is-completed"}`,
-      tags
+      tags,
+      sortIndex: steps.indexOf(terminalStep ?? selectedStep ?? null)
     });
   });
 
-  if (skillRuntimeStep) {
-    const skillFailed = skillRuntimeStep.type === "skill_handler_failed";
-
+  if (selectedToolSteps.length > calls.length) {
+    const selectedStep = selectedToolSteps[selectedToolSteps.length - 1];
+    const selectedStepIndex = steps.indexOf(selectedStep);
+    const serverStep = steps
+      .slice(0, selectedStepIndex)
+      .reverse()
+      .find((step) => step?.type === "mcp_server_selected");
+    const tags = normalizeWritingAgentTags(getWritingAgentToolPermissionTags(steps, selectedToolSteps.length - 1));
+    const denied = tags.some((tag) => tag.className === "is-error");
     items.push({
-      id: skillRuntimeStep.id ?? `writing_agent_skill_${progress.progressEventId}`,
-      title: getWritingAgentStepTitle(skillRuntimeStep),
-      detail: truncateWritingProgressText(skillRuntimeStep.detail || progress.statusText, 150),
-      createdAt: skillRuntimeStep.createdAt || progress.updatedAt || "",
-      className: `is-skill ${skillFailed ? "is-error" : skillRuntimeStep.type === "skill_handler_started" && isRunning ? "is-running" : "is-completed"}`,
-      tags: ["Skill"]
+      id: `${selectedStep?.id ?? "pending_tool"}_writing_pending_tool`,
+      sequenceMode: "tool",
+      marker: `${calls.length + 1}`,
+      label: denied ? "执行受阻" : "执行中",
+      title: `${getWritingAgentServerNameFromStep(serverStep) || "工具服务"} / ${getWritingAgentToolNameFromStep(selectedStep) || "工具"}`,
+      detail: getWritingAgentToolArgumentsFromStep(selectedStep)
+        ? `参数：${truncateWritingProgressText(getWritingAgentToolArgumentsFromStep(selectedStep), 180)}`
+        : "参数已确定，正在等待工具返回。",
+      output: denied ? "授权被拒绝，Gordon 会调整路线或停止当前工具调用。" : "工具正在运行，返回后会把中间输出接在这里。",
+      outputLabel: denied ? "授权状态" : "中间输出",
+      createdAt: selectedStep?.createdAt || progress.updatedAt || "",
+      className: denied ? "is-tool is-error" : "is-tool is-running",
+      tags,
+      sortIndex: selectedStepIndex
+    });
+  }
+
+  if (isRunning && items.length <= 1) {
+    items.push({
+      id: `writing_agent_waiting_${progress.progressEventId}`,
+      marker: "判",
+      label: "规划",
+      title: "等待 Gordon 推进",
+      detail: truncateWritingProgressText(progress.statusText, 150),
+      createdAt: progress.updatedAt || "",
+      className: "is-plan is-running",
+      tags: normalizeWritingAgentTags([permissionTag].filter(Boolean)),
+      sortIndex: 0
     });
   }
 
   if (phase === "completed") {
     items.push({
       id: `writing_agent_final_${progress.progressEventId}`,
+      marker: "成",
+      label: "完成",
       title: "整理输出",
       detail: "结果已放入添香小筑输出区，等待你决定追加或替换。",
       createdAt: progress.updatedAt || "",
       className: "is-final is-completed",
-      tags: ["已完成"]
+      tags: normalizeWritingAgentTags(["已完成"]),
+      sortIndex: steps.length + calls.length + 1
     });
   } else if (phase === "failed") {
     items.push({
       id: `writing_agent_failed_${progress.progressEventId}`,
+      marker: "!",
+      label: progress.tone === "warning" ? "停止" : "失败",
       title: progress.tone === "warning" ? "运行已停止" : "运行失败",
       detail: truncateWritingProgressText(progress.stopReason || progress.statusText, 150),
       createdAt: progress.updatedAt || "",
       className: progress.tone === "warning" ? "is-final is-warning" : "is-final is-error",
-      tags: [progress.tone === "warning" ? "已停止" : "失败"]
+      tags: normalizeWritingAgentTags([progress.tone === "warning" ? "已停止" : "失败"]),
+      sortIndex: steps.length + calls.length + 2
     });
   } else if (progress.text) {
     items.push({
       id: `writing_agent_stream_${progress.progressEventId}`,
+      marker: "答",
+      label: "整理",
       title: "整理输出",
       detail: truncateWritingProgressText(progress.statusText || "正在生成最终回复...", 150),
       createdAt: progress.updatedAt || "",
       className: "is-final is-running",
-      tags: ["输出中"]
+      tags: normalizeWritingAgentTags(["输出中"]),
+      sortIndex: steps.length + calls.length + 1
     });
   }
 
-  return normalizeWritingAgentProgressItemSequence(items);
+  const visibleItems = items.sort((left, right) => {
+    const leftSortIndex = left.sortIndex;
+    const rightSortIndex = right.sortIndex;
+
+    if (leftSortIndex >= 0 && rightSortIndex >= 0 && leftSortIndex !== rightSortIndex) {
+      return leftSortIndex - rightSortIndex;
+    }
+
+    return String(left.createdAt || "").localeCompare(String(right.createdAt || ""));
+  });
+
+  return normalizeWritingAgentProgressItemSequence(normalizeWritingAgentRunningState(visibleItems));
 }
 
 function isRetryableWritingAssistantError(error) {
@@ -2036,12 +2353,19 @@ async function runWritingAgentTask() {
   }
 
   const progressEventId = `writing_agent_progress_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const writeIntent =
+    isWritingWriteIntent(ui.marketplace.writing.aiInstruction) ||
+    isWritingWriteIntent(activeWritingTask.value?.label) ||
+    isWritingWriteIntent(activeWritingTask.value?.goal);
   const runRequest = buildWritingAgentRunInput({
     book,
     tabId: ui.marketplace.writing.activeTab,
     task: activeWritingTask.value,
     instruction: ui.marketplace.writing.aiInstruction,
-    outputTarget: "预览输出到添香小筑，不直接覆盖书稿；如需写回，优先 dryRun 预览。"
+    outputTarget: writeIntent
+      ? "作者明确要求写回 / 修改书稿资产；请完成写回并读回验证，结果同时摘要到添香小筑输出区。"
+      : "预览输出到添香小筑，不直接覆盖书稿；如需写回，优先 dryRun 预览。",
+    writeIntent
   });
 
   if (!runRequest) {

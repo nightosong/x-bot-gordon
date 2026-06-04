@@ -1888,20 +1888,18 @@
                         <p class="feature-kicker">Chapter List</p>
                         <p class="writing-panel-title">{{ activeComicChapters.length }} 个章节</p>
                       </div>
+                      <button
+                        type="button"
+                        class="model-icon-button comic-chapter-head-add"
+                        aria-label="新增漫画章节"
+                        title="新增漫画章节"
+                        @click="createComicChapter"
+                      >
+                        <GIcon name="add" :size="15" />
+                      </button>
                     </div>
 
                     <div class="writing-chapter-list">
-                      <button type="button" class="writing-chapter-list-item comic-chapter-create-item" @click="createComicChapter">
-                        <span class="writing-chapter-list-title-row">
-                          <span class="writing-chapter-list-title">新增漫画章节</span>
-                          <GIcon name="add" :size="13" />
-                        </span>
-                        <span class="writing-chapter-list-meta">
-                          <span class="status-pill">文本可选</span>
-                          <span>用于后续分镜</span>
-                        </span>
-                      </button>
-
                       <button
                         v-for="(chapter, index) in activeComicChapters"
                         :key="chapter.id"
@@ -2137,21 +2135,11 @@
                           type="button"
                           class="comic-storyboard-card"
                           :class="{ 'is-active': activeComicStoryboard?.id === storyboard.id }"
+                          :aria-label="`选择分镜 ${index + 1}：${storyboard.title || storyboard.beat || storyboard.prompt || '未填写画面'}`"
+                          :title="storyboard.title || storyboard.beat || storyboard.prompt || `分镜 ${index + 1}`"
                           @click="selectComicStoryboard(storyboard.id)"
                         >
-                          <span class="comic-storyboard-order">#{{ index + 1 }}</span>
-                          <span class="comic-storyboard-card-main">
-                            <span class="comic-storyboard-title-row">
-                              <strong>{{ storyboard.title || `分镜 ${index + 1}` }}</strong>
-                              <em>{{ getComicStoryboardKindLabel(storyboard.kind) }}</em>
-                            </span>
-                            <span class="comic-storyboard-beat">{{ storyboard.beat || storyboard.prompt || "未填写画面" }}</span>
-                            <span class="comic-storyboard-meta">
-                              <small>{{ getComicStoryboardImages(activeComicChapter, storyboard).length }} 图</small>
-                              <small>{{ storyboard.dialogue ? "有对白" : "无对白" }}</small>
-                              <small>{{ storyboard.camera ? "有镜头" : "无镜头" }}</small>
-                            </span>
-                          </span>
+                          <span class="comic-storyboard-order">{{ index + 1 }}</span>
                         </button>
 
                         <section v-if="!activeComicStoryboards.length" class="comic-storyboard-empty">
@@ -2170,7 +2158,7 @@
                       aria-label="当前分镜图片展示"
                     >
                       <div class="comic-storyboard-stage-head">
-                        <div>
+                        <div class="comic-storyboard-stage-copy">
                           <p class="feature-kicker">Canvas</p>
                           <h3>
                             {{
@@ -2180,7 +2168,6 @@
                             }}
                           </h3>
                         </div>
-                        <span class="status-pill">{{ activeComicStoryboardImages.length }} 张图</span>
                       </div>
 
                       <div v-if="activeComicStoryboardImages.length" class="comic-chapter-image-list comic-storyboard-image-list">
@@ -2220,6 +2207,9 @@
                           <div>
                             <p class="feature-kicker">Shot Editor</p>
                             <h3>分镜 {{ activeComicStoryboardIndex + 1 }}</h3>
+                            <p class="comic-storyboard-editor-subtitle">
+                              {{ activeComicStoryboard.title || "未命名分镜" }} / {{ getComicStoryboardKindLabel(activeComicStoryboard.kind) }}
+                            </p>
                           </div>
                           <button
                             type="button"
@@ -2230,6 +2220,12 @@
                           >
                             <GIcon name="delete" />
                           </button>
+                        </div>
+
+                        <div class="comic-storyboard-editor-summary">
+                          <span>{{ getComicStoryboardImages(activeComicChapter, activeComicStoryboard).length }} 张图</span>
+                          <span>{{ activeComicStoryboard.dialogue ? "有对白" : "无对白" }}</span>
+                          <span>{{ activeComicStoryboard.camera ? "有镜头" : "无镜头" }}</span>
                         </div>
 
                         <div class="comic-storyboard-editor-grid">

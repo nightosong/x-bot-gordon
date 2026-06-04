@@ -54,7 +54,13 @@ import {
   type AgentTaskLedgerPatch
 } from "./ledger.js";
 import { isRecord, stringifyArguments } from "./runtime-utils.js";
-import { buildPlannerToolPayload, buildToolSchemaSummary } from "./tool-metadata.js";
+import {
+  buildPlannerToolPayload,
+  buildToolSchemaSummary,
+  inferToolCapabilities,
+  inferToolRiskLevel,
+  inferToolSideEffects
+} from "./tool-metadata.js";
 import {
   buildActiveVerificationStrategyContext,
   evaluateActiveVerificationResult,
@@ -156,6 +162,7 @@ interface ExecuteMcpToolCallOptions {
   reportProgress?: () => void;
   workspacePermission?: WorkspacePermissionRuntime;
   computerUsePermission?: ComputerUsePermissionRuntime;
+  toolPermission?: ToolPermissionRuntime;
   expectedOutcome?: string;
   verificationMethod?: string;
   signal?: AbortSignal;
@@ -166,6 +173,7 @@ interface RunAgentOptions {
   onProgress?: (payload: AgentRunProgressEvent) => void;
   onWorkspacePermissionRequest?: (request: WorkspacePermissionRequest) => Promise<boolean>;
   onComputerUsePermissionRequest?: (request: ComputerUsePermissionRequest) => Promise<boolean>;
+  onToolPermissionRequest?: (request: ToolPermissionRequest) => Promise<boolean>;
 }
 
 interface WorkspacePermissionRequest {
@@ -192,6 +200,23 @@ interface ComputerUsePermissionRequest {
 interface ComputerUsePermissionRuntime {
   granted: boolean;
   requestAccess?: (request: ComputerUsePermissionRequest) => Promise<boolean>;
+}
+
+interface ToolPermissionRequest {
+  serverName: string;
+  serverId: string;
+  toolName: string;
+  riskLevel: "medium" | "high";
+  sideEffects: "stateful" | "destructive";
+  reason: string;
+  argumentsPreview: string;
+  expectedOutcome?: string;
+  verificationMethod?: string;
+}
+
+interface ToolPermissionRuntime {
+  grantedKeys: Set<string>;
+  requestAccess?: (request: ToolPermissionRequest) => Promise<boolean>;
 }
 
 function createAgentAbortError(): Error {
@@ -1567,7 +1592,7 @@ function buildSystemPrompt(agent: AgentProfile, skill: SkillDefinition | null, a
   sections.push(`工具上下文：\n${buildToolScopeText(authorizedMcpServers)}`);
 
   sections.push(
-    "输出只返回最终结果，不要解释内部隐藏推理过程；可以简要说明已经执行的可见步骤和工具结果。不要把内置本地工具描述成用户已经接入外部 MCP。用户要求新增、创建、保存、写入、修改或删除本地资产时，必须通过工具完成；没有成功的工具结果前，不要声称已经完成。若用户要求把小说企划、世界观、角色、武道体系、势力设定或章节大纲写入「墨笔生花」，应优先使用 Application Tools；如果应用工具不可用、未覆盖目标操作或调用失败，应使用 Workspace Tools 直接维护 ~/.gord/data/workbench/writing-books 下的文件并验证 JSON 解析，不要降级成让用户手动粘贴。"
+    "输出只返回最终结果，不要解释内部隐藏推理过程；可以简要说明已经执行的可见步骤和工具结果。不要把内置本地工具描述成用户已经接入外部 MCP。用户要求新增、创建、保存、写入、修改或删除本地资产时，必须通过工具完成；没有成功的工具结果前，不要声称已经完成。若用户要求把小说企划、世界观、角色、武道体系、势力设定或章节大纲写入「墨笔生花」，应优先使用 Application Tools 的 writing_* 工具；若用户要求把漫画项目介绍、画风规划、连载规划、章节正文、章节分镜、素材或图片写入「丹青溢彩」，应优先使用 Application Tools 的 comic_* 工具，并在写后读回验证。如果应用工具不可用、未覆盖目标操作或调用失败，应使用 Workspace Tools 直接维护 ~/.gord/data/workbench 下的应用数据文件并验证 JSON 解析，不要降级成让用户手动粘贴。"
   );
 
   return sections.filter(Boolean).join("\n\n");
@@ -1632,6 +1657,24 @@ ${call.resultText}`
     .join("\n\n");
 }
 
+function shouldRequestToolPermission(tool: McpToolDefinition | undefined): boolean {
+  if (!tool) {
+    return false;
+  }
+
+  const sideEffects = inferToolSideEffects(tool);
+
+  return (
+    sideEffects === "destructive" ||
+    sideEffects === "stateful" ||
+    (inferToolRiskLevel(tool) === "high" && inferToolCapabilities(tool).some((capability) => ["write", "execute", "generate"].includes(capability)))
+  );
+}
+
+function buildToolPermissionKey(serverId: string, toolName: string, toolArguments?: Record<string, unknown>): string {
+  return `${serverId}:${toolName}:${stringifyArguments(toolArguments)}`;
+}
+
 async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<AgentMcpCallRecord> {
   const {
     server,
@@ -1646,6 +1689,7 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
     reportProgress,
     workspacePermission,
     computerUsePermission,
+    toolPermission,
     expectedOutcome,
     verificationMethod,
     signal
@@ -1666,6 +1710,76 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
     )
   );
   reportProgress?.();
+
+  if (toolDefinition && shouldRequestToolPermission(toolDefinition)) {
+    const sideEffects = inferToolSideEffects(toolDefinition);
+    const permissionSideEffects = sideEffects === "destructive" ? "destructive" : "stateful";
+    const riskLevel = inferToolRiskLevel(toolDefinition) === "high" ? "high" : "medium";
+    const permissionKey = buildToolPermissionKey(server.id, toolName, currentArguments);
+
+    if (!toolPermission?.grantedKeys.has(permissionKey)) {
+      const argumentsPreview = stringifyDisplayArguments(currentArguments);
+      const permissionReason = [
+        `${server.name} / ${toolName} 将执行${permissionSideEffects === "destructive" ? "破坏性" : "会改变状态"}操作`,
+        expectedOutcome ? `预期：${expectedOutcome}` : "",
+        verificationMethod ? `验证：${verificationMethod}` : ""
+      ]
+        .filter(Boolean)
+        .join(" / ");
+
+      steps.push(createRunStep("tool_permission_requested", "请求高风险工具授权", `${server.name} / ${toolName} / ${permissionReason}`));
+      reportProgress?.();
+
+      const granted = toolPermission?.requestAccess
+        ? await toolPermission.requestAccess({
+            serverName: server.name,
+            serverId: server.id,
+            toolName,
+            riskLevel,
+            sideEffects: permissionSideEffects,
+            reason: permissionReason,
+            argumentsPreview,
+            ...(expectedOutcome ? { expectedOutcome } : {}),
+            ...(verificationMethod ? { verificationMethod } : {})
+          })
+        : true;
+
+      if (!granted) {
+        const deniedMessage = `用户拒绝授权高风险工具：${server.name} / ${toolName}`;
+        steps.push(createRunStep("tool_permission_denied", "高风险工具授权被拒绝", deniedMessage));
+        reportProgress?.();
+
+        return {
+          round,
+          serverId: server.id,
+          serverName: server.name,
+          toolName,
+          arguments: currentArguments,
+          resultText: `工具调用失败：${deniedMessage}`,
+          isError: true,
+          autoSelected,
+          attemptCount: 0,
+          recovered: false,
+          errorCategory: "non_retryable",
+          failureKind: "permission_denied",
+          failureReason: deniedMessage,
+          ...(expectedOutcome ? { expectedOutcome } : {}),
+          ...(verificationMethod ? { verificationMethod } : {}),
+          ...(fallbackFrom
+            ? {
+                fallbackFromToolName: fallbackFrom.toolName,
+                fallbackFromServerName: fallbackFrom.serverName
+              }
+            : {}),
+          createdAt: new Date().toISOString()
+        };
+      }
+
+      toolPermission?.grantedKeys.add(permissionKey);
+      steps.push(createRunStep("tool_permission_granted", "高风险工具已授权", `${server.name} / ${toolName} / 将继续执行`));
+      reportProgress?.();
+    }
+  }
 
   let lastErrorMessage = "";
   let lastErrorCategory: AgentMcpCallRecord["errorCategory"] = "non_retryable";
@@ -2215,6 +2329,10 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
     granted: false,
     requestAccess: options.onComputerUsePermissionRequest
   };
+  const toolPermission: ToolPermissionRuntime = {
+    grantedKeys: new Set<string>(),
+    requestAccess: options.onToolPermissionRequest
+  };
 
   const emitProgress = (overrides: Partial<AgentRunProgressEvent> = {}): void => {
     if (!request.progressEventId || !options.onProgress) {
@@ -2376,6 +2494,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
       },
       workspacePermission,
       computerUsePermission,
+      toolPermission,
       signal: options.signal
     });
     mcpCalls.push(manualCallRecord);
@@ -2557,6 +2676,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
         },
         workspacePermission,
         computerUsePermission,
+        toolPermission,
         expectedOutcome: plannedSelection.expectedOutcome,
         verificationMethod: plannedSelection.verificationMethod,
         signal: options.signal
@@ -2631,6 +2751,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
                   },
                   workspacePermission,
                   computerUsePermission,
+                  toolPermission,
                   expectedOutcome: fallbackPlan.expectedOutcome,
                   verificationMethod: fallbackPlan.verificationMethod,
                   signal: options.signal,
@@ -2785,6 +2906,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
         },
         workspacePermission,
         computerUsePermission,
+        toolPermission,
         expectedOutcome: verificationPlan.expectedOutcome,
         verificationMethod: verificationPlan.verificationMethod,
         signal: options.signal

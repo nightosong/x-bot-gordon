@@ -379,7 +379,8 @@ export function buildWritingAgentTaskPackage({
   outlineContent,
   chapterContext,
   currentModuleContent,
-  outputTarget = "预览，不直接写回"
+  outputTarget = "预览，不直接写回",
+  writeIntent = false
 }) {
   if (!book) {
     return "";
@@ -400,7 +401,9 @@ export function buildWritingAgentTaskPackage({
     "- 先根据 Writing Director Plan 判断本轮真正意图和成功标准。",
     "- 再根据 writing Skill 的节点方法完成规划、生成、审阅或状态提交。",
     "- 如需写回应用资产，优先使用 Application Tools 的墨笔生花工具；无法覆盖时才使用 Workspace Tools 直接维护 ~/.gord/data/workbench/writing-books。",
-    "- 写回前如果会覆盖正文、目录或长期设定，优先给出 dryRun / 预览；用户明确要求直接保存时才真实写回。",
+    writeIntent
+      ? "- 本轮作者已经明确要求写回 / 修改：允许设置 dryRun=false 执行真实写回；写回前先读取定位，写回后必须读回验证关键字段。"
+      : "- 写回前如果会覆盖正文、目录或长期设定，优先给出 dryRun / 预览；用户明确要求直接保存时才真实写回。",
     "- 写回后必须验证 JSON 可解析、目标书籍 / 章节存在、关键字段符合本轮目标。",
     "- 小说正文、简介、目录和设定成品不得暴露 Agent、Skill、工具、Schema、状态提交等内部工程语言。",
     "- 小说正文、简介、目录和设定成品也不得暴露上一版 / 这一版 / 旧方案 / 新方案 / 本次调整 / 修改建议 / review 建议 / 用户要求 / 保留 / 融合 / 降级 / 删除 / 风险残留等讨论或审稿痕迹。",

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildPlannerToolPayload, sanitizeToolDescription } from "./tool-metadata.js";
+import { buildPlannerToolPayload, inferToolRiskLevel, inferToolSideEffects, sanitizeToolDescription } from "./tool-metadata.js";
 
 test("sanitizeToolDescription removes prompt-injection style instructions", () => {
   const sanitized = sanitizeToolDescription(`
@@ -48,4 +48,26 @@ test("buildPlannerToolPayload exposes structured capability metadata", () => {
       y: { type: "number", description: "screen y" }
     }
   });
+});
+
+test("application read tools stay low-risk while update tools remain stateful", () => {
+  const readTool = {
+    serverId: "builtin:mcp:application-tools",
+    serverName: "Application Tools",
+    name: "comic_read_project",
+    description: "读取丹青溢彩漫画项目字段和章节",
+    inputSchema: { type: "object" }
+  };
+  const updateTool = {
+    serverId: "builtin:mcp:application-tools",
+    serverName: "Application Tools",
+    name: "comic_update_project_fields",
+    description: "写回丹青溢彩漫画项目级字段",
+    inputSchema: { type: "object" }
+  };
+
+  assert.equal(inferToolRiskLevel(readTool), "low");
+  assert.equal(inferToolSideEffects(readTool), "read_only");
+  assert.equal(inferToolRiskLevel(updateTool), "high");
+  assert.equal(inferToolSideEffects(updateTool), "stateful");
 });

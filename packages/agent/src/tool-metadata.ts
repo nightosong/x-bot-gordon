@@ -95,12 +95,16 @@ export function inferToolExecutionDomain(tool: McpToolDefinition): string {
 export function inferToolRiskLevel(tool: McpToolDefinition): "low" | "medium" | "high" {
   const source = `${tool.name} ${tool.description ?? ""}`.toLowerCase();
 
+  if (/^(read|get|list|inspect|search|query|validate|diff|status)_|_(read|get|list|inspect|search|query|validate|diff|status)$/u.test(tool.name)) {
+    return "low";
+  }
+
   if (/delete|remove|write|update|replace|move|rename|run_shell|execute|click|type|press|drag|生成|写入|修改|删除|移动|重命名|点击|输入/u.test(source)) {
     return "high";
   }
 
   if (/read|inspect|search|list|query|screenshot|open|读取|检查|搜索|查询|截图|打开/u.test(source)) {
-    return "medium";
+    return "low";
   }
 
   return "low";
@@ -165,6 +169,10 @@ export function inferToolCost(tool: McpToolDefinition): "low" | "medium" | "high
 
 export function inferToolSideEffects(tool: McpToolDefinition): "none" | "read_only" | "stateful" | "destructive" {
   const source = `${tool.name} ${tool.description ?? ""}`.toLowerCase();
+
+  if (/^(read|get|list|inspect|search|query|validate|diff|status)_|_(read|get|list|inspect|search|query|validate|diff|status)$/u.test(tool.name)) {
+    return "read_only";
+  }
 
   if (/delete|remove|move|rename|删除|移除|移动|重命名/u.test(source)) {
     return "destructive";

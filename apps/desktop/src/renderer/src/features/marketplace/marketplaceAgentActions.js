@@ -44,6 +44,12 @@ function compactText(value, maxLength = 220) {
   return chars.length > maxLength ? `${chars.slice(0, maxLength).join("")}...` : text;
 }
 
+function isWriteIntent(value) {
+  return /保存|写入|写回|改写|修改|更新|替换|覆盖|落盘|同步|提交|应用到|放进项目|放进章节|直接改|直接写|更新到/u.test(
+    normalizeText(value)
+  );
+}
+
 function getErrorMessage(error) {
   return error instanceof Error ? error.message : "未知错误";
 }
@@ -156,7 +162,7 @@ function findLatestMusicTaskId(result) {
   return "";
 }
 
-function buildAgentRunInput({ appId, appName, modeLabel, taskLabel, contextText, instruction, outputTarget }) {
+function buildAgentRunInput({ appId, appName, modeLabel, taskLabel, contextText, instruction, outputTarget, writeIntent }) {
   return [
     `你是 Gordon，正在应用广场「${appName}」里处理任务。`,
     "",
@@ -169,7 +175,11 @@ function buildAgentRunInput({ appId, appName, modeLabel, taskLabel, contextText,
     `- 应用：${appName}`,
     `- 模块：${modeLabel || "当前工作区"}`,
     `- 动作：${taskLabel || "Gordon 处理"}`,
-    `- 输出位置：${outputTarget || "输出到当前应用的预览/备注区域，不直接覆盖用户资产"}`,
+    `- 输出位置：${
+      writeIntent
+        ? outputTarget || "用户明确要求写回 / 修改应用资产；请使用 Application Tools 或可用 fallback 完成写入，并在写后读回验证。"
+        : outputTarget || "输出到当前应用的预览/备注区域，不直接覆盖用户资产"
+    }`,
     "",
     "当前上下文：",
     contextText || "暂无上下文",
@@ -179,6 +189,9 @@ function buildAgentRunInput({ appId, appName, modeLabel, taskLabel, contextText,
     "",
     "输出要求：",
     "- 先给可直接使用的结果，不输出内部隐藏推理。",
+    writeIntent
+      ? "- 用户本轮有明确写回 / 修改意图：必须优先尝试通过 Application Tools 读取定位、dryRun=false 写回、再读回验证；没有成功工具结果前，不要把计划说成已完成。"
+      : "- 若用户只是构思、评审或生成草案，优先输出到当前预览区，不主动覆盖应用资产。",
     "- 若调用了工具，简要说明工具产物和下一步可操作方式。",
     "- 若没有必要调用工具，给出高质量草案、提示词、规划或解读，并说明可如何落到快速工具按钮。",
     "- 不要要求用户手动复制到别处；结果会由 Gordon 回填到当前应用区域。"
@@ -196,13 +209,194 @@ function buildRunRequest(input, toPlainIpcData, options = {}) {
       `- preferredGenerationToolServer：${BUILTIN_GORDON_TOOLS_MCP_ID}`,
       options.applicationToolHint ? `- applicationToolHint：${options.applicationToolHint}` : "",
       "- Gordon 是主导决策层；工具集合完整授权后交给模型判断，不要用前端硬规则裁剪候选工具。",
-      "- 如当前应用工具未覆盖写回能力，请仅输出到本轮预览结果，不要声称已经写回应用资产。"
+      options.writeIntent
+        ? "- 本轮用户明确要求保存 / 写入 / 改写应用资产：必须进入工具闭环，优先用应用语义工具写回并读回验证；若工具不可用或失败，再使用允许的 fallback，不要只输出“下一步应该做什么”。"
+        : "",
+      options.writeIntent
+        ? "- 如果当前应用工具确实未覆盖目标写回能力，先尝试允许的 Workspace fallback；仍无法安全落盘时，明确报告阻塞和已验证事实，不要声称已完成。"
+        : "- 如当前应用工具未覆盖写回能力，请仅输出到本轮预览结果，不要声称已经写回应用资产。"
     ].filter(Boolean).join("\n"),
     ...(options.skillId ? { skillId: options.skillId } : {}),
     autoSelectMcp: true
   };
 
   return typeof toPlainIpcData === "function" ? toPlainIpcData(runRequest) : JSON.parse(JSON.stringify(runRequest));
+}
+
+function normalizeProgressInlineText(value) {
+  return String(value ?? "")
+    .replace(/\s*\n+\s*/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function parseToolNameFromStep(step) {
+  return normalizeProgressInlineText(step?.detail).split(" / 参数：")[0]?.trim() || "";
+}
+
+function parseToolArgumentsFromStep(step) {
+  return normalizeProgressInlineText(step?.detail).split(" / 参数：")[1]?.trim() || "";
+}
+
+function parseServerNameFromStep(step) {
+  const detail = normalizeProgressInlineText(step?.detail);
+  return detail.split("（")[0]?.trim() || detail.split("/")[0]?.trim() || "";
+}
+
+function getProgressStepTime(step, fallback = "") {
+  return normalizeText(step?.createdAt) || fallback;
+}
+
+function isPermissionStep(step) {
+  return [
+    "workspace_permission_requested",
+    "workspace_permission_granted",
+    "workspace_permission_denied",
+    "computer_use_permission_requested",
+    "computer_use_permission_granted",
+    "computer_use_permission_denied",
+    "tool_permission_requested",
+    "tool_permission_granted",
+    "tool_permission_denied"
+  ].includes(step?.type);
+}
+
+function getPermissionDomainLabel(step) {
+  if (String(step?.type ?? "").startsWith("computer_use_")) {
+    return "桌面控制";
+  }
+
+  if (String(step?.type ?? "").startsWith("tool_permission_")) {
+    return "工具授权";
+  }
+
+  return "外部路径";
+}
+
+function getPermissionTag(step) {
+  if (!isPermissionStep(step)) {
+    return null;
+  }
+
+  if (String(step.type).endsWith("_requested")) {
+    return {
+      label: `${getPermissionDomainLabel(step)} · 待授权`,
+      className: "is-waiting",
+      detail: compactText(step.detail, 120),
+      priority: 1
+    };
+  }
+
+  if (String(step.type).endsWith("_granted")) {
+    return {
+      label: `${getPermissionDomainLabel(step)} · 已授权`,
+      className: "is-done",
+      detail: compactText(step.detail, 120),
+      priority: 2
+    };
+  }
+
+  return {
+    label: `${getPermissionDomainLabel(step)} · 已拒绝`,
+    className: "is-error",
+    detail: compactText(step.detail, 120),
+    priority: 3
+  };
+}
+
+function getToolPermissionTags(steps, toolIndex = 0) {
+  const selectedToolSteps = steps.filter((step) => step?.type === "mcp_tool_selected");
+  const selectedStep = selectedToolSteps[toolIndex];
+
+  if (!selectedStep) {
+    return [];
+  }
+
+  const selectedStepIndex = steps.indexOf(selectedStep);
+  const nextSelectedStep = selectedToolSteps[toolIndex + 1];
+  const nextSelectedStepIndex = nextSelectedStep ? steps.indexOf(nextSelectedStep) : steps.length;
+  const latestByDomain = new Map();
+
+  for (const step of steps.slice(selectedStepIndex + 1, nextSelectedStepIndex)) {
+    const tag = getPermissionTag(step);
+
+    if (!tag) {
+      continue;
+    }
+
+    latestByDomain.set(getPermissionDomainLabel(step), tag);
+  }
+
+  return Array.from(latestByDomain.values()).sort((left, right) => right.priority - left.priority);
+}
+
+function getToolTerminalStep(steps, toolIndex = 0) {
+  const selectedToolSteps = steps.filter((step) => step?.type === "mcp_tool_selected");
+  const selectedStep = selectedToolSteps[toolIndex];
+
+  if (!selectedStep) {
+    return null;
+  }
+
+  const selectedStepIndex = steps.indexOf(selectedStep);
+  const nextSelectedStep = selectedToolSteps[toolIndex + 1];
+  const nextSelectedStepIndex = nextSelectedStep ? steps.indexOf(nextSelectedStep) : steps.length;
+
+  return (
+    steps
+      .slice(selectedStepIndex + 1, nextSelectedStepIndex)
+      .reverse()
+      .find((step) => step?.type === "mcp_tool_called" || step?.type === "mcp_tool_failed") ?? null
+  );
+}
+
+function normalizeProgressTags(tags = []) {
+  return tags
+    .filter(Boolean)
+    .map((tag) => (typeof tag === "string" ? { label: tag, className: "", detail: "" } : tag))
+    .filter((tag) => normalizeText(tag.label));
+}
+
+function normalizeProgressVisibleSequence(items) {
+  let toolStepIndex = 0;
+
+  return items.map((item) => {
+    if (item?.sequenceMode !== "tool") {
+      return item;
+    }
+
+    toolStepIndex += 1;
+
+    return {
+      ...item,
+      marker: `${toolStepIndex}`,
+      label: `${item.label} · 步骤 ${toolStepIndex}`
+    };
+  });
+}
+
+function hasProgressRunningClass(item) {
+  return String(item?.className ?? "")
+    .split(/\s+/u)
+    .includes("is-running");
+}
+
+function normalizeProgressRunningState(items) {
+  const latestIndex = items.length - 1;
+
+  return items.map((item, index) => {
+    if (index === latestIndex || !hasProgressRunningClass(item)) {
+      return item;
+    }
+
+    return {
+      ...item,
+      className: String(item.className ?? "")
+        .split(/\s+/u)
+        .filter((token) => token && token !== "is-running")
+        .join(" ")
+    };
+  });
 }
 
 export function createMarketplaceAgentActions({
@@ -337,95 +531,331 @@ export function createMarketplaceAgentActions({
     }
 
     const steps = Array.isArray(progress.steps) ? progress.steps : [];
-    const items = [];
+    const calls = Array.isArray(progress.mcpCalls) ? progress.mcpCalls : [];
+    const phase = progress.phase ?? "running";
+    const isRunning = phase === "running";
     const contextStep = steps.find((step) => step?.type === "agent_selected") ?? steps[0] ?? null;
-    const planningStep = [...steps]
-      .reverse()
-      .find((step) => ["planning", "tool_planned", "tool_selected", "tool_plan_critic"].includes(step?.type));
-    const toolSteps = steps.filter((step) => ["tool_started", "tool_completed", "tool_failed", "tool_fallback"].includes(step?.type));
-    const skillStep = [...steps].reverse().find((step) => String(step?.type ?? "").startsWith("skill_handler"));
+    const modelStep = steps.find((step) => step?.type === "model_selected");
+    const skillStep = steps.find((step) => step?.type === "skill_selected");
+    const authorizedStep = [...steps].reverse().find((step) => step?.type === "mcp_authorized");
+    const selectedToolSteps = steps.filter((step) => step?.type === "mcp_tool_selected");
+    const hasRuntimeWork = Boolean(
+      steps.some((step) =>
+        [
+          "mcp_auto_planning",
+          "mcp_args_repaired",
+          "mcp_retrying",
+          "mcp_fallback_planned",
+          "mcp_fallback_selected",
+          "mcp_auto_stopped",
+          "mcp_tool_selected",
+          "mcp_tool_called",
+          "mcp_tool_failed",
+          "skill_handler_started",
+          "skill_handler_completed",
+          "skill_handler_failed",
+          "model_invoked",
+          "completed"
+        ].includes(step?.type)
+      ) || calls.length || progress.text || phase !== "running"
+    );
+    const timelineItems = [];
 
-    items.push({
+    timelineItems.push({
       id: `marketplace_agent_context_${progress.progressEventId}`,
-      marker: "1",
+      kind: "context",
+      marker: "识",
+      label: "上下文",
       title: "上下文就绪",
-      detail: compactText(progress.profileLabel ? `Agent：${progress.profileLabel}` : contextStep?.detail || "已建立应用上下文", 150),
-      tags: ["Gordon", "Agent"].filter(Boolean),
-      className: progress.phase === "failed" ? "is-warning" : "is-completed"
+      detail: compactText(
+        [
+          progress.profileLabel ? `Agent：${progress.profileLabel}` : contextStep?.detail,
+          progress.model || modelStep?.detail ? `模型：${progress.model || modelStep?.detail}` : "",
+          progress.skillName || skillStep?.detail ? `Skill：${progress.skillName || skillStep?.detail}` : "",
+          authorizedStep?.detail ? `工具：${authorizedStep.detail}` : ""
+        ]
+          .filter(Boolean)
+          .join(" / ") || "已建立应用上下文",
+        180
+      ),
+      tags: normalizeProgressTags(["Gordon", progress.skillName ? "Skill" : "Agent"].filter(Boolean)),
+      className: hasRuntimeWork ? "is-context is-completed" : "is-context is-running",
+      createdAt: progress.createdAt || contextStep?.createdAt || "",
+      sortIndex: -1
     });
 
-    if (planningStep) {
-      items.push({
-        id: planningStep.id ?? `marketplace_agent_planning_${progress.progressEventId}`,
-        marker: String(items.length + 1),
-        title: planningStep.title || "规划下一步",
-        detail: compactText(planningStep.detail || progress.statusText, 150),
-        tags: ["规划"],
-        className: progress.phase === "failed" ? "is-warning" : "is-completed"
+    steps.forEach((step, index) => {
+      const detail = compactText(step.detail || progress.statusText, 180);
+      const createdAt = getProgressStepTime(step, progress.updatedAt || "");
+
+      if (step.type === "mcp_auto_planning") {
+        timelineItems.push({
+          id: step.id ?? `marketplace_agent_plan_${progress.progressEventId}_${index}`,
+          kind: "plan",
+          marker: "判",
+          label: /主动验证/u.test(step.title ?? "") ? "验证规划" : "规划",
+          title: step.title || "规划下一步",
+          detail,
+          tags: normalizeProgressTags(["Gordon 判断"]),
+          className: "is-plan is-running",
+          createdAt,
+          sortIndex: index
+        });
+        return;
+      }
+
+      if (step.type === "mcp_args_repaired") {
+        timelineItems.push({
+          id: step.id ?? `marketplace_agent_repair_${progress.progressEventId}_${index}`,
+          kind: "adjust",
+          marker: "调",
+          label: "调整",
+          title: "修正工具参数",
+          detail,
+          tags: normalizeProgressTags(["参数修复"]),
+          className: "is-adjust is-running",
+          createdAt,
+          sortIndex: index
+        });
+        return;
+      }
+
+      if (step.type === "mcp_retrying") {
+        timelineItems.push({
+          id: step.id ?? `marketplace_agent_retry_${progress.progressEventId}_${index}`,
+          kind: "adjust",
+          marker: "重",
+          label: "重试",
+          title: "工具调用重试",
+          detail,
+          tags: normalizeProgressTags(["恢复"]),
+          className: "is-adjust is-running",
+          createdAt,
+          sortIndex: index
+        });
+        return;
+      }
+
+      if (step.type === "mcp_fallback_planned" || step.type === "mcp_fallback_selected") {
+        timelineItems.push({
+          id: step.id ?? `marketplace_agent_fallback_${progress.progressEventId}_${index}`,
+          kind: "recover",
+          marker: "换",
+          label: "恢复策略",
+          title: step.title || "切换备用工具",
+          detail,
+          tags: normalizeProgressTags(["fallback"]),
+          className: "is-recover is-running",
+          createdAt,
+          sortIndex: index
+        });
+        return;
+      }
+
+      if (step.type === "mcp_auto_stopped") {
+        const hasFailure = /失败|停止|拒绝|重复|最大/u.test(`${step.title ?? ""} ${step.detail ?? ""}`);
+
+        if (!hasFailure && !calls.length) {
+          return;
+        }
+
+        timelineItems.push({
+          id: step.id ?? `marketplace_agent_stop_${progress.progressEventId}_${index}`,
+          kind: "reflect",
+          marker: hasFailure ? "!" : "判",
+          label: hasFailure ? "复盘" : "继续判断",
+          title: step.title || "工具规划完成",
+          detail,
+          tags: normalizeProgressTags([hasFailure ? "需关注" : "判断完成"]),
+          className: hasFailure ? "is-reflect is-error" : "is-reflect",
+          createdAt,
+          sortIndex: index
+        });
+        return;
+      }
+
+      if (step.type === "skill_handler_started" || step.type === "skill_handler_completed" || step.type === "skill_handler_failed") {
+        const failed = step.type === "skill_handler_failed";
+        const started = step.type === "skill_handler_started";
+
+        timelineItems.push({
+          id: step.id ?? `marketplace_agent_skill_${progress.progressEventId}_${index}`,
+          kind: "execute",
+          marker: failed ? "!" : "执",
+          label: "执行 Skill",
+          title: step.title || (failed ? "Skill Handler 执行失败" : "Skill Handler 执行"),
+          detail,
+          tags: normalizeProgressTags(["Skill"]),
+          className: `is-execute ${failed ? "is-error" : started ? "is-running" : "is-completed"}`,
+          createdAt,
+          sortIndex: index
+        });
+        return;
+      }
+
+      if (step.type === "model_invoked") {
+        timelineItems.push({
+          id: step.id ?? `marketplace_agent_model_${progress.progressEventId}_${index}`,
+          kind: "final",
+          marker: "答",
+          label: "整理",
+          title: "整理最终答复",
+          detail: detail || "工具输出已经汇总，正在生成最终回复。",
+          tags: normalizeProgressTags(["输出"]),
+          className: "is-final is-running",
+          createdAt,
+          sortIndex: index
+        });
+        return;
+      }
+
+      if (step.type === "completed") {
+        timelineItems.push({
+          id: step.id ?? `marketplace_agent_completed_${progress.progressEventId}_${index}`,
+          kind: "final",
+          marker: "成",
+          label: "完成",
+          title: "本轮处理完成",
+          detail,
+          tags: normalizeProgressTags(["完成"]),
+          className: "is-final is-completed",
+          createdAt,
+          sortIndex: index
+        });
+      }
+    });
+
+    calls.forEach((call, index) => {
+      const selectedStep = selectedToolSteps[index] ?? null;
+      const terminalStep = getToolTerminalStep(steps, index);
+      const tags = normalizeProgressTags([
+        call.autoSelected ? "自动工具" : "",
+        call.repairReason ? "参数修复" : "",
+        call.recovered ? "已恢复" : "",
+        call.fallbackFromToolName ? "fallback" : "",
+        ...getToolPermissionTags(steps, index)
+      ]);
+      const output = compactText(call.resultText, 260);
+      const detailParts = [];
+
+      if (selectedStep) {
+        const argumentText = parseToolArgumentsFromStep(selectedStep);
+        if (argumentText) {
+          detailParts.push(`参数：${compactText(argumentText, 180)}`);
+        }
+      }
+
+      if (call.expectedOutcome) {
+        detailParts.push(`预期：${compactText(call.expectedOutcome, 120)}`);
+      }
+
+      if (call.failureReason) {
+        detailParts.push(compactText(call.failureReason, 140));
+      }
+
+      timelineItems.push({
+        id: selectedStep?.id ? `${selectedStep.id}_marketplace_tool` : `marketplace_agent_tool_${progress.progressEventId}_${index}`,
+        kind: "execute",
+        sequenceMode: "tool",
+        marker: `${index + 1}`,
+        label: call.isError ? "执行失败" : "执行",
+        title: `${call.serverName || parseServerNameFromStep(steps.find((step) => step?.type === "mcp_server_selected")) || "工具服务"} / ${call.toolName || parseToolNameFromStep(selectedStep) || "工具"}`,
+        detail: detailParts.join(" · "),
+        tags,
+        output,
+        outputLabel: call.isError ? "错误输出" : "中间输出",
+        className: call.isError ? "is-execute is-error" : "is-execute is-completed",
+        createdAt: terminalStep?.createdAt || call.createdAt || selectedStep?.createdAt || progress.updatedAt || "",
+        sortIndex: steps.indexOf(terminalStep ?? selectedStep ?? null)
       });
-    } else if (progress.phase === "running") {
-      items.push({
+    });
+
+    if (selectedToolSteps.length > calls.length) {
+      const selectedStep = selectedToolSteps[selectedToolSteps.length - 1];
+      const selectedStepIndex = steps.indexOf(selectedStep);
+      const serverStep = steps
+        .slice(0, selectedStepIndex)
+        .reverse()
+        .find((step) => step?.type === "mcp_server_selected");
+      const tags = normalizeProgressTags(getToolPermissionTags(steps, selectedToolSteps.length - 1));
+      const denied = tags.some((tag) => tag.className === "is-error");
+
+      timelineItems.push({
+        id: `${selectedStep?.id ?? "pending_tool"}_marketplace_pending_tool`,
+        kind: "execute",
+        sequenceMode: "tool",
+        marker: `${calls.length + 1}`,
+        label: denied ? "执行受阻" : "执行中",
+        title: `${parseServerNameFromStep(serverStep) || "工具服务"} / ${parseToolNameFromStep(selectedStep) || "工具"}`,
+        detail: parseToolArgumentsFromStep(selectedStep)
+          ? `参数：${compactText(parseToolArgumentsFromStep(selectedStep), 180)}`
+          : "参数已确定，正在等待工具返回。",
+        tags,
+        output: denied ? "授权被拒绝，Gordon 会调整路线或停止当前工具调用。" : "工具正在运行，返回后会把中间输出接在这里。",
+        outputLabel: denied ? "授权状态" : "中间输出",
+        className: denied ? "is-execute is-error" : "is-execute is-running",
+        createdAt: selectedStep?.createdAt || progress.updatedAt || "",
+        sortIndex: selectedStepIndex
+      });
+    }
+
+    if (isRunning && timelineItems.length <= 1) {
+      timelineItems.push({
         id: `marketplace_agent_waiting_${progress.progressEventId}`,
-        marker: String(items.length + 1),
+        kind: "plan",
+        marker: "判",
+        label: "规划",
         title: "等待 Gordon 推进",
         detail: compactText(progress.statusText || "正在判断是否需要工具", 150),
-        tags: ["处理中"],
-        className: "is-running"
+        tags: normalizeProgressTags(["处理中"]),
+        className: "is-plan is-running",
+        createdAt: progress.updatedAt || "",
+        sortIndex: 0
       });
     }
 
-    toolSteps.slice(-3).forEach((step) => {
-      items.push({
-        id: step.id ?? `marketplace_agent_tool_${progress.progressEventId}_${items.length}`,
-        marker: String(items.length + 1),
-        title: step.title || "工具处理",
-        detail: compactText(step.detail, 150),
-        tags: ["工具"],
-        className:
-          step.type === "tool_failed"
-            ? "is-error"
-            : step.type === "tool_fallback"
-              ? "is-warning"
-              : step.type === "tool_started"
-                ? "is-running"
-                : "is-completed"
-      });
-    });
-
-    if (skillStep) {
-      items.push({
-        id: skillStep.id ?? `marketplace_agent_skill_${progress.progressEventId}`,
-        marker: String(items.length + 1),
-        title: skillStep.title || "Skill 处理",
-        detail: compactText(skillStep.detail, 150),
-        tags: ["Skill"],
-        className: skillStep.type === "skill_handler_failed" ? "is-error" : "is-completed"
-      });
-    }
-
-    if (progress.phase === "completed") {
-      items.push({
+    if (phase === "completed" && !timelineItems.some((item) => item.kind === "final" && item.label === "完成")) {
+      timelineItems.push({
         id: `marketplace_agent_final_${progress.progressEventId}`,
-        marker: String(items.length + 1),
+        kind: "final",
+        marker: "成",
+        label: "完成",
         title: "结果已回填",
         detail: "Gordon 处理结果已进入当前应用区域。",
-        tags: ["完成"],
-        className: "is-completed"
+        tags: normalizeProgressTags(["完成"]),
+        className: "is-final is-completed",
+        createdAt: progress.updatedAt || "",
+        sortIndex: steps.length + calls.length + 1
       });
     }
 
-    if (progress.phase === "failed") {
-      items.push({
+    if (phase === "failed") {
+      timelineItems.push({
         id: `marketplace_agent_failed_${progress.progressEventId}`,
-        marker: String(items.length + 1),
+        kind: "reflect",
+        marker: "!",
+        label: progress.tone === "warning" ? "停止" : "失败",
         title: progress.tone === "warning" ? "处理已停止" : "处理失败",
         detail: compactText(progress.stopReason || progress.statusText, 150),
-        tags: [progress.tone === "warning" ? "已停止" : "失败"],
-        className: progress.tone === "warning" ? "is-warning" : "is-error"
+        tags: normalizeProgressTags([progress.tone === "warning" ? "已停止" : "失败"]),
+        className: progress.tone === "warning" ? "is-reflect is-warning" : "is-reflect is-error",
+        createdAt: progress.updatedAt || "",
+        sortIndex: steps.length + calls.length + 2
       });
     }
 
-    return items.slice(0, 6);
+    const visibleItems = timelineItems.sort((left, right) => {
+      const leftSortIndex = left.sortIndex;
+      const rightSortIndex = right.sortIndex;
+
+      if (leftSortIndex >= 0 && rightSortIndex >= 0 && leftSortIndex !== rightSortIndex) {
+        return leftSortIndex - rightSortIndex;
+      }
+
+      return String(left.createdAt || "").localeCompare(String(right.createdAt || ""));
+    });
+
+    return normalizeProgressVisibleSequence(normalizeProgressRunningState(visibleItems));
   }
 
   async function cancelMarketplaceAgentRun() {
@@ -459,6 +889,12 @@ export function createMarketplaceAgentActions({
 
     const context = typeof provider === "function" ? provider(options) : null;
     const contextText = normalizeText(context?.contextText || options.contextText);
+    const instruction = context?.instruction ?? options.instruction;
+    const writeIntent = Boolean(
+      options.writeIntent ??
+        context?.writeIntent ??
+        (isWriteIntent(instruction) || isWriteIntent(options.taskLabel) || isWriteIntent(context?.taskLabel))
+    );
 
     if (!contextText) {
       (options.setFeedback ?? ((text, tone) => setAppFeedback(appId, text, tone)))("当前应用上下文不足，无法交给 Gordon 处理。", "warning");
@@ -472,12 +908,16 @@ export function createMarketplaceAgentActions({
       modeLabel: context?.modeLabel || options.modeLabel,
       taskLabel: context?.taskLabel || options.taskLabel,
       contextText,
-      instruction: context?.instruction ?? options.instruction,
-      outputTarget: context?.outputTarget ?? options.outputTarget
+      instruction,
+      outputTarget: writeIntent
+        ? context?.writeOutputTarget ?? options.writeOutputTarget
+        : context?.outputTarget ?? options.outputTarget,
+      writeIntent
     });
     const runRequest = buildRunRequest(input, toPlainIpcData, {
       skillId: options.skillId ?? meta.skillId,
-      applicationToolHint: options.applicationToolHint ?? context?.applicationToolHint
+      applicationToolHint: options.applicationToolHint ?? context?.applicationToolHint,
+      writeIntent
     });
 
     try {
