@@ -1,7 +1,19 @@
 import { randomUUID } from "node:crypto";
 
-import { listWritingBooks, saveWritingBook } from "../../workbench/src/index.js";
+import { listComicProjects, listWritingBooks, saveWritingBook, upsertComicProject } from "../../workbench/src/index.js";
 import type {
+  ComicAsset,
+  ComicAssetType,
+  ComicAssetView,
+  ComicAssetViewKind,
+  ComicChapter,
+  ComicChapterImage,
+  ComicChapterStatus,
+  ComicProject,
+  ComicProjectFormat,
+  ComicProjectPalette,
+  ComicStoryboardKind,
+  ComicStoryboardShot,
   McpServerConfig,
   McpToolCallRequest,
   McpToolCallResult,
@@ -182,6 +194,81 @@ const EXTRA_INTRO_SECTIONS_SCHEMA = {
   }
 } as const;
 
+const COMIC_CHAPTER_IMAGE_SCHEMA = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    storyboardId: { type: "string", description: "可选，关联的章节分镜 id" },
+    alt: { type: "string", description: "图片替代文本/画面名" },
+    src: { type: "string", description: "图片 URL、file URL 或 data URL" },
+    prompt: { type: "string", description: "用于复现或继续优化的生图提示词" },
+    size: { type: "string", description: "例如 1024x1536" },
+    quality: { type: "string", description: "例如 low / medium / high" },
+    createdAt: { type: "string" }
+  },
+  additionalProperties: false
+} as const;
+
+const COMIC_STORYBOARD_SCHEMA = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    index: { type: "integer", minimum: 1 },
+    kind: { type: "string", enum: ["dialogue", "scene", "action", "transition", "emotion", "other"] },
+    title: { type: "string" },
+    beat: { type: "string", description: "单条分镜的画面内容与故事节点" },
+    dialogue: { type: "string", description: "对白、旁白或文字留白说明" },
+    camera: { type: "string", description: "景别、构图、镜头运动、画面重心" },
+    prompt: { type: "string", description: "可直接用于生成该分镜图片的生图提示词" },
+    status: { type: "string", enum: ["todo", "inProgress", "done"] },
+    imageIds: { type: "array", items: { type: "string" }, description: "关联图片 id" },
+    updatedAt: { type: "string" }
+  },
+  additionalProperties: false
+} as const;
+
+const COMIC_CHAPTER_SCHEMA = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    index: { type: "integer", minimum: 1 },
+    title: { type: "string" },
+    summary: { type: "string", description: "章节内容简介：故事事件、角色目标、冲突变化和结尾钩子" },
+    prompt: { type: "string", description: "章节级分镜与出图提示词：图片数量建议、画面节点、景别、构图和一致性约束" },
+    content: { type: "string", description: "可选章节正文/故事内容，可由小说正文、剧情草稿或本章完整文本转入，用作分镜和出图参考" },
+    status: { type: "string", enum: ["todo", "inProgress", "done"] },
+    assetRefs: { type: "array", items: { type: "string" }, description: "引用素材 id" },
+    storyboards: { type: "array", items: COMIC_STORYBOARD_SCHEMA, description: "章节内的分镜轨道，每条分镜对应一张或多张漫画图" },
+    images: { type: "array", items: COMIC_CHAPTER_IMAGE_SCHEMA }
+  },
+  additionalProperties: false
+} as const;
+
+const COMIC_ASSET_VIEW_SCHEMA = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    kind: { type: "string", enum: ["turnaround", "front", "side", "back", "angle", "wide", "detail"] },
+    label: { type: "string" },
+    src: { type: "string", description: "素材视图图片 URL、file URL 或 data URL" },
+    prompt: { type: "string", description: "该视角的稳定视觉约束" }
+  },
+  additionalProperties: false
+} as const;
+
+const COMIC_ASSET_SCHEMA = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    name: { type: "string" },
+    type: { type: "string", enum: ["character", "prop", "scene"] },
+    description: { type: "string" },
+    prompt: { type: "string", description: "素材级出图一致性提示词" },
+    views: { type: "array", items: COMIC_ASSET_VIEW_SCHEMA }
+  },
+  additionalProperties: false
+} as const;
+
 function isObject(value: unknown): value is JsonObject {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
@@ -271,6 +358,53 @@ function asWritingChapterStatus(value: unknown): WritingChapter["status"] {
   }
 
   return "todo";
+}
+
+function asComicProjectFormat(value: unknown): ComicProjectFormat {
+  const normalized = asString(value);
+  return ["poster", "serial"].includes(normalized) ? (normalized as ComicProjectFormat) : "poster";
+}
+
+function asComicProjectPalette(value: unknown): ComicProjectPalette {
+  const normalized = asString(value);
+  return ["monochrome", "color"].includes(normalized) ? (normalized as ComicProjectPalette) : "color";
+}
+
+function asComicChapterStatus(value: unknown): ComicChapterStatus {
+  const normalized = asString(value);
+
+  if (["todo", "inProgress", "done"].includes(normalized)) {
+    return normalized as ComicChapterStatus;
+  }
+
+  if (/完成|done/u.test(normalized)) {
+    return "done";
+  }
+
+  if (/进行|繪制|绘制|生成|in.?progress/u.test(normalized)) {
+    return "inProgress";
+  }
+
+  return "todo";
+}
+
+function asComicStoryboardKind(value: unknown): ComicStoryboardKind {
+  const normalized = asString(value);
+  return ["dialogue", "scene", "action", "transition", "emotion", "other"].includes(normalized)
+    ? (normalized as ComicStoryboardKind)
+    : "other";
+}
+
+function asComicAssetType(value: unknown): ComicAssetType {
+  const normalized = asString(value);
+  return ["character", "prop", "scene"].includes(normalized) ? (normalized as ComicAssetType) : "character";
+}
+
+function asComicAssetViewKind(value: unknown): ComicAssetViewKind {
+  const normalized = asString(value);
+  return ["turnaround", "front", "side", "back", "angle", "wide", "detail"].includes(normalized)
+    ? (normalized as ComicAssetViewKind)
+    : "angle";
 }
 
 function asOptionalPositiveInteger(value: unknown): number | undefined {
@@ -1108,6 +1242,52 @@ function summarizeBook(book: WritingBook, includeChapters = false): JsonObject {
   };
 }
 
+function summarizeComicProject(project: ComicProject, includeChapters = false, includeAssets = false): JsonObject {
+  return {
+    id: project.id,
+    title: project.title,
+    format: project.format,
+    palette: project.palette,
+    genre: project.genre,
+    status: project.status,
+    pageCount: project.pageCount,
+    updatedAt: project.updatedAt,
+    chapterCount: project.chapters.length,
+    assetCount: project.assets.length,
+    imageCount: project.chapters.reduce((sum, chapter) => sum + chapter.images.length, 0),
+    storyboardCount: project.chapters.reduce((sum, chapter) => sum + chapter.storyboards.length, 0),
+    ...(includeChapters
+      ? {
+          chapters: project.chapters.map((chapter) => ({
+            id: chapter.id,
+            index: chapter.index,
+            title: chapter.title,
+            status: chapter.status,
+            summary: chapter.summary,
+            storyboardCount: chapter.storyboards.length,
+            imageCount: chapter.images.length,
+            assetRefs: chapter.assetRefs,
+            updatedAt: chapter.updatedAt
+          }))
+        }
+      : {}),
+    ...(includeAssets
+      ? {
+          assets: project.assets.map((asset) => ({
+            id: asset.id,
+            name: asset.name,
+            type: asset.type,
+            description: truncateText(asset.description, 1200),
+            prompt: truncateText(asset.prompt, 1200),
+            viewCount: asset.views.length,
+            filledViewCount: asset.views.filter((view) => asString(view.src)).length,
+            updatedAt: asset.updatedAt
+          }))
+        }
+      : {})
+  };
+}
+
 function findWritingBook(books: WritingBook[], bookIdOrTitle: string): WritingBook {
   const query = bookIdOrTitle.trim();
 
@@ -1137,6 +1317,32 @@ function findWritingBook(books: WritingBook[], bookIdOrTitle: string): WritingBo
   }
 
   throw new Error(`没有找到小说：${query}`);
+}
+
+function findComicProject(projects: ComicProject[], projectIdOrTitle: string): ComicProject {
+  const query = projectIdOrTitle.trim();
+
+  if (!query) {
+    throw new Error("projectIdOrTitle 不能为空");
+  }
+
+  const exact = projects.find((project) => project.id === query) ?? projects.find((project) => project.title === query);
+
+  if (exact) {
+    return exact;
+  }
+
+  const candidates = projects.filter((project) => project.title.includes(query) || query.includes(project.title));
+
+  if (candidates.length === 1) {
+    return candidates[0];
+  }
+
+  if (candidates.length > 1) {
+    throw new Error(`找到多个可能匹配的漫画项目：${candidates.map((project) => project.title).join("、")}，请使用更精确的项目名或 projectId。`);
+  }
+
+  throw new Error(`没有找到漫画项目：${query}`);
 }
 
 function findWritingChapter(book: WritingBook, args: JsonObject): WritingChapter {
@@ -1183,6 +1389,50 @@ function findWritingChapter(book: WritingBook, args: JsonObject): WritingChapter
   }
 
   throw new Error("没有找到目标章节，请提供 chapterId、chapterIndex 或 chapterTitle。");
+}
+
+function findComicChapter(project: ComicProject, args: JsonObject): ComicChapter {
+  const chapterId = asString(args.chapterId);
+  const chapterTitle = asString(args.chapterTitle);
+  const rawChapterIndex = args.chapterIndex;
+  const chapterIndex =
+    rawChapterIndex === undefined || rawChapterIndex === null || rawChapterIndex === "" ? null : Number(rawChapterIndex);
+
+  if (chapterId) {
+    const chapter = project.chapters.find((entry) => entry.id === chapterId);
+
+    if (chapter) {
+      return chapter;
+    }
+  }
+
+  if (typeof chapterIndex === "number" && Number.isInteger(chapterIndex) && chapterIndex > 0) {
+    const chapter = project.chapters.find((entry) => entry.index === chapterIndex);
+
+    if (chapter) {
+      return chapter;
+    }
+  }
+
+  if (chapterTitle) {
+    const exact = project.chapters.find((entry) => entry.title === chapterTitle);
+
+    if (exact) {
+      return exact;
+    }
+
+    const candidates = project.chapters.filter((entry) => entry.title.includes(chapterTitle) || chapterTitle.includes(entry.title));
+
+    if (candidates.length === 1) {
+      return candidates[0];
+    }
+
+    if (candidates.length > 1) {
+      throw new Error(`找到多个漫画章节标题匹配：${candidates.map((chapter) => `第 ${chapter.index} 章 ${chapter.title}`).join("、")}，请使用 chapterIndex 或 chapterId。`);
+    }
+  }
+
+  throw new Error("没有找到目标漫画章节，请提供 chapterId、chapterIndex 或 chapterTitle。");
 }
 
 function buildTextResult(contentText: string, structuredContent?: JsonObject): Omit<McpToolCallResult, "serverId" | "serverName" | "toolName" | "isError"> {
@@ -1361,6 +1611,130 @@ function getApplicationToolDefinitions(server: McpServerConfig): McpToolDefiniti
           extraIntroSections: EXTRA_INTRO_SECTIONS_SCHEMA,
           dryRun: { type: "boolean", description: "可选，默认 true。true 只预览，false 写回本地书稿" },
           expectedBookUpdatedAt: { type: "string", description: "可选，乐观锁：若书籍更新时间不一致则拒绝写回" }
+        },
+        additionalProperties: false
+      }
+    }),
+    createToolDefinition(server, {
+      name: "comic_list_projects",
+      description: "列出应用广场「丹青溢彩」中的漫画项目。用于根据项目名、id、章节数量、素材数量和更新时间定位目标漫画。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "可选，按项目名、类型、状态或简介过滤" },
+          includeChapters: { type: "boolean", description: "可选，是否返回章节目录摘要，默认 false" },
+          includeAssets: { type: "boolean", description: "可选，是否返回素材库摘要，默认 false" },
+          limit: { type: "integer", minimum: 1, maximum: 50, description: "可选，最多返回数量，默认 20" }
+        },
+        additionalProperties: false
+      }
+    }),
+    createToolDefinition(server, {
+      name: "comic_read_project",
+      description:
+        "读取「丹青溢彩」漫画项目的项目字段、素材库、章节目录和指定章节图片/提示词。处理漫画项目、章节分镜、素材一致性和出图任务前应优先调用。",
+      inputSchema: {
+        type: "object",
+        required: ["projectIdOrTitle"],
+        properties: {
+          projectIdOrTitle: { type: "string", description: "漫画项目 id、完整项目名或可唯一匹配的项目名片段" },
+          chapterId: { type: "string", description: "可选，目标章节 id" },
+          chapterIndex: { type: "integer", minimum: 1, description: "可选，目标章节序号" },
+          chapterTitle: { type: "string", description: "可选，目标章节标题或可唯一匹配片段" },
+          includeAssets: { type: "boolean", description: "可选，是否返回素材库，默认 true" },
+          includeImages: { type: "boolean", description: "可选，是否返回章节图片列表，默认 true" },
+          maxContentChars: { type: "integer", minimum: 1000, maximum: 60000, description: "可选，章节备注最大返回字数，默认 24000" }
+        },
+        additionalProperties: false
+      }
+    }),
+    createToolDefinition(server, {
+      name: "comic_update_project_fields",
+      description:
+        "预览或写回「丹青溢彩」漫画项目级字段，例如故事与画面目标、画风与镜头、规划、类型、形态、画面和状态。默认 dryRun=true，只预览；用户明确保存/写回/替换时设置 dryRun=false。",
+      inputSchema: {
+        type: "object",
+        required: ["projectIdOrTitle"],
+        properties: {
+          projectIdOrTitle: { type: "string", description: "漫画项目 id、完整项目名或可唯一匹配的项目名片段" },
+          title: { type: "string" },
+          format: { type: "string", enum: ["poster", "serial"], description: "poster 单图海报，serial 连载漫画" },
+          palette: { type: "string", enum: ["monochrome", "color"] },
+          genre: { type: "string" },
+          status: { type: "string" },
+          summary: { type: "string", description: "故事与画面目标" },
+          visualStyle: { type: "string", description: "画风与镜头" },
+          episodePlan: { type: "string", description: "海报构图规划或连载总规划" },
+          pageCount: { type: "integer", minimum: 1, maximum: 999 },
+          dryRun: { type: "boolean", description: "可选，默认 true。true 只预览，false 写回本地项目" },
+          expectedProjectUpdatedAt: { type: "string", description: "可选，乐观锁：若项目更新时间不一致则拒绝写回" }
+        },
+        additionalProperties: false
+      }
+    }),
+    createToolDefinition(server, {
+      name: "comic_update_chapter",
+      description:
+        "预览或写回「丹青溢彩」指定漫画章节的标题、章节内容简介、章节正文/故事内容、分镜与出图提示、状态或引用素材。默认 dryRun=true；用户明确保存/写回/直接修改时设置 dryRun=false。",
+      inputSchema: {
+        type: "object",
+        required: ["projectIdOrTitle"],
+        properties: {
+          projectIdOrTitle: { type: "string", description: "漫画项目 id、完整项目名或可唯一匹配的项目名片段" },
+          chapterId: { type: "string" },
+          chapterIndex: { type: "integer", minimum: 1 },
+          chapterTitle: { type: "string" },
+          title: { type: "string" },
+          summary: { type: "string", description: "章节内容简介：故事事件、角色目标、冲突变化和结尾钩子" },
+          prompt: { type: "string", description: "章节级分镜与出图提示词：图片数量建议、画面节点、景别、构图和一致性约束" },
+          content: { type: "string", description: "可选章节正文/故事内容，可由小说正文、剧情草稿或本章完整文本转入，用作分镜和出图参考" },
+          storyboards: { type: "array", items: COMIC_STORYBOARD_SCHEMA, description: "当前章节的分镜轨道；替换写入时应包含完整目标分镜列表" },
+          status: { type: "string", enum: ["todo", "inProgress", "done"] },
+          assetRefs: { type: "array", items: { type: "string" }, description: "引用素材 id" },
+          dryRun: { type: "boolean", description: "可选，默认 true。true 只预览，false 写回本地项目" },
+          expectedProjectUpdatedAt: { type: "string" },
+          expectedChapterUpdatedAt: { type: "string" }
+        },
+        additionalProperties: false
+      }
+    }),
+    createToolDefinition(server, {
+      name: "comic_update_chapter_images",
+      description:
+        "预览或写回「丹青溢彩」指定章节的图片数组。适合把 image_gen 产生的漫画图、漫画页、封面或连续图组写入当前章节图片区。默认 dryRun=true；用户明确要求生成并放进项目/追加/替换时设置 dryRun=false。",
+      inputSchema: {
+        type: "object",
+        required: ["projectIdOrTitle", "images"],
+        properties: {
+          projectIdOrTitle: { type: "string" },
+          chapterId: { type: "string" },
+          chapterIndex: { type: "integer", minimum: 1 },
+          chapterTitle: { type: "string" },
+          storyboardId: { type: "string", description: "可选，指定要写入图片的章节分镜 id" },
+          storyboardIndex: { type: "integer", minimum: 1, description: "可选，指定要写入图片的分镜序号" },
+          mode: { type: "string", enum: ["append", "replace"], description: "append 追加到章节图片区，replace 替换章节全部图片；默认 append" },
+          prompt: { type: "string", description: "可选，同时写入章节级分镜与出图提示" },
+          images: { type: "array", items: COMIC_CHAPTER_IMAGE_SCHEMA },
+          dryRun: { type: "boolean", description: "可选，默认 true。true 只预览，false 写回本地项目" },
+          expectedProjectUpdatedAt: { type: "string" },
+          expectedChapterUpdatedAt: { type: "string" }
+        },
+        additionalProperties: false
+      }
+    }),
+    createToolDefinition(server, {
+      name: "comic_update_assets",
+      description:
+        "预览或写回「丹青溢彩」项目素材库。适合维护人物、物品、场景素材及其视图图和稳定出图提示词。默认 dryRun=true；用户明确保存/写回素材时设置 dryRun=false。",
+      inputSchema: {
+        type: "object",
+        required: ["projectIdOrTitle", "assets"],
+        properties: {
+          projectIdOrTitle: { type: "string" },
+          mode: { type: "string", enum: ["merge", "replace"], description: "merge 按 id/名称合并，replace 替换素材库；默认 merge" },
+          assets: { type: "array", items: COMIC_ASSET_SCHEMA },
+          dryRun: { type: "boolean", description: "可选，默认 true。true 只预览，false 写回本地项目" },
+          expectedProjectUpdatedAt: { type: "string" }
         },
         additionalProperties: false
       }
@@ -1706,6 +2080,129 @@ ${results.map((result, index) => `${index + 1}. ${result.bookTitle} / ${result.t
   );
 }
 
+async function handleComicListProjects(args: JsonObject) {
+  const query = asString(args.query).toLowerCase();
+  const includeChapters = asBoolean(args.includeChapters, false);
+  const includeAssets = asBoolean(args.includeAssets, false);
+  const limit = asPositiveInteger(args.limit, 20, 50);
+  const projects = (await listComicProjects()).filter((project) => {
+    if (!query) {
+      return true;
+    }
+
+    return [project.title, project.genre, project.status, project.summary, project.visualStyle, project.episodePlan]
+      .map((value) => String(value ?? "").toLowerCase())
+      .some((value) => value.includes(query));
+  });
+  const selectedProjects = projects.slice(0, limit);
+  const lines = selectedProjects.map(
+    (project) =>
+      `- ${project.title}（id=${project.id}，章节=${project.chapters.length}，素材=${project.assets.length}，图片=${project.chapters.reduce((sum, chapter) => sum + chapter.images.length, 0)}，更新=${project.updatedAt}）`
+  );
+
+  return buildTextResult(
+    `丹青溢彩漫画项目列表：共匹配 ${projects.length} 个，返回 ${selectedProjects.length} 个。\n${lines.join("\n") || "暂无匹配项目。"}`,
+    {
+      applicationId: "comic",
+      resourceType: "project",
+      total: projects.length,
+      projects: selectedProjects.map((project) => summarizeComicProject(project, includeChapters, includeAssets))
+    }
+  );
+}
+
+async function handleComicReadProject(args: JsonObject) {
+  const projects = await listComicProjects();
+  const project = findComicProject(projects, asString(args.projectIdOrTitle));
+  const includeAssets = asBoolean(args.includeAssets, true);
+  const includeImages = asBoolean(args.includeImages, true);
+  const maxContentChars = asPositiveInteger(args.maxContentChars, MAX_TEXT_CHARS, 60_000);
+  const hasChapterTarget = Boolean(args.chapterId || args.chapterIndex || args.chapterTitle);
+  const selectedChapters = hasChapterTarget ? [findComicChapter(project, args)] : [];
+  const chapterSummaries = project.chapters.map((chapter) => ({
+    id: chapter.id,
+    index: chapter.index,
+    title: chapter.title,
+    summary: chapter.summary,
+    prompt: truncateText(chapter.prompt, 1800),
+    status: chapter.status,
+    storyboardCount: chapter.storyboards.length,
+    imageCount: chapter.images.length,
+    assetRefs: chapter.assetRefs,
+    updatedAt: chapter.updatedAt
+  }));
+  const selectedChapterText = selectedChapters
+    .map((chapter) => {
+      const images = includeImages
+        ? chapter.images.map((image, index) => `${index + 1}. ${image.alt || `画面 ${index + 1}`} / ${image.size || "未标尺寸"} / ${image.quality || "未标质量"}\n${image.src}\n提示词：${truncateText(image.prompt, 1200)}`)
+        : [];
+      const storyboards = chapter.storyboards.map((storyboard, index) => {
+        const imageCount = chapter.images.filter((image) => image.storyboardId === storyboard.id || storyboard.imageIds.includes(image.id)).length;
+
+        return `${index + 1}. [${storyboard.kind}] ${storyboard.title || `分镜 ${index + 1}`}（id=${storyboard.id}，图片=${imageCount}，状态=${storyboard.status}）
+画面：${truncateText(storyboard.beat || "无", 800)}
+对白：${truncateText(storyboard.dialogue || "无", 500)}
+镜头：${truncateText(storyboard.camera || "无", 500)}
+提示词：${truncateText(storyboard.prompt || "无", 900)}`;
+      });
+
+      return `第 ${chapter.index} 章 ${chapter.title}（id=${chapter.id}，状态=${chapter.status}，更新=${chapter.updatedAt}）
+章节内容简介：${chapter.summary || "无"}
+章节正文/故事内容：
+${truncateText(chapter.content || "无", maxContentChars)}
+分镜与出图提示：
+${truncateText(chapter.prompt || "无", 4000)}
+章节分镜：
+${storyboards.join("\n\n") || "无"}
+引用素材：${chapter.assetRefs.join("、") || "无"}
+图片：${images.join("\n\n") || "无"}`;
+    })
+    .join("\n\n");
+
+  return buildTextResult(
+    `已读取漫画项目：${project.title}
+id=${project.id}
+类型=${project.genre}
+形态=${project.format}
+画面=${project.palette}
+状态=${project.status}
+页数目标=${project.pageCount}
+更新时间=${project.updatedAt}
+素材数=${project.assets.length}
+章节数=${project.chapters.length}
+
+故事与画面目标：
+${truncateText(project.summary || "无", 4000)}
+
+画风与镜头：
+${truncateText(project.visualStyle || "无", 4000)}
+
+规划：
+${truncateText(project.episodePlan || "无", 6000)}
+
+章节目录：
+${chapterSummaries.map((chapter) => `- 第 ${chapter.index} 章 ${chapter.title} / ${chapter.status} / 分镜 ${chapter.storyboardCount} 条 / 图片 ${chapter.imageCount} 张 / ${chapter.summary || "无简介"}`).join("\n") || "暂无章节"}
+${selectedChapterText ? `\n\n选中章节：\n${selectedChapterText}` : ""}`,
+    {
+      applicationId: "comic",
+      resourceType: "project",
+      project: {
+        ...summarizeComicProject(project, true, includeAssets),
+        summary: project.summary,
+        visualStyle: project.visualStyle,
+        episodePlan: project.episodePlan,
+        ...(includeAssets ? { assets: project.assets } : {}),
+        chapters: chapterSummaries,
+        selectedChapters: selectedChapters.map((chapter) => ({
+          ...chapter,
+          content: truncateText(chapter.content, maxContentChars),
+          images: includeImages ? chapter.images : []
+        }))
+      }
+    }
+  );
+}
+
 function assertExpectedTimestamp(label: string, expected: string, actual: string): void {
   if (expected && expected !== actual) {
     throw new Error(`${label} 已变化，拒绝写回。expected=${expected} actual=${actual}`);
@@ -1742,6 +2239,303 @@ function formatFieldPreviewText(fields: JsonObject): string {
 新值（${preview.afterLength ?? 0} 字）：${truncateText(preview.after, 1200) || "空"}`;
     })
     .join("\n\n");
+}
+
+function normalizeComicAssetRefsForTool(value: unknown, project: ComicProject): string[] {
+  const assetIds = new Set(project.assets.map((asset) => asset.id));
+  return asStringList(value).filter((assetId) => assetIds.has(assetId));
+}
+
+function normalizeComicChapterImageInput(value: unknown, index: number, fallbackPrompt = ""): ComicChapterImage | null {
+  const source = isObject(value) ? value : {};
+  const src = asString(source.src ?? source.url ?? source.dataUrl);
+
+  if (!src) {
+    return null;
+  }
+
+  const timestamp = asString(source.createdAt) || new Date().toISOString();
+
+  return {
+    id: asString(source.id) || createLocalId("comic_chapter_image"),
+    storyboardId: asString(source.storyboardId) || undefined,
+    alt: asString(source.alt ?? source.title) || `画面 ${index + 1}`,
+    src,
+    prompt: String(source.prompt ?? fallbackPrompt ?? ""),
+    size: asString(source.size),
+    quality: asString(source.quality),
+    createdAt: timestamp
+  };
+}
+
+function normalizeComicChapterImagesInput(value: unknown, fallbackPrompt = ""): ComicChapterImage[] {
+  return (Array.isArray(value) ? value : [])
+    .map((entry, index) => normalizeComicChapterImageInput(entry, index, fallbackPrompt))
+    .filter((entry): entry is ComicChapterImage => Boolean(entry));
+}
+
+function normalizeComicStoryboardInput(value: unknown, index: number, current?: ComicStoryboardShot): ComicStoryboardShot | null {
+  const source = isObject(value) ? value : {};
+  const now = new Date().toISOString();
+  const title = asString(source.title ?? source.name ?? current?.title);
+  const beat = String(source.beat ?? source.summary ?? source.description ?? source.content ?? current?.beat ?? "");
+  const dialogue = String(source.dialogue ?? source.lines ?? source.caption ?? current?.dialogue ?? "");
+  const camera = String(source.camera ?? source.shot ?? source.composition ?? current?.camera ?? "");
+  const prompt = String(source.prompt ?? source.imagePrompt ?? current?.prompt ?? "");
+
+  if (!title && !beat && !dialogue && !camera && !prompt) {
+    return null;
+  }
+
+  return {
+    id: asString(source.id) || current?.id || createLocalId("comic_storyboard"),
+    index: asPositiveInteger(source.index, index + 1, 9999),
+    kind: asComicStoryboardKind(source.kind ?? current?.kind),
+    title: title || current?.title || `分镜 ${index + 1}`,
+    beat,
+    dialogue,
+    camera,
+    prompt,
+    status: asComicChapterStatus(source.status ?? current?.status),
+    imageIds: asStringList(source.imageIds ?? current?.imageIds),
+    updatedAt: asString(source.updatedAt) || now
+  };
+}
+
+function normalizeComicStoryboardsInput(value: unknown, currentStoryboards: ComicStoryboardShot[] = []): ComicStoryboardShot[] {
+  return (Array.isArray(value) ? value : [])
+    .map((entry, index) => {
+      const source = isObject(entry) ? entry : {};
+      const sourceId = asString(source.id);
+      const current = sourceId ? currentStoryboards.find((storyboard) => storyboard.id === sourceId) : undefined;
+      return normalizeComicStoryboardInput(entry, index, current);
+    })
+    .filter((entry): entry is ComicStoryboardShot => Boolean(entry))
+    .sort((left, right) => left.index - right.index)
+    .map((storyboard, index) => ({ ...storyboard, index: index + 1 }));
+}
+
+function findComicStoryboard(chapter: ComicChapter, args: JsonObject): ComicStoryboardShot | null {
+  const storyboardId = asString(args.storyboardId);
+  const rawStoryboardIndex = args.storyboardIndex;
+  const storyboardIndex =
+    rawStoryboardIndex === undefined || rawStoryboardIndex === null || rawStoryboardIndex === ""
+      ? null
+      : Number(rawStoryboardIndex);
+
+  if (storyboardId) {
+    const storyboard = chapter.storyboards.find((entry) => entry.id === storyboardId);
+
+    if (storyboard) {
+      return storyboard;
+    }
+
+    throw new Error(`没有找到目标分镜：${storyboardId}`);
+  }
+
+  if (typeof storyboardIndex === "number" && Number.isInteger(storyboardIndex) && storyboardIndex > 0) {
+    const storyboard = chapter.storyboards.find((entry) => entry.index === storyboardIndex);
+
+    if (storyboard) {
+      return storyboard;
+    }
+
+    throw new Error(`没有找到第 ${storyboardIndex} 条分镜。`);
+  }
+
+  return null;
+}
+
+function syncComicStoryboardImageIdsForTool(chapter: ComicChapter): ComicChapter {
+  const images = chapter.images;
+  const storyboards = chapter.storyboards.map((storyboard) => ({
+    ...storyboard,
+    imageIds: Array.from(
+      new Set([
+        ...storyboard.imageIds.filter((imageId) => images.some((image) => image.id === imageId)),
+        ...images.filter((image) => image.storyboardId === storyboard.id).map((image) => image.id)
+      ])
+    )
+  }));
+
+  return {
+    ...chapter,
+    storyboards
+  };
+}
+
+function normalizeComicAssetViewInput(value: unknown, index: number): ComicAssetView {
+  const source = isObject(value) ? value : {};
+
+  return {
+    id: asString(source.id) || createLocalId("comic_asset_view"),
+    kind: asComicAssetViewKind(source.kind),
+    label: asString(source.label) || `视角 ${index + 1}`,
+    src: asString(source.src ?? source.url ?? source.dataUrl),
+    prompt: String(source.prompt ?? "")
+  };
+}
+
+function getDefaultComicAssetViewsForTool(type: ComicAssetType): ComicAssetView[] {
+  if (type === "scene") {
+    return [
+      { id: createLocalId("comic_asset_view"), kind: "wide", label: "全景", src: "", prompt: "" },
+      { id: createLocalId("comic_asset_view"), kind: "angle", label: "视角 A", src: "", prompt: "" },
+      { id: createLocalId("comic_asset_view"), kind: "detail", label: "细节", src: "", prompt: "" }
+    ];
+  }
+
+  return [{ id: createLocalId("comic_asset_view"), kind: "turnaround", label: "三视图", src: "", prompt: "" }];
+}
+
+function normalizeComicAssetInput(value: unknown, index: number, current?: ComicAsset): ComicAsset | null {
+  const source = isObject(value) ? value : {};
+  const now = new Date().toISOString();
+  const type = asComicAssetType(source.type ?? current?.type);
+  const name = asString(source.name ?? source.title ?? current?.name);
+
+  if (!name && !asString(source.description ?? current?.description) && !asString(source.prompt ?? current?.prompt)) {
+    return null;
+  }
+
+  const incomingViews = Array.isArray(source.views)
+    ? source.views.map((view, viewIndex) => normalizeComicAssetViewInput(view, viewIndex))
+    : [];
+
+  return {
+    id: asString(source.id) || current?.id || createLocalId("comic_asset"),
+    name: name || current?.name || `素材 ${index + 1}`,
+    type,
+    description: String(source.description ?? current?.description ?? ""),
+    prompt: String(source.prompt ?? current?.prompt ?? ""),
+    views: incomingViews.length ? incomingViews : current?.views?.length ? current.views : getDefaultComicAssetViewsForTool(type),
+    createdAt: asString(source.createdAt) || current?.createdAt || now,
+    updatedAt: now
+  };
+}
+
+function mergeComicAssets(currentAssets: ComicAsset[], incomingAssets: ComicAsset[], mode: string): ComicAsset[] {
+  if (mode === "replace") {
+    return incomingAssets;
+  }
+
+  const byKey = new Map<string, ComicAsset>();
+
+  for (const asset of currentAssets) {
+    const key = normalizeAssetMergeKey(asset.id || asset.name);
+
+    if (key) {
+      byKey.set(key, asset);
+    }
+
+    const nameKey = normalizeAssetMergeKey(asset.name);
+    if (nameKey && !byKey.has(nameKey)) {
+      byKey.set(nameKey, asset);
+    }
+  }
+
+  for (const asset of incomingAssets) {
+    const key = normalizeAssetMergeKey(asset.id || asset.name);
+    const nameKey = normalizeAssetMergeKey(asset.name);
+    const current = (key ? byKey.get(key) : null) ?? (nameKey ? byKey.get(nameKey) : null);
+    const merged = current
+      ? {
+          ...current,
+          name: asset.name || current.name,
+          type: asset.type || current.type,
+          description: asset.description || current.description,
+          prompt: asset.prompt || current.prompt,
+          views: asset.views.length ? asset.views : current.views,
+          updatedAt: asset.updatedAt
+        }
+      : asset;
+    const nextKey = normalizeAssetMergeKey(merged.id || merged.name);
+
+    if (nextKey) {
+      byKey.set(nextKey, merged);
+    }
+
+    if (nameKey) {
+      byKey.set(nameKey, merged);
+    }
+  }
+
+  return Array.from(new Map(Array.from(byKey.values()).map((asset) => [asset.id, asset])).values());
+}
+
+async function handleComicUpdateProjectFields(args: JsonObject) {
+  const projects = await listComicProjects();
+  const project = findComicProject(projects, asString(args.projectIdOrTitle));
+  const dryRun = asBoolean(args.dryRun, true);
+  const timestamp = new Date().toISOString();
+  const nextProject: ComicProject = {
+    ...project,
+    ...(args.title !== undefined ? { title: asString(args.title) || project.title } : {}),
+    ...(args.format !== undefined ? { format: asComicProjectFormat(args.format) } : {}),
+    ...(args.palette !== undefined ? { palette: asComicProjectPalette(args.palette) } : {}),
+    ...(args.genre !== undefined ? { genre: asString(args.genre) || project.genre } : {}),
+    ...(args.status !== undefined ? { status: asString(args.status) || project.status } : {}),
+    ...(args.summary !== undefined ? { summary: String(args.summary ?? "") } : {}),
+    ...(args.visualStyle !== undefined ? { visualStyle: String(args.visualStyle ?? "") } : {}),
+    ...(args.episodePlan !== undefined ? { episodePlan: String(args.episodePlan ?? "") } : {}),
+    ...(args.pageCount !== undefined ? { pageCount: asPositiveInteger(args.pageCount, project.pageCount, 999) } : {}),
+    updatedAt: timestamp
+  };
+  const fields: JsonObject = {};
+
+  for (const field of ["title", "format", "palette", "genre", "status", "summary", "visualStyle", "episodePlan", "pageCount"] as const) {
+    if (args[field] !== undefined) {
+      fields[field] = buildFieldPreview(project[field], nextProject[field]);
+    }
+  }
+
+  if (!Object.keys(fields).length) {
+    throw new Error("没有提供任何漫画项目字段变更。");
+  }
+
+  assertExpectedTimestamp("漫画项目", asString(args.expectedProjectUpdatedAt), project.updatedAt);
+
+  if (!dryRun) {
+    const savedProjects = await upsertComicProject(nextProject);
+    const savedProject = savedProjects.find((entry) => entry.id === project.id) ?? nextProject;
+
+    return buildTextResult(
+      `已写回漫画项目字段：${project.title}
+变更字段：${Object.keys(fields).join("、")}
+更新时间：${savedProject.updatedAt}`,
+      {
+        applicationId: "comic",
+        resourceType: "project",
+        applied: true,
+        dryRun: false,
+        projectId: project.id,
+        fields,
+        savedProject: summarizeComicProject(savedProject, true, true)
+      }
+    );
+  }
+
+  return buildTextResult(
+    `漫画项目字段修改预览（未写回）：${project.title}
+变更字段：${Object.keys(fields).join("、")}
+${formatFieldPreviewText(fields)}
+
+如需保存，请在用户确认后再次调用 comic_update_project_fields 并设置 dryRun=false。`,
+    {
+      applicationId: "comic",
+      resourceType: "project",
+      applied: false,
+      dryRun: true,
+      projectId: project.id,
+      fields,
+      proposedProject: {
+        ...summarizeComicProject(nextProject, true, true),
+        summary: truncateText(nextProject.summary, MAX_TEXT_CHARS),
+        visualStyle: truncateText(nextProject.visualStyle, MAX_TEXT_CHARS),
+        episodePlan: truncateText(nextProject.episodePlan, MAX_TEXT_CHARS)
+      }
+    }
+  );
 }
 
 async function handleWritingUpdateChapter(args: JsonObject) {
@@ -1827,6 +2621,196 @@ ${formatFieldPreviewText(fields)}
         status: nextChapter.status,
         content: truncateText(nextChapter.content, MAX_TEXT_CHARS),
         updatedAt: nextChapter.updatedAt
+      }
+    }
+  );
+}
+
+async function handleComicUpdateChapter(args: JsonObject) {
+  const projects = await listComicProjects();
+  const project = findComicProject(projects, asString(args.projectIdOrTitle));
+  const chapter = findComicChapter(project, args);
+  const dryRun = asBoolean(args.dryRun, true);
+  const timestamp = new Date().toISOString();
+  const nextChapterBase: ComicChapter = {
+    ...chapter,
+    ...(args.title !== undefined ? { title: asString(args.title) || chapter.title } : {}),
+    ...(args.summary !== undefined ? { summary: String(args.summary ?? "") } : {}),
+    ...(args.prompt !== undefined ? { prompt: String(args.prompt ?? "") } : {}),
+    ...(args.content !== undefined ? { content: String(args.content ?? "") } : {}),
+    ...(args.storyboards !== undefined ? { storyboards: normalizeComicStoryboardsInput(args.storyboards, chapter.storyboards) } : {}),
+    ...(args.status !== undefined ? { status: asComicChapterStatus(args.status) } : {}),
+    ...(args.assetRefs !== undefined ? { assetRefs: normalizeComicAssetRefsForTool(args.assetRefs, project) } : {}),
+    updatedAt: timestamp
+  };
+  const nextChapter = syncComicStoryboardImageIdsForTool(nextChapterBase);
+  const fields: JsonObject = {};
+
+  for (const field of ["title", "summary", "prompt", "content", "storyboards", "status", "assetRefs"] as const) {
+    if (args[field] !== undefined) {
+      fields[field] =
+        field === "assetRefs" || field === "storyboards"
+          ? buildStructuredFieldPreview(chapter[field], nextChapter[field])
+          : buildFieldPreview(chapter[field], nextChapter[field]);
+    }
+  }
+
+  if (!Object.keys(fields).length) {
+    throw new Error("没有提供任何漫画章节字段变更。");
+  }
+
+  assertExpectedTimestamp("漫画项目", asString(args.expectedProjectUpdatedAt), project.updatedAt);
+  assertExpectedTimestamp("漫画章节", asString(args.expectedChapterUpdatedAt), chapter.updatedAt);
+
+  const nextProject: ComicProject = {
+    ...project,
+    chapters: project.chapters.map((entry) => (entry.id === chapter.id ? nextChapter : entry)),
+    updatedAt: timestamp
+  };
+
+  if (!dryRun) {
+    const savedProjects = await upsertComicProject(nextProject);
+    const savedProject = savedProjects.find((entry) => entry.id === project.id) ?? nextProject;
+
+    return buildTextResult(
+      `已写回漫画章节：${project.title} / 第 ${nextChapter.index} 章 ${nextChapter.title}
+变更字段：${Object.keys(fields).join("、")}
+更新时间：${savedProject.updatedAt}`,
+      {
+        applicationId: "comic",
+        resourceType: "chapter",
+        applied: true,
+        dryRun: false,
+        projectId: project.id,
+        chapterId: chapter.id,
+        fields,
+        savedProject: summarizeComicProject(savedProject, true, true)
+      }
+    );
+  }
+
+  return buildTextResult(
+    `漫画章节修改预览（未写回）：${project.title} / 第 ${chapter.index} 章 ${chapter.title}
+变更字段：${Object.keys(fields).join("、")}
+${formatFieldPreviewText(fields)}
+
+如需保存，请在用户确认后再次调用 comic_update_chapter 并设置 dryRun=false。`,
+    {
+      applicationId: "comic",
+      resourceType: "chapter",
+      applied: false,
+      dryRun: true,
+      projectId: project.id,
+      chapterId: chapter.id,
+      fields,
+      proposedChapter: {
+        ...nextChapter,
+        content: truncateText(nextChapter.content, MAX_TEXT_CHARS)
+      }
+    }
+  );
+}
+
+async function handleComicUpdateChapterImages(args: JsonObject) {
+  const projects = await listComicProjects();
+  const project = findComicProject(projects, asString(args.projectIdOrTitle));
+  const chapter = findComicChapter(project, args);
+  const dryRun = asBoolean(args.dryRun, true);
+  const mode = asString(args.mode) === "replace" ? "replace" : "append";
+  const timestamp = new Date().toISOString();
+  const targetStoryboard = findComicStoryboard(chapter, args);
+  const incomingImages = normalizeComicChapterImagesInput(args.images, asString(args.prompt || targetStoryboard?.prompt || chapter.prompt)).map((image) => ({
+    ...image,
+    storyboardId: targetStoryboard?.id ?? image.storyboardId
+  }));
+
+  if (!incomingImages.length) {
+    throw new Error("没有提供可写入的漫画图片。请传入 images，且每张至少包含 src。");
+  }
+
+  assertExpectedTimestamp("漫画项目", asString(args.expectedProjectUpdatedAt), project.updatedAt);
+  assertExpectedTimestamp("漫画章节", asString(args.expectedChapterUpdatedAt), chapter.updatedAt);
+
+  const nextImages =
+    mode === "replace" && targetStoryboard
+      ? [...chapter.images.filter((image) => image.storyboardId !== targetStoryboard.id), ...incomingImages]
+      : mode === "replace"
+        ? incomingImages
+        : [...chapter.images, ...incomingImages];
+  const nextChapterBase: ComicChapter = {
+    ...chapter,
+    ...(args.prompt !== undefined ? { prompt: String(args.prompt ?? "") } : {}),
+    images: nextImages,
+    storyboards: chapter.storyboards.map((storyboard) =>
+      storyboard.id === targetStoryboard?.id && storyboard.status === "todo"
+        ? { ...storyboard, status: "inProgress", updatedAt: timestamp }
+        : storyboard
+    ),
+    status: chapter.status === "todo" ? "inProgress" : chapter.status,
+    updatedAt: timestamp
+  };
+  const nextChapter = syncComicStoryboardImageIdsForTool(nextChapterBase);
+  const nextProject: ComicProject = {
+    ...project,
+    chapters: project.chapters.map((entry) => (entry.id === chapter.id ? nextChapter : entry)),
+    updatedAt: timestamp
+  };
+  const fields: JsonObject = {
+    images: buildStructuredFieldPreview(chapter.images, nextImages)
+  };
+
+  if (args.prompt !== undefined) {
+    fields.prompt = buildFieldPreview(chapter.prompt, nextChapter.prompt);
+  }
+
+  if (!dryRun) {
+    const savedProjects = await upsertComicProject(nextProject);
+    const savedProject = savedProjects.find((entry) => entry.id === project.id) ?? nextProject;
+
+    return buildTextResult(
+      `已写回漫画章节图片：${project.title} / 第 ${chapter.index} 章 ${chapter.title}
+模式：${mode}
+目标分镜：${targetStoryboard ? `${targetStoryboard.index}. ${targetStoryboard.title}` : "整章"}
+新增图片：${incomingImages.length} 张
+章节图片总数：${nextImages.length}
+更新时间：${savedProject.updatedAt}`,
+      {
+        applicationId: "comic",
+        resourceType: "chapterImages",
+        applied: true,
+        dryRun: false,
+        mode,
+        storyboardId: targetStoryboard?.id ?? "",
+        projectId: project.id,
+        chapterId: chapter.id,
+        fields,
+        savedProject: summarizeComicProject(savedProject, true, true),
+        images: incomingImages
+      }
+    );
+  }
+
+  return buildTextResult(
+    `漫画章节图片写入预览（未写回）：${project.title} / 第 ${chapter.index} 章 ${chapter.title}
+模式：${mode}
+目标分镜：${targetStoryboard ? `${targetStoryboard.index}. ${targetStoryboard.title}` : "整章"}
+新增图片：${incomingImages.length} 张
+章节图片总数：${chapter.images.length} -> ${nextImages.length}
+
+如需保存，请在用户确认后再次调用 comic_update_chapter_images 并设置 dryRun=false。`,
+    {
+      applicationId: "comic",
+      resourceType: "chapterImages",
+      applied: false,
+      dryRun: true,
+      mode,
+      projectId: project.id,
+      chapterId: chapter.id,
+      fields,
+      images: incomingImages,
+      proposedChapter: {
+        ...nextChapter,
+        content: truncateText(nextChapter.content, MAX_TEXT_CHARS)
       }
     }
   );
@@ -2074,6 +3058,93 @@ async function handleWritingUpdateStoryAssets(args: JsonObject) {
   );
 }
 
+async function handleComicUpdateAssets(args: JsonObject) {
+  const projects = await listComicProjects();
+  const project = findComicProject(projects, asString(args.projectIdOrTitle));
+  const dryRun = asBoolean(args.dryRun, true);
+  const mode = asString(args.mode) === "replace" ? "replace" : "merge";
+  const timestamp = new Date().toISOString();
+  const existingById = new Map(project.assets.map((asset) => [asset.id, asset]));
+  const existingByName = new Map(project.assets.map((asset) => [normalizeAssetMergeKey(asset.name), asset]));
+  const incomingAssets = (Array.isArray(args.assets) ? args.assets : [])
+    .map((entry, index) => {
+      const source = isObject(entry) ? entry : {};
+      const current =
+        (asString(source.id) ? existingById.get(asString(source.id)) : null) ??
+        (asString(source.name) ? existingByName.get(normalizeAssetMergeKey(source.name)) : null);
+      return normalizeComicAssetInput(entry, index, current ?? undefined);
+    })
+    .filter((entry): entry is ComicAsset => Boolean(entry));
+
+  if (!incomingAssets.length) {
+    throw new Error("没有提供可写入的漫画素材。请传入 assets。");
+  }
+
+  assertExpectedTimestamp("漫画项目", asString(args.expectedProjectUpdatedAt), project.updatedAt);
+
+  const nextAssets = mergeComicAssets(project.assets, incomingAssets, mode);
+  const nextAssetIds = new Set(nextAssets.map((asset) => asset.id));
+  const nextProject: ComicProject = {
+    ...project,
+    assets: nextAssets,
+    chapters: project.chapters.map((chapter) => ({
+      ...chapter,
+      assetRefs: chapter.assetRefs.filter((assetId) => nextAssetIds.has(assetId))
+    })),
+    updatedAt: timestamp
+  };
+  const fields: JsonObject = {
+    assets: buildStructuredFieldPreview(project.assets, nextAssets)
+  };
+
+  if (!dryRun) {
+    const savedProjects = await upsertComicProject(nextProject);
+    const savedProject = savedProjects.find((entry) => entry.id === project.id) ?? nextProject;
+
+    return buildTextResult(
+      `已写回漫画素材库：${project.title}
+模式：${mode}
+输入素材：${incomingAssets.length} 个
+素材总数：${savedProject.assets.length} 个
+更新时间：${savedProject.updatedAt}`,
+      {
+        applicationId: "comic",
+        resourceType: "assets",
+        applied: true,
+        dryRun: false,
+        mode,
+        projectId: project.id,
+        fields,
+        savedProject: summarizeComicProject(savedProject, true, true),
+        assets: incomingAssets
+      }
+    );
+  }
+
+  return buildTextResult(
+    `漫画素材库修改预览（未写回）：${project.title}
+模式：${mode}
+输入素材：${incomingAssets.length} 个
+素材总数：${project.assets.length} -> ${nextAssets.length}
+
+如需保存，请在用户确认后再次调用 comic_update_assets 并设置 dryRun=false。`,
+    {
+      applicationId: "comic",
+      resourceType: "assets",
+      applied: false,
+      dryRun: true,
+      mode,
+      projectId: project.id,
+      fields,
+      assets: incomingAssets,
+      proposedProject: {
+        ...summarizeComicProject(nextProject, true, true),
+        assets: nextAssets
+      }
+    }
+  );
+}
+
 export async function callApplicationTool(server: McpServerConfig, request: McpToolCallRequest): Promise<McpToolCallResult> {
   const args = isObject(request.arguments) ? request.arguments : {};
   let result: Omit<McpToolCallResult, "serverId" | "serverName" | "toolName" | "isError">;
@@ -2099,6 +3170,24 @@ export async function callApplicationTool(server: McpServerConfig, request: McpT
       break;
     case "writing_update_story_assets":
       result = await handleWritingUpdateStoryAssets(args);
+      break;
+    case "comic_list_projects":
+      result = await handleComicListProjects(args);
+      break;
+    case "comic_read_project":
+      result = await handleComicReadProject(args);
+      break;
+    case "comic_update_project_fields":
+      result = await handleComicUpdateProjectFields(args);
+      break;
+    case "comic_update_chapter":
+      result = await handleComicUpdateChapter(args);
+      break;
+    case "comic_update_chapter_images":
+      result = await handleComicUpdateChapterImages(args);
+      break;
+    case "comic_update_assets":
+      result = await handleComicUpdateAssets(args);
       break;
     default:
       throw new Error(`未知应用工具：${request.toolName}`);

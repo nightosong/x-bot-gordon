@@ -14,6 +14,8 @@ import type {
   ComicChapter,
   ComicChapterImage,
   ComicChapterStatus,
+  ComicStoryboardKind,
+  ComicStoryboardShot,
   ComicProject,
   ComicProjectFormat,
   ComicProjectPalette,
@@ -3214,6 +3216,7 @@ export async function deleteWritingBook(bookId: string, moveToTrash: (targetPath
 const COMIC_PROJECT_FORMATS = new Set<ComicProjectFormat>(["poster", "serial"]);
 const COMIC_PROJECT_PALETTES = new Set<ComicProjectPalette>(["monochrome", "color"]);
 const COMIC_CHAPTER_STATUSES = new Set<ComicChapterStatus>(["todo", "inProgress", "done"]);
+const COMIC_STORYBOARD_KINDS = new Set<ComicStoryboardKind>(["dialogue", "scene", "action", "transition", "emotion", "other"]);
 const COMIC_ASSET_TYPES = new Set<ComicAssetType>(["character", "prop", "scene"]);
 const COMIC_ASSET_VIEW_KINDS = new Set<ComicAssetViewKind>(["turnaround", "front", "side", "back", "angle", "wide", "detail"]);
 
@@ -3230,6 +3233,11 @@ function normalizeComicProjectPalette(value: unknown): ComicProjectPalette {
 function normalizeComicChapterStatus(value: unknown): ComicChapterStatus {
   const status = String(value ?? "").trim();
   return COMIC_CHAPTER_STATUSES.has(status as ComicChapterStatus) ? (status as ComicChapterStatus) : "todo";
+}
+
+function normalizeComicStoryboardKind(value: unknown): ComicStoryboardKind {
+  const kind = String(value ?? "").trim();
+  return COMIC_STORYBOARD_KINDS.has(kind as ComicStoryboardKind) ? (kind as ComicStoryboardKind) : "other";
 }
 
 function normalizeComicAssetType(value: unknown): ComicAssetType {
@@ -3295,6 +3303,7 @@ function normalizeComicChapterImage(input: Partial<ComicChapterImage> | null | u
 
   return {
     id: String(input?.id ?? "").trim() || `comic_chapter_image_${randomUUID()}`,
+    storyboardId: String(input?.storyboardId ?? "").trim() || undefined,
     alt: String(input?.alt ?? "").trim() || `画面 ${index + 1}`,
     src: cleanComicImageSource(input?.src),
     prompt: String(input?.prompt ?? ""),
@@ -3324,6 +3333,71 @@ function normalizeComicChapterImages(input: unknown, legacyContent = ""): ComicC
   });
 
   return images;
+}
+
+function normalizeComicStoryboardShot(input: Partial<ComicStoryboardShot> | null | undefined, index = 0, chapterPrompt = ""): ComicStoryboardShot {
+  const now = new Date().toISOString();
+  const order = Math.max(1, Math.round(Number(input?.index ?? index + 1) || index + 1));
+
+  return {
+    id: String(input?.id ?? "").trim() || `comic_storyboard_${randomUUID()}`,
+    index: order,
+    kind: normalizeComicStoryboardKind(input?.kind),
+    title: String(input?.title ?? "").trim() || `分镜 ${order}`,
+    beat: String(input?.beat ?? ""),
+    dialogue: String(input?.dialogue ?? ""),
+    camera: String(input?.camera ?? ""),
+    prompt: String(input?.prompt ?? "").trim() || chapterPrompt,
+    status: normalizeComicChapterStatus(input?.status),
+    imageIds: Array.from(
+      new Set((Array.isArray(input?.imageIds) ? input.imageIds : []).map((imageId) => String(imageId ?? "").trim()).filter(Boolean))
+    ),
+    updatedAt: String(input?.updatedAt ?? "").trim() || now
+  };
+}
+
+function normalizeComicStoryboards(input: unknown, chapterPrompt = "", images: ComicChapterImage[] = []): ComicStoryboardShot[] {
+  const storyboards = (Array.isArray(input) ? input : [])
+    .map((shot, index) => normalizeComicStoryboardShot(shot as Partial<ComicStoryboardShot>, index, chapterPrompt))
+    .sort((left, right) => left.index - right.index)
+    .map((shot, index) => ({ ...shot, index: index + 1 }));
+
+  if (storyboards.length) {
+    const storyboardIds = new Set(storyboards.map((shot) => shot.id));
+
+    return storyboards.map((shot) => ({
+      ...shot,
+      imageIds: shot.imageIds.filter((imageId) => images.some((image) => image.id === imageId))
+    })).map((shot) => ({
+      ...shot,
+      imageIds: Array.from(
+        new Set([
+          ...shot.imageIds,
+          ...images.filter((image) => image.storyboardId === shot.id && storyboardIds.has(shot.id)).map((image) => image.id)
+        ])
+      )
+    }));
+  }
+
+  if (!chapterPrompt && !images.length) {
+    return [];
+  }
+
+  return [
+    normalizeComicStoryboardShot(
+      {
+        index: 1,
+        kind: "scene",
+        title: "分镜 1",
+        beat: "",
+        prompt: chapterPrompt,
+        imageIds: images.map((image) => image.id),
+        status: images.length ? "inProgress" : "todo"
+      },
+      0,
+      chapterPrompt
+    )
+  ];
 }
 
 function parseComicImageDataUrl(value: string): { buffer: Buffer; extension: string } | null {
@@ -3448,6 +3522,12 @@ function normalizeComicChapter(input: Partial<ComicChapter> | null | undefined, 
     ...image,
     prompt: image.prompt || chapterPrompt
   }));
+  const storyboards = normalizeComicStoryboards(input?.storyboards, chapterPrompt, images);
+  const storyboardIds = new Set(storyboards.map((shot) => shot.id));
+  const normalizedImages = images.map((image) => ({
+    ...image,
+    storyboardId: image.storyboardId && storyboardIds.has(image.storyboardId) ? image.storyboardId : storyboards[0]?.id
+  }));
 
   return {
     id: String(input?.id ?? "").trim() || `comic_chapter_${randomUUID()}`,
@@ -3456,7 +3536,16 @@ function normalizeComicChapter(input: Partial<ComicChapter> | null | undefined, 
     summary: String(input?.summary ?? ""),
     prompt: chapterPrompt,
     content: stripComicChapterImageMarkdown(content),
-    images,
+    storyboards: storyboards.map((shot) => ({
+      ...shot,
+      imageIds: Array.from(
+        new Set([
+          ...shot.imageIds.filter((imageId) => normalizedImages.some((image) => image.id === imageId)),
+          ...normalizedImages.filter((image) => image.storyboardId === shot.id).map((image) => image.id)
+        ])
+      )
+    })),
+    images: normalizedImages,
     status: normalizeComicChapterStatus(input?.status),
     assetRefs: normalizeComicAssetRefs(input?.assetRefs),
     updatedAt: String(input?.updatedAt ?? "").trim() || now
@@ -3476,10 +3565,11 @@ function normalizeComicChapters(input: unknown): ComicChapter[] {
     normalizeComicChapter(
       {
         index: 1,
-        title: "开场分镜",
+        title: "第 1 章",
         summary: "写下这一章的场景目标、镜头顺序、角色动作和结尾画面。",
         prompt: "基于总介绍生成开场分镜，明确画面、动作、对白和页数。",
         content: "",
+        storyboards: [],
         status: "inProgress"
       },
       0
@@ -3608,6 +3698,9 @@ function normalizeComicProject(input: Partial<ComicProject> | null | undefined, 
     episodePlan: String(input?.episodePlan ?? ""),
     pageCount: Math.max(1, Math.round(Number(input?.pageCount ?? 1) || 1)),
     coverTone: String(input?.coverTone ?? "").trim() || (index % 2 === 0 ? "ink" : "coral"),
+    coverUrl: String(input?.coverUrl ?? "").trim(),
+    coverPrompt: String(input?.coverPrompt ?? ""),
+    coverShouldShowTitle: input?.coverShouldShowTitle !== false,
     assets,
     chapters,
     createdAt,
@@ -3767,6 +3860,9 @@ function normalizeVideoProject(input: Partial<VideoProject> | null | undefined, 
     storyboardPlan: String(input?.storyboardPlan ?? ""),
     durationSeconds: normalizeVideoDurationSeconds(input?.durationSeconds, 5),
     coverTone: String(input?.coverTone ?? "").trim() || (index % 2 === 0 ? "lumen" : "violet"),
+    coverUrl: String(input?.coverUrl ?? "").trim(),
+    coverPrompt: String(input?.coverPrompt ?? ""),
+    coverShouldShowTitle: input?.coverShouldShowTitle !== false,
     shots: normalizeVideoShots(input?.shots),
     createdAt,
     updatedAt
@@ -3900,6 +3996,9 @@ function normalizeMusicProject(input: Partial<MusicProject> | null | undefined, 
     status: String(input?.status ?? "").trim() || "草稿",
     summary: String(input?.summary ?? ""),
     coverTone: String(input?.coverTone ?? "").trim() || (index % 2 === 0 ? "lunar" : "jade"),
+    coverUrl: String(input?.coverUrl ?? "").trim(),
+    coverPrompt: String(input?.coverPrompt ?? ""),
+    coverShouldShowTitle: input?.coverShouldShowTitle !== false,
     tracks: normalizeMusicTracks(input?.tracks),
     createdAt,
     updatedAt

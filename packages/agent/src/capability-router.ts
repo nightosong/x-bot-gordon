@@ -102,8 +102,8 @@ function inferNeedsFromContext(contextPacket: AgentContextPacket): AgentCapabili
     addNeed(needs, "generation", 7, "任务涉及图片、视频、音乐、音频或生成类产物");
   }
 
-  if (/writing|book|chapter|novel|application|story|asset|小说|章节|书稿|应用|故事|资产/u.test(text)) {
-    addNeed(needs, "application_asset", 7, "任务涉及应用广场资产、小说、章节或故事资产");
+  if (/writing|comic|book|chapter|novel|application|story|asset|storyboard|小说|漫画|章节|分镜|书稿|应用|故事|素材|资产/u.test(text)) {
+    addNeed(needs, "application_asset", 7, "任务涉及应用广场资产、小说/漫画、章节、分镜、素材或故事资产");
   }
 
   if (/verify|check|test|exists|contains|status|验证|检查|测试|存在|包含|状态/u.test(text)) {

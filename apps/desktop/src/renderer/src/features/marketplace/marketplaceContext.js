@@ -1,4 +1,5 @@
 export function createMarketplaceViewContext({
+  applicationCoverActions,
   comicActions,
   comicAiActions,
   comicChapterDropdownMenuRef,
@@ -16,6 +17,7 @@ export function createMarketplaceViewContext({
   writingChapterDropdownMenuRef
 }) {
   return {
+    applicationCoverActions,
     comicActions,
     comicAiActions,
     fieldAiActions,

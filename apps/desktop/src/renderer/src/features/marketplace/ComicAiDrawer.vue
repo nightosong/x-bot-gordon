@@ -41,8 +41,38 @@
       </div>
     </div>
 
-    <div v-if="isImageTask" class="comic-ai-control-grid">
-      <div class="field comic-ai-control-field">
+    <div v-if="isImageTask || isStoryboardTask" class="comic-ai-control-grid">
+      <div v-if="isStoryboardTask" class="field comic-ai-control-field">
+        <span class="field-label">分镜数</span>
+        <div class="comic-ai-control-picker" :class="{ 'is-open': activeControlPicker === 'storyboardCount' }">
+          <button
+            type="button"
+            class="comic-ai-control-trigger"
+            :aria-expanded="activeControlPicker === 'storyboardCount' ? 'true' : 'false'"
+            aria-haspopup="listbox"
+            @click="toggleControlPicker('storyboardCount')"
+          >
+            <span>{{ state.aiStoryboardCount }} 条</span>
+            <GIcon name="chevronDown" />
+          </button>
+          <div v-if="activeControlPicker === 'storyboardCount'" class="comic-ai-control-menu" role="listbox">
+            <button
+              v-for="count in comicAiStoryboardCountOptions"
+              :key="count"
+              type="button"
+              class="comic-ai-control-item"
+              :class="{ 'is-active': Number(state.aiStoryboardCount) === count }"
+              role="option"
+              :aria-selected="Number(state.aiStoryboardCount) === count ? 'true' : 'false'"
+              @click="selectComicAiStoryboardCount(count)"
+            >
+              {{ count }} 条
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="isImageTask" class="field comic-ai-control-field">
         <span class="field-label">数量</span>
         <div class="comic-ai-control-picker" :class="{ 'is-open': activeControlPicker === 'count' }">
           <button
@@ -72,7 +102,7 @@
         </div>
       </div>
 
-      <div class="field comic-ai-control-field">
+      <div v-if="isImageTask" class="field comic-ai-control-field">
         <span class="field-label">尺寸</span>
         <div class="comic-ai-control-picker" :class="{ 'is-open': activeControlPicker === 'size' }">
           <button
@@ -103,7 +133,7 @@
         </div>
       </div>
 
-      <div class="field comic-ai-control-field">
+      <div v-if="isImageTask" class="field comic-ai-control-field">
         <span class="field-label">质量</span>
         <div class="comic-ai-control-picker" :class="{ 'is-open': activeControlPicker === 'quality' }">
           <button
@@ -206,19 +236,19 @@
       <textarea
         :value="state.aiOutput"
         class="field-textarea writing-ai-output-textarea comic-ai-output-textarea"
-        :placeholder="isImageTask ? '生成结果、图片摘要或最终提示词会出现在这里。' : '大模型生成的漫画介绍、规划或目录会出现在这里。'"
+        :placeholder="isImageTask ? '生成结果、图片摘要或最终提示词会出现在这里。' : '大模型生成的漫画介绍、规划、目录或分镜会出现在这里。'"
         @input="setComicAiOutput($event.target.value)"
       ></textarea>
 
       <div v-if="!isReviewTask" class="model-section-actions comic-ai-output-actions">
         <button v-if="isImageTask" type="button" class="model-action-secondary" :disabled="state.isAiRunning" @click="applyComicAiOutput('prompt')">
-          写入生图提示词
+          写入当前分镜提示词
         </button>
         <button type="button" class="model-action-secondary" :disabled="state.isAiRunning || !canWriteContent" @click="applyComicAiOutput('append')">
-          {{ isImageTask ? "追加图片" : "追加" }}
+          {{ isImageTask ? "追加到当前分镜" : "追加" }}
         </button>
         <button type="button" class="model-action-secondary" :disabled="state.isAiRunning || !canWriteContent" @click="applyComicAiOutput('replace')">
-          {{ isImageTask ? "替换图片" : "替换" }}
+          {{ isImageTask ? "替换当前分镜图片" : "替换" }}
         </button>
       </div>
     </div>
@@ -246,6 +276,7 @@ const props = defineProps({
   setComicAiImageCount: { type: Function, required: true },
   setComicAiImageSize: { type: Function, required: true },
   setComicAiImageQuality: { type: Function, required: true },
+  setComicAiStoryboardCount: { type: Function, required: true },
   generateComicAiOutput: { type: Function, required: true },
   getMarketplaceAgentProgress: { type: Function, required: true },
   getMarketplaceAgentProgressItems: { type: Function, required: true },
@@ -258,9 +289,11 @@ const props = defineProps({
 
 const isAiInstructionOpen = ref(Boolean(props.state.aiInstruction?.trim()));
 const activeControlPicker = ref("");
-const comicAiCountOptions = Array.from({ length: 10 }, (_, index) => index + 1);
+const comicAiCountOptions = Array.from({ length: 20 }, (_, index) => index + 1);
+const comicAiStoryboardCountOptions = [4, 6, 8, 10, 12, 16, 20, 24, 30, 36, 40];
 const hasAiInstruction = computed(() => Boolean(props.state.aiInstruction?.trim()));
 const isImageTask = computed(() => props.activeComicAiTask?.type === "image");
+const isStoryboardTask = computed(() => props.activeComicAiTask?.writeMode === "storyboards");
 const isReviewTask = computed(() => props.activeComicAiTask?.writeMode === "review");
 const activeComicTaskTarget = computed(() => String(props.activeComicAiTask?.target ?? ""));
 const hasGeneratedImages = computed(() => Array.isArray(props.state.aiGeneratedImages) && props.state.aiGeneratedImages.length > 0);
@@ -319,6 +352,11 @@ function closeControlPicker() {
 
 function selectComicAiCount(count) {
   props.setComicAiImageCount(count);
+  closeControlPicker();
+}
+
+function selectComicAiStoryboardCount(count) {
+  props.setComicAiStoryboardCount(count);
   closeControlPicker();
 }
 

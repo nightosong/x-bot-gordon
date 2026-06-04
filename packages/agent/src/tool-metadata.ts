@@ -81,12 +81,12 @@ export function inferToolExecutionDomain(tool: McpToolDefinition): string {
     return "desktop";
   }
 
-  if (tool.serverId === BUILTIN_APPLICATION_TOOLS_MCP_ID || /application|writing|book|chapter|应用|小说|章节/u.test(source)) {
-    return "application_asset";
-  }
-
   if (tool.serverId === BUILTIN_GORDON_TOOLS_MCP_ID || /image|video|music|generate|图片|视频|音乐|生成/u.test(source)) {
     return "generation";
+  }
+
+  if (tool.serverId === BUILTIN_APPLICATION_TOOLS_MCP_ID || /application|writing|comic|book|chapter|asset|应用|小说|漫画|章节|分镜|素材/u.test(source)) {
+    return "application_asset";
   }
 
   return "external_mcp";

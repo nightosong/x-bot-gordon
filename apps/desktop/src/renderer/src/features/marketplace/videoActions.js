@@ -166,6 +166,9 @@ export function createVideoActions({
         project?.durationSeconds,
         VIDEO_PROJECT_MODE_META[mode]?.defaultDuration ?? 5
       ),
+      coverUrl: String(project?.coverUrl ?? "").trim(),
+      coverPrompt: String(project?.coverPrompt ?? ""),
+      coverShouldShowTitle: project?.coverShouldShowTitle !== false,
       coverTone:
         String(project?.coverTone ?? "").trim() ||
         VIDEO_PROJECT_COVER_TONES[index % VIDEO_PROJECT_COVER_TONES.length] ||
@@ -211,6 +214,9 @@ export function createVideoActions({
       visualStyle: project.visualStyle,
       storyboardPlan: project.storyboardPlan,
       durationSeconds: normalizeVideoDurationSeconds(project.durationSeconds),
+      coverUrl: String(project.coverUrl ?? "").trim(),
+      coverPrompt: String(project.coverPrompt ?? ""),
+      coverShouldShowTitle: project.coverShouldShowTitle !== false,
       shots: getVideoShots(project).map((shot, index) => ({
         ...normalizeVideoShotForUi(shot, index),
         updatedAt: shot.updatedAt
@@ -515,6 +521,9 @@ export function createVideoActions({
       storyboardPlan: "按镜头写下开场、推进、高潮和收束，每个镜头都要有主体、运动、景别和转场。",
       durationSeconds: 5,
       coverTone: VIDEO_PROJECT_COVER_TONES[videoProjects.value.length % VIDEO_PROJECT_COVER_TONES.length],
+      coverUrl: "",
+      coverPrompt: "",
+      coverShouldShowTitle: true,
       shots: [
         {
           id: createLocalId("video_shot"),
@@ -968,6 +977,7 @@ export function createVideoActions({
     openVideoAppShelf,
     openVideoExportDialog,
     openVideoProject,
+    persistVideoProjectById,
     selectVideoExportDirectory,
     selectVideoShot,
     selectVideoShotFromPicker,
@@ -991,6 +1001,7 @@ export function createVideoActions({
     submitVideoShot,
     toggleVideoProfileRail,
     toggleVideoShotPicker,
-    videoProjects
+    videoProjects,
+    touchVideoProject
   };
 }

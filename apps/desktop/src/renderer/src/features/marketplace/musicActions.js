@@ -257,6 +257,9 @@ export function createMusicActions({
       mood: normalizeMusicText(project?.mood) || "待定",
       status: normalizeMusicText(project?.status) || "草稿",
       summary: String(project?.summary ?? ""),
+      coverUrl: normalizeMusicText(project?.coverUrl),
+      coverPrompt: String(project?.coverPrompt ?? ""),
+      coverShouldShowTitle: project?.coverShouldShowTitle !== false,
       coverTone:
         normalizeMusicText(project?.coverTone) ||
         MUSIC_PROJECT_COVER_TONES[index % MUSIC_PROJECT_COVER_TONES.length] ||
@@ -302,6 +305,9 @@ export function createMusicActions({
       status: project.status,
       summary: project.summary,
       coverTone: project.coverTone,
+      coverUrl: normalizeMusicText(project.coverUrl),
+      coverPrompt: String(project.coverPrompt ?? ""),
+      coverShouldShowTitle: project.coverShouldShowTitle !== false,
       tracks: getMusicTracks(project).map((track, index) => ({
         ...normalizeMusicTrackForUi(track, index),
         updatedAt: track.updatedAt
@@ -450,6 +456,9 @@ export function createMusicActions({
       status: "草稿",
       summary: "写下这张专辑的主题、听感、使用场景和曲目方向。",
       coverTone: MUSIC_PROJECT_COVER_TONES[musicProjects.value.length % MUSIC_PROJECT_COVER_TONES.length] || "lunar",
+      coverUrl: "",
+      coverPrompt: "",
+      coverShouldShowTitle: true,
       tracks: [],
       createdAt: now,
       updatedAt: now
@@ -1127,6 +1136,7 @@ export function createMusicActions({
     openMusicExportDialog,
     openMusicApp,
     openMusicProject,
+    persistMusicProjectById,
     queryMusicGeneration,
     selectMusicProject,
     selectMusicExportDirectory,
@@ -1148,6 +1158,7 @@ export function createMusicActions({
     setMusicTab,
     setMusicAiDrawerOpen,
     toggleMusicAiTaskPicker,
-    toggleMusicProfileRail
+    toggleMusicProfileRail,
+    touchMusicProject
   };
 }

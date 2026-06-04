@@ -57,6 +57,7 @@ import {
 } from "../../../packages/workbench/src/index.js";
 import type {
   AgentRunProgressEvent,
+  ApplicationCoverImageSaveRequest,
   CommandWorkshopMessageExportFormat,
   CommandWorkshopMessageExportRequest,
   ComicProjectExportFormat,
@@ -69,7 +70,6 @@ import type {
   WeeklyFeishuSettings,
   VideoProjectExportFormat,
   VideoProjectExportRequest,
-  WritingBookCoverImageSaveRequest,
   WritingBookExportFormat,
   WritingBookExportRequest
 } from "../../../packages/shared/src/index.js";
@@ -543,7 +543,7 @@ function sanitizeWritingBookExportFileName(value: unknown, format: WritingBookEx
   return `${baseName || "未命名书稿"}.${format}`;
 }
 
-function inferWritingCoverImageMimeType(filePath: string): string {
+function inferApplicationCoverImageMimeType(filePath: string): string {
   const extension = path.extname(filePath).toLowerCase();
   const mimeTypes: Record<string, string> = {
     ".gif": "image/gif",
@@ -557,7 +557,7 @@ function inferWritingCoverImageMimeType(filePath: string): string {
   return mimeTypes[extension] ?? "image/png";
 }
 
-function inferWritingCoverExtensionFromMimeType(mimeType: string): string {
+function inferApplicationCoverExtensionFromMimeType(mimeType: string): string {
   const normalizedMimeType = String(mimeType ?? "").trim().toLowerCase().split(";")[0];
   const extensions: Record<string, string> = {
     "image/gif": "gif",
@@ -571,7 +571,7 @@ function inferWritingCoverExtensionFromMimeType(mimeType: string): string {
   return extensions[normalizedMimeType] ?? "png";
 }
 
-function sanitizeWritingCoverImageFileName(value: unknown, extension = "png"): string {
+function sanitizeApplicationCoverImageFileName(value: unknown, extension = "png"): string {
   const normalizedExtension = String(extension ?? "").trim().toLowerCase().replace(/^\./, "") || "png";
   const baseName = String(value ?? "")
     .replace(/\.[^.]+$/, "")
@@ -583,7 +583,7 @@ function sanitizeWritingCoverImageFileName(value: unknown, extension = "png"): s
   return `${baseName || "未命名封面"}.${normalizedExtension}`;
 }
 
-async function readWritingCoverImageSource(imageUrl: unknown): Promise<{ buffer: Buffer; extension: string; mimeType: string }> {
+async function readApplicationCoverImageSource(imageUrl: unknown): Promise<{ buffer: Buffer; extension: string; mimeType: string }> {
   const source = String(imageUrl ?? "").trim();
 
   if (!source) {
@@ -596,7 +596,7 @@ async function readWritingCoverImageSource(imageUrl: unknown): Promise<{ buffer:
     const mimeType = dataUrlMatch[1] || "image/png";
     return {
       buffer: Buffer.from(dataUrlMatch[2], "base64"),
-      extension: inferWritingCoverExtensionFromMimeType(mimeType),
+      extension: inferApplicationCoverExtensionFromMimeType(mimeType),
       mimeType
     };
   }
@@ -612,7 +612,7 @@ async function readWritingCoverImageSource(imageUrl: unknown): Promise<{ buffer:
     const urlExtension = path.extname(new URL(source).pathname).replace(/^\./, "").toLowerCase();
     const extension = urlExtension && ["gif", "jpeg", "jpg", "png", "svg", "webp"].includes(urlExtension)
       ? urlExtension
-      : inferWritingCoverExtensionFromMimeType(mimeType);
+      : inferApplicationCoverExtensionFromMimeType(mimeType);
 
     return {
       buffer: Buffer.from(await response.arrayBuffer()),
@@ -2784,10 +2784,10 @@ app.whenReady().then(async () => {
 
     return result.filePaths[0];
   });
-  ipcMain.handle("gordon:writing-books:select-cover-image", async (event) => {
+  const handleSelectApplicationCoverImage = async (event: Electron.IpcMainInvokeEvent) => {
     const ownerWindow = BrowserWindow.fromWebContents(event.sender);
     const openDialogOptions = {
-      title: "选择墨笔生花封面图片",
+      title: "选择作品封面图片",
       properties: ["openFile"],
       filters: [
         {
@@ -2807,14 +2807,17 @@ app.whenReady().then(async () => {
 
     const filePath = result.filePaths[0];
     const buffer = await readFile(filePath);
-    return `data:${inferWritingCoverImageMimeType(filePath)};base64,${buffer.toString("base64")}`;
-  });
-  ipcMain.handle("gordon:writing-books:save-cover-image", async (event, request: WritingBookCoverImageSaveRequest) => {
-    const imageSource = await readWritingCoverImageSource(request?.imageUrl);
+    return `data:${inferApplicationCoverImageMimeType(filePath)};base64,${buffer.toString("base64")}`;
+  };
+  const handleSaveApplicationCoverImage = async (
+    event: Electron.IpcMainInvokeEvent,
+    request: ApplicationCoverImageSaveRequest
+  ) => {
+    const imageSource = await readApplicationCoverImageSource(request?.imageUrl);
     const ownerWindow = BrowserWindow.fromWebContents(event.sender);
-    const fileName = sanitizeWritingCoverImageFileName(request?.title, imageSource.extension);
+    const fileName = sanitizeApplicationCoverImageFileName(request?.title, imageSource.extension);
     const saveDialogOptions = {
-      title: "下载墨笔生花封面",
+      title: "下载作品封面",
       defaultPath: path.join(app.getPath("documents"), fileName),
       filters: [
         {
@@ -2847,7 +2850,11 @@ app.whenReady().then(async () => {
       fileName: path.basename(normalizedFilePath),
       writtenBytes: imageSource.buffer.byteLength
     };
-  });
+  };
+  ipcMain.handle("gordon:application-cover:select-image", handleSelectApplicationCoverImage);
+  ipcMain.handle("gordon:application-cover:save-image", handleSaveApplicationCoverImage);
+  ipcMain.handle("gordon:writing-books:select-cover-image", handleSelectApplicationCoverImage);
+  ipcMain.handle("gordon:writing-books:save-cover-image", handleSaveApplicationCoverImage);
   ipcMain.handle("gordon:writing-books:export", async (_event, request: WritingBookExportRequest) => {
     const exportTarget = resolveWritingBookExportPath(request);
 

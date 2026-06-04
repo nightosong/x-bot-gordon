@@ -39,12 +39,12 @@ const COMIC_AI_TASKS_BY_TAB = {
     {
       id: "chapterOutline",
       label: "规划章节目录",
-      goal: "生成可落盘的章节标题、简介和出图提示词。",
+      goal: "生成可落盘的章节标题、内容简介和分镜提示词。",
       target: "写入：章节目录",
       runLabel: "生成目录",
       type: "text",
       writeMode: "chapters",
-      promptIntent: "生成漫画章节目录，每章必须有标题、分镜简介和适合后续单章生图的提示词。"
+      promptIntent: "生成漫画章节目录，每章必须有标题、章节内容简介和适合后续拆分镜/单章生图的提示词；如用户要求，可补一段可选章节正文。"
     },
     {
       id: "outlineReview",
@@ -59,40 +59,50 @@ const COMIC_AI_TASKS_BY_TAB = {
   ],
   chapter: [
     {
+      id: "splitStoryboards",
+      label: "拆分章节分镜",
+      goal: "把章节故事拆成可编辑的分镜轨道。",
+      target: "写入：当前章节分镜轨道",
+      runLabel: "拆分分镜",
+      type: "text",
+      writeMode: "storyboards",
+      promptIntent: "根据章节内容简介、章节正文、章节级提示和用户要求，把当前章节拆成多个连续分镜；每个分镜都要有画面事件、对白/旁白、镜头构图和可直接用于生图的提示词。"
+    },
+    {
       id: "chapterImage",
-      label: "单张漫画图",
-      goal: "把当前章节提炼为一张关键成图。",
-      target: "写入：当前章节图片区",
-      runLabel: "生成漫画图",
+      label: "生成当前分镜图",
+      goal: "把当前分镜绘制成单张画面。",
+      target: "写入：当前分镜图片区",
+      runLabel: "生成分镜图",
       type: "image",
       defaultImageCount: 1,
-      promptIntent: "生成 1 张完整漫画关键画面，突出本章最有冲击力的动作、情绪和构图。"
+      promptIntent: "生成当前选中分镜的完整漫画画面，突出该分镜的动作、情绪、对白留白和构图。"
     },
     {
       id: "comicPage",
       label: "漫画页分镜",
-      goal: "生成一页多格漫画画面。",
-      target: "写入：当前章节图片区",
+      goal: "把当前分镜扩成一页多格画面。",
+      target: "写入：当前分镜图片区",
       runLabel: "生成漫画页",
       type: "image",
       defaultImageCount: 1,
-      promptIntent: "生成一页完整漫画页，包含 4-6 个清晰分格，镜头有远中近变化，叙事顺序从左到右、从上到下清楚可读。"
+      promptIntent: "围绕当前分镜生成一页完整漫画页，包含 4-6 个清晰分格，镜头有远中近变化，叙事顺序清楚可读。"
     },
     {
       id: "continuousImages",
-      label: "连续图组",
-      goal: "多张连续画面保持角色与场景一致。",
-      target: "写入：当前章节图片区",
+      label: "分镜连续图",
+      goal: "为当前分镜生成多张连续候选画面。",
+      target: "写入：当前分镜图片区",
       runLabel: "生成连续图",
       type: "image",
       defaultImageCount: 4,
-      promptIntent: "生成多张连续叙事图，同一角色造型、服饰、光线、场景和色彩保持一致，每张推进一个动作节点。"
+      promptIntent: "围绕当前分镜生成多张连续叙事图，同一角色造型、服饰、光线、场景和色彩保持一致，每张推进一个动作节点。"
     },
     {
       id: "coverPoster",
       label: "封面海报",
       goal: "为项目生成封面或宣传图。",
-      target: "写入：当前章节图片区",
+      target: "写入：当前分镜图片区",
       runLabel: "生成封面图",
       type: "image",
       defaultImageCount: 1,
@@ -303,6 +313,7 @@ function parsePlainOutlineLines(text) {
         index: index + 1,
         title: match[2].trim(),
         summary: String(match[3] ?? "").trim(),
+        content: "",
         prompt: ""
       };
     })
@@ -322,14 +333,70 @@ function parseComicOutlineChapters(output) {
     return chapters
       .map((chapter, index) => ({
         index: clampInteger(chapter?.index, 1, 9999, index + 1),
-        title: normalizeText(chapter?.title || chapter?.name || `分镜章节 ${index + 1}`),
+        title: normalizeText(chapter?.title || chapter?.name || `第 ${index + 1} 章`),
         summary: normalizeText(chapter?.summary || chapter?.brief || chapter?.description),
+        content: normalizeText(chapter?.content || chapter?.story || chapter?.body),
         prompt: normalizeText(chapter?.prompt || chapter?.imagePrompt),
         status: normalizeText(chapter?.status || "todo") || "todo"
       }))
-      .filter((chapter) => chapter.title || chapter.summary || chapter.prompt);
+      .filter((chapter) => chapter.title || chapter.summary || chapter.content || chapter.prompt);
   } catch {
     return parsePlainOutlineLines(text);
+  }
+}
+
+function parsePlainStoryboardLines(text) {
+  return normalizeText(text)
+    .split(/\n+/)
+    .map((line, index) => {
+      const normalized = line.replace(/^[-*]\s*/, "").trim();
+
+      if (!normalized) {
+        return null;
+      }
+
+      const match = normalized.match(/^(?:#?\s*)?(?:分镜|镜头|画面)?\s*([0-9０-９]+)?\s*[.、:：-]?\s*(.+)$/u);
+      const body = String(match?.[2] ?? normalized).trim();
+      const [titlePart, ...restParts] = body.split(/[：:]/u);
+      const rest = restParts.join("：").trim();
+
+      return {
+        index: index + 1,
+        kind: "other",
+        title: titlePart.trim() || `分镜 ${index + 1}`,
+        beat: rest || body,
+        dialogue: "",
+        camera: "",
+        prompt: rest || body
+      };
+    })
+    .filter(Boolean);
+}
+
+function parseComicStoryboards(output) {
+  const text = normalizeText(output);
+
+  if (!text) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(extractJsonText(text));
+    const storyboards = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.storyboards) ? parsed.storyboards : [];
+    return storyboards
+      .map((storyboard, index) => ({
+        index: clampInteger(storyboard?.index, 1, 9999, index + 1),
+        kind: normalizeText(storyboard?.kind || "other"),
+        title: normalizeText(storyboard?.title || storyboard?.name || `分镜 ${index + 1}`),
+        beat: normalizeText(storyboard?.beat || storyboard?.summary || storyboard?.description || storyboard?.content),
+        dialogue: normalizeText(storyboard?.dialogue || storyboard?.lines || storyboard?.caption),
+        camera: normalizeText(storyboard?.camera || storyboard?.shot || storyboard?.composition),
+        prompt: normalizeText(storyboard?.prompt || storyboard?.imagePrompt),
+        status: normalizeText(storyboard?.status || "todo") || "todo"
+      }))
+      .filter((storyboard) => storyboard.title || storyboard.beat || storyboard.dialogue || storyboard.camera || storyboard.prompt);
+  } catch {
+    return parsePlainStoryboardLines(text);
   }
 }
 
@@ -338,10 +405,15 @@ export function createComicAiActions({
   activeComicChapterAssets,
   activeComicChapterImage,
   activeComicChapterIndex,
+  activeComicStoryboard,
+  activeComicStoryboardImages,
+  activeComicStoryboardIndex,
+  activeComicStoryboards,
   activeComicProject,
   activeComicTabMeta,
   appendComicChapterImages,
   applyComicChaptersFromAi,
+  applyComicStoryboardsFromAi,
   createLocalId,
   desktopApi,
   getComicChapterDisplayTitle,
@@ -350,6 +422,7 @@ export function createComicAiActions({
   setComicChapterImagePrompt,
   setComicChapterImages,
   setComicChapterPrompt,
+  setComicStoryboardField,
   setComicProjectEpisodePlan,
   setComicProjectSummary,
   setComicProjectVisualStyle,
@@ -364,11 +437,16 @@ export function createComicAiActions({
       chapter: activeComicChapter.value,
       chapterImage: activeComicChapterImage?.value ?? null,
       chapterIndex: activeComicChapterIndex.value,
+      storyboard: activeComicStoryboard?.value ?? null,
+      storyboardIndex: activeComicStoryboardIndex?.value ?? -1,
+      storyboards: activeComicStoryboards?.value ?? [],
+      storyboardImages: activeComicStoryboardImages?.value ?? [],
       tabId: ui.marketplace.comic.activeTab,
       tabLabel: activeComicTabMeta.value?.fieldLabel,
       task: activeComicAiTask.value,
       instruction: ui.marketplace.comic.aiInstruction,
       imageCount: ui.marketplace.comic.aiImageCount,
+      storyboardCount: ui.marketplace.comic.aiStoryboardCount,
       referencedAssets: activeComicChapterAssets?.value ?? []
     })
   );
@@ -389,7 +467,9 @@ export function createComicAiActions({
     state.aiTaskId = task.id;
 
     if (task.type === "image") {
-      state.aiImageCount = clampInteger(state.aiImageCount, 1, 10, task.defaultImageCount || 1);
+      state.aiImageCount = clampInteger(state.aiImageCount, 1, 20, task.defaultImageCount || 1);
+    } else if (task.writeMode === "storyboards") {
+      state.aiStoryboardCount = clampInteger(state.aiStoryboardCount, 1, 40, 8);
     }
 
     return task;
@@ -419,7 +499,9 @@ export function createComicAiActions({
     state.isAiTaskPickerOpen = false;
 
     if (task.type === "image") {
-      state.aiImageCount = clampInteger(task.defaultImageCount, 1, 10, 1);
+      state.aiImageCount = clampInteger(task.defaultImageCount, 1, 20, 1);
+    } else if (task.writeMode === "storyboards") {
+      state.aiStoryboardCount = clampInteger(state.aiStoryboardCount, 1, 40, 8);
     }
   }
 
@@ -449,10 +531,53 @@ export function createComicAiActions({
   }
 
   function setComicAiImageCount(value) {
-    getState().aiImageCount = clampInteger(value, 1, 10, 1);
+    getState().aiImageCount = clampInteger(value, 1, 20, 1);
   }
 
-  function buildComicContextLines(project, chapter, chapterIndex, tabLabel, referencedAssets = [], chapterImage = null) {
+  function setComicAiStoryboardCount(value) {
+    getState().aiStoryboardCount = clampInteger(value, 1, 40, 8);
+  }
+
+  function buildComicStoryboardContextLines(storyboards = [], activeStoryboard = null, storyboardIndex = -1, storyboardImages = []) {
+    const normalizedStoryboards = Array.isArray(storyboards) ? storyboards : [];
+    const activeIndex = Number.isFinite(storyboardIndex) ? storyboardIndex : -1;
+    const activeOrder = activeIndex >= 0 ? activeIndex + 1 : normalizedStoryboards.findIndex((storyboard) => storyboard.id === activeStoryboard?.id) + 1;
+
+    return [
+      `章节分镜数量：${normalizedStoryboards.length}`,
+      normalizedStoryboards.length
+        ? `分镜轨道：${normalizedStoryboards
+            .slice(0, 40)
+            .map((storyboard, index) => {
+              const title = normalizeText(storyboard?.title) || `分镜 ${index + 1}`;
+              const kind = normalizeText(storyboard?.kind) || "other";
+              const beat = clipText(storyboard?.beat || storyboard?.prompt || "暂无", 160);
+              return `${index + 1}. [${kind}] ${title}：${beat}`;
+            })
+            .join("\n")}`
+        : "分镜轨道：暂无",
+      activeStoryboard ? `当前分镜：第 ${activeOrder || 1} 条 / ${normalizeText(activeStoryboard.title) || "未命名分镜"}` : "当前分镜：暂无",
+      activeStoryboard ? `当前分镜类型：${normalizeText(activeStoryboard.kind) || "other"}` : "",
+      activeStoryboard ? `当前分镜画面：${clipText(activeStoryboard.beat || "暂无", 600)}` : "",
+      activeStoryboard ? `当前分镜对白/旁白：${clipText(activeStoryboard.dialogue || "暂无", 360)}` : "",
+      activeStoryboard ? `当前分镜镜头：${clipText(activeStoryboard.camera || "暂无", 360)}` : "",
+      activeStoryboard ? `当前分镜提示词：${clipText(activeStoryboard.prompt || "暂无", 700)}` : "",
+      activeStoryboard ? `当前分镜已生成图片：${Array.isArray(storyboardImages) ? storyboardImages.length : 0} 张` : ""
+    ].filter(Boolean);
+  }
+
+  function buildComicContextLines(
+    project,
+    chapter,
+    chapterIndex,
+    tabLabel,
+    referencedAssets = [],
+    chapterImage = null,
+    storyboard = null,
+    storyboardIndex = -1,
+    storyboards = [],
+    storyboardImages = []
+  ) {
     const chapterTitle = chapter ? getComicChapterDisplayTitle(chapter, chapterIndex) : "暂无当前章节";
     const imageParams = [
       normalizeText(chapterImage?.size) ? `尺寸 ${normalizeText(chapterImage.size)}` : "",
@@ -472,21 +597,50 @@ export function createComicAiActions({
       `画风与镜头：${clipText(project?.visualStyle || "暂无")}`,
       `总规划：${clipText(project?.episodePlan || "暂无")}`,
       `当前章节：${chapterTitle}`,
-      `分镜简介：${clipText(chapter?.summary || "暂无")}`,
-      `已有生成提示词：${clipText(chapter?.prompt || "暂无")}`,
+      `章节内容简介：${clipText(chapter?.summary || "暂无")}`,
+      `章节正文/故事内容：${clipText(chapter?.content || "暂无", 1400)}`,
+      `分镜与出图提示：${clipText(chapter?.prompt || "暂无")}`,
+      ...buildComicStoryboardContextLines(storyboards, storyboard, storyboardIndex, storyboardImages),
       chapterImage ? `当前选中图片：${normalizeText(chapterImage.alt) || "未命名画面"}${imageParams ? `（${imageParams}）` : ""}` : "",
       chapterImage ? `当前图片生图提示词：${clipText(chapterImage.prompt || "暂无")}` : "",
-      `历史生成备注：${clipText(chapter?.content || "暂无", 900)}`,
       ...buildComicAssetContextLines(referencedAssets)
     ].filter(Boolean);
   }
 
-  function buildComicAiPrompt({ project, chapter, chapterImage, chapterIndex, tabId, tabLabel, task, instruction, imageCount, referencedAssets }) {
+  function buildComicAiPrompt({
+    project,
+    chapter,
+    chapterImage,
+    chapterIndex,
+    storyboard,
+    storyboardIndex,
+    storyboards,
+    storyboardImages,
+    tabId,
+    tabLabel,
+    task,
+    instruction,
+    imageCount,
+    storyboardCount,
+    referencedAssets
+  }) {
     const safeTask = task ?? getTasksByTab(tabId)[0];
     const userInstruction = normalizeText(instruction) || "按当前项目设定生成，保持漫画感、画面连续性和可执行性。";
+    const contextLines = buildComicContextLines(
+      project,
+      chapter,
+      chapterIndex,
+      tabLabel,
+      referencedAssets,
+      chapterImage,
+      storyboard,
+      storyboardIndex,
+      storyboards,
+      storyboardImages
+    ).join("\n");
 
     if (safeTask.type === "image") {
-      const count = clampInteger(imageCount, 1, 10, safeTask.defaultImageCount || 1);
+      const count = clampInteger(imageCount, 1, 20, safeTask.defaultImageCount || 1);
       const sequenceLine =
         safeTask.id === "continuousImages"
           ? `连续图数量：${count} 张。请明确第 1 张到第 ${count} 张的画面推进，并保持角色、服饰、场景和色调一致。`
@@ -502,7 +656,7 @@ export function createComicAiActions({
         sequenceLine,
         "",
         "【项目上下文】",
-        buildComicContextLines(project, chapter, chapterIndex, tabLabel, referencedAssets, chapterImage).join("\n"),
+        contextLines,
         "",
         "【用户额外要求】",
         userInstruction,
@@ -519,9 +673,17 @@ export function createComicAiActions({
       safeTask.writeMode === "chapters"
         ? [
             "请只输出 JSON 对象，不要代码块。",
-            '格式：{"chapters":[{"index":1,"title":"章节标题","summary":"本章分镜简介","prompt":"本章单章生图提示词"}]}',
-            "章节数应贴合项目形态和页数目标；标题要适合漫画分镜，不要模板化重复。"
+            '格式：{"chapters":[{"index":1,"title":"章节标题","summary":"本章内容简介","content":"可选章节正文或故事草稿","prompt":"本章分镜与生图提示词"}]}',
+            "章节数应贴合项目形态和页数目标；summary 写故事事件和情绪推进，prompt 写分镜拆解、图片数量建议、景别、动作和出图约束；标题不要模板化重复。"
           ].join("\n")
+        : safeTask.writeMode === "storyboards"
+          ? [
+              "请只输出 JSON 对象，不要代码块。",
+              '格式：{"storyboards":[{"index":1,"kind":"dialogue|scene|action|transition|emotion|other","title":"分镜标题","beat":"画面内容与故事节点","dialogue":"对白/旁白，可为空","camera":"景别/构图/镜头运动","prompt":"可直接用于生成这一张图的生图提示词"}]}',
+              `目标分镜数：${clampInteger(storyboardCount, 1, 40, 8)} 条；如果用户额外要求了具体数量，以用户要求为准。`,
+              "分镜必须覆盖本章的对话、过渡、场景刻画、情绪停顿和打斗动作，不要把一章压缩成单张概念图。",
+              "kind 只能使用 dialogue / scene / action / transition / emotion / other；prompt 要聚焦单张图，不写解释和修改说明。"
+            ].join("\n")
         : safeTask.writeMode === "review"
           ? "请输出简洁的审阅报告，按问题、风险、修正建议组织，不要改写成章节正文。"
           : "请只输出可直接写入目标字段的正文，不要标题和解释。";
@@ -533,7 +695,7 @@ export function createComicAiActions({
       `${safeTask.label}：${safeTask.promptIntent}`,
       "",
       "【项目上下文】",
-      buildComicContextLines(project, chapter, chapterIndex, tabLabel, referencedAssets, chapterImage).join("\n"),
+      contextLines,
       "",
       "【用户额外要求】",
       userInstruction,
@@ -569,7 +731,7 @@ export function createComicAiActions({
     const result = await desktopApi.invokeModelText({
       requestId,
       temperature: task.writeMode === "review" ? 0.42 : 0.64,
-      maxOutputTokens: task.writeMode === "chapters" ? 3200 : 1800,
+      maxOutputTokens: task.writeMode === "chapters" || task.writeMode === "storyboards" ? 4200 : 1800,
       messages: [
         {
           role: "system",
@@ -610,7 +772,7 @@ export function createComicAiActions({
     const toolArguments = {
       prompt,
       size: state.aiImageSize,
-      n: clampInteger(state.aiImageCount, 1, 10, task.defaultImageCount || 1),
+      n: clampInteger(state.aiImageCount, 1, 20, task.defaultImageCount || 1),
       quality: state.aiQuality
     };
 
@@ -764,6 +926,24 @@ export function createComicAiActions({
       return;
     }
 
+    if (task.writeMode === "storyboards") {
+      const storyboards = parseComicStoryboards(output);
+
+      if (!storyboards.length) {
+        setComicAiFeedback("没有解析到可写入的分镜。", "warning");
+        return;
+      }
+
+      if (!applyComicStoryboardsFromAi(storyboards, mode)) {
+        setComicAiFeedback("分镜轨道写入失败。", "danger");
+        return;
+      }
+
+      setComicAiFeedback(mode === "replace" ? "已替换当前章节分镜。" : "已追加到当前章节分镜。", "success");
+      setStatus(mode === "replace" ? "灵绘小筑已替换当前章节分镜。" : "灵绘小筑已追加到当前章节分镜。", "success");
+      return;
+    }
+
     const currentText = getComicTextFieldValue(task);
     const nextText = mode === "append" ? buildAppendText(currentText, output) : output;
 
@@ -793,14 +973,18 @@ export function createComicAiActions({
         return;
       }
 
-      if (activeComicChapterImage?.value && typeof setComicChapterImagePrompt === "function") {
+      if (activeComicStoryboard?.value && typeof setComicStoryboardField === "function") {
+        setComicStoryboardField(activeComicStoryboard.value, "prompt", prompt);
+        setComicAiFeedback("已写入当前分镜生图提示词。", "success");
+        setStatus("灵绘小筑已写入当前分镜生图提示词。", "success");
+      } else if (activeComicChapterImage?.value && typeof setComicChapterImagePrompt === "function") {
         setComicChapterImagePrompt(chapter, activeComicChapterImage.value.id, prompt);
         setComicAiFeedback("已写入当前图片生图提示词。", "success");
         setStatus("灵绘小筑已写入当前图片生图提示词。", "success");
       } else {
         setComicChapterPrompt(chapter, prompt);
-        setComicAiFeedback("当前章节暂无图片，已写入章节提示词。", "success");
-        setStatus("灵绘小筑已写入当前章节提示词。", "success");
+        setComicAiFeedback("当前章节暂无图片，已写入分镜与出图提示。", "success");
+        setStatus("灵绘小筑已写入当前章节分镜与出图提示。", "success");
       }
       return;
     }
@@ -822,13 +1006,14 @@ export function createComicAiActions({
     }
 
     if (mode === "replace" && typeof setComicChapterImages === "function") {
-      setComicChapterImages(chapter, images);
+      setComicChapterImages(chapter, images, { storyboardId: activeComicStoryboard?.value?.id ?? "" });
     } else if (typeof appendComicChapterImages === "function") {
-      appendComicChapterImages(chapter, images);
+      appendComicChapterImages(chapter, images, { storyboardId: activeComicStoryboard?.value?.id ?? "" });
     }
 
-    setComicAiFeedback(mode === "replace" ? "已替换当前章节图片。" : "已追加到当前章节图片。", "success");
-    setStatus(mode === "replace" ? "灵绘小筑已替换当前章节图片。" : "灵绘小筑已追加到当前章节图片。", "success");
+    const targetLabel = activeComicStoryboard?.value ? "当前分镜图片" : "当前章节图片";
+    setComicAiFeedback(mode === "replace" ? `已替换${targetLabel}。` : `已追加到${targetLabel}。`, "success");
+    setStatus(mode === "replace" ? `灵绘小筑已替换${targetLabel}。` : `灵绘小筑已追加到${targetLabel}。`, "success");
   }
 
   function applyComicAiOutput(mode = "append") {
@@ -874,6 +1059,7 @@ export function createComicAiActions({
     setComicAiImageSize,
     setComicAiInstruction,
     setComicAiOutput,
+    setComicAiStoryboardCount,
     toggleComicAiPromptPreview,
     toggleComicAiTaskPicker
   };

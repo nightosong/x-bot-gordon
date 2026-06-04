@@ -173,6 +173,7 @@ export const BUILTIN_GORDON_AGENT_ID = "builtin:agent:gordon";
 export const BUILTIN_GORDON_TOOLS_MCP_ID = "builtin:mcp:gordon-tools";
 export const BUILTIN_APPLICATION_TOOLS_MCP_ID = "builtin:mcp:application-tools";
 export const BUILTIN_WRITING_SKILL_ID = "builtin:skill:writing";
+export const BUILTIN_COMIC_SKILL_ID = "builtin:skill:comic";
 export const BUILTIN_WORKBENCH_ID_PREFIX = "builtin:";
 export const SKILL_DISPLAY_NAME_MAP = {
   plan: "任务拆解",
@@ -181,7 +182,9 @@ export const SKILL_DISPLAY_NAME_MAP = {
   "code-guidelines": "代码准则",
   "self-improvement": "自我改进",
   "deep-research": "深度研究",
-  "skill-creator": "Skill 创建"
+  "skill-creator": "Skill 创建",
+  comic: "漫画创作",
+  writing: "小说创作"
 };
 
 export function getProviderMeta(providerKind) {

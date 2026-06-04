@@ -984,9 +984,13 @@ export interface WritingBookCoverImageSaveResult {
   writtenBytes: number;
 }
 
+export type ApplicationCoverImageSaveRequest = WritingBookCoverImageSaveRequest;
+export type ApplicationCoverImageSaveResult = WritingBookCoverImageSaveResult;
+
 export type ComicProjectFormat = "poster" | "serial";
 export type ComicProjectPalette = "monochrome" | "color";
 export type ComicChapterStatus = "todo" | "inProgress" | "done";
+export type ComicStoryboardKind = "dialogue" | "scene" | "action" | "transition" | "emotion" | "other";
 export type ComicAssetType = "character" | "prop" | "scene";
 export type ComicAssetViewKind = "turnaround" | "front" | "side" | "back" | "angle" | "wide" | "detail";
 
@@ -1011,12 +1015,27 @@ export interface ComicAsset {
 
 export interface ComicChapterImage {
   id: string;
+  storyboardId?: string;
   alt: string;
   src: string;
   prompt: string;
   size: string;
   quality: string;
   createdAt: string;
+}
+
+export interface ComicStoryboardShot {
+  id: string;
+  index: number;
+  kind: ComicStoryboardKind;
+  title: string;
+  beat: string;
+  dialogue: string;
+  camera: string;
+  prompt: string;
+  status: ComicChapterStatus;
+  imageIds: string[];
+  updatedAt: string;
 }
 
 export interface ComicChapter {
@@ -1026,6 +1045,7 @@ export interface ComicChapter {
   summary: string;
   prompt: string;
   content: string;
+  storyboards: ComicStoryboardShot[];
   images: ComicChapterImage[];
   status: ComicChapterStatus;
   assetRefs: string[];
@@ -1044,6 +1064,9 @@ export interface ComicProject {
   episodePlan: string;
   pageCount: number;
   coverTone: string;
+  coverUrl?: string;
+  coverPrompt?: string;
+  coverShouldShowTitle?: boolean;
   assets: ComicAsset[];
   chapters: ComicChapter[];
   createdAt: string;
@@ -1112,6 +1135,9 @@ export interface VideoProject {
   storyboardPlan: string;
   durationSeconds: number;
   coverTone: string;
+  coverUrl?: string;
+  coverPrompt?: string;
+  coverShouldShowTitle?: boolean;
   shots: VideoShot[];
   createdAt: string;
   updatedAt: string;
@@ -1169,6 +1195,9 @@ export interface MusicProject {
   status: string;
   summary: string;
   coverTone: string;
+  coverUrl?: string;
+  coverPrompt?: string;
+  coverShouldShowTitle?: boolean;
   tracks: MusicTrack[];
   createdAt: string;
   updatedAt: string;

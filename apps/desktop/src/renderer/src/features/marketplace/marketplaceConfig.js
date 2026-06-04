@@ -240,6 +240,15 @@ export const COMIC_CHAPTER_STATUS_META = {
   done: { label: "已完成", className: "is-success" }
 };
 
+export const COMIC_STORYBOARD_KIND_META = {
+  dialogue: { label: "对话" },
+  scene: { label: "场景" },
+  action: { label: "打斗" },
+  transition: { label: "过渡" },
+  emotion: { label: "情绪" },
+  other: { label: "其他" }
+};
+
 export const VIDEO_APP_TABS = [
   { id: "concept", label: "项目设定", kicker: "Concept", fieldLabel: "视频生成设定" },
   { id: "storyboard", label: "镜头规划", kicker: "Storyboard", fieldLabel: "镜头列表与分镜" },
@@ -274,16 +283,31 @@ export function createMarketplaceState() {
       activeProgressEventId: "",
       progress: null
     },
+    cover: {
+      isDialogOpen: false,
+      appId: "",
+      itemId: "",
+      dialogMode: "upload",
+      urlInput: "",
+      promptInput: "",
+      shouldShowTitle: true,
+      feedback: "",
+      feedbackTone: "neutral",
+      draftUrl: "",
+      previewUrl: "",
+      isGenerating: false
+    },
     comic: {
       projects: [],
       activeProjectId: null,
       activeTab: "intro",
       activeChapterId: "",
+      activeStoryboardId: "",
       activeChapterImageId: "",
       introMode: "settings",
       activeAssetId: "",
       isAssetRailCollapsed: false,
-      aiTaskId: "chapterImage",
+      aiTaskId: "splitStoryboards",
       aiInstruction: "",
       aiOutput: "",
       aiFeedback: "",
@@ -292,6 +316,7 @@ export function createMarketplaceState() {
       aiGeneratedImages: [],
       aiImageSize: "1024x1536",
       aiImageCount: 1,
+      aiStoryboardCount: 8,
       aiQuality: "medium",
       aiRequestId: "",
       isAiRunning: false,
@@ -301,6 +326,10 @@ export function createMarketplaceState() {
       isProfileCollapsed: false,
       isChapterPickerOpen: false,
       chapterSearchQuery: "",
+      isOutlineChapterSummaryOpen: true,
+      isOutlineChapterContentOpen: true,
+      isOutlineChapterPromptOpen: true,
+      isChapterStoryInputOpen: false,
       isExportDialogOpen: false,
       exportDirectory: "",
       exportFeedback: "",

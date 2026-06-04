@@ -6,6 +6,7 @@ import {
   COMIC_ASSET_TYPE_META,
   COMIC_ASSET_VIEW_KIND_META,
   COMIC_CHAPTER_STATUS_META,
+  COMIC_STORYBOARD_KIND_META,
   COMIC_PROJECT_COVER_TONES,
   COMIC_PROJECT_FORMAT_META,
   COMIC_PROJECT_PALETTE_META
@@ -71,9 +72,23 @@ export function createComicActions({
   );
   const activeComicChapterAssets = computed(() => getComicChapterReferencedAssets(activeComicChapter.value));
   const activeComicChapterImages = computed(() => getComicChapterImages(activeComicChapter.value));
-  const activeComicChapterImage = computed(() => getActiveComicChapterImage(activeComicChapterImages.value));
+  const activeComicStoryboards = computed(() => getComicStoryboards(activeComicChapter.value));
+  const activeComicStoryboard = computed(() => getActiveComicStoryboard(activeComicStoryboards.value));
+  const activeComicStoryboardIndex = computed(() =>
+    activeComicStoryboards.value.findIndex((storyboard) => storyboard.id === activeComicStoryboard.value?.id)
+  );
+  const activeComicStoryboardImages = computed(() =>
+    getComicStoryboardImages(activeComicChapter.value, activeComicStoryboard.value)
+  );
+  const activeComicChapterImage = computed(() =>
+    activeComicStoryboard.value
+      ? getActiveComicChapterImage(activeComicStoryboardImages.value)
+      : getActiveComicChapterImage(activeComicChapterImages.value)
+  );
   const activeComicChapterImageIndex = computed(() =>
-    activeComicChapterImages.value.findIndex((image) => image.id === activeComicChapterImage.value?.id)
+    (activeComicStoryboard.value ? activeComicStoryboardImages.value : activeComicChapterImages.value).findIndex(
+      (image) => image.id === activeComicChapterImage.value?.id
+    )
   );
   const activeComicChapterImageCountLabel = computed(() => getComicChapterImageCountLabel(activeComicChapterImages.value));
   const activeComicExportFileName = computed(() => getComicExportFileName(activeComicProject.value));
@@ -108,6 +123,11 @@ export function createComicActions({
     return COMIC_CHAPTER_STATUS_META[value] ? value : "todo";
   }
 
+  function normalizeComicStoryboardKindForUi(value) {
+    const kind = String(value ?? "").trim();
+    return COMIC_STORYBOARD_KIND_META[kind] ? kind : "other";
+  }
+
   function normalizeComicAssetTypeForUi(value) {
     const type = String(value ?? "").trim();
     return COMIC_ASSET_TYPE_META[type] ? type : "character";
@@ -124,6 +144,10 @@ export function createComicActions({
 
   function getComicAssetViewKindLabel(kind) {
     return COMIC_ASSET_VIEW_KIND_META[normalizeComicAssetViewKindForUi(kind)]?.label ?? "视角";
+  }
+
+  function getComicStoryboardKindLabel(kind) {
+    return COMIC_STORYBOARD_KIND_META[normalizeComicStoryboardKindForUi(kind)]?.label ?? "其他";
   }
 
   function normalizeComicAssetRefsForUi(refs = []) {
@@ -182,6 +206,7 @@ export function createComicActions({
 
     return {
       id: String(image?.id ?? "").trim() || createLocalId("comic_chapter_image"),
+      storyboardId: String(image?.storyboardId ?? "").trim() || "",
       alt: String(image?.alt ?? "").trim() || `画面 ${index + 1}`,
       src: cleanComicImageSource(image?.src),
       prompt: String(image?.prompt ?? ""),
@@ -208,6 +233,125 @@ export function createComicActions({
         usedSources.add(image.src);
         return true;
       });
+  }
+
+  function normalizeComicStoryboardShotForUi(storyboard, index = 0, chapterPrompt = "") {
+    const now = new Date().toISOString();
+    const safeIndex = Math.max(1, Math.round(Number(storyboard?.index ?? index + 1) || index + 1));
+
+    return {
+      id: String(storyboard?.id ?? "").trim() || createLocalId("comic_storyboard"),
+      index: safeIndex,
+      kind: normalizeComicStoryboardKindForUi(storyboard?.kind),
+      title: String(storyboard?.title ?? "").trim() || `分镜 ${safeIndex}`,
+      beat: String(storyboard?.beat ?? ""),
+      dialogue: String(storyboard?.dialogue ?? ""),
+      camera: String(storyboard?.camera ?? ""),
+      prompt: String(storyboard?.prompt ?? "").trim() || chapterPrompt,
+      status: normalizeComicChapterStatusForUi(storyboard?.status),
+      imageIds: Array.from(
+        new Set(
+          (Array.isArray(storyboard?.imageIds) ? storyboard.imageIds : [])
+            .map((imageId) => String(imageId ?? "").trim())
+            .filter(Boolean)
+        )
+      ),
+      updatedAt: String(storyboard?.updatedAt ?? "").trim() || now
+    };
+  }
+
+  function normalizeComicStoryboardsForUi(storyboards = [], chapterPrompt = "", images = []) {
+    const normalizedStoryboards = (Array.isArray(storyboards) ? storyboards : [])
+      .map((storyboard, index) => normalizeComicStoryboardShotForUi(storyboard, index, chapterPrompt))
+      .sort((left, right) => left.index - right.index)
+      .map((storyboard, index) => ({
+        ...storyboard,
+        index: index + 1
+      }));
+
+    if (!normalizedStoryboards.length && (String(chapterPrompt ?? "").trim() || images.length)) {
+      normalizedStoryboards.push(
+        normalizeComicStoryboardShotForUi(
+          {
+            index: 1,
+            kind: "scene",
+            title: "分镜 1",
+            prompt: chapterPrompt,
+            imageIds: images.map((image) => image.id),
+            status: images.length ? "inProgress" : "todo"
+          },
+          0,
+          chapterPrompt
+        )
+      );
+    }
+
+    const storyboardIds = new Set(normalizedStoryboards.map((storyboard) => storyboard.id));
+
+    return normalizedStoryboards.map((storyboard) => ({
+      ...storyboard,
+      imageIds: Array.from(
+        new Set([
+          ...storyboard.imageIds.filter((imageId) => images.some((image) => image.id === imageId)),
+          ...images.filter((image) => image.storyboardId === storyboard.id && storyboardIds.has(storyboard.id)).map((image) => image.id)
+        ])
+      )
+    }));
+  }
+
+  function getComicStoryboards(chapter) {
+    return Array.isArray(chapter?.storyboards) ? chapter.storyboards : [];
+  }
+
+  function getComicStoryboardImages(chapter, storyboard) {
+    const normalizedStoryboardId = String(storyboard?.id ?? "").trim();
+
+    if (!normalizedStoryboardId) {
+      return [];
+    }
+
+    const imageIds = new Set(
+      (Array.isArray(storyboard?.imageIds) ? storyboard.imageIds : [])
+        .map((imageId) => String(imageId ?? "").trim())
+        .filter(Boolean)
+    );
+
+    return getComicChapterImages(chapter).filter(
+      (image) => image.storyboardId === normalizedStoryboardId || imageIds.has(image.id)
+    );
+  }
+
+  function getActiveComicStoryboard(storyboards = activeComicStoryboards.value) {
+    const normalizedStoryboards = Array.isArray(storyboards) ? storyboards : [];
+    const activeStoryboardId = String(ui.marketplace.comic.activeStoryboardId ?? "").trim();
+    return normalizedStoryboards.find((storyboard) => storyboard.id === activeStoryboardId) ?? normalizedStoryboards[0] ?? null;
+  }
+
+  function syncActiveComicStoryboard(chapter = activeComicChapter.value) {
+    const storyboards = getComicStoryboards(chapter);
+    const activeStoryboardId = String(ui.marketplace.comic.activeStoryboardId ?? "").trim();
+
+    if (storyboards.some((storyboard) => storyboard.id === activeStoryboardId)) {
+      return activeStoryboardId;
+    }
+
+    const nextStoryboardId = storyboards[0]?.id ?? "";
+    ui.marketplace.comic.activeStoryboardId = nextStoryboardId;
+    return nextStoryboardId;
+  }
+
+  function syncActiveComicStoryboardImage(chapter = activeComicChapter.value, storyboardId = ui.marketplace.comic.activeStoryboardId) {
+    const storyboard = getComicStoryboards(chapter).find((entry) => entry.id === storyboardId) ?? null;
+    const storyboardImages = getComicStoryboardImages(chapter, storyboard);
+    const activeImageId = String(ui.marketplace.comic.activeChapterImageId ?? "").trim();
+
+    if (storyboardImages.some((image) => image.id === activeImageId)) {
+      return activeImageId;
+    }
+
+    const nextImageId = storyboardImages[0]?.id ?? "";
+    ui.marketplace.comic.activeChapterImageId = nextImageId;
+    return nextImageId;
   }
 
   function getComicChapterImages(chapter) {
@@ -342,15 +486,30 @@ export function createComicActions({
       ...image,
       prompt: image.prompt || chapterPrompt
     }));
+    const storyboards = normalizeComicStoryboardsForUi(chapter?.storyboards, chapterPrompt, images);
+    const storyboardIds = new Set(storyboards.map((storyboard) => storyboard.id));
+    const normalizedImages = images.map((image) => ({
+      ...image,
+      storyboardId: image.storyboardId && storyboardIds.has(image.storyboardId) ? image.storyboardId : storyboards[0]?.id ?? ""
+    }));
 
     return {
       id: String(chapter?.id ?? "").trim() || createLocalId("comic_chapter"),
       index: Math.max(1, Math.round(Number(chapter?.index ?? index + 1) || index + 1)),
-      title: String(chapter?.title ?? "").trim() || `第 ${index + 1} 章`,
+      title: String(chapter?.title ?? "").trim() || `第 ${Math.max(1, Math.round(Number(chapter?.index ?? index + 1) || index + 1))} 章`,
       summary: String(chapter?.summary ?? ""),
       prompt: chapterPrompt,
       content: stripComicChapterImageMarkdown(content),
-      images,
+      storyboards: storyboards.map((storyboard) => ({
+        ...storyboard,
+        imageIds: Array.from(
+          new Set([
+            ...storyboard.imageIds.filter((imageId) => normalizedImages.some((image) => image.id === imageId)),
+            ...normalizedImages.filter((image) => image.storyboardId === storyboard.id).map((image) => image.id)
+          ])
+        )
+      })),
+      images: normalizedImages,
       status: normalizeComicChapterStatusForUi(chapter?.status),
       assetRefs: normalizeComicAssetRefsForUi(chapter?.assetRefs),
       updatedAt: String(chapter?.updatedAt ?? "").trim() || now
@@ -370,10 +529,11 @@ export function createComicActions({
       normalizeComicChapterForUi(
         {
           index: 1,
-          title: "开场分镜",
+          title: "第 1 章",
           summary: "写下这一章的场景目标、镜头顺序、角色动作和结尾画面。",
           prompt: "基于总介绍生成开场分镜，明确画面、动作、对白和页数。",
           content: "",
+          storyboards: [],
           status: "inProgress"
         },
         0
@@ -405,6 +565,9 @@ export function createComicActions({
       visualStyle: String(project?.visualStyle ?? ""),
       episodePlan: String(project?.episodePlan ?? ""),
       pageCount: normalizeComicProjectPageCount(project?.pageCount, COMIC_PROJECT_FORMAT_META[format]?.defaultPages ?? 1),
+      coverUrl: String(project?.coverUrl ?? "").trim(),
+      coverPrompt: String(project?.coverPrompt ?? ""),
+      coverShouldShowTitle: project?.coverShouldShowTitle !== false,
       assets,
       chapters,
       coverTone:
@@ -438,7 +601,9 @@ export function createComicActions({
       ui.marketplace.comic.activeChapterId = nextProject.chapters[0]?.id ?? "";
     }
 
-    syncActiveComicChapterImage(nextProject?.chapters.find((chapter) => chapter.id === ui.marketplace.comic.activeChapterId) ?? null);
+    const activeChapter = nextProject?.chapters.find((chapter) => chapter.id === ui.marketplace.comic.activeChapterId) ?? null;
+    const activeStoryboardId = syncActiveComicStoryboard(activeChapter);
+    syncActiveComicStoryboardImage(activeChapter, activeStoryboardId);
 
     if (nextProject && !getComicAssets(nextProject).some((asset) => asset.id === ui.marketplace.comic.activeAssetId)) {
       ui.marketplace.comic.activeAssetId = getComicAssets(nextProject)[0]?.id ?? "";
@@ -460,6 +625,9 @@ export function createComicActions({
       visualStyle: project.visualStyle,
       episodePlan: project.episodePlan,
       pageCount: normalizeComicProjectPageCount(project.pageCount),
+      coverUrl: String(project.coverUrl ?? "").trim(),
+      coverPrompt: String(project.coverPrompt ?? ""),
+      coverShouldShowTitle: project.coverShouldShowTitle !== false,
       assets,
       chapters: getComicChapters(project).map((chapter, index) => ({
         ...normalizeComicChapterForUi(chapter, index),
@@ -635,7 +803,7 @@ export function createComicActions({
   function getComicChapterDisplayTitle(chapter, index = 0) {
     const order = Number(chapter?.index ?? index + 1);
     const title = String(chapter?.title ?? "").trim();
-    return `第 ${Number.isFinite(order) && order > 0 ? order : index + 1} 章 ${title || "未命名分镜"}`;
+    return title || `第 ${Number.isFinite(order) && order > 0 ? order : index + 1} 章`;
   }
 
   function getComicChapterStatusLabel(status) {
@@ -748,7 +916,7 @@ export function createComicActions({
     if (chapters.length) {
       chapters.forEach((chapter, index) => {
         const title = getComicChapterDisplayTitle(chapter, index);
-        const chapterSummary = trimComicExportTextBlock(chapter.summary ?? "") || "暂无分镜简介";
+        const chapterSummary = trimComicExportTextBlock(chapter.summary ?? "") || "暂无章节内容简介";
         lines.push(`- ${title}（${getComicChapterStatusLabel(chapter.status)}）：${chapterSummary}`);
       });
     } else {
@@ -761,7 +929,9 @@ export function createComicActions({
       const title = getComicChapterDisplayTitle(chapter, index);
       const chapterSummary = trimComicExportTextBlock(chapter.summary ?? "");
       const content = trimComicExportTextBlock(chapter.content ?? "");
+      const chapterPrompt = trimComicExportTextBlock(chapter.prompt ?? "");
       const images = getComicChapterImages(chapter);
+      const storyboards = getComicStoryboards(chapter);
       const referencedAssets = normalizeComicAssetRefsForUi(chapter.assetRefs)
         .map((assetId) => assetMap.get(assetId))
         .filter(Boolean);
@@ -769,7 +939,15 @@ export function createComicActions({
       lines.push(`### ${title}`, "");
 
       if (chapterSummary) {
-        lines.push("#### 分镜简介", "", chapterSummary, "");
+        lines.push("#### 章节内容简介", "", chapterSummary, "");
+      }
+
+      if (content) {
+        lines.push("#### 章节正文", "", content, "");
+      }
+
+      if (chapterPrompt) {
+        lines.push("#### 分镜与出图提示", "", chapterPrompt, "");
       }
 
       if (referencedAssets.length) {
@@ -781,8 +959,49 @@ export function createComicActions({
         );
       }
 
+      if (storyboards.length) {
+        lines.push("#### 分镜轨道", "");
+
+        storyboards.forEach((storyboard, storyboardIndex) => {
+          const beat = trimComicExportTextBlock(storyboard.beat ?? "");
+          const dialogue = trimComicExportTextBlock(storyboard.dialogue ?? "");
+          const camera = trimComicExportTextBlock(storyboard.camera ?? "");
+          const prompt = trimComicExportTextBlock(storyboard.prompt ?? "");
+          const storyboardImages = getComicStoryboardImages(chapter, storyboard);
+
+          lines.push(`##### ${storyboardIndex + 1}. ${storyboard.title || `分镜 ${storyboardIndex + 1}`}`, "");
+          lines.push(`- 类型：${getComicStoryboardKindLabel(storyboard.kind)}`);
+          lines.push(`- 状态：${getComicChapterStatusLabel(storyboard.status)}`);
+
+          if (beat) {
+            lines.push("", "画面内容：", "", beat);
+          }
+
+          if (dialogue) {
+            lines.push("", "对白 / 旁白：", "", dialogue);
+          }
+
+          if (camera) {
+            lines.push("", "镜头 / 构图：", "", camera);
+          }
+
+          if (prompt) {
+            lines.push("", "分镜生图提示词：", "", prompt);
+          }
+
+          if (storyboardImages.length) {
+            lines.push("", "关联图片：", "");
+            storyboardImages.forEach((image, imageIndex) => {
+              lines.push(`![${image.alt || `分镜图片 ${imageIndex + 1}`}](${image.src})`, "");
+            });
+          }
+
+          lines.push("");
+        });
+      }
+
       if (images.length) {
-        lines.push("#### 生成图片", "");
+        lines.push("#### 全部生成图片", "");
 
         images.forEach((image, imageIndex) => {
           const imagePrompt = trimComicExportTextBlock(image.prompt ?? "");
@@ -801,10 +1020,6 @@ export function createComicActions({
             lines.push("生图提示词：", "", imagePrompt, "");
           }
         });
-      }
-
-      if (content) {
-        lines.push("#### 生成备注", "", content, "");
       }
     });
 
@@ -831,7 +1046,8 @@ export function createComicActions({
     const project = comicProjects.value.find((entry) => entry.id === projectId) ?? null;
     const chapter = getComicChapters(project)[0] ?? null;
     ui.marketplace.comic.activeChapterId = chapter?.id ?? "";
-    syncActiveComicChapterImage(chapter);
+    const activeStoryboardId = syncActiveComicStoryboard(chapter);
+    syncActiveComicStoryboardImage(chapter, activeStoryboardId);
     ui.marketplace.comic.activeAssetId = getComicAssets(project)[0]?.id ?? "";
     ui.marketplace.view = "comicDetail";
   }
@@ -892,15 +1108,20 @@ export function createComicActions({
       episodePlan: "单图海报：主体、背景、人物站位、标题区域和最终比例。",
       pageCount: 1,
       coverTone: COMIC_PROJECT_COVER_TONES[comicProjects.value.length % COMIC_PROJECT_COVER_TONES.length],
+      coverUrl: "",
+      coverPrompt: "",
+      coverShouldShowTitle: true,
       assets: [],
       chapters: [
         {
           id: createLocalId("comic_chapter"),
           index: 1,
-          title: "开场分镜",
-          summary: "写下这一章的场景目标、镜头顺序、角色动作和结尾画面。",
-          prompt: "基于总介绍生成开场分镜，明确画面、动作、对白和页数。",
+          title: "第 1 章",
+          summary: "写下这一章的故事事件、角色目标、冲突变化和结尾钩子。",
+          prompt: "基于章节正文拆分开场分镜，明确画面、动作、对白留白和页数。",
           content: "",
+          storyboards: [],
+          images: [],
           status: "inProgress",
           assetRefs: [],
           updatedAt: now
@@ -915,6 +1136,7 @@ export function createComicActions({
     ui.marketplace.comic.activeTab = "intro";
     ui.marketplace.comic.introMode = "settings";
     ui.marketplace.comic.activeChapterId = project.chapters[0]?.id ?? "";
+    ui.marketplace.comic.activeStoryboardId = "";
     ui.marketplace.comic.activeAssetId = "";
     openComicProject(project.id);
     setStatus("已创建一个漫画项目，正在写入本地项目库。", "success");
@@ -1287,16 +1509,37 @@ export function createComicActions({
 
   function selectComicChapter(chapterId) {
     ui.marketplace.comic.activeChapterId = chapterId;
-    syncActiveComicChapterImage(activeComicChapters.value.find((chapter) => chapter.id === chapterId) ?? null);
+    const chapter = activeComicChapters.value.find((entry) => entry.id === chapterId) ?? null;
+    const activeStoryboardId = syncActiveComicStoryboard(chapter);
+    syncActiveComicStoryboardImage(chapter, activeStoryboardId);
+  }
+
+  function selectComicStoryboard(storyboardId) {
+    const normalizedStoryboardId = String(storyboardId ?? "").trim();
+    const storyboards = getComicStoryboards(activeComicChapter.value);
+
+    if (!storyboards.some((storyboard) => storyboard.id === normalizedStoryboardId)) {
+      const nextStoryboardId = syncActiveComicStoryboard(activeComicChapter.value);
+      syncActiveComicStoryboardImage(activeComicChapter.value, nextStoryboardId);
+      return;
+    }
+
+    ui.marketplace.comic.activeStoryboardId = normalizedStoryboardId;
+    syncActiveComicStoryboardImage(activeComicChapter.value, normalizedStoryboardId);
   }
 
   function selectComicChapterImage(imageId) {
     const normalizedImageId = String(imageId ?? "").trim();
     const images = getComicChapterImages(activeComicChapter.value);
+    const image = images.find((entry) => entry.id === normalizedImageId) ?? null;
 
-    if (!images.some((image) => image.id === normalizedImageId)) {
-      syncActiveComicChapterImage(activeComicChapter.value);
+    if (!image) {
+      syncActiveComicStoryboardImage(activeComicChapter.value, ui.marketplace.comic.activeStoryboardId);
       return;
+    }
+
+    if (image.storyboardId && getComicStoryboards(activeComicChapter.value).some((storyboard) => storyboard.id === image.storyboardId)) {
+      ui.marketplace.comic.activeStoryboardId = image.storyboardId;
     }
 
     ui.marketplace.comic.activeChapterImageId = normalizedImageId;
@@ -1312,6 +1555,22 @@ export function createComicActions({
 
   function toggleComicChapterPicker() {
     setComicChapterPickerOpen(!ui.marketplace.comic.isChapterPickerOpen);
+  }
+
+  function toggleComicOutlineChapterContent() {
+    ui.marketplace.comic.isOutlineChapterContentOpen = !ui.marketplace.comic.isOutlineChapterContentOpen;
+  }
+
+  function toggleComicOutlineChapterPrompt() {
+    ui.marketplace.comic.isOutlineChapterPromptOpen = !ui.marketplace.comic.isOutlineChapterPromptOpen;
+  }
+
+  function toggleComicOutlineChapterSummary() {
+    ui.marketplace.comic.isOutlineChapterSummaryOpen = !ui.marketplace.comic.isOutlineChapterSummaryOpen;
+  }
+
+  function toggleComicChapterStoryInput() {
+    ui.marketplace.comic.isChapterStoryInputOpen = !ui.marketplace.comic.isChapterStoryInputOpen;
   }
 
   function selectComicChapterFromPicker(chapterId) {
@@ -1344,8 +1603,23 @@ export function createComicActions({
     chapter.updatedAt = new Date().toISOString();
 
     const hasImageWork = getComicChapterImages(chapter).some((image) => String(image?.prompt ?? "").trim() || String(image?.src ?? "").trim());
+    const hasStoryboardWork = getComicStoryboards(chapter).some(
+      (storyboard) =>
+        String(storyboard?.beat ?? "").trim() ||
+        String(storyboard?.dialogue ?? "").trim() ||
+        String(storyboard?.camera ?? "").trim() ||
+        String(storyboard?.prompt ?? "").trim() ||
+        getComicStoryboardImages(chapter, storyboard).length
+    );
 
-    if (chapter.status === "todo" && (String(chapter.prompt ?? "").trim() || String(chapter.content ?? "").trim() || hasImageWork)) {
+    if (
+      chapter.status === "todo" &&
+      (String(chapter.summary ?? "").trim() ||
+        String(chapter.prompt ?? "").trim() ||
+        String(chapter.content ?? "").trim() ||
+        hasStoryboardWork ||
+        hasImageWork)
+    ) {
       chapter.status = "inProgress";
     }
 
@@ -1364,10 +1638,11 @@ export function createComicActions({
     const chapter = {
       id: createLocalId("comic_chapter"),
       index: chapters.length + 1,
-      title: `分镜章节 ${chapters.length + 1}`,
-      summary: "写下本章画面目标、分镜顺序、角色动作、对白密度和结尾画面。",
-      prompt: "基于总介绍和目录生成本章漫画分镜。",
+      title: `第 ${chapters.length + 1} 章`,
+      summary: "写下本章故事事件、角色目标、冲突变化和结尾钩子。",
+      prompt: "基于章节正文拆分分镜，明确每张图/每格的画面、动作、景别和出图提示。",
       content: "",
+      storyboards: [],
       images: [],
       status: "todo",
       assetRefs: [],
@@ -1376,6 +1651,7 @@ export function createComicActions({
 
     project.chapters = [...chapters, chapter];
     ui.marketplace.comic.activeChapterId = chapter.id;
+    ui.marketplace.comic.activeStoryboardId = "";
     ui.marketplace.comic.activeChapterImageId = "";
     ui.marketplace.comic.activeTab = "outline";
     touchComicProject(project);
@@ -1388,10 +1664,11 @@ export function createComicActions({
       {
         id: createLocalId("comic_chapter"),
         index: safeIndex,
-        title: String(chapter?.title ?? "").trim() || `分镜章节 ${safeIndex}`,
+        title: String(chapter?.title ?? "").trim() || `第 ${safeIndex} 章`,
         summary: String(chapter?.summary ?? chapter?.brief ?? chapter?.description ?? ""),
         prompt: String(chapter?.prompt ?? chapter?.imagePrompt ?? ""),
         content: String(chapter?.content ?? ""),
+        storyboards: Array.isArray(chapter?.storyboards) ? chapter.storyboards : [],
         status: normalizeComicChapterStatusForUi(chapter?.status || "todo"),
         assetRefs: []
       },
@@ -1416,11 +1693,168 @@ export function createComicActions({
 
     project.chapters = isAppend ? [...currentChapters, ...nextChapters] : nextChapters;
     ui.marketplace.comic.activeChapterId = nextChapters[0]?.id ?? project.chapters[0]?.id ?? "";
-    syncActiveComicChapterImage(project.chapters.find((chapter) => chapter.id === ui.marketplace.comic.activeChapterId) ?? null);
+    const activeChapter = project.chapters.find((chapter) => chapter.id === ui.marketplace.comic.activeChapterId) ?? null;
+    const activeStoryboardId = syncActiveComicStoryboard(activeChapter);
+    syncActiveComicStoryboardImage(activeChapter, activeStoryboardId);
     ui.marketplace.comic.activeTab = "outline";
     touchComicProject(project);
 
     return true;
+  }
+
+  function normalizeComicAiStoryboardDraft(storyboard, index = 0, baseIndex = 0, chapterPrompt = "") {
+    return normalizeComicStoryboardShotForUi(
+      {
+        id: createLocalId("comic_storyboard"),
+        index: baseIndex + index + 1,
+        kind: storyboard?.kind,
+        title: String(storyboard?.title ?? storyboard?.name ?? "").trim() || `分镜 ${baseIndex + index + 1}`,
+        beat: String(storyboard?.beat ?? storyboard?.summary ?? storyboard?.description ?? storyboard?.content ?? ""),
+        dialogue: String(storyboard?.dialogue ?? storyboard?.lines ?? storyboard?.caption ?? ""),
+        camera: String(storyboard?.camera ?? storyboard?.shot ?? storyboard?.composition ?? ""),
+        prompt: String(storyboard?.prompt ?? storyboard?.imagePrompt ?? ""),
+        status: normalizeComicChapterStatusForUi(storyboard?.status || "todo"),
+        imageIds: []
+      },
+      baseIndex + index,
+      chapterPrompt
+    );
+  }
+
+  function applyComicStoryboardsFromAi(storyboardDrafts, mode = "replace") {
+    const chapter = activeComicChapter.value;
+    const drafts = Array.isArray(storyboardDrafts) ? storyboardDrafts : [];
+
+    if (!chapter || !drafts.length) {
+      return false;
+    }
+
+    const currentStoryboards = getComicStoryboards(chapter);
+    const isAppend = mode === "append";
+    const baseIndex = isAppend
+      ? currentStoryboards.reduce((maxIndex, storyboard) => Math.max(maxIndex, Number(storyboard.index ?? 0) || 0), 0)
+      : 0;
+    const nextStoryboards = drafts.map((storyboard, index) =>
+      normalizeComicAiStoryboardDraft(storyboard, index, baseIndex, chapter.prompt)
+    );
+
+    if (isAppend) {
+      chapter.storyboards = [...currentStoryboards, ...nextStoryboards].map((storyboard, index) => ({
+        ...storyboard,
+        index: index + 1
+      }));
+    } else {
+      const nextStoryboardIdSet = new Set(nextStoryboards.map((storyboard) => storyboard.id));
+      chapter.storyboards = nextStoryboards;
+      chapter.images = getComicChapterImages(chapter).map((image) => ({
+        ...image,
+        storyboardId: image.storyboardId && nextStoryboardIdSet.has(image.storyboardId) ? image.storyboardId : ""
+      }));
+    }
+
+    const activeStoryboardId = nextStoryboards[0]?.id ?? syncActiveComicStoryboard(chapter);
+    ui.marketplace.comic.activeStoryboardId = activeStoryboardId;
+    syncActiveComicStoryboardImage(chapter, activeStoryboardId);
+    ui.marketplace.comic.activeTab = "chapter";
+    touchComicChapter(chapter);
+    return true;
+  }
+
+  function createComicStoryboard(kind = "scene") {
+    const chapter = activeComicChapter.value;
+
+    if (!chapter) {
+      return null;
+    }
+
+    const storyboards = getComicStoryboards(chapter);
+    const storyboard = normalizeComicStoryboardShotForUi(
+      {
+        index: storyboards.length + 1,
+        kind,
+        title: `分镜 ${storyboards.length + 1}`,
+        beat: "",
+        dialogue: "",
+        camera: "",
+        prompt: chapter.prompt,
+        status: "todo",
+        imageIds: []
+      },
+      storyboards.length,
+      chapter.prompt
+    );
+
+    chapter.storyboards = [...storyboards, storyboard];
+    ui.marketplace.comic.activeStoryboardId = storyboard.id;
+    ui.marketplace.comic.activeChapterImageId = "";
+    touchComicChapter(chapter);
+    return storyboard;
+  }
+
+  async function deleteComicStoryboard(storyboardId) {
+    const chapter = activeComicChapter.value;
+    const normalizedStoryboardId = String(storyboardId ?? "").trim();
+    const storyboard = getComicStoryboards(chapter).find((entry) => entry.id === normalizedStoryboardId);
+
+    if (!chapter || !storyboard) {
+      return;
+    }
+
+    const confirmed = await showConfirmDialog({
+      tone: "danger",
+      title: "删除分镜",
+      message: `确认删除「${storyboard.title || "当前分镜"}」吗？`,
+      detail: "分镜会从轨道移除，已生成图片保留在章节中但解除分镜关联。",
+      confirmText: "删除",
+      cancelText: "取消"
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
+    chapter.storyboards = getComicStoryboards(chapter)
+      .filter((entry) => entry.id !== normalizedStoryboardId)
+      .map((entry, index) => ({
+        ...entry,
+        index: index + 1
+      }));
+    chapter.images = getComicChapterImages(chapter).map((image) => ({
+      ...image,
+      storyboardId: image.storyboardId === normalizedStoryboardId ? "" : image.storyboardId
+    }));
+    const activeStoryboardId = syncActiveComicStoryboard(chapter);
+    syncActiveComicStoryboardImage(chapter, activeStoryboardId);
+    touchComicChapter(chapter);
+    setStatus("分镜已删除，图片已保留在章节中。", "success");
+  }
+
+  function setComicStoryboardField(storyboard, field, value) {
+    const chapter = activeComicChapter.value;
+    const target = getComicStoryboards(chapter).find((entry) => entry.id === storyboard?.id);
+
+    if (!chapter || !target) {
+      return;
+    }
+
+    if (field === "kind") {
+      target.kind = normalizeComicStoryboardKindForUi(value);
+    } else if (field === "title") {
+      target.title = String(value ?? "");
+    } else if (field === "beat") {
+      target.beat = String(value ?? "");
+    } else if (field === "dialogue") {
+      target.dialogue = String(value ?? "");
+    } else if (field === "camera") {
+      target.camera = String(value ?? "");
+    } else if (field === "prompt") {
+      target.prompt = String(value ?? "");
+    } else if (field === "status") {
+      target.status = normalizeComicChapterStatusForUi(value);
+    }
+
+    target.updatedAt = new Date().toISOString();
+    touchComicChapter(chapter);
   }
 
   function setComicChapterTitle(chapter, value) {
@@ -1467,31 +1901,97 @@ export function createComicActions({
     touchComicChapter(chapter);
   }
 
-  function setComicChapterImages(chapter, images) {
+  function getComicImageWriteStoryboardId(chapter, options = {}) {
+    const optionStoryboardId = String(options.storyboardId ?? "").trim();
+    const storyboards = getComicStoryboards(chapter);
+
+    if (optionStoryboardId && storyboards.some((storyboard) => storyboard.id === optionStoryboardId)) {
+      return optionStoryboardId;
+    }
+
+    const activeStoryboardId = String(ui.marketplace.comic.activeStoryboardId ?? "").trim();
+
+    if (activeStoryboardId && storyboards.some((storyboard) => storyboard.id === activeStoryboardId)) {
+      return activeStoryboardId;
+    }
+
+    return "";
+  }
+
+  function syncComicStoryboardImageIds(chapter) {
     if (!chapter) {
       return;
     }
 
-    chapter.images = normalizeComicChapterImagesForUi(images).map((image) => ({
-      ...image,
-      prompt: image.prompt || String(chapter.prompt ?? "")
+    const images = getComicChapterImages(chapter);
+    chapter.storyboards = getComicStoryboards(chapter).map((storyboard) => ({
+      ...storyboard,
+      imageIds: Array.from(
+        new Set([
+          ...(Array.isArray(storyboard.imageIds) ? storyboard.imageIds : []).filter((imageId) =>
+            images.some((image) => image.id === imageId && image.storyboardId === storyboard.id)
+          ),
+          ...images.filter((image) => image.storyboardId === storyboard.id).map((image) => image.id)
+        ])
+      ),
+      status:
+        storyboard.status === "todo" && images.some((image) => image.storyboardId === storyboard.id)
+          ? "inProgress"
+          : storyboard.status
     }));
-    ui.marketplace.comic.activeChapterImageId = chapter.images[0]?.id ?? "";
+  }
+
+  function setComicChapterImages(chapter, images, options = {}) {
+    if (!chapter) {
+      return;
+    }
+
+    const storyboardId = getComicImageWriteStoryboardId(chapter, options);
+    const storyboards = getComicStoryboards(chapter);
+    const storyboard = storyboards.find((entry) => entry.id === storyboardId) ?? null;
+    const promptFallback = String(storyboard?.prompt || chapter.prompt || "");
+    const nextImages = normalizeComicChapterImagesForUi(images).map((image) => ({
+      ...image,
+      storyboardId: storyboardId || image.storyboardId,
+      prompt: image.prompt || promptFallback
+    }));
+
+    if (storyboardId) {
+      const remainingImages = getComicChapterImages(chapter).filter((image) => image.storyboardId !== storyboardId);
+      chapter.images = [...remainingImages, ...nextImages];
+      ui.marketplace.comic.activeStoryboardId = storyboardId;
+    } else {
+      chapter.images = nextImages;
+    }
+
+    syncComicStoryboardImageIds(chapter);
+    ui.marketplace.comic.activeChapterImageId = nextImages[0]?.id ?? getActiveComicChapterImage(chapter.images)?.id ?? "";
     touchComicChapter(chapter);
   }
 
-  function appendComicChapterImages(chapter, images) {
+  function appendComicChapterImages(chapter, images, options = {}) {
     if (!chapter) {
       return false;
     }
 
+    const storyboardId = getComicImageWriteStoryboardId(chapter, options);
+    const storyboard = getComicStoryboards(chapter).find((entry) => entry.id === storyboardId) ?? null;
     const currentImages = Array.isArray(chapter.images) ? chapter.images : [];
     const currentCount = currentImages.length;
-    const nextImages = normalizeComicChapterImagesForUi([...currentImages, ...(Array.isArray(images) ? images : [])]).map((image) => ({
+    const incomingImages = (Array.isArray(images) ? images : []).map((image) => ({
       ...image,
-      prompt: image.prompt || String(chapter.prompt ?? "")
+      storyboardId: storyboardId || image?.storyboardId
     }));
+    const nextImages = normalizeComicChapterImagesForUi([...currentImages, ...incomingImages]).map((image) => ({
+      ...image,
+      prompt: image.prompt || String(storyboard?.prompt || chapter.prompt || "")
+    }));
+
     chapter.images = nextImages;
+    syncComicStoryboardImageIds(chapter);
+    if (storyboardId) {
+      ui.marketplace.comic.activeStoryboardId = storyboardId;
+    }
     ui.marketplace.comic.activeChapterImageId = nextImages[currentCount]?.id ?? getActiveComicChapterImage(nextImages)?.id ?? "";
     touchComicChapter(chapter);
     return true;
@@ -1531,6 +2031,8 @@ export function createComicActions({
     selectComicChapter(chapterId);
     ui.marketplace.comic.chapterSearchQuery = "";
     setComicChapterPickerOpen(false);
+    const activeStoryboardId = syncActiveComicStoryboard(activeComicChapter.value);
+    syncActiveComicStoryboardImage(activeComicChapter.value, activeStoryboardId);
     setComicTab("chapter");
   }
 
@@ -1640,8 +2142,13 @@ export function createComicActions({
     activeComicChapters,
     activeComicExportFileName,
     activeComicProject,
+    activeComicStoryboard,
+    activeComicStoryboardImages,
+    activeComicStoryboardIndex,
+    activeComicStoryboards,
     activeComicTabMeta,
     applyComicProjectsFromStorage,
+    applyComicStoryboardsFromAi,
     backComicMarketplace,
     backComicShelf,
     canExportActiveComicProject,
@@ -1652,8 +2159,10 @@ export function createComicActions({
     createComicAsset,
     createComicChapter,
     createComicProject,
+    createComicStoryboard,
     deleteComicAsset,
     deleteComicProjectFromShelf,
+    deleteComicStoryboard,
     exportActiveComicProject,
     filteredComicChapterEntries,
     appendComicChapterImages,
@@ -1668,6 +2177,8 @@ export function createComicActions({
     getComicChapterImages,
     getComicProjectFormatLabel,
     getComicProjectPaletteLabel,
+    getComicStoryboardImages,
+    getComicStoryboardKindLabel,
     goComicChapter,
     isComicChapterAssetReferenced,
     openComicAppShelf,
@@ -1680,6 +2191,7 @@ export function createComicActions({
     selectComicChapter,
     selectComicChapterImage,
     selectComicChapterFromPicker,
+    selectComicStoryboard,
     selectComicExportDirectory,
     setComicAssetDescription,
     setComicAssetName,
@@ -1695,6 +2207,7 @@ export function createComicActions({
     setComicChapterPrompt,
     setComicChapterSummary,
     setComicChapterTitle,
+    setComicStoryboardField,
     setComicProjectEpisodePlan,
     setComicProjectFormat,
     setComicProjectGenre,
@@ -1706,9 +2219,15 @@ export function createComicActions({
     setComicIntroMode,
     setComicTab,
     submitComicChapter,
+    persistComicProjectById,
     toggleComicAssetRail,
     toggleComicChapterAssetRef,
+    toggleComicChapterStoryInput,
+    toggleComicOutlineChapterContent,
+    toggleComicOutlineChapterPrompt,
+    toggleComicOutlineChapterSummary,
     toggleComicChapterPicker,
-    toggleComicProfileRail
+    toggleComicProfileRail,
+    touchComicProject
   };
 }

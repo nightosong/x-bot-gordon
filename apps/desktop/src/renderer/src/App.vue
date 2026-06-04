@@ -274,6 +274,7 @@ import { createCommandWorkshopState } from "./features/command-workshop/commandW
 import CommandWorkshopView from "./features/command-workshop/CommandWorkshopView.vue";
 import { createExtensionsActions, createExtensionsState } from "./features/extensions/extensionsActions.js";
 import ExtensionsManagementView from "./features/extensions/ExtensionsManagementView.vue";
+import { createApplicationCoverActions } from "./features/marketplace/applicationCoverActions.js";
 import { createComicAiActions } from "./features/marketplace/comicAiActions.js";
 import { createComicActions } from "./features/marketplace/comicActions.js";
 import { createMarketplaceFieldAiActions } from "./features/marketplace/fieldAiActions.js";
@@ -468,10 +469,15 @@ const comicAiActions = createComicAiActions({
   activeComicChapterAssets: comicActions.activeComicChapterAssets,
   activeComicChapterImage: comicActions.activeComicChapterImage,
   activeComicChapterIndex: comicActions.activeComicChapterIndex,
+  activeComicStoryboard: comicActions.activeComicStoryboard,
+  activeComicStoryboardImages: comicActions.activeComicStoryboardImages,
+  activeComicStoryboardIndex: comicActions.activeComicStoryboardIndex,
+  activeComicStoryboards: comicActions.activeComicStoryboards,
   activeComicProject: comicActions.activeComicProject,
   activeComicTabMeta: comicActions.activeComicTabMeta,
   appendComicChapterImages: comicActions.appendComicChapterImages,
   applyComicChaptersFromAi: comicActions.applyComicChaptersFromAi,
+  applyComicStoryboardsFromAi: comicActions.applyComicStoryboardsFromAi,
   createLocalId,
   desktopApi,
   getComicChapterDisplayTitle: comicActions.getComicChapterDisplayTitle,
@@ -480,6 +486,7 @@ const comicAiActions = createComicAiActions({
   setComicChapterImagePrompt: comicActions.setComicChapterImagePrompt,
   setComicChapterImages: comicActions.setComicChapterImages,
   setComicChapterPrompt: comicActions.setComicChapterPrompt,
+  setComicStoryboardField: comicActions.setComicStoryboardField,
   setComicProjectEpisodePlan: comicActions.setComicProjectEpisodePlan,
   setComicProjectSummary: comicActions.setComicProjectSummary,
   setComicProjectVisualStyle: comicActions.setComicProjectVisualStyle,
@@ -661,6 +668,56 @@ const fieldAiActions = createMarketplaceFieldAiActions({
   ui
 });
 
+const applicationCoverActions = createApplicationCoverActions({
+  activeAdapters: {
+    writing: {
+      getItem: () => writingActions.activeWritingBook.value,
+      isDisabled: () => writingActions.isActiveWritingBookAiRunning.value,
+      applyCover: async (book, cover) => {
+        book.coverUrl = cover.coverUrl;
+        book.coverPrompt = cover.coverPrompt;
+        book.coverShouldShowTitle = cover.coverShouldShowTitle;
+        writingActions.touchWritingBook(book, { persist: false });
+        await writingActions.persistWritingBookById(book.id, { silent: true, keepLocal: true, mergeChapters: true });
+      }
+    },
+    comic: {
+      getItem: () => comicActions.activeComicProject.value,
+      applyCover: async (project, cover) => {
+        project.coverUrl = cover.coverUrl;
+        project.coverPrompt = cover.coverPrompt;
+        project.coverShouldShowTitle = cover.coverShouldShowTitle;
+        comicActions.touchComicProject(project, { persist: false });
+        await comicActions.persistComicProjectById(project.id, { silent: true });
+      }
+    },
+    video: {
+      getItem: () => videoActions.activeVideoProject.value,
+      applyCover: async (project, cover) => {
+        project.coverUrl = cover.coverUrl;
+        project.coverPrompt = cover.coverPrompt;
+        project.coverShouldShowTitle = cover.coverShouldShowTitle;
+        videoActions.touchVideoProject(project, { persist: false });
+        await videoActions.persistVideoProjectById(project.id, { silent: true });
+      }
+    },
+    music: {
+      getItem: () => musicActions.activeMusicProject.value,
+      applyCover: async (project, cover) => {
+        project.coverUrl = cover.coverUrl;
+        project.coverPrompt = cover.coverPrompt;
+        project.coverShouldShowTitle = cover.coverShouldShowTitle;
+        musicActions.touchMusicProject(project, { persist: false });
+        await musicActions.persistMusicProjectById(project.id, { silent: true });
+      }
+    }
+  },
+  desktopApi,
+  fieldAiActions,
+  setStatus,
+  ui
+});
+
 const marketplaceAgentContextProviders = createMarketplaceAgentContextProviders({
   comicActions,
   comicAiActions,
@@ -676,13 +733,22 @@ const marketplaceAgentActions = createMarketplaceAgentActions({
   createLocalId,
   desktopApi,
   resultHandlers: {
-    comic: ({ output, artifacts }) => {
+    comic: ({ result, output, artifacts }) => {
       ui.marketplace.comic.aiOutput = output;
       const images = artifacts
         .map((artifact, index) => marketplaceAgentActions.normalizeAgentImageArtifact(artifact, index))
         .filter(Boolean);
       if (images.length) {
         ui.marketplace.comic.aiGeneratedImages = images;
+      }
+
+      const hasAppliedComicTool = (Array.isArray(result?.mcpCalls) ? result.mcpCalls : []).some((call) => {
+        const structured = call?.structuredContent && typeof call.structuredContent === "object" ? call.structuredContent : null;
+        return structured?.applicationId === "comic" && structured?.applied === true;
+      });
+
+      if (hasAppliedComicTool) {
+        void refreshWorkbenchSnapshot();
       }
     },
     video: ({ output }) => {
@@ -744,6 +810,7 @@ const marketplaceAgentActions = createMarketplaceAgentActions({
 });
 
 const marketplaceViewContext = createMarketplaceViewContext({
+  applicationCoverActions,
   comicActions,
   comicAiActions,
   comicChapterDropdownMenuRef,

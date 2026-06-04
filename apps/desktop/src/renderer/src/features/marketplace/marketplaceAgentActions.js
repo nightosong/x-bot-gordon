@@ -1,4 +1,5 @@
 import {
+  BUILTIN_COMIC_SKILL_ID,
   BUILTIN_APPLICATION_TOOLS_MCP_ID,
   BUILTIN_GORDON_AGENT_ID,
   BUILTIN_GORDON_TOOLS_MCP_ID
@@ -8,6 +9,7 @@ const MARKETPLACE_AGENT_APP_META = {
   comic: {
     appName: "丹青溢彩",
     skillHint: "comic planning / visual consistency / image generation tools",
+    skillId: BUILTIN_COMIC_SKILL_ID,
     runningText: "Gordon 正在处理漫画任务..."
   },
   video: {
@@ -183,7 +185,7 @@ function buildAgentRunInput({ appId, appName, modeLabel, taskLabel, contextText,
   ].join("\n");
 }
 
-function buildRunRequest(input, toPlainIpcData) {
+function buildRunRequest(input, toPlainIpcData, options = {}) {
   const runRequest = {
     agentProfileId: BUILTIN_GORDON_AGENT_ID,
     userInput: [
@@ -192,9 +194,11 @@ function buildRunRequest(input, toPlainIpcData) {
       "Gordon Runtime Hint：",
       `- preferredApplicationToolServer：${BUILTIN_APPLICATION_TOOLS_MCP_ID}`,
       `- preferredGenerationToolServer：${BUILTIN_GORDON_TOOLS_MCP_ID}`,
+      options.applicationToolHint ? `- applicationToolHint：${options.applicationToolHint}` : "",
       "- Gordon 是主导决策层；工具集合完整授权后交给模型判断，不要用前端硬规则裁剪候选工具。",
       "- 如当前应用工具未覆盖写回能力，请仅输出到本轮预览结果，不要声称已经写回应用资产。"
-    ].join("\n"),
+    ].filter(Boolean).join("\n"),
+    ...(options.skillId ? { skillId: options.skillId } : {}),
     autoSelectMcp: true
   };
 
@@ -471,7 +475,10 @@ export function createMarketplaceAgentActions({
       instruction: context?.instruction ?? options.instruction,
       outputTarget: context?.outputTarget ?? options.outputTarget
     });
-    const runRequest = buildRunRequest(input, toPlainIpcData);
+    const runRequest = buildRunRequest(input, toPlainIpcData, {
+      skillId: options.skillId ?? meta.skillId,
+      applicationToolHint: options.applicationToolHint ?? context?.applicationToolHint
+    });
 
     try {
       activeProgressEventId = progressEventId;
