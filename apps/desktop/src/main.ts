@@ -1333,6 +1333,7 @@ function buildGordonConfirmWindowHtml(options: GordonConfirmWindowOptions, confi
         --text-faint: rgba(247, 243, 235, 0.52);
         --line: rgba(151, 182, 216, 0.16);
         --panel: rgba(8, 17, 29, 0.94);
+        --window-bg: #08111d;
         --panel-strong: rgba(5, 12, 21, 0.96);
         --panel-soft: rgba(255, 255, 255, 0.05);
         --accent: #5ce1c2;
@@ -1349,29 +1350,41 @@ function buildGordonConfirmWindowHtml(options: GordonConfirmWindowOptions, confi
         box-sizing: border-box;
       }
 
+      html,
+      body {
+        width: 100%;
+        min-width: 100%;
+        min-height: 100%;
+        margin: 0;
+        background: var(--window-bg) !important;
+      }
+
+      html {
+        overflow: hidden;
+      }
+
       body {
         display: grid;
         place-items: center;
         min-height: 100vh;
-        margin: 0;
         color: var(--text);
-        padding: 10px;
-        background: transparent;
+        padding: 0;
         overflow: hidden;
       }
 
       .dialog {
         position: relative;
-        width: min(520px, calc(100vw - 20px));
+        width: 100vw;
+        min-height: 100vh;
         padding: 18px;
         overflow: hidden;
         border: 1px solid var(--line);
-        border-radius: 22px;
+        border-radius: 0;
         background:
           radial-gradient(circle at 14% 0%, var(--tone-soft), transparent 32%),
           linear-gradient(180deg, rgba(255, 255, 255, 0.065), rgba(255, 255, 255, 0.022)),
           var(--panel);
-        box-shadow: var(--shadow);
+        box-shadow: none;
         backdrop-filter: blur(18px);
         -webkit-app-region: drag;
       }
@@ -1671,7 +1684,7 @@ function showGordonConfirmWindow(ownerWindow: BrowserWindow | null, options: Gor
     const cancelUrl = `gordon-confirm://${requestId}/cancel`;
     const confirmWindow = new BrowserWindow({
       width: 540,
-      height: 390,
+      height: 358,
       parent: ownerWindow ?? undefined,
       modal: Boolean(ownerWindow),
       resizable: false,
@@ -1681,9 +1694,11 @@ function showGordonConfirmWindow(ownerWindow: BrowserWindow | null, options: Gor
       frame: false,
       show: false,
       title: options.title,
-      transparent: true,
-      backgroundColor: "#00000000",
+      transparent: false,
+      backgroundColor: "#08111d",
       hasShadow: false,
+      vibrancy: undefined,
+      visualEffectState: "inactive",
       autoHideMenuBar: true,
       webPreferences: {
         contextIsolation: true,
