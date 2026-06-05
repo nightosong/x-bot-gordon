@@ -166,7 +166,7 @@ function createFakeModelServer(capturedRequests: CapturedRequest[]): Server {
               arguments: {
                 app: "Google Chrome"
               },
-              reason: "用户要求打开或检查浏览器界面，需要使用桌面状态读取工具；能力路由只是提示，完整候选仍可选。",
+              reason: "用户要求打开或检查浏览器界面，需要使用桌面状态读取工具；Planner Tool View 已保留 Computer Use 高阶工具。",
               expectedOutcome: "返回 Google Chrome 的当前窗口和可见 UI 文本",
               verificationMethod: "工具结果包含 Chrome Ready 或 Google Chrome",
               ledgerPatch: {
@@ -252,7 +252,7 @@ function createFakeModelServer(capturedRequests: CapturedRequest[]): Server {
         content = JSON.stringify({
         objective: "验证 Gordon 自动工具链可以选择 Computer Use",
         taskPhase: "verifying",
-        constraints: ["Capability Routing 只提示，不裁剪完整工具候选集"],
+        constraints: ["Capability Routing 会收敛 Planner 可见工具，但不移除 runtime 授权边界"],
         completedSubtasks: ["已读取 Google Chrome 桌面状态"],
         pendingSubtasks: ["验证 UI 文本是否包含 Chrome Ready"],
         activePlan: [
@@ -582,10 +582,13 @@ test("runAgent keeps Computer Use selectable through capability routing", async 
 
     assert.ok(firstPlannerRequest);
     assert.match(firstPlannerUserMessage, /能力路由上下文/u);
-    assert.match(firstPlannerUserMessage, /"allToolsAvailable": true/u);
-    assert.match(firstPlannerUserMessage, /不做候选裁剪/u);
+    assert.match(firstPlannerUserMessage, /"allToolsAvailable": false/u);
+    assert.match(firstPlannerUserMessage, /Planner Tool View/u);
+    assert.match(firstPlannerUserMessage, /可见工具列表/u);
     assert.match(firstPlannerUserMessage, /test:mcp:computer-use/u);
     assert.match(firstPlannerUserMessage, /test:mcp:workspace/u);
+    assert.equal(log.steps.some((step) => /发现 \d+ 个候选工具，接下来由模型选择是否调用/u.test(step.detail)), false);
+    assert.ok(log.steps.some((step) => step.title === "Planner 工具视图已生成" && /Planner 可见工具/u.test(step.detail)));
     assert.equal(log.autoSelectedMcp, true);
     assert.equal(log.mcpCalls?.[0]?.serverId, "test:mcp:computer-use");
     assert.equal(log.mcpCalls?.[0]?.toolName, "get_app_state");

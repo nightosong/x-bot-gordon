@@ -612,7 +612,7 @@ function buildWritingAgentRunInput({
       "Gordon Runtime Hint：",
       `- skillId：${BUILTIN_WRITING_SKILL_ID}`,
       `- preferredApplicationToolServer：${BUILTIN_APPLICATION_TOOLS_MCP_ID}`,
-      "- 工具集合仍由 Gordon runtime 完整授权后交给模型判断；不要用前端硬规则裁剪候选工具。",
+      "- Gordon Runtime 会从完整授权工具集中生成本轮 Planner 可见工具白名单；前端只提供应用上下文，不做工具硬路由。",
       writeIntent
         ? "- 本轮作者明确要求保存 / 写入 / 改写书稿资产：必须优先使用 Application Tools 的 writing_* 工具或可用 fallback 完成写回，并读回验证；没有成功工具结果前，不要把计划说成已完成。"
         : ""

@@ -208,7 +208,7 @@ function buildRunRequest(input, toPlainIpcData, options = {}) {
       `- preferredApplicationToolServer：${BUILTIN_APPLICATION_TOOLS_MCP_ID}`,
       `- preferredGenerationToolServer：${BUILTIN_GORDON_TOOLS_MCP_ID}`,
       options.applicationToolHint ? `- applicationToolHint：${options.applicationToolHint}` : "",
-      "- Gordon 是主导决策层；工具集合完整授权后交给模型判断，不要用前端硬规则裁剪候选工具。",
+      "- Gordon 是主导决策层；Runtime 会从完整授权工具集中生成本轮 Planner 可见工具白名单，前端不做工具硬路由。",
       options.writeIntent
         ? "- 本轮用户明确要求保存 / 写入 / 改写应用资产：必须进入工具闭环，优先用应用语义工具写回并读回验证；若工具不可用或失败，再使用允许的 fallback，不要只输出“下一步应该做什么”。"
         : "",

@@ -180,6 +180,7 @@
               :back-to-command-list="backToCommandList"
               :begin-new-command-session="beginNewCommandSession"
               :get-command-artifact-products="getCommandArtifactProducts"
+              :get-command-live-activity-item="getCommandLiveActivityItem"
               :get-command-response-process-items="getCommandResponseProcessItems"
               :get-command-live-status-text="getCommandLiveStatusText"
               :get-skill-option-label="getSkillOptionLabel"
@@ -918,6 +919,7 @@ const {
   commandToolOptions,
   focusCommandInput,
   getCommandArtifactProducts,
+  getCommandLiveActivityItem,
   getCommandResponseProcessItems,
   getCommandLiveStatusText,
   handleAgentRunProgress,

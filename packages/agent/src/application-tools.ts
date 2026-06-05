@@ -1673,6 +1673,30 @@ function getApplicationToolDefinitions(server: McpServerConfig): McpToolDefiniti
       }
     }),
     createToolDefinition(server, {
+      name: "comic_create_chapter",
+      description:
+        "预览或写回「丹青溢彩」漫画项目中的新章节实体。用于新增、补全或追加章节目录；如果目标章节已经存在，请改用 comic_update_chapter。默认 dryRun=true；用户明确保存/写回/直接创建时设置 dryRun=false。",
+      inputSchema: {
+        type: "object",
+        required: ["projectIdOrTitle"],
+        properties: {
+          projectIdOrTitle: { type: "string", description: "漫画项目 id、完整项目名或可唯一匹配的项目名片段" },
+          chapterIndex: { type: "integer", minimum: 1, description: "可选，新章节序号；默认追加到末尾。若该序号已存在会拒绝创建" },
+          title: { type: "string", description: "可选，新章节标题；默认“第 N 章”" },
+          summary: { type: "string", description: "可选，章节内容简介：故事事件、角色目标、冲突变化和结尾钩子" },
+          prompt: { type: "string", description: "可选，章节级分镜与出图提示词" },
+          content: { type: "string", description: "可选章节正文/故事内容" },
+          storyboards: { type: "array", items: COMIC_STORYBOARD_SCHEMA, description: "可选，新章节初始分镜轨道" },
+          images: { type: "array", items: COMIC_CHAPTER_IMAGE_SCHEMA, description: "可选，新章节初始图片数组" },
+          status: { type: "string", enum: ["todo", "inProgress", "done"], description: "可选，新章节状态，默认 todo" },
+          assetRefs: { type: "array", items: { type: "string" }, description: "可选，引用素材 id" },
+          dryRun: { type: "boolean", description: "可选，默认 true。true 只预览，false 写回本地项目" },
+          expectedProjectUpdatedAt: { type: "string", description: "可选，乐观锁：若项目更新时间不一致则拒绝写回" }
+        },
+        additionalProperties: false
+      }
+    }),
+    createToolDefinition(server, {
       name: "comic_update_chapter",
       description:
         "预览或写回「丹青溢彩」指定漫画章节的标题、章节内容简介、章节正文/故事内容、分镜与出图提示、状态或引用素材。默认 dryRun=true；用户明确保存/写回/直接修改时设置 dryRun=false。",
@@ -2626,6 +2650,105 @@ ${formatFieldPreviewText(fields)}
   );
 }
 
+async function handleComicCreateChapter(args: JsonObject) {
+  const projects = await listComicProjects();
+  const project = findComicProject(projects, asString(args.projectIdOrTitle));
+  const dryRun = asBoolean(args.dryRun, true);
+  const timestamp = new Date().toISOString();
+  const requestedIndex =
+    args.chapterIndex === undefined || args.chapterIndex === null || args.chapterIndex === ""
+      ? null
+      : asPositiveInteger(args.chapterIndex, project.chapters.length + 1, 9999);
+  const nextIndex = requestedIndex ?? Math.max(0, ...project.chapters.map((chapter) => Number(chapter.index) || 0)) + 1;
+  const title = asString(args.title) || `第 ${nextIndex} 章`;
+
+  if (project.chapters.some((chapter) => chapter.index === nextIndex)) {
+    throw new Error(`第 ${nextIndex} 章已存在；如需修改该章节，请使用 comic_update_chapter。`);
+  }
+
+  if (title && project.chapters.some((chapter) => chapter.title === title)) {
+    throw new Error(`漫画章节标题已存在：${title}；如需修改该章节，请使用 comic_update_chapter。`);
+  }
+
+  assertExpectedTimestamp("漫画项目", asString(args.expectedProjectUpdatedAt), project.updatedAt);
+
+  const storyboards = normalizeComicStoryboardsInput(args.storyboards, []);
+  const incomingImages = normalizeComicChapterImagesInput(args.images, asString(args.prompt));
+  const storyboardIds = new Set(storyboards.map((storyboard) => storyboard.id));
+  const images = incomingImages.map((image) => ({
+    ...image,
+    storyboardId: image.storyboardId && storyboardIds.has(image.storyboardId) ? image.storyboardId : storyboards[0]?.id
+  }));
+  const chapter = syncComicStoryboardImageIdsForTool({
+    id: createLocalId("comic_chapter"),
+    index: nextIndex,
+    title,
+    summary: String(args.summary ?? ""),
+    prompt: String(args.prompt ?? ""),
+    content: String(args.content ?? ""),
+    storyboards,
+    images,
+    status: asComicChapterStatus(args.status),
+    assetRefs: normalizeComicAssetRefsForTool(args.assetRefs, project),
+    updatedAt: timestamp
+  });
+  const nextChapters = [...project.chapters, chapter]
+    .sort((left, right) => left.index - right.index)
+    .map((entry, index) => ({ ...entry, index: index + 1 }));
+  const nextProject: ComicProject = {
+    ...project,
+    chapters: nextChapters,
+    updatedAt: timestamp
+  };
+  const chapterAfterReindex = nextChapters.find((entry) => entry.id === chapter.id) ?? chapter;
+
+  if (!dryRun) {
+    const savedProjects = await upsertComicProject(nextProject);
+    const savedProject = savedProjects.find((entry) => entry.id === project.id) ?? nextProject;
+    const savedChapter = savedProject.chapters.find((entry) => entry.id === chapter.id) ?? chapterAfterReindex;
+
+    return buildTextResult(
+      `已创建漫画章节：${project.title} / 第 ${savedChapter.index} 章 ${savedChapter.title}
+当前实际章节数：${savedProject.chapters.length}
+更新时间：${savedProject.updatedAt}`,
+      {
+        applicationId: "comic",
+        resourceType: "chapter",
+        applied: true,
+        dryRun: false,
+        projectId: project.id,
+        chapterId: savedChapter.id,
+        createdChapter: {
+          ...savedChapter,
+          content: truncateText(savedChapter.content, MAX_TEXT_CHARS)
+        },
+        savedProject: summarizeComicProject(savedProject, true, true)
+      }
+    );
+  }
+
+  return buildTextResult(
+    `漫画章节创建预览（未写回）：${project.title} / 第 ${chapterAfterReindex.index} 章 ${chapterAfterReindex.title}
+当前实际章节数：${project.chapters.length}
+创建后章节数：${nextProject.chapters.length}
+
+如需保存，请在用户确认后再次调用 comic_create_chapter 并设置 dryRun=false。`,
+    {
+      applicationId: "comic",
+      resourceType: "chapter",
+      applied: false,
+      dryRun: true,
+      projectId: project.id,
+      chapterId: chapterAfterReindex.id,
+      proposedChapter: {
+        ...chapterAfterReindex,
+        content: truncateText(chapterAfterReindex.content, MAX_TEXT_CHARS)
+      },
+      proposedProject: summarizeComicProject(nextProject, true, true)
+    }
+  );
+}
+
 async function handleComicUpdateChapter(args: JsonObject) {
   const projects = await listComicProjects();
   const project = findComicProject(projects, asString(args.projectIdOrTitle));
@@ -3179,6 +3302,9 @@ export async function callApplicationTool(server: McpServerConfig, request: McpT
       break;
     case "comic_update_project_fields":
       result = await handleComicUpdateProjectFields(args);
+      break;
+    case "comic_create_chapter":
+      result = await handleComicCreateChapter(args);
       break;
     case "comic_update_chapter":
       result = await handleComicUpdateChapter(args);

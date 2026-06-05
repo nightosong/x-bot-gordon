@@ -11,7 +11,10 @@ const DEFAULT_IMAGE_SIZE = "1024x1024";
 const DEFAULT_OPENAI_IMAGE_N = 1;
 const DEFAULT_OPENAI_IMAGE_QUALITY = "medium";
 const OPENAI_IMAGE_QUALITY_VALUES = new Set(["low", "medium", "high"]);
-const FETCH_TIMEOUT_MS = 120_000;
+const DEFAULT_FETCH_TIMEOUT_MS = 120_000;
+const DEFAULT_IMAGE_GEN_TIMEOUT_MS = 300_000;
+const FETCH_TIMEOUT_MS = readTimeoutMsFromEnv("GORDON_TOOLS_FETCH_TIMEOUT_MS", DEFAULT_FETCH_TIMEOUT_MS);
+const IMAGE_GEN_TIMEOUT_MS = readTimeoutMsFromEnv("GORDON_IMAGE_GEN_TIMEOUT_MS", DEFAULT_IMAGE_GEN_TIMEOUT_MS);
 const MAX_RESULT_TEXT_CHARS = 12_000;
 const MUSIC_PROVIDER_VALUES = new Set(["mureka", "suno"]);
 
@@ -124,6 +127,16 @@ function truncateText(value, maxChars = MAX_RESULT_TEXT_CHARS) {
   }
 
   return `${text.slice(0, maxChars)}\n...（已截断 ${text.length - maxChars} 字符）`;
+}
+
+function readTimeoutMsFromEnv(name, fallback) {
+  const value = Number(process.env[name]);
+
+  if (!Number.isFinite(value) || value < 1_000) {
+    return fallback;
+  }
+
+  return Math.min(Math.floor(value), 900_000);
 }
 
 function normalizeBaseUrl(value, toolName, provider) {
@@ -541,9 +554,11 @@ function extractImageArtifacts(responseJson, context) {
     .filter(Boolean);
 }
 
-async function postJson(url, apiKey, body) {
+async function postJson(url, apiKey, body, options = {}) {
+  const timeoutMs = readRequestTimeoutMs(options.timeoutMs);
+  const timeoutLabel = String(options.timeoutLabel ?? "请求").trim() || "请求";
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(url, {
@@ -571,7 +586,7 @@ async function postJson(url, apiKey, body) {
     return json ?? text;
   } catch (error) {
     if (error?.name === "AbortError") {
-      throw new Error(`请求超时：超过 ${FETCH_TIMEOUT_MS}ms`);
+      throw new Error(`${timeoutLabel}超时：超过 ${timeoutMs}ms`);
     }
 
     throw error;
@@ -580,9 +595,11 @@ async function postJson(url, apiKey, body) {
   }
 }
 
-async function getJson(url, apiKey) {
+async function getJson(url, apiKey, options = {}) {
+  const timeoutMs = readRequestTimeoutMs(options.timeoutMs);
+  const timeoutLabel = String(options.timeoutLabel ?? "请求").trim() || "请求";
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(url, {
@@ -608,13 +625,23 @@ async function getJson(url, apiKey) {
     return json ?? text;
   } catch (error) {
     if (error?.name === "AbortError") {
-      throw new Error(`请求超时：超过 ${FETCH_TIMEOUT_MS}ms`);
+      throw new Error(`${timeoutLabel}超时：超过 ${timeoutMs}ms`);
     }
 
     throw error;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function readRequestTimeoutMs(timeoutMs) {
+  const normalized = Number(timeoutMs);
+
+  if (!Number.isFinite(normalized) || normalized < 1_000) {
+    return FETCH_TIMEOUT_MS;
+  }
+
+  return Math.min(Math.floor(normalized), 900_000);
 }
 
 function inferAudioMimeType(filePath) {
@@ -639,7 +666,7 @@ function inferAudioMimeType(filePath) {
   return "audio/mpeg";
 }
 
-async function postMultipartFile(url, apiKey, filePath, fieldName = "file") {
+async function postMultipartFile(url, apiKey, filePath, fieldName = "file", options = {}) {
   const normalizedFilePath = String(filePath ?? "").trim();
 
   if (!normalizedFilePath) {
@@ -650,8 +677,10 @@ async function postMultipartFile(url, apiKey, filePath, fieldName = "file") {
   const form = new FormData();
   const blob = new Blob([bytes], { type: inferAudioMimeType(normalizedFilePath) });
   form.append(fieldName, blob, path.basename(normalizedFilePath));
+  const timeoutMs = readRequestTimeoutMs(options.timeoutMs);
+  const timeoutLabel = String(options.timeoutLabel ?? "请求").trim() || "请求";
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(url, {
@@ -678,7 +707,7 @@ async function postMultipartFile(url, apiKey, filePath, fieldName = "file") {
     return json ?? text;
   } catch (error) {
     if (error?.name === "AbortError") {
-      throw new Error(`请求超时：超过 ${FETCH_TIMEOUT_MS}ms`);
+      throw new Error(`${timeoutLabel}超时：超过 ${timeoutMs}ms`);
     }
 
     throw error;
@@ -1143,14 +1172,18 @@ async function callImageGen(argumentsObject) {
     requestBody: sanitizedRequestBody,
     prompt: truncateText(prompt, 240),
     hasImage: Boolean(image),
-    imageCount: images.length
+    imageCount: images.length,
+    timeoutMs: IMAGE_GEN_TIMEOUT_MS
   };
   const requestStartedAt = Date.now();
   logToolCall("image_gen request", callLog);
   let response;
 
   try {
-    response = await postJson(endpoint, apiKey, requestBody);
+    response = await postJson(endpoint, apiKey, requestBody, {
+      timeoutMs: IMAGE_GEN_TIMEOUT_MS,
+      timeoutLabel: "image_gen 请求"
+    });
   } catch (error) {
     logToolCall("image_gen failure", {
       ...callLog,

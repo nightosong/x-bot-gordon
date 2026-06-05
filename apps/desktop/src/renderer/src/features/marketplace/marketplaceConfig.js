@@ -159,7 +159,7 @@ export const COMIC_ASSET_TYPE_META = {
     label: "人物",
     defaultName: "人物素材",
     defaultDescription: "固定角色的外貌、服饰、体态、表情气质和关键识别点。",
-    defaultPrompt: "保持人物五官、发型、服饰、年龄感、体态比例和标志性细节一致；三视图使用 16:9 横图，把正面、侧面、背面放在同一张图里。",
+    defaultPrompt: "保持人物五官、发型、服饰、年龄感、体态比例和标志性细节一致；三视图使用 16:9 横图，把正面、侧面、背面三个完整全身立姿放在同一张图里，不能裁切头顶、脚部、衣摆或武器。",
     defaultViews: [
       { kind: "turnaround", label: "三视图" }
     ]
@@ -168,7 +168,7 @@ export const COMIC_ASSET_TYPE_META = {
     label: "物品",
     defaultName: "物品素材",
     defaultDescription: "固定物品的造型、材质、尺寸感、纹样和使用方式。",
-    defaultPrompt: "保持物品轮廓、材质、颜色、比例、纹样和磨损细节一致；三视图使用 16:9 横图，把正面、侧面、背面放在同一张图里。",
+    defaultPrompt: "保持物品轮廓、材质、颜色、比例、纹样和磨损细节一致；三视图使用 16:9 横图，把正面、侧面、背面三个完整视角放在同一张图里，不能裁切主体轮廓。",
     defaultViews: [
       { kind: "turnaround", label: "三视图" }
     ]
@@ -307,6 +307,7 @@ export function createMarketplaceState() {
       introMode: "settings",
       activeAssetId: "",
       isAssetRailCollapsed: false,
+      previewAssetViewId: "",
       aiTaskId: "splitStoryboards",
       aiInstruction: "",
       aiOutput: "",
@@ -320,6 +321,7 @@ export function createMarketplaceState() {
       aiQuality: "medium",
       aiRequestId: "",
       isAiRunning: false,
+      generatingAssetViewId: "",
       isAiDrawerOpen: false,
       isAiTaskPickerOpen: false,
       isPromptPreviewOpen: false,

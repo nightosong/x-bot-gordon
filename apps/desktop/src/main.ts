@@ -1303,10 +1303,21 @@ function buildGordonConfirmWindowHtml(options: GordonConfirmWindowOptions, confi
   const tone = options.tone ?? "warning";
   const detailItems = (options.detailLines ?? [])
     .filter((line) => String(line ?? "").trim())
-    .map((line) => `<li>${escapeHtml(line)}</li>`)
+    .map((line) => {
+      const text = String(line ?? "").trim();
+      const separatorIndex = text.indexOf("：");
+
+      if (separatorIndex > 0 && separatorIndex < 8) {
+        return `<li><span class="detail-label">${escapeHtml(text.slice(0, separatorIndex))}</span><span class="detail-value">${escapeHtml(text.slice(separatorIndex + 1))}</span></li>`;
+      }
+
+      return `<li><span class="detail-label">信息</span><span class="detail-value">${escapeHtml(text)}</span></li>`;
+    })
     .join("");
   const escapedConfirmUrl = escapeHtml(confirmUrl);
   const escapedCancelUrl = escapeHtml(cancelUrl);
+  const toneLabel = tone === "danger" ? "High Risk" : tone === "warning" ? "Permission" : "Notice";
+  const safeEyebrow = options.eyebrow ?? "Gordon Confirm";
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -1320,14 +1331,17 @@ function buildGordonConfirmWindowHtml(options: GordonConfirmWindowOptions, confi
         --text: #f7f3eb;
         --text-soft: #98a9bf;
         --text-faint: rgba(247, 243, 235, 0.52);
-        --line: rgba(151, 182, 216, 0.14);
-        --panel: rgba(10, 19, 31, 0.92);
-        --panel-strong: rgba(8, 15, 24, 0.96);
+        --line: rgba(151, 182, 216, 0.16);
+        --panel: rgba(8, 17, 29, 0.94);
+        --panel-strong: rgba(5, 12, 21, 0.96);
         --panel-soft: rgba(255, 255, 255, 0.05);
         --accent: #5ce1c2;
         --accent-warm: #f5c86b;
         --accent-hot: #ff8d77;
-        --shadow: 0 24px 64px rgba(0, 0, 0, 0.36);
+        --tone: var(--accent-warm);
+        --tone-soft: rgba(245, 200, 107, 0.12);
+        --tone-line: rgba(245, 200, 107, 0.28);
+        --shadow: 0 26px 72px rgba(0, 0, 0, 0.42);
         font-family: "Avenir Next", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
       }
 
@@ -1341,153 +1355,306 @@ function buildGordonConfirmWindowHtml(options: GordonConfirmWindowOptions, confi
         min-height: 100vh;
         margin: 0;
         color: var(--text);
-        background:
-          radial-gradient(circle at 18% 18%, rgba(92, 225, 194, 0.1), transparent 32%),
-          radial-gradient(circle at 84% 18%, rgba(245, 200, 107, 0.1), transparent 30%),
-          linear-gradient(180deg, #07111d 0%, #0a1320 100%);
+        padding: 10px;
+        background: transparent;
+        overflow: hidden;
       }
 
       .dialog {
-        width: min(420px, calc(100vw - 32px));
-        padding: 17px;
+        position: relative;
+        width: min(520px, calc(100vw - 20px));
+        padding: 18px;
+        overflow: hidden;
         border: 1px solid var(--line);
-        border-radius: 20px;
+        border-radius: 22px;
         background:
-          linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.025)),
+          radial-gradient(circle at 14% 0%, var(--tone-soft), transparent 32%),
+          linear-gradient(180deg, rgba(255, 255, 255, 0.065), rgba(255, 255, 255, 0.022)),
           var(--panel);
         box-shadow: var(--shadow);
         backdrop-filter: blur(18px);
+        -webkit-app-region: drag;
+      }
+
+      .dialog::before {
+        content: "";
+        position: absolute;
+        inset: 0 0 auto;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, var(--tone), rgba(92, 225, 194, 0.58), transparent);
+        opacity: 0.86;
+      }
+
+      .dialog::after {
+        content: "";
+        position: absolute;
+        right: -72px;
+        top: -92px;
+        width: 190px;
+        height: 190px;
+        border-radius: 999px;
+        background: radial-gradient(circle, var(--tone-soft), transparent 64%);
+        pointer-events: none;
+      }
+
+      .dialog.is-danger {
+        --tone: var(--accent-hot);
+        --tone-soft: rgba(255, 141, 119, 0.13);
+        --tone-line: rgba(255, 141, 119, 0.3);
       }
 
       .head {
+        position: relative;
+        z-index: 1;
         display: grid;
         grid-template-columns: auto minmax(0, 1fr);
-        gap: 10px;
+        gap: 12px;
         align-items: center;
       }
 
       .mark {
+        position: relative;
         display: grid;
         place-items: center;
-        width: 32px;
-        height: 32px;
-        border-radius: 10px;
-        border: 1px solid rgba(92, 225, 194, 0.14);
-        background: rgba(92, 225, 194, 0.08);
-        color: #bcf8ea;
+        width: 42px;
+        height: 42px;
+        border-radius: 14px;
+        border: 1px solid var(--tone-line);
+        background:
+          linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent),
+          var(--tone-soft);
+        color: var(--tone);
+        box-shadow: inset 0 0 0 1px rgba(247, 243, 235, 0.035), 0 14px 30px rgba(0, 0, 0, 0.2);
       }
 
-      .dialog.is-warning .mark,
-      .dialog.is-danger .mark {
-        border-color: rgba(255, 141, 119, 0.18);
-        background: rgba(255, 141, 119, 0.09);
-        color: #ffc5b7;
+      .mark::after {
+        content: "";
+        position: absolute;
+        inset: -5px;
+        border: 1px solid var(--tone-line);
+        border-radius: 18px;
+        opacity: 0.26;
       }
 
       .mark svg {
-        width: 16px;
-        height: 16px;
+        width: 19px;
+        height: 19px;
       }
 
       .eyebrow {
         margin: 0 0 4px;
-        color: var(--text-faint);
+        color: var(--tone);
         font-size: 10px;
-        font-weight: 800;
-        letter-spacing: 0.12em;
+        font-weight: 900;
+        letter-spacing: 0.1em;
         text-transform: uppercase;
       }
 
       h1 {
         margin: 0;
-        font-size: 17px;
-        line-height: 1.22;
+        color: rgba(247, 243, 235, 0.96);
+        font-size: 18px;
+        line-height: 1.26;
+      }
+
+      .tone-pill {
+        position: absolute;
+        top: 18px;
+        right: 18px;
+        z-index: 2;
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        padding: 0 9px;
+        border: 1px solid var(--tone-line);
+        border-radius: 999px;
+        background: rgba(5, 12, 21, 0.36);
+        color: var(--tone);
+        font-size: 10px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
       }
 
       .message {
-        margin: 12px 0 0;
-        color: var(--text-soft);
+        position: relative;
+        z-index: 1;
+        margin: 14px 0 0;
+        color: rgba(247, 243, 235, 0.72);
         font-size: 12.5px;
-        line-height: 1.65;
+        font-weight: 600;
+        line-height: 1.66;
       }
 
       .detail {
+        position: relative;
+        z-index: 1;
         display: grid;
-        gap: 6px;
-        max-height: 112px;
-        margin: 12px 0 0;
+        gap: 7px;
+        max-height: 142px;
+        margin: 13px 0 0;
         padding: 10px;
-        border: 1px solid var(--line);
-        border-radius: 13px;
-        background: var(--panel-soft);
-        color: var(--text-soft);
+        border: 1px solid rgba(151, 182, 216, 0.13);
+        border-radius: 15px;
+        background:
+          linear-gradient(135deg, rgba(92, 225, 194, 0.045), rgba(245, 200, 107, 0.035)),
+          rgba(3, 10, 18, 0.35);
         font-size: 11.5px;
-        line-height: 1.5;
+        line-height: 1.48;
         list-style: none;
         overflow: auto;
+        -webkit-app-region: no-drag;
       }
 
       .detail li {
+        display: grid;
+        grid-template-columns: 48px minmax(0, 1fr);
+        gap: 8px;
+        align-items: start;
         overflow-wrap: anywhere;
       }
 
+      .detail-label {
+        color: rgba(247, 243, 235, 0.48);
+        font-weight: 900;
+        white-space: nowrap;
+      }
+
+      .detail-value {
+        color: rgba(247, 243, 235, 0.76);
+        font-family: "SFMono-Regular", "Menlo", "Consolas", "PingFang SC", monospace;
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .scope-note {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        margin: 11px 0 0;
+        color: rgba(247, 243, 235, 0.52);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .scope-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        background: var(--tone);
+        box-shadow: 0 0 16px var(--tone);
+      }
+
       .actions {
+        position: relative;
+        z-index: 1;
         display: flex;
         justify-content: flex-end;
-        gap: 8px;
-        margin-top: 14px;
+        gap: 9px;
+        margin-top: 16px;
+        -webkit-app-region: no-drag;
       }
 
       .dialog-action {
         display: inline-grid;
         place-items: center;
-        min-height: 34px;
-        padding: 0 12px;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 999px;
+        min-width: 102px;
+        min-height: 36px;
+        padding: 0 14px;
+        border: 1px solid rgba(247, 243, 235, 0.1);
+        border-radius: 12px;
         text-decoration: none;
         font: inherit;
-        font-weight: 700;
+        font-weight: 900;
         font-size: 12px;
         cursor: pointer;
+        transition: transform 150ms ease, border-color 150ms ease, background 150ms ease, color 150ms ease;
       }
 
       .secondary {
-        background: rgba(255, 255, 255, 0.06);
-        color: var(--text);
+        background: rgba(255, 255, 255, 0.045);
+        color: rgba(247, 243, 235, 0.72);
       }
 
       .primary {
-        border-color: rgba(92, 225, 194, 0.2);
-        background: rgba(92, 225, 194, 0.14);
-        color: #bcf8ea;
+        border-color: var(--tone-line);
+        background:
+          linear-gradient(135deg, color-mix(in srgb, var(--tone) 24%, transparent), rgba(255, 255, 255, 0.035)),
+          rgba(8, 15, 24, 0.72);
+        color: #fff1ca;
+        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
       }
 
-      .dialog.is-danger .primary,
-      .dialog.is-warning .primary {
-        border-color: rgba(255, 141, 119, 0.24);
-        background: rgba(255, 141, 119, 0.14);
+      .dialog.is-danger .primary {
         color: #ffd0c6;
+      }
+
+      .dialog-action:hover,
+      .dialog-action:focus-visible {
+        outline: none;
+        transform: translateY(-1px);
+      }
+
+      .secondary:hover,
+      .secondary:focus-visible {
+        border-color: rgba(247, 243, 235, 0.18);
+        background: rgba(255, 255, 255, 0.07);
+        color: rgba(247, 243, 235, 0.9);
+      }
+
+      .primary:hover,
+      .primary:focus-visible {
+        border-color: var(--tone);
+        background:
+          linear-gradient(135deg, color-mix(in srgb, var(--tone) 34%, transparent), rgba(255, 255, 255, 0.055)),
+          rgba(8, 15, 24, 0.78);
+      }
+
+      @supports not (color: color-mix(in srgb, red, transparent)) {
+        .primary {
+          background: rgba(245, 200, 107, 0.16);
+        }
+
+        .dialog.is-danger .primary {
+          background: rgba(255, 141, 119, 0.16);
+        }
+      }
+
+      ::-webkit-scrollbar {
+        width: 7px;
+      }
+
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      ::-webkit-scrollbar-thumb {
+        border-radius: 999px;
+        background: rgba(247, 243, 235, 0.16);
       }
     </style>
   </head>
   <body>
     <main class="dialog is-${escapeHtml(tone)}" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+      <span class="tone-pill">${escapeHtml(toneLabel)}</span>
       <div class="head">
         <div class="mark" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 9v4" />
-            <path d="M12 17h.01" />
-            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+            <path d="M12 3 5 6v5c0 4.6 2.9 8.6 7 10 4.1-1.4 7-5.4 7-10V6l-7-3Z" />
+            <path d="M12 8v5" />
+            <path d="M12 16h.01" />
           </svg>
         </div>
         <div>
-          <p class="eyebrow">${escapeHtml(options.eyebrow ?? "Gordon Confirm")}</p>
+          <p class="eyebrow">${escapeHtml(safeEyebrow)}</p>
           <h1 id="dialog-title">${escapeHtml(options.title)}</h1>
         </div>
       </div>
       <p class="message">${escapeHtml(options.message)}</p>
       ${detailItems ? `<ul class="detail">${detailItems}</ul>` : ""}
+      <div class="scope-note"><span class="scope-dot" aria-hidden="true"></span><span>仅本轮 Agent 运行生效，关闭或拒绝后不会继续执行该动作。</span></div>
       <div class="actions">
         <a class="dialog-action secondary" href="${escapedCancelUrl}" data-action="cancel">${escapeHtml(options.cancelText ?? "取消")}</a>
         <a class="dialog-action primary" href="${escapedConfirmUrl}" data-action="confirm" autofocus>${escapeHtml(options.confirmText ?? "确认")}</a>
@@ -1503,8 +1670,8 @@ function showGordonConfirmWindow(ownerWindow: BrowserWindow | null, options: Gor
     const confirmUrl = `gordon-confirm://${requestId}/confirm`;
     const cancelUrl = `gordon-confirm://${requestId}/cancel`;
     const confirmWindow = new BrowserWindow({
-      width: 460,
-      height: 320,
+      width: 540,
+      height: 390,
       parent: ownerWindow ?? undefined,
       modal: Boolean(ownerWindow),
       resizable: false,
@@ -1514,7 +1681,9 @@ function showGordonConfirmWindow(ownerWindow: BrowserWindow | null, options: Gor
       frame: false,
       show: false,
       title: options.title,
-      backgroundColor: "#07111d",
+      transparent: true,
+      backgroundColor: "#00000000",
+      hasShadow: false,
       autoHideMenuBar: true,
       webPreferences: {
         contextIsolation: true,

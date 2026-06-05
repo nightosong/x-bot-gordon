@@ -11,6 +11,7 @@ import {
   COMIC_PROJECT_FORMAT_META,
   COMIC_PROJECT_PALETTE_META
 } from "./marketplaceConfig.js";
+import { BUILTIN_GORDON_TOOLS_MCP_ID } from "../../lib/presenter.js";
 
 function writeRef(target, value) {
   if (target && typeof target === "object" && "value" in target) {
@@ -20,6 +21,43 @@ function writeRef(target, value) {
 
 function getErrorMessage(error) {
   return error instanceof Error ? error.message : "未知错误";
+}
+
+function normalizeText(value) {
+  return String(value ?? "").trim();
+}
+
+function getImageArtifactSource(artifact) {
+  return (
+    normalizeText(artifact?.src) ||
+    normalizeText(artifact?.url) ||
+    normalizeText(artifact?.dataUrl) ||
+    normalizeText(artifact?.base64) ||
+    normalizeText(artifact?.imageUrl)
+  );
+}
+
+function extractFirstImageArtifact(toolResult) {
+  const artifacts = Array.isArray(toolResult?.structuredContent?.artifacts) ? toolResult.structuredContent.artifacts : [];
+
+  for (const artifact of artifacts) {
+    if (normalizeText(artifact?.kind) !== "image") {
+      continue;
+    }
+
+    const src = getImageArtifactSource(artifact);
+
+    if (src) {
+      return {
+        src,
+        prompt: normalizeText(artifact?.prompt),
+        provider: normalizeText(artifact?.provider),
+        model: normalizeText(artifact?.model)
+      };
+    }
+  }
+
+  return null;
 }
 
 const EMPTY_TITLE_RESTORE_DELAY = 10000;
@@ -54,6 +92,10 @@ export function createComicActions({
       activeComicAssets.value[0] ??
       null
   );
+  const activeComicAssetPreviewView = computed(() => {
+    const views = Array.isArray(activeComicAsset.value?.views) ? activeComicAsset.value.views : [];
+    return views.find((view) => view.id === ui.marketplace.comic.previewAssetViewId && normalizeText(view.src)) ?? null;
+  });
   const activeComicTabMeta = computed(
     () => COMIC_APP_TABS.find((tab) => tab.id === ui.marketplace.comic.activeTab) ?? COMIC_APP_TABS[0]
   );
@@ -1244,6 +1286,7 @@ export function createComicActions({
   }
 
   function setComicIntroMode(mode) {
+    ui.marketplace.comic.activeTab = "intro";
     ui.marketplace.comic.introMode = mode === "assets" ? "assets" : "settings";
   }
 
@@ -1253,6 +1296,7 @@ export function createComicActions({
 
   function selectComicAsset(assetId) {
     ui.marketplace.comic.activeAssetId = String(assetId ?? "").trim();
+    ui.marketplace.comic.previewAssetViewId = "";
     setComicIntroMode("assets");
   }
 
@@ -1323,6 +1367,7 @@ export function createComicActions({
       assetRefs: normalizeComicAssetRefsForUi(chapter.assetRefs).filter((ref) => ref !== normalizedAssetId)
     }));
     ui.marketplace.comic.activeAssetId = project.assets[0]?.id ?? "";
+    ui.marketplace.comic.previewAssetViewId = "";
     const nameKey = getComicAssetNameRestoreKey(project.id, normalizedAssetId);
     clearComicTitleRestoreTimer(nameKey);
     comicTitleBaselines.delete(nameKey);
@@ -1455,6 +1500,9 @@ export function createComicActions({
     }
 
     asset.views = (Array.isArray(asset.views) ? asset.views : []).filter((view) => view.id !== viewId);
+    if (ui.marketplace.comic.previewAssetViewId === viewId) {
+      ui.marketplace.comic.previewAssetViewId = "";
+    }
     touchComicAsset(asset);
   }
 
@@ -1475,11 +1523,255 @@ export function createComicActions({
       view.label = String(value ?? "");
     } else if (field === "src") {
       view.src = String(value ?? "").trim();
+      if (!normalizeText(view.src) && ui.marketplace.comic.previewAssetViewId === view.id) {
+        ui.marketplace.comic.previewAssetViewId = "";
+      }
     } else if (field === "prompt") {
       view.prompt = String(value ?? "");
     }
 
     touchComicAsset(asset);
+  }
+
+  function isGeneratedComicAssetPromptLine(line) {
+    return (
+      /^素材类型[:：]/.test(line) ||
+      /^素材名称[:：]/.test(line) ||
+      /^素材描述[:：]/.test(line) ||
+      /^目标视图[:：]/.test(line) ||
+      /^画幅规格[:：]/.test(line) ||
+      line === "请生成一张可长期复用的漫画素材设定图。" ||
+      line.startsWith("优先级：视图规格与完整度") ||
+      line.startsWith("生成单张角色/物品设定参考图") ||
+      line.startsWith("生成单张角色设定参考图") ||
+      line.startsWith("生成单张物品设定参考图") ||
+      line.startsWith("生成单张场景参考图") ||
+      line.startsWith("生成角色三视图设定表") ||
+      line.startsWith("生成物品三视图设定表") ||
+      line.startsWith("不要加入无关文字说明") ||
+      line.startsWith("不要做成多图拼贴") ||
+      line.startsWith("画面只保留一个明确素材主体")
+    );
+  }
+
+  function normalizeComicPromptLines(...values) {
+    const seen = new Set();
+    const lines = [];
+
+    values.forEach((value) => {
+      String(value ?? "")
+        .replace(/\r\n?/g, "\n")
+        .split("\n")
+        .map((line) => normalizeText(line))
+        .filter(Boolean)
+        .filter((line) => !isGeneratedComicAssetPromptLine(line))
+        .forEach((line) => {
+          const key = line.replace(/[，。；;:：、\s]/g, "").toLowerCase();
+
+          if (key && !seen.has(key)) {
+            seen.add(key);
+            lines.push(line);
+          }
+        });
+    });
+
+    return lines;
+  }
+
+  function getComicAssetViewGenerationSize(asset, view) {
+    const kind = normalizeComicAssetViewKindForUi(view?.kind);
+    const type = normalizeComicAssetTypeForUi(asset?.type);
+
+    if (kind === "turnaround" || type === "scene") {
+      return "1536x1024";
+    }
+
+    if (type === "character" && ["front", "side", "back", "angle"].includes(kind)) {
+      return "1024x1536";
+    }
+
+    return "1024x1024";
+  }
+
+  function getComicAssetViewGenerationDirectives(asset, view) {
+    const kind = normalizeComicAssetViewKindForUi(view?.kind);
+    const type = normalizeComicAssetTypeForUi(asset?.type);
+
+    if (kind === "turnaround" && type === "character") {
+      return [
+        "生成角色三视图设定表：同一名角色的正面、侧面、背面三个完整全身立姿并排展示。",
+        "必须从头顶到脚底完整可见，保留靴子/鞋底/衣摆/武器全长，不得裁切身体。",
+        "三视图服饰、发型、体型、武器位置和标志性细节必须一致，背景保持干净或极淡氛围。",
+        "禁止半身图、胸像、头像特写、近景裁切、单人海报、剧情分镜、文字标签、UI 标注。"
+      ];
+    }
+
+    if (kind === "turnaround" && type === "prop") {
+      return [
+        "生成物品三视图设定表：同一件物品的正面、侧面、背面三个完整视角并排展示。",
+        "必须完整展示物品轮廓、比例、材质、磨损痕迹和关键结构，不得裁切。",
+        "三视图颜色、纹样、材质和结构必须一致，背景保持干净。",
+        "禁止单角度海报、局部特写、剧情场景、文字标签、UI 标注。"
+      ];
+    }
+
+    if (type === "character") {
+      return [
+        "生成单张角色设定参考图，完整全身站姿优先，从头顶到脚底完整可见，不要裁切。",
+        "重点表现角色五官、眼神、体态、服饰层次、随身武器和可反复复用的漫画识别点。",
+        "背景干净或只保留极淡氛围，不要喧宾夺主。",
+        "禁止半身图、头像特写、过度华丽服装、夸张玄幻武器、文字标签。"
+      ];
+    }
+
+    if (type === "scene") {
+      return [
+        "生成单张场景参考图，构图清晰，空间关系明确，可作为后续漫画分镜参考。",
+        "突出场景的时代感、光线方向、地形/建筑结构和可复用的布景锚点。",
+        "禁止人物抢占画面主体、文字标签、UI 标注。"
+      ];
+    }
+
+    return [
+      "生成单张物品设定参考图，主体完整清晰，结构准确，便于后续漫画分镜保持一致性。",
+      "重点表现轮廓、材质、比例、纹样、磨损和使用方式，不得裁切主体。",
+      "背景干净，禁止文字标签、UI 标注。"
+    ];
+  }
+
+  function buildComicAssetViewGenerationPrompt(asset, view) {
+    const typeLabel = getComicAssetTypeLabel(asset?.type);
+    const viewLabel = normalizeText(view?.label) || getComicAssetViewKindLabel(view?.kind);
+    const promptLines = normalizeComicPromptLines(view?.prompt, asset?.description, asset?.prompt);
+    const lines = [
+      "请生成一张可长期复用的漫画素材设定图。",
+      "优先级：视图规格与完整度 > 角色/物品识别点 > 服饰/道具一致性 > 氛围与画风。",
+      promptLines.length ? `创作简报：\n${promptLines.map((line) => `- ${line}`).join("\n")}` : "",
+      `素材类型：${typeLabel}`,
+      `素材名称：${normalizeText(asset?.name) || "未命名素材"}`,
+      `目标视图：${viewLabel}`,
+      `画幅规格：${getComicAssetViewGenerationSize(asset, view)}`,
+      ...getComicAssetViewGenerationDirectives(asset, view)
+    ].filter(Boolean);
+
+    return lines.join("\n");
+  }
+
+  async function generateComicAssetViewImage(assetId, viewId) {
+    const asset = getComicAssets(activeComicProject.value).find((entry) => entry.id === assetId);
+    const view = (Array.isArray(asset?.views) ? asset.views : []).find((entry) => entry.id === viewId);
+
+    if (!asset || !view) {
+      return;
+    }
+
+    if (!desktopApi?.callMcpServerTool) {
+      setStatus("Gordon Tools 桥接未就绪，暂时无法生成素材图。", "danger");
+      return;
+    }
+
+    const prompt = buildComicAssetViewGenerationPrompt(asset, view);
+
+    if (!normalizeText(prompt)) {
+      setStatus("请先填写视图提示词或素材描述。", "warning");
+      return;
+    }
+
+    ui.marketplace.comic.generatingAssetViewId = view.id;
+    setStatus(`正在生成素材视图：${asset.name} / ${view.label || getComicAssetViewKindLabel(view.kind)}`, "neutral");
+
+    try {
+      const toolResult = await desktopApi.callMcpServerTool({
+        serverId: BUILTIN_GORDON_TOOLS_MCP_ID,
+        toolName: "image_gen",
+        arguments: {
+          prompt,
+          size: getComicAssetViewGenerationSize(asset, view),
+          n: 1,
+          quality: "high"
+        }
+      });
+
+      if (toolResult?.isError) {
+        throw new Error(normalizeText(toolResult.contentText) || "image_gen 调用失败");
+      }
+
+      const image = extractFirstImageArtifact(toolResult);
+
+      if (!image?.src) {
+        setStatus("素材图生成完成，但工具没有返回可展示图片。", "warning");
+        return;
+      }
+
+      view.src = image.src;
+      view.prompt = normalizeText(view.prompt) || image.prompt || "";
+      touchComicAsset(asset);
+      setStatus(
+        image.provider || image.model
+          ? `素材图已生成并写入视图：${[image.provider, image.model].filter(Boolean).join(" / ")}`
+          : "素材图已生成并写入当前视图。",
+        "success"
+      );
+    } catch (error) {
+      console.error("Failed to generate comic asset view image", error);
+      setStatus(`素材图生成失败：${getErrorMessage(error)}`, "danger");
+    } finally {
+      if (ui.marketplace.comic.generatingAssetViewId === view.id) {
+        ui.marketplace.comic.generatingAssetViewId = "";
+      }
+    }
+  }
+
+  function previewComicAssetView(viewId) {
+    const views = Array.isArray(activeComicAsset.value?.views) ? activeComicAsset.value.views : [];
+    const view = views.find((entry) => entry.id === viewId);
+
+    if (!normalizeText(view?.src)) {
+      setStatus("当前视图还没有可放大的素材图。", "warning");
+      return;
+    }
+
+    ui.marketplace.comic.previewAssetViewId = view.id;
+  }
+
+  function closeComicAssetPreviewView() {
+    ui.marketplace.comic.previewAssetViewId = "";
+  }
+
+  async function downloadComicAssetViewImage(assetId, viewId) {
+    const project = activeComicProject.value;
+    const asset = getComicAssets(project).find((entry) => entry.id === assetId);
+    const view = (Array.isArray(asset?.views) ? asset.views : []).find((entry) => entry.id === viewId);
+    const imageUrl = normalizeText(view?.src);
+    const saveImage = desktopApi?.saveApplicationCoverImage ?? desktopApi?.saveWritingBookCoverImage;
+
+    if (!asset || !view) {
+      return;
+    }
+
+    if (!imageUrl) {
+      setStatus("当前视图没有可下载的素材图。", "warning");
+      return;
+    }
+
+    if (!saveImage) {
+      setStatus("图片下载桥接未就绪。", "danger");
+      return;
+    }
+
+    try {
+      const result = await saveImage({
+        title: [project?.title, asset.name, view.label || getComicAssetViewKindLabel(view.kind)].filter(Boolean).join("-"),
+        imageUrl
+      });
+
+      if (result?.fileName) {
+        setStatus(`素材图已下载：${result.fileName}`, "success");
+      }
+    } catch (error) {
+      console.error("Failed to download comic asset view image", error);
+      setStatus(`下载素材图失败：${getErrorMessage(error)}`, "danger");
+    }
   }
 
   function toggleComicChapterAssetRef(chapter, assetId) {
@@ -2153,6 +2445,7 @@ export function createComicActions({
     backComicShelf,
     canExportActiveComicProject,
     clearComicAutosaveTimer,
+    closeComicAssetPreviewView,
     closeComicExportDialog,
     comicProjects,
     addComicAssetView,
@@ -2161,6 +2454,7 @@ export function createComicActions({
     createComicProject,
     createComicStoryboard,
     deleteComicAsset,
+    downloadComicAssetViewImage,
     deleteComicProjectFromShelf,
     deleteComicStoryboard,
     exportActiveComicProject,
@@ -2179,11 +2473,14 @@ export function createComicActions({
     getComicProjectPaletteLabel,
     getComicStoryboardImages,
     getComicStoryboardKindLabel,
+    generateComicAssetViewImage,
+    activeComicAssetPreviewView,
     goComicChapter,
     isComicChapterAssetReferenced,
     openComicAppShelf,
     openComicExportDialog,
     openComicProject,
+    previewComicAssetView,
     rememberComicAssetNameBaseline,
     rememberComicProjectTitleBaseline,
     removeComicAssetView,

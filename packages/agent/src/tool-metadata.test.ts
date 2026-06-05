@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildPlannerToolPayload, inferToolRiskLevel, inferToolSideEffects, sanitizeToolDescription } from "./tool-metadata.js";
+import {
+  buildPlannerToolPayload,
+  inferToolExecutionDomain,
+  inferToolRiskLevel,
+  inferToolSideEffects,
+  sanitizeToolDescription
+} from "./tool-metadata.js";
 
 test("sanitizeToolDescription removes prompt-injection style instructions", () => {
   const sanitized = sanitizeToolDescription(`
@@ -65,9 +71,51 @@ test("application read tools stay low-risk while update tools remain stateful", 
     description: "写回丹青溢彩漫画项目级字段",
     inputSchema: { type: "object" }
   };
+  const createTool = {
+    serverId: "builtin:mcp:application-tools",
+    serverName: "Application Tools",
+    name: "comic_create_chapter",
+    description: "创建丹青溢彩漫画章节实体",
+    inputSchema: { type: "object" }
+  };
 
   assert.equal(inferToolRiskLevel(readTool), "low");
   assert.equal(inferToolSideEffects(readTool), "read_only");
   assert.equal(inferToolRiskLevel(updateTool), "high");
   assert.equal(inferToolSideEffects(updateTool), "stateful");
+  assert.equal(inferToolRiskLevel(createTool), "high");
+  assert.equal(inferToolSideEffects(createTool), "stateful");
+});
+
+test("built-in server id wins over generic words in tool descriptions", () => {
+  assert.equal(
+    inferToolExecutionDomain({
+      serverId: "builtin:mcp:application-tools",
+      serverName: "Application Tools",
+      name: "writing_search_book",
+      description: "在「墨笔生花」小说中搜索关键词。",
+      inputSchema: { type: "object" }
+    }),
+    "writing_asset"
+  );
+  assert.equal(
+    inferToolExecutionDomain({
+      serverId: "builtin:mcp:gordon-tools",
+      serverName: "Gordon Tools",
+      name: "image_gen",
+      description: "使用 Base URL 和图片生成模型生成图片。",
+      inputSchema: { type: "object" }
+    }),
+    "generation"
+  );
+  assert.equal(
+    inferToolExecutionDomain({
+      serverId: "builtin:mcp:computer-use",
+      serverName: "Computer Use",
+      name: "open_url",
+      description: "使用默认浏览器打开 http(s) URL。",
+      inputSchema: { type: "object" }
+    }),
+    "desktop"
+  );
 });

@@ -57,6 +57,12 @@ export type WritingBookPartType = "act" | "volume";
 export type WritingChapterStatus = "todo" | "inProgress" | "done";
 export type WritingOutlinePlannerStatus = "idle" | "running" | "completed" | "failed" | "cancelled";
 export type AgentRunStepType =
+  | "run_received"
+  | "context_prepared"
+  | "runtime_initializing"
+  | "runtime_config_loaded"
+  | "tool_discovery_started"
+  | "tool_discovery_completed"
   | "agent_selected"
   | "model_selected"
   | "skill_selected"
@@ -84,6 +90,7 @@ export type AgentRunStepType =
   | "mcp_tool_failed"
   | "mcp_retrying"
   | "mcp_auto_stopped"
+  | "model_response_started"
   | "model_invoked"
   | "completed";
 
@@ -682,6 +689,7 @@ export interface AgentRunProgressEvent {
 }
 
 export interface CommandWorkshopMessageArtifact {
+  isLive?: boolean;
   profileLabel: string;
   model: string;
   skillName: string | null;

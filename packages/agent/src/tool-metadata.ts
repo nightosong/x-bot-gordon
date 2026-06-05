@@ -69,23 +69,51 @@ export function sanitizeToolDescription(description: string | undefined): string
 export function inferToolExecutionDomain(tool: McpToolDefinition): string {
   const source = `${tool.serverName} ${tool.name} ${tool.description ?? ""}`.toLowerCase();
 
-  if (tool.serverId === BUILTIN_WORKSPACE_MCP_ID || /file|path|workspace|shell|json|diff|文件|目录|仓库|命令/u.test(source)) {
+  if (tool.serverId === BUILTIN_WORKSPACE_MCP_ID) {
     return "workspace";
   }
 
-  if (tool.serverId === BUILTIN_SEARCH_TOOLS_MCP_ID || /search|web|github|research|url|联网|搜索|网页/u.test(source)) {
+  if (tool.serverId === BUILTIN_SEARCH_TOOLS_MCP_ID) {
     return "web_research";
   }
 
-  if (tool.serverId === BUILTIN_COMPUTER_USE_MCP_ID || /computer|desktop|browser|click|screenshot|桌面|点击|截图/u.test(source)) {
+  if (tool.serverId === BUILTIN_COMPUTER_USE_MCP_ID) {
     return "desktop";
   }
 
-  if (tool.serverId === BUILTIN_GORDON_TOOLS_MCP_ID || /image|video|music|generate|图片|视频|音乐|生成/u.test(source)) {
+  if (tool.serverId === BUILTIN_GORDON_TOOLS_MCP_ID) {
     return "generation";
   }
 
-  if (tool.serverId === BUILTIN_APPLICATION_TOOLS_MCP_ID || /application|writing|comic|book|chapter|asset|应用|小说|漫画|章节|分镜|素材/u.test(source)) {
+  if (tool.serverId === BUILTIN_APPLICATION_TOOLS_MCP_ID) {
+    if (/^writing_/u.test(tool.name)) {
+      return "writing_asset";
+    }
+
+    if (/^comic_/u.test(tool.name)) {
+      return "comic_asset";
+    }
+
+    return "application_asset";
+  }
+
+  if (/file|path|workspace|shell|json|diff|文件|目录|仓库|命令/u.test(source)) {
+    return "workspace";
+  }
+
+  if (/search|web|github|research|url|联网|搜索|网页/u.test(source)) {
+    return "web_research";
+  }
+
+  if (/computer|desktop|browser|click|screenshot|桌面|点击|截图/u.test(source)) {
+    return "desktop";
+  }
+
+  if (/image|video|music|generate|图片|视频|音乐|生成/u.test(source)) {
+    return "generation";
+  }
+
+  if (/application|writing|comic|book|chapter|asset|应用|小说|漫画|章节|分镜|素材/u.test(source)) {
     return "application_asset";
   }
 
@@ -99,7 +127,7 @@ export function inferToolRiskLevel(tool: McpToolDefinition): "low" | "medium" | 
     return "low";
   }
 
-  if (/delete|remove|write|update|replace|move|rename|run_shell|execute|click|type|press|drag|生成|写入|修改|删除|移动|重命名|点击|输入/u.test(source)) {
+  if (/delete|remove|write|update|replace|create|save|move|rename|run_shell|execute|click|type|press|drag|play|media|生成|写入|修改|创建|保存|删除|移动|重命名|点击|输入|播放/u.test(source)) {
     return "high";
   }
 
@@ -122,7 +150,7 @@ export function inferToolCapabilities(tool: McpToolDefinition): string[] {
   addCapability("read", [/read|list|inspect|query|screenshot|读取|查看|列出|查询|截图/u]);
   addCapability("write", [/write|update|replace|create|delete|move|rename|写入|更新|创建|删除|移动|重命名/u]);
   addCapability("search", [/search|research|github|web|搜索|调研|联网/u]);
-  addCapability("execute", [/run|execute|shell|click|type|press|drag|运行|执行|点击|输入|按键|拖拽/u]);
+  addCapability("execute", [/run|execute|shell|click|type|press|drag|play|media|运行|执行|点击|输入|按键|拖拽|播放/u]);
   addCapability("generate", [/generate|image|video|music|生成|图片|视频|音乐/u]);
   addCapability("verify", [/validate|diff|status|inspect|验证|校验|对比|状态/u]);
 
@@ -144,7 +172,7 @@ export function inferToolVerbs(tool: McpToolDefinition): string[] {
   addVerb("write", [/write|update|replace|create|save|写入|更新|创建|保存/u]);
   addVerb("delete", [/delete|remove|删除|移除/u]);
   addVerb("execute", [/run|execute|shell|command|运行|执行|命令/u]);
-  addVerb("operate", [/click|type|press|drag|点击|输入|按键|拖拽/u]);
+  addVerb("operate", [/click|type|press|drag|play|media|点击|输入|按键|拖拽|播放/u]);
   addVerb("generate", [/generate|image|video|music|生成|图片|视频|音乐/u]);
   addVerb("verify", [/validate|diff|status|inspect|验证|校验|对比|状态/u]);
 
@@ -178,7 +206,7 @@ export function inferToolSideEffects(tool: McpToolDefinition): "none" | "read_on
     return "destructive";
   }
 
-  if (/write|update|replace|create|save|run_shell|execute|click|type|press|drag|generate|写入|更新|修改|创建|保存|执行|点击|输入|生成/u.test(source)) {
+  if (/write|update|replace|create|save|run_shell|execute|click|type|press|drag|play|media|generate|写入|更新|修改|创建|保存|执行|点击|输入|播放|生成/u.test(source)) {
     return "stateful";
   }
 

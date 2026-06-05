@@ -514,27 +514,47 @@ export async function listToolsFromMcpServer(serverId: string): Promise<McpToolD
   const servers = await listMcpServers();
   const server = assertEnabledServer(servers.find((entry) => entry.id === serverId));
 
-  if (server.id === BUILTIN_APPLICATION_TOOLS_MCP_ID) {
-    return listApplicationToolDefinitions(server);
+  return listToolsFromMcpServerConfig(server);
+}
+
+export async function listToolsFromMcpServerConfig(server: McpServerConfig): Promise<McpToolDefinition[]> {
+  const enabledServer = assertEnabledServer(server);
+
+  if (enabledServer.id === BUILTIN_APPLICATION_TOOLS_MCP_ID) {
+    return listApplicationToolDefinitions(enabledServer);
   }
 
-  return withMcpClient(server, async (client) => {
+  return withMcpClient(enabledServer, async (client) => {
     const result = await client.request("tools/list");
-    return normalizeToolDefinitions(server, result);
+    return normalizeToolDefinitions(enabledServer, result);
   });
 }
 
 export async function callToolOnMcpServer(request: McpToolCallRequest): Promise<McpToolCallResult> {
   const servers = await listMcpServers();
   const server = assertEnabledServer(servers.find((entry) => entry.id === request.serverId));
-  const allowlist = new Set(server.toolAllowlist);
+
+  return callToolOnMcpServerConfig(server, request);
+}
+
+export async function callToolOnMcpServerConfig(
+  server: McpServerConfig,
+  request: McpToolCallRequest
+): Promise<McpToolCallResult> {
+  const enabledServer = assertEnabledServer(server);
+
+  if (enabledServer.id !== request.serverId) {
+    throw new Error("工具调用的 MCP Server 与已解析配置不一致");
+  }
+
+  const allowlist = new Set(enabledServer.toolAllowlist);
 
   if (allowlist.size && !allowlist.has(request.toolName)) {
     throw new Error("当前工具不在 MCP Server 白名单中");
   }
 
-  if (server.id === BUILTIN_APPLICATION_TOOLS_MCP_ID) {
-    return callApplicationTool(server, request).catch((error) => {
+  if (enabledServer.id === BUILTIN_APPLICATION_TOOLS_MCP_ID) {
+    return callApplicationTool(enabledServer, request).catch((error) => {
       throw new Error(`应用工具调用失败：${toErrorMessage(error)}`);
     });
   }
@@ -552,7 +572,7 @@ export async function callToolOnMcpServer(request: McpToolCallRequest): Promise<
     toolRuntimeEnv.GORDON_COMPUTER_USE_ALLOWED = "1";
   }
 
-  return withMcpClient(server, async (client) => {
+  return withMcpClient(enabledServer, async (client) => {
     const result = await client.request("tools/call", {
       name: request.toolName,
       arguments: request.arguments ?? {}
@@ -561,8 +581,8 @@ export async function callToolOnMcpServer(request: McpToolCallRequest): Promise<
     const contentText = parseToolContentText((payload as { content?: unknown }).content);
 
     return {
-      serverId: server.id,
-      serverName: server.name,
+      serverId: enabledServer.id,
+      serverName: enabledServer.name,
       toolName: request.toolName,
       contentText: contentText || JSON.stringify(result, null, 2),
       isError: Boolean((payload as { isError?: boolean }).isError),

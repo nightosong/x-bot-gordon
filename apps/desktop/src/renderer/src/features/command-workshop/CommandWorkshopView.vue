@@ -202,6 +202,35 @@
               </article>
 
               <article v-if="ui.command.isRunning" class="command-message is-assistant is-pending">
+                <div
+                  v-if="commandLiveActivityItem"
+                  class="command-live-activity"
+                  :class="commandLiveActivityItem.className"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <span class="command-live-activity-mark" aria-hidden="true">
+                    <span></span>
+                  </span>
+                  <div class="command-live-activity-main">
+                    <div class="command-live-activity-head">
+                      <span class="command-live-activity-label">{{ commandLiveActivityItem.label }}</span>
+                      <span v-if="commandLiveActivityItem.createdAt" class="command-live-activity-time">
+                        {{ formatLocalDateTime(commandLiveActivityItem.createdAt) }}
+                      </span>
+                    </div>
+                    <p class="command-live-activity-title">{{ commandLiveActivityItem.title }}</p>
+                    <p v-if="commandLiveActivityItem.detail" class="command-live-activity-detail">
+                      {{ commandLiveActivityItem.detail }}
+                    </p>
+                  </div>
+                  <span class="command-live-activity-dots" aria-hidden="true">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </span>
+                </div>
+
                 <div v-if="getCommandResponseProcessItems(ui.command.liveProgress?.artifact).length" class="command-response-process is-live">
                   <article
                     v-for="item in getCommandResponseProcessItems(ui.command.liveProgress?.artifact)"
@@ -248,7 +277,7 @@
                 ></div>
 
                 <div
-                  v-else-if="!getCommandResponseProcessItems(ui.command.liveProgress?.artifact).length"
+                  v-else-if="!commandLiveActivityItem && !getCommandResponseProcessItems(ui.command.liveProgress?.artifact).length"
                   class="command-live-waiting"
                   role="status"
                   aria-live="polite"
@@ -343,7 +372,7 @@
                 </div>
 
                 <label class="command-inline-toggle command-settings-toggle">
-                  <span class="command-inline-toggle-label">允许自动工具</span>
+                  <span class="command-inline-toggle-label">按需使用工具</span>
                   <input v-model="ui.command.form.autoSelectMcp" type="checkbox" />
                 </label>
 
@@ -549,6 +578,7 @@ const props = defineProps({
   backToCommandList: { type: Function, required: true },
   beginNewCommandSession: { type: Function, required: true },
   getCommandArtifactProducts: { type: Function, required: true },
+  getCommandLiveActivityItem: { type: Function, required: true },
   getCommandResponseProcessItems: { type: Function, required: true },
   getCommandLiveStatusText: { type: Function, required: true },
   getSkillOptionLabel: { type: Function, required: true },
@@ -602,6 +632,8 @@ const commandToolSelectOptions = computed(() => [
     value: tool.name
   }))
 ]);
+
+const commandLiveActivityItem = computed(() => props.getCommandLiveActivityItem(props.ui.command.liveProgress));
 
 function focusCommandInput() {
   commandInputRef.value?.focus?.();

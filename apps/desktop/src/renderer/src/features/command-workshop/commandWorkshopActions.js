@@ -77,6 +77,22 @@ const MAX_COMMAND_ARGUMENT_ARRAY_ITEMS = 12;
 const MAX_COMMAND_ARGUMENT_OBJECT_KEYS = 24;
 const MAX_COMMAND_PROCESS_OUTPUT_LENGTH = 900;
 const MAX_COMMAND_PROCESS_DETAIL_LENGTH = 260;
+const COMMAND_LIVE_ACTIVITY_STEP_TYPES = new Set([
+  "run_received",
+  "context_prepared",
+  "runtime_initializing",
+  "runtime_config_loaded",
+  "agent_selected",
+  "model_selected",
+  "skill_selected",
+  "mcp_authorized",
+  "tool_discovery_started",
+  "tool_discovery_completed",
+  "model_response_started",
+  "model_invoked",
+  "completed"
+]);
+const COMMAND_HISTORY_HIDDEN_STEP_TYPES = new Set(COMMAND_LIVE_ACTIVITY_STEP_TYPES);
 const COMMAND_VISIBLE_AUXILIARY_STEP_TYPES = new Set([
   "skill_handler_completed",
   "skill_handler_failed",
@@ -170,12 +186,13 @@ function getCommandArtifactResolvedCallArguments(call) {
 }
 
 function shouldForceCommandApplicationTools(input, applicationContext) {
-  const text = `${input ?? ""}\n${applicationContext ?? ""}`;
+  const inputText = String(input ?? "");
+  const text = `${inputText}\n${applicationContext ?? ""}`;
   const mentionsApplication =
     /应用：(?:墨笔生花|丹青溢彩)|墨笔生花|writing|小说|书稿|书籍|当前小说|丹青溢彩|comic|漫画|分镜|素材库|当前项目|当前章节|应用广场/u.test(
       text
     );
-  const wantsMutation = /创建|新建|新增|保存|写入|写回|导入|生成并写入|修改|更新|补充|整理到|落到|添加到|建立/u.test(text);
+  const wantsMutation = /创建|新建|新增|保存|写入|写回|导入|生成并写入|修改|更新|补充|整理到|落到|添加到|建立/u.test(inputText);
 
   return mentionsApplication && wantsMutation;
 }
@@ -194,6 +211,14 @@ function shouldAutoEnableCommandTools(input, attachments = []) {
     /图片|图像|海报|图标|logo|生成图|生图|音乐|歌曲|配乐|视频|生成视频|生成音乐/iu.test(text) ||
     /点击|输入|截图|窗口|浏览器|桌面|打开应用|菜单|按钮|复制|粘贴|飞书|Chrome|Safari|Electron/iu.test(text)
   );
+}
+
+function shouldUseCommandAutoToolPlanner(input, attachments = [], applicationContext = "", allowAutoTools = true) {
+  if (!allowAutoTools) {
+    return false;
+  }
+
+  return shouldForceCommandApplicationTools(input, applicationContext) || shouldAutoEnableCommandTools(input, attachments);
 }
 
 function collapseRepeatedCommandText(text) {
@@ -721,7 +746,10 @@ export function createCommandWorkshopActions({
       statusText: payload.statusText || "正在执行中",
       text: typeof payload.text === "string" ? payload.text : ui.command.liveProgress?.text ?? "",
       updatedAt: payload.updatedAt ?? new Date().toISOString(),
-      artifact: buildCommandWorkshopLiveArtifact(payload)
+      artifact: buildCommandWorkshopLiveArtifact({
+        ...payload,
+        steps: mergeCommandLiveProcessSteps(ui.command.liveProgress?.artifact?.steps, payload.steps)
+      })
     };
     scrollCommandToBottom();
   }
@@ -757,6 +785,50 @@ export function createCommandWorkshopActions({
     ui.command.activeSessionId = session.id;
   }
 
+  function createCommandLocalProcessStep(type, title, detail, createdAt = new Date().toISOString()) {
+    return {
+      id: `command_local_step_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      type,
+      title,
+      detail,
+      createdAt
+    };
+  }
+
+  function mergeCommandLiveProcessSteps(previousSteps, nextSteps) {
+    const mergedSteps = [];
+    const seenTypes = new Set();
+    const appendStep = (step) => {
+      if (!step || typeof step !== "object") {
+        return;
+      }
+
+      const type = String(step.type ?? "");
+
+      if (type && COMMAND_LIVE_ACTIVITY_STEP_TYPES.has(type)) {
+        if (seenTypes.has(type)) {
+          return;
+        }
+
+        seenTypes.add(type);
+      }
+
+      mergedSteps.push(step);
+    };
+
+    for (const step of Array.isArray(previousSteps) ? previousSteps : []) {
+      if (step?.id && String(step.id).startsWith("command_local_step_")) {
+        appendStep(step);
+      }
+    }
+
+    for (const step of Array.isArray(nextSteps) ? nextSteps : []) {
+      appendStep(step);
+    }
+
+    return mergedSteps;
+  }
+
   async function handleCommandSubmit() {
     if (!desktopApi) {
       setStatus("桌面桥接未就绪，暂无法执行命令工坊会话。", "danger");
@@ -781,9 +853,15 @@ export function createCommandWorkshopActions({
 
     const applicationContext = buildCommandApplicationContext(ui, workbench);
     const agentUserInput = buildCommandUserInputForAgent(userInput, attachments, applicationContext);
+    const allowAutoTools = ui.command.form.autoSelectMcp;
     const forceApplicationTools = shouldForceCommandApplicationTools(userInput, applicationContext);
     const autoEnableTools = shouldAutoEnableCommandTools(userInput, attachments);
-    const effectiveAutoSelectMcp = ui.command.form.autoSelectMcp || forceApplicationTools || autoEnableTools;
+    const effectiveAutoSelectMcp = shouldUseCommandAutoToolPlanner(
+      userInput,
+      attachments,
+      applicationContext,
+      allowAutoTools
+    );
     const effectiveMcpServerId = forceApplicationTools && !ui.command.form.mcpToolName ? "" : ui.command.form.mcpServerId;
     const effectiveMcpToolName = forceApplicationTools && !ui.command.form.mcpToolName ? "" : ui.command.form.mcpToolName;
     let mcpArguments = undefined;
@@ -842,7 +920,7 @@ export function createCommandWorkshopActions({
       summary: summarizeCommandWorkshopContent(titleSource),
       agentProfileId: ui.command.form.agentProfileId,
       skillId: ui.command.form.skillId || null,
-      autoSelectMcp: effectiveAutoSelectMcp,
+      autoSelectMcp: allowAutoTools,
       mcpServerId: effectiveMcpServerId || null,
       mcpToolName: effectiveMcpToolName || null,
       mcpArgumentsText: ui.command.form.mcpArgumentsText,
@@ -859,21 +937,45 @@ export function createCommandWorkshopActions({
     ui.command.liveProgress = {
       progressEventId,
       phase: "running",
-      statusText: `命令工坊正在运行 Agent「${agent.name}」...`,
+      statusText: "已接收任务，正在整理上下文...",
       text: "",
       updatedAt: startedAt,
-        artifact: buildCommandWorkshopLiveArtifact({
-          profileLabel: "",
-          model: "",
-          skillName: ui.command.form.skillId ? getSkillById(ui.command.form.skillId)?.name ?? null : null,
-          autoSelectedMcp: false,
-          mcpServerName: effectiveMcpServerId ? getMcpServerById(effectiveMcpServerId)?.name ?? null : null,
-          mcpToolName: effectiveMcpToolName || null,
+      artifact: buildCommandWorkshopLiveArtifact({
+        profileLabel: "",
+        model: "",
+        skillName: ui.command.form.skillId ? getSkillById(ui.command.form.skillId)?.name ?? null : null,
+        autoSelectedMcp: false,
+        mcpServerName: effectiveMcpServerId ? getMcpServerById(effectiveMcpServerId)?.name ?? null : null,
+        mcpToolName: effectiveMcpToolName || null,
         mcpResultText: "",
         mcpCalls: [],
         stopReason: "",
         taskLedger: null,
-        steps: [],
+        steps: [
+          createCommandLocalProcessStep(
+            "run_received",
+            "已接收任务",
+            attachments.length
+              ? `用户消息已进入命令工坊，包含 ${attachments.length} 个附件。`
+              : "用户消息已进入命令工坊。待会儿每一步都会在这里更新。"
+          ),
+          createCommandLocalProcessStep(
+            "context_prepared",
+            "正在整理上下文",
+            [
+              latestTaskLedger ? "已带入上一轮任务账本" : "当前为本轮新上下文",
+              applicationContext ? "已附加应用广场上下文" : "",
+              effectiveAutoSelectMcp ? "已识别为工具任务" : "将优先走快速流式回复"
+            ].filter(Boolean).join(" / "),
+            new Date(Date.now() + 1).toISOString()
+          ),
+          createCommandLocalProcessStep(
+            "runtime_initializing",
+            "正在启动 Gordon Runtime",
+            `准备运行 Agent「${agent.name}」${ui.command.form.skillId ? "，并附加 Skill" : ""}。`,
+            new Date(Date.now() + 2).toISOString()
+          )
+        ],
         createdAt: startedAt
       })
     };
@@ -884,9 +986,13 @@ export function createCommandWorkshopActions({
 
     try {
       const runStatusText = forceApplicationTools
-        ? "检测到应用资产写入任务，已自动启用应用工具。"
-        : autoEnableTools && !ui.command.form.autoSelectMcp
-          ? "检测到需要工具处理的任务，已自动启用工具编排。"
+        ? effectiveAutoSelectMcp
+          ? "检测到应用资产写入任务，已自动启用应用工具。"
+          : "检测到应用资产写入任务，但当前已关闭自动工具。"
+        : autoEnableTools && allowAutoTools
+          ? "检测到需要工具处理的任务，已进入工具编排。"
+          : autoEnableTools
+            ? "检测到工具任务，但当前已关闭自动工具。"
           : `命令工坊正在运行 Agent「${agent.name}」...`;
 
       setStatus(
@@ -1021,7 +1127,7 @@ export function createCommandWorkshopActions({
       return `${serverName} / ${config.mcpToolName}`;
     }
 
-    return config?.autoSelectMcp ? "自动工具" : "纯对话";
+    return config?.autoSelectMcp ? "按需工具" : "纯对话";
   }
 
   function getCommandArtifactSummary(artifact) {
@@ -1579,41 +1685,89 @@ export function createCommandWorkshopActions({
       };
     }
 
-    if (step.type === "model_invoked") {
-      if (!options.showFinalStage) {
-        return null;
-      }
-
-      return {
-        id,
-        kind: "final",
-        marker: "答",
-        label: "整理",
-        className: "is-final is-running",
-        title: "整理最终答复",
-        detail: detail || "工具输出已经汇总，正在生成最终回复。",
-        createdAt
-      };
-    }
-
-    if (step.type === "completed") {
-      if (!options.showFinalStage) {
-        return null;
-      }
-
-      return {
-        id,
-        kind: "final",
-        marker: "成",
-        label: "完成",
-        className: "is-final is-done",
-        title: "本轮处理完成",
-        detail,
-        createdAt
-      };
-    }
-
     return null;
+  }
+
+  function getCommandLiveActivityLabel(step) {
+    const type = step?.type;
+
+    if (type === "run_received" || type === "context_prepared" || type === "runtime_initializing") {
+      return "启动";
+    }
+
+    if (type === "runtime_config_loaded") {
+      return "配置";
+    }
+
+    if (type === "agent_selected" || type === "model_selected" || type === "skill_selected" || type === "mcp_authorized") {
+      return type === "mcp_authorized" ? "工具上下文" : "执行上下文";
+    }
+
+    if (type === "tool_discovery_started") {
+      return "工具发现";
+    }
+
+    if (type === "tool_discovery_completed") {
+      return "工具视图";
+    }
+
+    if (type === "model_response_started" || type === "model_invoked" || type === "completed") {
+      return "整理回复";
+    }
+
+    return "处理中";
+  }
+
+  function getCommandLiveActivityTone(step) {
+    if (step?.type === "completed") {
+      return "done";
+    }
+
+    if (step?.type === "tool_discovery_completed" || step?.type === "runtime_config_loaded") {
+      return "steady";
+    }
+
+    return "running";
+  }
+
+  function getCommandLiveActivityItem(liveProgress) {
+    const artifact = liveProgress?.artifact;
+    const steps = Array.isArray(artifact?.steps) ? artifact.steps : [];
+    const calls = Array.isArray(artifact?.mcpCalls) ? artifact.mcpCalls : [];
+    const selectedToolSteps = steps.filter((step) => step?.type === "mcp_tool_selected");
+    const hasPendingTool = selectedToolSteps.length > calls.length;
+    const latestActivityStep = [...steps]
+      .reverse()
+      .find((step) => COMMAND_LIVE_ACTIVITY_STEP_TYPES.has(step?.type));
+    const statusText = getCommandLiveStatusText(liveProgress);
+
+    if (
+      hasPendingTool ||
+      (calls.length > 0 &&
+        !["model_response_started", "model_invoked", "completed"].includes(latestActivityStep?.type))
+    ) {
+      return null;
+    }
+
+    if (!latestActivityStep && !statusText) {
+      return null;
+    }
+
+    const title = normalizeCommandArtifactInlineText(latestActivityStep?.title) || statusText || "Gordon 正在处理";
+    const detail = normalizeCommandArtifactInlineText(latestActivityStep?.detail);
+    const createdAt = latestActivityStep?.createdAt ?? liveProgress?.updatedAt ?? "";
+    const label = getCommandLiveActivityLabel(latestActivityStep);
+    const tone = getCommandLiveActivityTone(latestActivityStep);
+
+    return {
+      id: latestActivityStep?.id ?? `live_activity_${liveProgress?.progressEventId ?? "current"}`,
+      label,
+      title,
+      detail,
+      createdAt,
+      tone,
+      className: `is-${tone}`
+    };
   }
 
   function hasCommandProcessRunningClass(item) {
@@ -1670,6 +1824,14 @@ export function createCommandWorkshopActions({
     }
 
     return [
+      "run_received",
+      "context_prepared",
+      "runtime_initializing",
+      "runtime_config_loaded",
+      "agent_selected",
+      "model_selected",
+      "skill_selected",
+      "mcp_authorized",
       "mcp_args_repaired",
       "mcp_retrying",
       "mcp_fallback_planned",
@@ -1694,7 +1856,8 @@ export function createCommandWorkshopActions({
       return [];
     }
 
-    const steps = Array.isArray(artifact.steps) ? artifact.steps : [];
+    const allSteps = Array.isArray(artifact.steps) ? artifact.steps : [];
+    const steps = allSteps.filter((step) => !COMMAND_HISTORY_HIDDEN_STEP_TYPES.has(step?.type));
     const calls = Array.isArray(artifact.mcpCalls) ? artifact.mcpCalls : [];
 
     if (!steps.length && !calls.length && !artifact.stopReason) {
@@ -1893,6 +2056,7 @@ export function createCommandWorkshopActions({
     commandToolOptions,
     focusCommandInput,
     getCommandArtifactProducts,
+    getCommandLiveActivityItem,
     getCommandResponseProcessItems,
     getCommandLiveStatusText,
     getCommandWorkshopModeLabel,

@@ -284,6 +284,27 @@ function parseTabLines(text, columns) {
     });
 }
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizeSearchText(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function clampRatio(value, defaultValue) {
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed)) {
+    return defaultValue;
+  }
+
+  return Math.max(0.05, Math.min(0.95, parsed));
+}
+
 async function listApps(argumentsObject) {
   assertComputerUseAllowed("list_apps", "读取当前运行中的可见应用");
   const output = await runAppleScript([
@@ -485,6 +506,16 @@ async function openUrl(argumentsObject) {
   });
 }
 
+async function wait(argumentsObject) {
+  const ms = clampInteger(argumentsObject?.ms, 1_500, 250, 10_000);
+
+  await delay(ms);
+
+  return buildTextResult(`waited ${ms}ms`, {
+    ms
+  });
+}
+
 function buildModifierClause(value) {
   const modifiers = Array.isArray(value) ? value : [];
   const normalized = [];
@@ -611,6 +642,158 @@ async function click(argumentsObject) {
   });
 }
 
+async function clickText(argumentsObject) {
+  assertComputerUseAllowed("click_text", "按可见文本点击辅助功能元素");
+  const query = normalizeSearchText(assertSafeText(argumentsObject?.text, "text"));
+  const matchMode = String(argumentsObject?.match || "contains").trim().toLowerCase();
+  const appName = String(argumentsObject?.app || "").trim();
+  const maxElements = clampInteger(argumentsObject?.maxElements, 200, 1, 200);
+  const clickCount = clampInteger(argumentsObject?.clickCount, 1, 1, 3);
+
+  if (!query) {
+    throw new Error("text 不能为空");
+  }
+
+  if (!["contains", "exact"].includes(matchMode)) {
+    throw new Error("match 只支持 contains 或 exact");
+  }
+
+  const state = await getAppState({
+    app: appName,
+    maxElements
+  });
+  const elements = Array.isArray(state.structuredContent?.elements) ? state.structuredContent.elements : [];
+  const matched = elements.find((element) => {
+    const candidates = [element.name, element.description, element.value]
+      .map((item) => normalizeSearchText(item))
+      .filter(Boolean);
+
+    return candidates.some((candidate) => (matchMode === "exact" ? candidate === query : candidate.includes(query)));
+  });
+
+  if (!matched?.index) {
+    throw new Error(`未找到包含文本「${query}」的可点击元素`);
+  }
+
+  await click({
+    app: appName || state.structuredContent?.app,
+    elementIndex: matched.index,
+    clickCount
+  });
+
+  return buildTextResult(
+    [
+      `clicked text: ${argumentsObject?.text}`,
+      `elementIndex: ${matched.index}`,
+      matched.name ? `name: ${matched.name}` : "",
+      matched.description ? `description: ${matched.description}` : ""
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    {
+      app: appName || state.structuredContent?.app || null,
+      elementIndex: matched.index,
+      match: {
+        role: matched.role || "",
+        name: matched.name || "",
+        description: matched.description || "",
+        value: matched.value || ""
+      },
+      clickCount
+    }
+  );
+}
+
+async function clickWindowArea(argumentsObject) {
+  assertComputerUseAllowed("click_window_area", "点击前台或指定应用窗口的相对区域");
+  const appName = String(argumentsObject?.app || "").trim();
+  const horizontalRatio = clampRatio(argumentsObject?.horizontalRatio, 0.5);
+  const verticalRatio = clampRatio(argumentsObject?.verticalRatio, 0.56);
+  const clickCount = clampInteger(argumentsObject?.clickCount, 1, 1, 3);
+  const appSelector = appName
+    ? `set targetProcess to first application process whose name is ${quoteAppleScriptString(normalizeAppName(appName))}`
+    : "set targetProcess to first application process whose frontmost is true";
+  const scriptLines = [
+    "on safeText(theValue)",
+    "  try",
+    "    return theValue as text",
+    "  on error",
+    "    return \"\"",
+    "  end try",
+    "end safeText",
+    'tell application "System Events"',
+    `  ${appSelector}`,
+    "  set frontmost of targetProcess to true",
+    "  set processName to name of targetProcess as text",
+    "  set targetWindow to window 1 of targetProcess",
+    "  set windowName to my safeText(name of targetWindow)",
+    "  set windowPosition to position of targetWindow",
+    "  set windowSize to size of targetWindow",
+    "  set originX to item 1 of windowPosition",
+    "  set originY to item 2 of windowPosition",
+    "  set windowWidth to item 1 of windowSize",
+    "  set windowHeight to item 2 of windowSize",
+    `  set targetX to originX + ((windowWidth * ${horizontalRatio}) as integer)`,
+    `  set targetY to originY + ((windowHeight * ${verticalRatio}) as integer)`
+  ];
+
+  for (let index = 0; index < clickCount; index += 1) {
+    scriptLines.push("  click at {targetX, targetY}");
+  }
+
+  scriptLines.push('  return processName & tab & windowName & tab & (targetX as text) & tab & (targetY as text)');
+  scriptLines.push("end tell");
+  const output = await runAppleScript(scriptLines);
+  const [processName = "", windowName = "", xText = "", yText = ""] = output.split("\t");
+  const x = Number(xText);
+  const y = Number(yText);
+
+  return buildTextResult(`clicked window area: ${Math.round(x)}, ${Math.round(y)}`, {
+    app: processName || appName || null,
+    windowTitle: windowName,
+    x: Math.round(x),
+    y: Math.round(y),
+    horizontalRatio,
+    verticalRatio,
+    clickCount
+  });
+}
+
+async function playMedia(argumentsObject) {
+  assertComputerUseAllowed("play_media", "尝试播放前台浏览器或应用中的媒体");
+  const alsoPressSpace = Boolean(argumentsObject?.alsoPressSpace);
+  const appName = String(argumentsObject?.app || "").trim();
+  const areaResult = await clickWindowArea({
+    app: appName,
+    horizontalRatio: argumentsObject?.horizontalRatio ?? 0.5,
+    verticalRatio: argumentsObject?.verticalRatio ?? 0.56,
+    clickCount: 1
+  });
+
+  if (alsoPressSpace) {
+    await delay(300);
+    await pressKey({
+      key: "space"
+    });
+  }
+
+  return buildTextResult(
+    [
+      "media playback attempted",
+      `clicked: ${areaResult.structuredContent?.x ?? "-"}, ${areaResult.structuredContent?.y ?? "-"}`,
+      alsoPressSpace ? "space key also sent" : "space key not sent"
+    ].join("\n"),
+    {
+      app: areaResult.structuredContent?.app || appName || null,
+      windowTitle: areaResult.structuredContent?.windowTitle || "",
+      x: areaResult.structuredContent?.x,
+      y: areaResult.structuredContent?.y,
+      alsoPressSpace,
+      verificationHint: "调用 take_screenshot 或 get_app_state 确认页面是否进入播放状态；若未播放，可再调用 press_key space 或 click_text 查找播放按钮。"
+    }
+  );
+}
+
 async function takeScreenshot(argumentsObject) {
   assertComputerUseAllowed("take_screenshot", "截取当前屏幕并保存到临时文件");
   await fs.mkdir(SCREENSHOT_DIR, { recursive: true });
@@ -688,6 +871,19 @@ function getTools() {
       }
     },
     {
+      name: "wait",
+      description: "等待页面、应用或动画加载完成。适合 open_url、点击搜索结果、视频页面加载后的短暂停顿。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ms: {
+            type: "integer",
+            description: "等待毫秒数，默认 1500，上限 10000"
+          }
+        }
+      }
+    },
+    {
       name: "click",
       description: "点击辅助功能元素 index，或点击屏幕坐标。优先配合 get_app_state 返回的 elementIndex 使用。",
       inputSchema: {
@@ -712,6 +908,87 @@ function getTools() {
           clickCount: {
             type: "integer",
             description: "点击次数，1-3，默认 1"
+          }
+        }
+      }
+    },
+    {
+      name: "click_text",
+      description: "按可见文本查找并点击辅助功能元素。适合点击搜索结果、站内入口、播放、全屏、确认等按钮，比手动猜 elementIndex 更稳定。",
+      inputSchema: {
+        type: "object",
+        required: ["text"],
+        properties: {
+          text: {
+            type: "string",
+            description: "要匹配的可见文本，例如 bilibili、凡人修仙传、播放、番剧"
+          },
+          app: {
+            type: "string",
+            description: "应用进程名；不填时读取前台应用"
+          },
+          match: {
+            type: "string",
+            enum: ["contains", "exact"],
+            description: "匹配方式，默认 contains"
+          },
+          maxElements: {
+            type: "integer",
+            description: "最多扫描元素数，默认 200，上限 200"
+          },
+          clickCount: {
+            type: "integer",
+            description: "点击次数，1-3，默认 1"
+          }
+        }
+      }
+    },
+    {
+      name: "click_window_area",
+      description: "点击前台或指定应用窗口的相对区域。适合网页播放器按钮未出现在辅助功能树时，点击窗口中心或播放器区域。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          app: {
+            type: "string",
+            description: "应用进程名；不填时点击前台应用"
+          },
+          horizontalRatio: {
+            type: "number",
+            description: "窗口横向比例，0.05-0.95，默认 0.5"
+          },
+          verticalRatio: {
+            type: "number",
+            description: "窗口纵向比例，0.05-0.95，默认 0.56"
+          },
+          clickCount: {
+            type: "integer",
+            description: "点击次数，1-3，默认 1"
+          }
+        }
+      }
+    },
+    {
+      name: "play_media",
+      description: "尝试播放当前浏览器或应用中的视频/音频：默认点击窗口播放器区域，并返回验证建议。适合 B 站、网页视频或播放器控件不稳定的页面。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          app: {
+            type: "string",
+            description: "应用进程名；不填时操作前台应用"
+          },
+          horizontalRatio: {
+            type: "number",
+            description: "播放器点击横向比例，默认 0.5"
+          },
+          verticalRatio: {
+            type: "number",
+            description: "播放器点击纵向比例，默认 0.56"
+          },
+          alsoPressSpace: {
+            type: "boolean",
+            description: "点击后是否额外发送空格键，默认 false；只有确认点击未触发播放时再启用"
           }
         }
       }
@@ -815,8 +1092,28 @@ async function handleRequest(message) {
       return;
     }
 
+    if (toolName === "wait") {
+      ok(id, await wait(argumentsObject));
+      return;
+    }
+
     if (toolName === "click") {
       ok(id, await click(argumentsObject));
+      return;
+    }
+
+    if (toolName === "click_text") {
+      ok(id, await clickText(argumentsObject));
+      return;
+    }
+
+    if (toolName === "click_window_area") {
+      ok(id, await clickWindowArea(argumentsObject));
+      return;
+    }
+
+    if (toolName === "play_media") {
+      ok(id, await playMedia(argumentsObject));
       return;
     }
 

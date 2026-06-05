@@ -5,20 +5,23 @@ function normalizeList(value) {
 }
 
 export function buildCommandWorkshopLiveArtifact(progress) {
-  return buildCommandWorkshopArtifact({
-    profileLabel: progress?.profileLabel ?? "",
-    model: progress?.model ?? "",
-    skillName: progress?.skillName ?? null,
-    autoSelectedMcp: Boolean(progress?.autoSelectedMcp),
-    mcpServerName: progress?.mcpServerName ?? null,
-    mcpToolName: progress?.mcpToolName ?? null,
-    mcpResultText: progress?.mcpResultText ?? null,
-    mcpCalls: [...(progress?.mcpCalls ?? [])],
-    stopReason: progress?.stopReason ?? "",
-    taskLedger: progress?.taskLedger ?? null,
-    steps: [...(progress?.steps ?? [])],
-    createdAt: progress?.createdAt ?? new Date().toISOString()
-  });
+  return {
+    ...buildCommandWorkshopArtifact({
+      profileLabel: progress?.profileLabel ?? "",
+      model: progress?.model ?? "",
+      skillName: progress?.skillName ?? null,
+      autoSelectedMcp: Boolean(progress?.autoSelectedMcp),
+      mcpServerName: progress?.mcpServerName ?? null,
+      mcpToolName: progress?.mcpToolName ?? null,
+      mcpResultText: progress?.mcpResultText ?? null,
+      mcpCalls: [...(progress?.mcpCalls ?? [])],
+      stopReason: progress?.stopReason ?? "",
+      taskLedger: progress?.taskLedger ?? null,
+      steps: [...(progress?.steps ?? [])],
+      createdAt: progress?.createdAt ?? new Date().toISOString()
+    }),
+    isLive: true
+  };
 }
 
 export function getCommandAttachmentTitle(attachment) {
@@ -113,7 +116,7 @@ export function buildCommandApplicationContext(ui, workbench) {
       project ? `当前项目：${project.title}（id=${project.id}）` : "当前项目：未选中",
       `当前 tab：${comicState.activeTab || "intro"}`,
       chapter ? `当前章节：第 ${chapter.index} 章 ${chapter.title}（id=${chapter.id}）` : "当前章节：未选中",
-      "当用户要求读取、保存、写回或修改漫画项目 / 章节 / 分镜 / 素材时，优先使用 Application Tools 的 comic_* 工具，并在写后读回验证。"
+      "当用户要求读取、保存、写回、创建或修改漫画项目 / 章节 / 分镜 / 素材时，优先使用 Application Tools 的 comic_* 工具；新增章节使用 comic_create_chapter，修改已有章节使用 comic_update_chapter，并在写后读回验证。"
     ].join("\n");
   }
 

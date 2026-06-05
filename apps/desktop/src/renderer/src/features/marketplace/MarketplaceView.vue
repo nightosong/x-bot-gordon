@@ -1493,6 +1493,31 @@
             'is-ai-open': ui.marketplace.comic.isAiDrawerOpen
           }"
         >
+          <div
+            v-if="activeComicAsset && activeComicAssetPreviewView"
+            class="comic-asset-preview-overlay"
+            role="dialog"
+            aria-modal="true"
+            aria-label="放大素材图"
+            @click="closeComicAssetPreviewView"
+          >
+            <div class="comic-asset-preview-dialog" @click.stop>
+              <img
+                :src="activeComicAssetPreviewView.src"
+                :alt="activeComicAssetPreviewView.label || getComicAssetViewKindLabel(activeComicAssetPreviewView.kind)"
+              />
+              <button
+                type="button"
+                class="model-icon-button comic-asset-preview-close"
+                aria-label="关闭放大预览"
+                title="关闭放大预览"
+                @click.stop="closeComicAssetPreviewView"
+              >
+                <GIcon name="close" :size="13" />
+              </button>
+            </div>
+          </div>
+
           <aside class="writing-detail-rail comic-detail-rail" :aria-expanded="ui.marketplace.comic.isProfileCollapsed ? 'false' : 'true'">
             <button
               type="button"
@@ -1503,6 +1528,35 @@
             >
               <GIcon :name="ui.marketplace.comic.isProfileCollapsed ? 'chevronRight' : 'chevronLeft'" />
             </button>
+
+            <div
+              class="comic-rail-mode-tabs"
+              role="tablist"
+              aria-label="漫画项目设定与素材库"
+            >
+              <button
+                type="button"
+                class="comic-rail-mode-tab"
+                :class="{ 'is-active': ui.marketplace.comic.introMode !== 'assets' }"
+                :aria-selected="ui.marketplace.comic.introMode !== 'assets' ? 'true' : 'false'"
+                aria-label="项目设定"
+                title="项目设定"
+                @click.stop.prevent="setComicIntroMode('settings')"
+              >
+                <GIcon name="home" :size="14" />
+              </button>
+              <button
+                type="button"
+                class="comic-rail-mode-tab"
+                :class="{ 'is-active': ui.marketplace.comic.introMode === 'assets' }"
+                :aria-selected="ui.marketplace.comic.introMode === 'assets' ? 'true' : 'false'"
+                aria-label="素材库"
+                title="素材库"
+                @click.stop.prevent="setComicIntroMode('assets')"
+              >
+                <GIcon name="image" :size="14" />
+              </button>
+            </div>
 
             <div v-if="!ui.marketplace.comic.isProfileCollapsed" class="writing-rail-content comic-rail-content">
               <div class="comic-project-profile">
@@ -1607,25 +1661,6 @@
                   class="writing-intro-stack"
                   :class="{ 'comic-asset-stack': ui.marketplace.comic.introMode === 'assets' }"
                 >
-                  <div class="comic-intro-mode-actions comic-intro-mode-actions-inline">
-                    <button
-                      type="button"
-                      class="model-action-secondary comic-intro-mode-button"
-                      :class="{ 'is-active': ui.marketplace.comic.introMode !== 'assets' }"
-                      @click="setComicIntroMode('settings')"
-                    >
-                      项目设定
-                    </button>
-                    <button
-                      type="button"
-                      class="model-action-secondary comic-intro-mode-button"
-                      :class="{ 'is-active': ui.marketplace.comic.introMode === 'assets' }"
-                      @click="setComicIntroMode('assets')"
-                    >
-                      素材库
-                    </button>
-                  </div>
-
                   <template v-if="ui.marketplace.comic.introMode !== 'assets'">
                   <div class="field writing-intro-field">
                     <span class="field-label">故事与画面目标</span>
@@ -1640,7 +1675,7 @@
                       :set-value="setComicProjectSummary"
                     >
                       <textarea
-                        class="field-textarea writing-editor-textarea writing-intro-textarea"
+                        class="field-textarea writing-editor-textarea writing-intro-textarea comic-project-overview-textarea"
                         :value="activeComicProject.summary"
                         placeholder="主角、世界观、冲突、核心画面和这组漫画要留下的情绪。"
                         @input="setComicProjectSummary($event.target.value)"
@@ -1661,7 +1696,7 @@
                       :set-value="setComicProjectVisualStyle"
                     >
                       <textarea
-                        class="field-textarea writing-editor-textarea writing-intro-textarea is-large"
+                        class="field-textarea writing-editor-textarea writing-intro-textarea comic-project-overview-textarea is-large"
                         :value="activeComicProject.visualStyle"
                         placeholder="线条、色彩、构图、角色造型、分镜节奏和参考风格。"
                         @input="setComicProjectVisualStyle($event.target.value)"
@@ -1682,7 +1717,7 @@
                       :set-value="setComicProjectEpisodePlan"
                     >
                       <textarea
-                        class="field-textarea writing-editor-textarea writing-intro-textarea is-large"
+                        class="field-textarea writing-editor-textarea writing-intro-textarea comic-project-overview-textarea is-large"
                         :value="activeComicProject.episodePlan"
                         :placeholder="activeComicProject.format === 'serial' ? '按篇章写下主要剧情、角色成长、每话节奏和结尾钩子。' : '写下主体、背景、人物站位、文字区域和最终出图比例。'"
                         @input="setComicProjectEpisodePlan($event.target.value)"
@@ -1799,14 +1834,6 @@
                           ></textarea>
                         </label>
 
-                        <label class="field field-full">
-                          <span class="field-label">素材提示词</span>
-                          <textarea
-                            :value="activeComicAsset.prompt"
-                            class="field-textarea writing-editor-textarea comic-asset-prompt-textarea"
-                            @input="setComicAssetPrompt(activeComicAsset.id, $event.target.value)"
-                          ></textarea>
-                        </label>
                       </div>
 
                       <div class="comic-asset-views-head">
@@ -1839,6 +1866,22 @@
                             />
                             <button
                               type="button"
+                              class="comic-asset-view-generate"
+                              :class="{ 'is-running': ui.marketplace.comic.generatingAssetViewId === view.id }"
+                              :disabled="Boolean(ui.marketplace.comic.generatingAssetViewId)"
+                              :aria-label="ui.marketplace.comic.generatingAssetViewId === view.id ? '正在生成素材图' : '根据提示词生成素材图'"
+                              :title="ui.marketplace.comic.generatingAssetViewId === view.id ? '正在生成素材图' : '根据提示词生成素材图'"
+                              @click="generateComicAssetViewImage(activeComicAsset.id, view.id)"
+                            >
+                              <GIcon
+                                :name="ui.marketplace.comic.generatingAssetViewId === view.id ? 'loading' : 'sparkles'"
+                                :size="13"
+                                :spin="ui.marketplace.comic.generatingAssetViewId === view.id"
+                              />
+                              <span>生成素材</span>
+                            </button>
+                            <button
+                              type="button"
                               class="model-icon-button comic-asset-view-delete"
                               aria-label="删除视图"
                               title="删除视图"
@@ -1860,6 +1903,26 @@
 
                           <div v-if="view.src" class="comic-asset-view-preview">
                             <img :src="view.src" :alt="view.label || getComicAssetViewKindLabel(view.kind)" />
+                            <div class="comic-asset-view-tools" aria-label="素材图操作">
+                              <button
+                                type="button"
+                                class="model-icon-button comic-asset-view-tool"
+                                aria-label="放大素材图"
+                                title="放大素材图"
+                                @click.stop="previewComicAssetView(view.id)"
+                              >
+                                <GIcon name="maximize" :size="13" />
+                              </button>
+                              <button
+                                type="button"
+                                class="model-icon-button comic-asset-view-tool"
+                                aria-label="下载素材图"
+                                title="下载素材图"
+                                @click.stop="downloadComicAssetViewImage(activeComicAsset.id, view.id)"
+                              >
+                                <GIcon name="download" :size="13" />
+                              </button>
+                            </div>
                           </div>
 
                           <label class="field">
@@ -3495,6 +3558,7 @@ const {
   activeComicChapterIndex,
   activeComicChapters,
   activeComicExportFileName,
+  activeComicAssetPreviewView,
   activeComicProject,
   activeComicStoryboard,
   activeComicStoryboardImages,
@@ -3503,6 +3567,7 @@ const {
   backComicMarketplace,
   backComicShelf,
   canExportActiveComicProject,
+  closeComicAssetPreviewView,
   closeComicExportDialog,
   comicProjects,
   addComicAssetView,
@@ -3511,6 +3576,7 @@ const {
   createComicProject,
   createComicStoryboard,
   deleteComicAsset,
+  downloadComicAssetViewImage,
   deleteComicProjectFromShelf,
   deleteComicStoryboard,
   exportActiveComicProject,
@@ -3527,11 +3593,13 @@ const {
   getComicStoryboardKindLabel,
   getComicProjectFormatLabel,
   getComicProjectPaletteLabel,
+  generateComicAssetViewImage,
   goComicChapter,
   isComicChapterAssetReferenced,
   openComicAppShelf,
   openComicExportDialog,
   openComicProject,
+  previewComicAssetView,
   rememberComicAssetNameBaseline,
   rememberComicProjectTitleBaseline,
   removeComicAssetView,
@@ -3543,7 +3611,6 @@ const {
   selectComicExportDirectory,
   setComicAssetDescription,
   setComicAssetName,
-  setComicAssetPrompt,
   setComicAssetType,
   setComicAssetViewField,
   setComicChapterContent,
