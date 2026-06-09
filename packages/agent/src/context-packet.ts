@@ -9,6 +9,7 @@ import type {
   AgentTaskLedgerSuccessCriterion,
   ModelMessage
 } from "../../shared/src/index.js";
+import { buildAgentResourceContext, type AgentResourceContext } from "./resource-registry.js";
 import { stringifyArguments } from "./runtime-utils.js";
 
 const MAX_CONTEXT_RECENT_MESSAGES = 6;
@@ -25,6 +26,7 @@ export interface AgentContextPacket {
     taskPhase: AgentTaskLedger["taskPhase"];
     nextActionHint?: string;
   };
+  resources: AgentResourceContext;
   constraints: string[];
   plan: AgentTaskLedgerPlanStep[];
   decisionMemory: AgentTaskLedgerDecisionMemoryEntry[];
@@ -142,6 +144,7 @@ export function buildAgentContextPacket(params: {
   mcpCalls: AgentMcpCallRecord[];
 }): AgentContextPacket {
   const { userInput, conversationMessages, taskLedger, mcpCalls } = params;
+  const resources = buildAgentResourceContext(params);
 
   return {
     goal: {
@@ -150,6 +153,7 @@ export function buildAgentContextPacket(params: {
       taskPhase: taskLedger.taskPhase,
       ...(taskLedger.nextActionHint ? { nextActionHint: truncateContextText(taskLedger.nextActionHint) } : {})
     },
+    resources,
     constraints: trimStringList(taskLedger.constraints),
     plan: taskLedger.activePlan.slice(-MAX_CONTEXT_ITEMS),
     decisionMemory: taskLedger.decisionMemory.slice(-MAX_CONTEXT_ITEMS),

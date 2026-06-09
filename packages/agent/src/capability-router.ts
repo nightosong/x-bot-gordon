@@ -61,7 +61,7 @@ const DOMAIN_VISIBLE_TOOL_NAMES: Record<string, string[]> = {
   workspace: ["list_directory", "read_file", "search_files", "validate_json_file", "diff_paths", "run_shell_command"],
   web_research: ["web_research", "github_search_repositories", "open_url", "read_web_page"],
   desktop: ["get_app_state", "open_app", "open_url", "wait", "click_text"],
-  generation: ["image_gen", "music_gen"],
+  generation: ["image_gen", "video_gen", "music_gen"],
   writing_asset: ["writing_list_books", "writing_read_book", "writing_search_book"],
   comic_asset: ["comic_list_projects", "comic_read_project"],
   application_asset: ["writing_list_books", "writing_read_book", "writing_search_book", "comic_list_projects", "comic_read_project"]
@@ -103,7 +103,32 @@ const DOMAIN_VERIFY_TOOL_NAMES: Record<string, string[]> = {
 };
 const PLANNER_DOMAIN_NEEDS = new Set(["workspace", "web_research", "desktop", "generation", "writing_asset", "comic_asset", "application_asset"]);
 const PLANNER_ACTION_NEEDS = new Set(["read", "write", "verify", "operate_media"]);
+const RESOURCE_DOMAIN_NEEDS: Record<string, string[]> = {
+  workspace: ["workspace"],
+  codebase: ["workspace"],
+  web: ["web_research"],
+  desktop: ["desktop"],
+  artifact: ["workspace", "generation"],
+  writing: ["writing_asset", "application_asset"],
+  comic: ["comic_asset", "application_asset"],
+  media: ["generation"],
+  conversation: ["read"]
+};
 const DESKTOP_MEDIA_TOOL_NAMES = ["wait", "get_app_state", "click_text", "play_media", "click_window_area", "take_screenshot"];
+const RESOURCE_CAPABILITY_NEEDS: Record<string, string[]> = {
+  "codebase.inspect": ["workspace", "read"],
+  "codebase.edit": ["workspace", "write"],
+  "codebase.verify": ["workspace", "verify"],
+  "web.research": ["web_research", "search", "read"],
+  "desktop.inspect": ["desktop", "read"],
+  "desktop.operate": ["desktop", "operate_media"],
+  "media.generate": ["generation"],
+  "writing.review_continuity": ["writing_asset", "application_asset", "read", "verify"],
+  "writing.update_asset": ["writing_asset", "application_asset", "write"],
+  "comic.read_project": ["comic_asset", "application_asset", "read"],
+  "comic.split_storyboard": ["comic_asset", "application_asset", "write"],
+  "comic.render_images": ["generation", "comic_asset", "application_asset", "write"]
+};
 const HIDDEN_PRIMITIVE_TOOL_NAMES = new Set([
   "path_info",
   "inspect_path",
@@ -137,6 +162,29 @@ function addNeed(needs: Map<string, AgentCapabilityNeed>, capability: string, we
   }
 }
 
+function addResourceGatewayNeeds(contextPacket: AgentContextPacket, needs: Map<string, AgentCapabilityNeed>): void {
+  const gatewayPlan = contextPacket.resources.gatewayPlan;
+
+  for (const step of gatewayPlan.steps) {
+    for (const capability of RESOURCE_CAPABILITY_NEEDS[step.capabilityId] ?? []) {
+      const phaseWeight = isPlannerDomainNeed(capability)
+        ? step.phase === "act"
+          ? 9
+          : step.phase === "verify"
+            ? 8
+            : 7
+        : step.phase === "act"
+          ? 6
+          : 5;
+      addNeed(needs, capability, phaseWeight, `Resource Gateway ${step.phase}:${step.capabilityId} 建议 ${capability}`);
+    }
+
+    for (const executionDomain of step.preferredExecutionDomains) {
+      addNeed(needs, executionDomain, step.phase === "act" ? 9 : 7, `Resource Gateway ${step.capabilityId} 偏好 ${executionDomain}`);
+    }
+  }
+}
+
 function inferNeedsFromContext(contextPacket: AgentContextPacket): AgentCapabilityNeed[] {
   const text = normalizeText(
     [
@@ -152,6 +200,41 @@ function inferNeedsFromContext(contextPacket: AgentContextPacket): AgentCapabili
     ].join("\n")
   );
   const needs = new Map<string, AgentCapabilityNeed>();
+
+  for (const resource of contextPacket.resources.candidates) {
+    for (const capability of RESOURCE_DOMAIN_NEEDS[resource.domain] ?? []) {
+      addNeed(needs, capability, Math.max(5, Math.round(resource.confidence * 10)), `资源 ${resource.type} 需要 ${capability} 执行域`);
+    }
+
+    for (const executionDomain of resource.preferredExecutionDomains) {
+      addNeed(
+        needs,
+        executionDomain,
+        Math.max(5, Math.round(resource.confidence * 10)),
+        `资源 ${resource.type} 偏好 ${executionDomain} 执行域`
+      );
+    }
+  }
+
+  for (const capability of contextPacket.resources.capabilityFrame.capabilities) {
+    if (["read", "write", "update", "review", "verify", "generate", "search", "research", "operate"].includes(capability)) {
+      const mappedCapability =
+        capability === "generate"
+          ? "generation"
+          : capability === "search" || capability === "research"
+            ? "web_research"
+            : capability === "update"
+              ? "write"
+              : capability === "review"
+                ? "verify"
+                : capability === "operate"
+                  ? "desktop"
+                  : capability;
+      addNeed(needs, mappedCapability, 6, `资源能力帧建议 ${capability}`);
+    }
+  }
+
+  addResourceGatewayNeeds(contextPacket, needs);
 
   if (/file|path|workspace|repo|code|diff|json|文件|目录|路径|仓库|代码|读取|修改/u.test(text)) {
     addNeed(needs, "workspace", 7, "任务涉及本地文件、仓库、路径、代码或 JSON");
@@ -170,7 +253,11 @@ function inferNeedsFromContext(contextPacket: AgentContextPacket): AgentCapabili
     addNeed(needs, "operate_media", 7, "任务需要等待页面、点击可见文本、尝试播放并截图验证");
   }
 
-  if (/image|video|music|audio|poster|cover|illustration|图片|图像|视频|音乐|音频|海报|封面|插画|生图/u.test(text)) {
+  if (
+    /image|video|music|audio|poster|cover|illustration|图片|图像|视频|音乐|音频|歌曲|曲子|乐曲|配乐|伴奏|bgm|钢琴曲|笛子音乐|纯音乐|海报|封面|插画|生图|生成结果|任务状态|task\s*id|taskid|视频链接|音频链接|图片链接|轮询生成/u.test(
+      text
+    )
+  ) {
     addNeed(needs, "generation", 7, "任务涉及图片、视频、音乐、音频或生成类产物");
   }
 
@@ -273,6 +360,35 @@ function isToolRelevantToDomains(tool: McpToolDefinition | AgentCapabilityRouteT
   return false;
 }
 
+function hasSpecificApplicationDomain(domains: Set<string>): boolean {
+  return domains.has("writing_asset") || domains.has("comic_asset");
+}
+
+function shouldUseBroadApplicationDomain(domain: string, domains: Set<string>): boolean {
+  return !(domain === "application_asset" && hasSpecificApplicationDomain(domains));
+}
+
+function isToolAllowedBySpecificApplicationDomains(
+  tool: McpToolDefinition | AgentCapabilityRouteTool,
+  domains: Set<string>
+): boolean {
+  if (!hasSpecificApplicationDomain(domains)) {
+    return true;
+  }
+
+  const executionDomain = "executionDomain" in tool ? tool.executionDomain : inferToolExecutionDomain(tool);
+
+  if (executionDomain === "writing_asset") {
+    return domains.has("writing_asset");
+  }
+
+  if (executionDomain === "comic_asset") {
+    return domains.has("comic_asset");
+  }
+
+  return true;
+}
+
 function scoreToolForNeed(tool: McpToolDefinition, need: AgentCapabilityNeed): AgentCapabilityRouteTool {
   const capability = inferToolCapabilities(tool);
   const verbs = inferToolVerbs(tool);
@@ -336,6 +452,47 @@ function scoreToolForNeed(tool: McpToolDefinition, need: AgentCapabilityNeed): A
   };
 }
 
+function isResourceGatewayStepRelevantToNeed(capabilityId: string, need: AgentCapabilityNeed): boolean {
+  const capabilities = RESOURCE_CAPABILITY_NEEDS[capabilityId] ?? [];
+
+  return capabilities.includes(need.capability);
+}
+
+function scoreToolForResourceGateway(tool: McpToolDefinition, contextPacket: AgentContextPacket, need: AgentCapabilityNeed): number {
+  const gatewayPlan = contextPacket.resources.gatewayPlan;
+
+  if (!gatewayPlan.steps.length) {
+    return 0;
+  }
+
+  const toolText = normalizeText(`${tool.serverName} ${tool.name} ${tool.description ?? ""}`);
+  let score = 0;
+
+  for (const step of gatewayPlan.steps) {
+    if (!isResourceGatewayStepRelevantToNeed(step.capabilityId, need)) {
+      continue;
+    }
+
+    if (step.toolHints.includes(tool.name)) {
+      score += step.phase === "act" ? 8 : step.phase === "verify" ? 6 : 5;
+    }
+
+    if (step.preferredExecutionDomains.includes(inferToolExecutionDomain(tool))) {
+      score += step.phase === "act" ? 4 : 3;
+    }
+
+    if (step.toolHints.some((hint) => toolText.includes(normalizeText(hint)))) {
+      score += 2;
+    }
+  }
+
+  if (score > 0 && gatewayPlan.toolBias.includes(tool.name)) {
+    score += 4;
+  }
+
+  return score;
+}
+
 export function buildCapabilityRoutingContext(
   contextPacket: AgentContextPacket,
   candidateTools: McpToolDefinition[]
@@ -348,7 +505,16 @@ export function buildCapabilityRoutingContext(
         ? candidateTools.filter((tool) => isToolRelevantToDomains(tool, domainNeeds))
         : candidateTools;
     const tools = scopedTools
-      .map((tool) => scoreToolForNeed(tool, need))
+      .map((tool) => {
+        const scoredTool = scoreToolForNeed(tool, need);
+        const gatewayScore = scoreToolForResourceGateway(tool, contextPacket, need);
+
+        return {
+          ...scoredTool,
+          score: scoredTool.score + gatewayScore,
+          matchedNeeds: gatewayScore > 0 ? [...scoredTool.matchedNeeds, "resource_gateway"] : scoredTool.matchedNeeds
+        };
+      })
       .filter((tool) => tool.score > 0)
       .sort((left, right) => right.score - left.score || left.serverName.localeCompare(right.serverName) || left.name.localeCompare(right.name))
       .slice(0, MAX_ROUTED_TOOLS_PER_GROUP);
@@ -361,9 +527,10 @@ export function buildCapabilityRoutingContext(
   });
   const routedCount = new Set(groups.flatMap((group) => group.tools.map((tool) => `${tool.serverId}:${tool.name}`))).size;
   const visibleTools = buildPlannerVisibleTools(candidateTools, groups);
+  const gatewaySummary = contextPacket.resources.gatewayPlan.steps.length ? ` Resource Gateway：${contextPacket.resources.gatewayPlan.summary}` : "";
 
   return {
-    summary: `Capability Routing 已生成 Planner Tool View：识别 ${needs.length} 个能力需求，推荐关注 ${routedCount}/${candidateTools.length} 个工具；本轮 planner 只可从 ${visibleTools.length} 个可见工具中选择，隐藏 ${candidateTools.length - visibleTools.length} 个底层原语或低相关工具。`,
+    summary: `Capability Routing 已生成 Planner Tool View：识别 ${needs.length} 个能力需求，推荐关注 ${routedCount}/${candidateTools.length} 个工具；本轮 planner 只可从 ${visibleTools.length} 个可见工具中选择，隐藏 ${candidateTools.length - visibleTools.length} 个底层原语或低相关工具。${gatewaySummary}`,
     needs,
     groups,
     visibleToolCount: visibleTools.length,
@@ -431,6 +598,10 @@ export function buildPlannerVisibleTools(
 
   if (hasWriteNeed) {
     for (const domain of domainNeeds) {
+      if (!shouldUseBroadApplicationDomain(domain, domainNeeds)) {
+        continue;
+      }
+
       for (const toolName of DOMAIN_WRITE_TOOL_NAMES[domain] ?? []) {
         addToolByName(toolName);
       }
@@ -439,6 +610,10 @@ export function buildPlannerVisibleTools(
 
   if (hasVerifyNeed) {
     for (const domain of domainNeeds) {
+      if (!shouldUseBroadApplicationDomain(domain, domainNeeds)) {
+        continue;
+      }
+
       for (const toolName of DOMAIN_VERIFY_TOOL_NAMES[domain] ?? []) {
         addToolByName(toolName);
       }
@@ -449,6 +624,14 @@ export function buildPlannerVisibleTools(
     for (const toolName of DESKTOP_MEDIA_TOOL_NAMES) {
       addToolByName(toolName);
     }
+  }
+
+  for (const routedTool of groups.flatMap((group) => group.tools.filter((tool) => tool.matchedNeeds.includes("resource_gateway")))) {
+    if (!isToolAllowedBySpecificApplicationDomains(routedTool, domainNeeds)) {
+      continue;
+    }
+
+    addTool(candidateTools.find((tool) => tool.serverId === routedTool.serverId && tool.name === routedTool.name));
   }
 
   for (const group of groups) {
@@ -462,6 +645,10 @@ export function buildPlannerVisibleTools(
       }
 
       if (!isPlannerDomainNeed(group.capability) && !isToolRelevantToDomains(routedTool, domainNeeds)) {
+        continue;
+      }
+
+      if (!isToolAllowedBySpecificApplicationDomains(routedTool, domainNeeds)) {
         continue;
       }
 

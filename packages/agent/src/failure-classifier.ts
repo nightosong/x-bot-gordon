@@ -9,6 +9,36 @@ export interface McpErrorClassification {
 export function classifyMcpMessage(message: string): McpErrorClassification {
   const normalized = message.toLowerCase();
 
+  const networkTimeoutPatterns = [
+    "network_timeout",
+    "网络连接超时",
+    "网络请求超时",
+    "连接超时",
+    "请求超时",
+    "connection timed out",
+    "connect timeout",
+    "connect timed out",
+    "connection timeout",
+    "operation timed out",
+    "timeout was reached",
+    "curl: (28)",
+    "exit 28",
+    "etimedout",
+    "und_err_connect_timeout",
+    "eai_again",
+    "enotfound",
+    "econnreset",
+    "econnrefused",
+    "fetch failed"
+  ];
+
+  const nonRetryableSubmissionUnknownPatterns = [
+    "video_gen 提交状态未知",
+    "不能安全自动重试",
+    "以免重复生成",
+    "重复扣费"
+  ];
+
   const retryablePatterns = [
     "http 408",
     "http 409",
@@ -44,6 +74,9 @@ export function classifyMcpMessage(message: string): McpErrorClassification {
     "must be",
     "should be",
     "invalid type",
+    "invalidparameter",
+    "badrequest",
+    "bad request",
     "参数",
     "字段",
     "必填",
@@ -141,6 +174,22 @@ export function classifyMcpMessage(message: string): McpErrorClassification {
     "找不到",
     "没有这个"
   ];
+
+  if (nonRetryableSubmissionUnknownPatterns.some((pattern) => normalized.includes(pattern.toLowerCase()))) {
+    return {
+      category: "non_retryable",
+      message,
+      failureKind: "tool_execution"
+    };
+  }
+
+  if (networkTimeoutPatterns.some((pattern) => normalized.includes(pattern))) {
+    return {
+      category: "retryable",
+      message,
+      failureKind: "network_timeout"
+    };
+  }
 
   if (retryablePatterns.some((pattern) => normalized.includes(pattern))) {
     return {

@@ -1878,6 +1878,31 @@ const TOOL_PROVIDER_RUNTIME_CONFIG: Partial<
       }
     }
   },
+  video_gen: {
+    seedance: {
+      operations: {
+        submit: {
+          endpoint: "gpt-proxy/volengine/video/submit",
+          parameters: [
+            "mode",
+            "prompt",
+            "model",
+            "durationSeconds",
+            "ratio",
+            "resolution",
+            "image",
+            "firstFrameImage",
+            "lastFrameImage",
+            "referenceImages"
+          ]
+        },
+        query: {
+          endpoint: "gpt-proxy/volengine/video/task/{task_id}",
+          parameters: ["taskId"]
+        }
+      }
+    }
+  },
   music_gen: {
     mureka: {
       operations: {
@@ -1902,15 +1927,15 @@ const TOOL_PROVIDER_RUNTIME_CONFIG: Partial<
     suno: {
       operations: {
         generate_song: {
-          endpoint: "api/v1/generate",
-          parameters: ["prompt", "style", "title", "model", "instrumental", "callbackUrl"]
+          endpoint: "gpt-proxy/suno/generate",
+          parameters: ["prompt", "model", "instrumental"]
         },
         generate_instrumental: {
-          endpoint: "api/v1/generate",
-          parameters: ["prompt", "style", "title", "model", "instrumental", "callbackUrl"]
+          endpoint: "gpt-proxy/suno/generate",
+          parameters: ["prompt", "model", "instrumental"]
         },
         query: {
-          endpoint: "api/v1/generate/record-info",
+          endpoint: "gpt-proxy/suno/detail",
           parameters: ["taskId"]
         }
       }
@@ -1919,6 +1944,9 @@ const TOOL_PROVIDER_RUNTIME_CONFIG: Partial<
 };
 
 const TOOL_PROVIDER_DEFAULT_BASE_URLS: Partial<Record<ToolConfigName, Partial<Record<ToolConfigProvider, string>>>> = {
+  video_gen: {
+    seedance: ""
+  },
   music_gen: {
     mureka: "https://api.mureka.ai",
     suno: "https://api.sunoapi.org"
@@ -1950,10 +1978,18 @@ function getDefaultToolProviderRuntimeConfig(
 }
 
 function normalizeToolProviderBaseUrl(toolName: ToolConfigName, provider: ToolConfigProvider, baseUrl: string): string {
-  const normalizedBaseUrl = baseUrl.trim();
+  const normalizedBaseUrl = baseUrl.trim().replace(/^["']+/u, "").replace(/["']+$/u, "");
 
   if (toolName === "image_gen" && provider === "openai") {
     return normalizedBaseUrl.replace(/\/imagen(?:\/edit(?:\/base64)?)?\/?$/u, "");
+  }
+
+  if (toolName === "video_gen" && provider === "seedance") {
+    return normalizedBaseUrl.replace(/\/gpt-proxy\/volengine\/video(?:\/(?:submit|task(?:\/[^/]+)?))?\/?$/u, "");
+  }
+
+  if (toolName === "music_gen" && provider === "suno") {
+    return normalizedBaseUrl.replace(/\/(?:api\/v1\/generate(?:\/record-info)?|gpt-proxy\/suno\/(?:generate|detail))\/?$/u, "");
   }
 
   return normalizedBaseUrl;
@@ -3809,6 +3845,14 @@ function normalizeVideoShot(input: Partial<VideoShot> | null | undefined, index 
     negativePrompt: String(input?.negativePrompt ?? ""),
     reference: String(input?.reference ?? ""),
     output: String(input?.output ?? ""),
+    taskId: String(input?.taskId ?? "").trim(),
+    videoUrl: String(input?.videoUrl ?? "").trim(),
+    lastFrameUrl: String(input?.lastFrameUrl ?? "").trim(),
+    provider: String(input?.provider ?? "").trim(),
+    model: String(input?.model ?? "").trim(),
+    ...(input?.rawResult && typeof input.rawResult === "object" && !Array.isArray(input.rawResult)
+      ? { rawResult: input.rawResult as Record<string, unknown> }
+      : {}),
     status: normalizeVideoShotStatus(input?.status),
     durationSeconds: normalizeVideoDurationSeconds(input?.durationSeconds, 5),
     updatedAt: String(input?.updatedAt ?? "").trim() || now

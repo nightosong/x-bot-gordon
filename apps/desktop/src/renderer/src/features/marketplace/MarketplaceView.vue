@@ -1315,8 +1315,18 @@
                       {{ getVideoShotStatusLabel(activeVideoShot.status) }}
                     </span>
 
-                    <button type="button" class="model-action writing-chapter-submit" @click="submitVideoShot">
-                      提交
+                    <button
+                      type="button"
+                      class="model-action writing-chapter-submit"
+                      :disabled="ui.marketplace.video.isGenerating"
+                      @click="submitVideoShot"
+                    >
+                      <GIcon
+                        :name="ui.marketplace.video.isGenerating ? 'loading' : activeVideoShot.taskId ? 'refresh' : 'play'"
+                        :spin="ui.marketplace.video.isGenerating"
+                        :size="14"
+                      />
+                      {{ ui.marketplace.video.isGenerating ? "处理中" : activeVideoShot.taskId ? "查询结果" : "生成视频" }}
                     </button>
                   </div>
 
@@ -1358,6 +1368,11 @@
                   >
                     {{ ui.marketplace.video.feedback }}
                   </p>
+
+                  <div v-if="activeVideoShot?.videoUrl" class="video-shot-result-preview">
+                    <video :src="activeVideoShot.videoUrl" controls playsinline></video>
+                    <a :href="activeVideoShot.videoUrl" target="_blank" rel="noreferrer">打开视频</a>
+                  </div>
 
                   <div v-if="activeVideoShot" class="field writing-intro-field">
                     <span class="field-label">参考素材 / 首帧说明</span>

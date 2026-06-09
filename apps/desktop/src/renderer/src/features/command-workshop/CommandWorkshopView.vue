@@ -146,6 +146,9 @@
                       <GIcon name="music" :size="20" />
                       <audio :src="product.src" controls></audio>
                     </div>
+                    <div v-else-if="product.kind === 'video'" class="command-generated-product-video">
+                      <video :src="product.src" controls playsinline></video>
+                    </div>
                     <div class="command-generated-product-meta">
                       <p class="command-generated-product-title">{{ product.title }}</p>
                       <p v-if="product.meta" class="command-generated-product-copy" :title="product.meta">{{ product.meta }}</p>
@@ -156,7 +159,7 @@
                         target="_blank"
                         rel="noreferrer"
                       >
-                        {{ product.kind === "audio" ? "打开音频" : "打开原图" }}
+                        {{ product.kind === "audio" ? "打开音频" : product.kind === "video" ? "打开视频" : "打开原图" }}
                       </a>
                     </div>
                   </article>
@@ -231,9 +234,9 @@
                   </span>
                 </div>
 
-                <div v-if="getCommandResponseProcessItems(ui.command.liveProgress?.artifact).length" class="command-response-process is-live">
+                <div v-if="commandLiveProcessItems.length" class="command-response-process is-live">
                   <article
-                    v-for="item in getCommandResponseProcessItems(ui.command.liveProgress?.artifact)"
+                    v-for="item in commandLiveProcessItems"
                     :key="item.id"
                     class="command-response-process-item"
                     :class="item.className"
@@ -277,7 +280,7 @@
                 ></div>
 
                 <div
-                  v-else-if="!commandLiveActivityItem && !getCommandResponseProcessItems(ui.command.liveProgress?.artifact).length"
+                  v-else-if="!commandLiveActivityItem && !commandLiveProcessItems.length"
                   class="command-live-waiting"
                   role="status"
                   aria-live="polite"
@@ -310,6 +313,9 @@
                       <GIcon name="music" :size="20" />
                       <audio :src="product.src" controls></audio>
                     </div>
+                    <div v-else-if="product.kind === 'video'" class="command-generated-product-video">
+                      <video :src="product.src" controls playsinline></video>
+                    </div>
                     <div class="command-generated-product-meta">
                       <p class="command-generated-product-title">{{ product.title }}</p>
                       <p v-if="product.meta" class="command-generated-product-copy" :title="product.meta">{{ product.meta }}</p>
@@ -320,7 +326,7 @@
                         target="_blank"
                         rel="noreferrer"
                       >
-                        {{ product.kind === "audio" ? "打开音频" : "打开原图" }}
+                        {{ product.kind === "audio" ? "打开音频" : product.kind === "video" ? "打开视频" : "打开原图" }}
                       </a>
                     </div>
                   </article>
@@ -634,6 +640,7 @@ const commandToolSelectOptions = computed(() => [
 ]);
 
 const commandLiveActivityItem = computed(() => props.getCommandLiveActivityItem(props.ui.command.liveProgress));
+const commandLiveProcessItems = computed(() => props.getCommandResponseProcessItems(props.ui.command.liveProgress?.artifact));
 
 function focusCommandInput() {
   commandInputRef.value?.focus?.();

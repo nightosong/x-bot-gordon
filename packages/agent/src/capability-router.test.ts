@@ -4,6 +4,7 @@ import test from "node:test";
 import type { McpToolDefinition } from "../../shared/src/index.js";
 import type { AgentContextPacket } from "./context-packet.js";
 import { buildCapabilityRoutingContext, buildPlannerVisibleTools } from "./capability-router.js";
+import { buildAgentResourceContext } from "./resource-registry.js";
 
 function createContextPacket(overrides: Partial<AgentContextPacket> = {}): AgentContextPacket {
   return {
@@ -12,6 +13,29 @@ function createContextPacket(overrides: Partial<AgentContextPacket> = {}): Agent
       objective: "验证本地代码状态",
       taskPhase: "planning"
     },
+    resources: buildAgentResourceContext({
+      userInput: "检查 packages/agent/src/runtime.ts 是否包含 Plan Critic",
+      conversationMessages: [],
+      taskLedger: {
+        taskPhase: "planning",
+        objective: "验证本地代码状态",
+        constraints: [],
+        completedSubtasks: [],
+        pendingSubtasks: [],
+        activePlan: [],
+        decisionTrace: [],
+        decisionMemory: [],
+        observations: [],
+        evidenceGraph: [],
+        discoveredFacts: [],
+        failedAttempts: [],
+        environmentState: [],
+        userInterruptions: [],
+        successCriteria: [],
+        structuredSuccessCriteria: []
+      },
+      mcpCalls: []
+    }),
     constraints: [],
     plan: [],
     decisionMemory: [],
@@ -130,6 +154,117 @@ test("buildCapabilityRoutingContext recognizes generation and application asset 
   assert.ok(routing.needs.some((need) => need.capability === "application_asset"));
   assert.equal(routing.groups.find((group) => group.capability === "generation")?.tools[0]?.name, "image_gen");
   assert.equal(routing.groups.find((group) => group.capability === "application_asset")?.tools[0]?.name, "writing_update_story_assets");
+});
+
+test("buildPlannerVisibleTools exposes video_gen for video generation tasks", () => {
+  const candidateTools = [
+    createTool({
+      serverId: "builtin:mcp:gordon-tools",
+      serverName: "Gordon Tools",
+      name: "image_gen",
+      description: "Generate image assets"
+    }),
+    createTool({
+      serverId: "builtin:mcp:gordon-tools",
+      serverName: "Gordon Tools",
+      name: "video_gen",
+      description: "Submit and query Seedance video generation tasks"
+    }),
+    createTool({
+      serverId: "builtin:mcp:gordon-tools",
+      serverName: "Gordon Tools",
+      name: "music_gen",
+      description: "Generate music assets"
+    })
+  ];
+  const routing = buildCapabilityRoutingContext(
+    createContextPacket({
+      goal: {
+        latestUserRequest: "根据这个镜头提示词生成一段视频",
+        objective: "生成视频产物",
+        taskPhase: "planning"
+      }
+    }),
+    candidateTools
+  );
+  const visibleToolNames = buildPlannerVisibleTools(candidateTools, routing.groups).map((tool) => tool.name);
+
+  assert.ok(visibleToolNames.includes("video_gen"));
+});
+
+test("buildPlannerVisibleTools exposes video_gen for async video result polling", () => {
+  const candidateTools = [
+    createTool({
+      serverId: "builtin:mcp:gordon-tools",
+      serverName: "Gordon Tools",
+      name: "image_gen",
+      description: "Generate image assets"
+    }),
+    createTool({
+      serverId: "builtin:mcp:gordon-tools",
+      serverName: "Gordon Tools",
+      name: "video_gen",
+      description: "Submit and query Seedance video generation tasks"
+    }),
+    createTool({
+      serverId: "builtin:mcp:gordon-tools",
+      serverName: "Gordon Tools",
+      name: "music_gen",
+      description: "Generate music assets"
+    })
+  ];
+  const routing = buildCapabilityRoutingContext(
+    createContextPacket({
+      goal: {
+        latestUserRequest: "帮我轮询生成结果，任务 ID 是 cgt-20260605233458-cd6f8",
+        objective: "查询视频生成任务状态并拿到视频链接",
+        taskPhase: "planning",
+        nextActionHint: "使用 video_gen query 继续查询 running 的异步任务"
+      }
+    }),
+    candidateTools
+  );
+  const visibleToolNames = buildPlannerVisibleTools(candidateTools, routing.groups).map((tool) => tool.name);
+
+  assert.ok(routing.needs.some((need) => need.capability === "generation"));
+  assert.ok(visibleToolNames.includes("video_gen"));
+});
+
+test("buildPlannerVisibleTools exposes music_gen for instrumental music wording", () => {
+  const candidateTools = [
+    createTool({
+      serverId: "builtin:mcp:gordon-tools",
+      serverName: "Gordon Tools",
+      name: "image_gen",
+      description: "Generate image assets"
+    }),
+    createTool({
+      serverId: "builtin:mcp:gordon-tools",
+      serverName: "Gordon Tools",
+      name: "video_gen",
+      description: "Submit and query video generation tasks"
+    }),
+    createTool({
+      serverId: "builtin:mcp:gordon-tools",
+      serverName: "Gordon Tools",
+      name: "music_gen",
+      description: "Generate music and audio assets"
+    })
+  ];
+  const routing = buildCapabilityRoutingContext(
+    createContextPacket({
+      goal: {
+        latestUserRequest: "帮我生成一段一分钟的钢琴曲",
+        objective: "生成约一分钟的钢琴曲音频产物",
+        taskPhase: "planning"
+      }
+    }),
+    candidateTools
+  );
+  const visibleToolNames = buildPlannerVisibleTools(candidateTools, routing.groups).map((tool) => tool.name);
+
+  assert.ok(routing.needs.some((need) => need.capability === "generation"));
+  assert.ok(visibleToolNames.includes("music_gen"));
 });
 
 test("buildPlannerVisibleTools hides low-level path and GUI primitives", () => {
@@ -409,4 +544,73 @@ test("buildPlannerVisibleTools exposes write tools only for matching application
   assert.ok(visibleToolNames.includes("writing_update_story_assets"));
   assert.equal(visibleToolNames.includes("comic_read_project"), false);
   assert.equal(visibleToolNames.includes("comic_update_chapter"), false);
+});
+
+test("buildCapabilityRoutingContext uses resource gateway for comic storyboard tasks", () => {
+  const candidateTools = [
+    createTool({
+      serverId: "builtin:mcp:application-tools",
+      serverName: "Application Tools",
+      name: "comic_read_project",
+      description: "读取丹青溢彩漫画项目。"
+    }),
+    createTool({
+      serverId: "builtin:mcp:application-tools",
+      serverName: "Application Tools",
+      name: "comic_update_chapter",
+      description: "写回丹青溢彩漫画章节和分镜。"
+    }),
+    createTool({
+      serverId: "builtin:mcp:application-tools",
+      serverName: "Application Tools",
+      name: "writing_update_story_assets",
+      description: "写回墨笔生花小说故事资产。"
+    }),
+    createTool({
+      serverId: "builtin:mcp:gordon-tools",
+      serverName: "Gordon Tools",
+      name: "image_gen",
+      description: "生成图片。"
+    })
+  ];
+  const packet = createContextPacket({
+    goal: {
+      latestUserRequest: "项目 ID：comic_project_abc123\n当前章节 ID：comic_chapter_def456\n把丹青溢彩这一章拆成 20 个分镜并写回漫画项目",
+      objective: "处理丹青溢彩章节分镜",
+      taskPhase: "planning"
+    },
+    resources: buildAgentResourceContext({
+      userInput: "项目 ID：comic_project_abc123\n当前章节 ID：comic_chapter_def456\n把丹青溢彩这一章拆成 20 个分镜并写回漫画项目",
+      conversationMessages: [],
+      taskLedger: {
+        taskPhase: "planning",
+        objective: "处理丹青溢彩章节分镜",
+        constraints: [],
+        completedSubtasks: [],
+        pendingSubtasks: [],
+        activePlan: [],
+        decisionTrace: [],
+        decisionMemory: [],
+        observations: [],
+        evidenceGraph: [],
+        discoveredFacts: [],
+        failedAttempts: [],
+        environmentState: [],
+        userInterruptions: [],
+        successCriteria: [],
+        structuredSuccessCriteria: []
+      },
+      mcpCalls: []
+    })
+  });
+  const routing = buildCapabilityRoutingContext(packet, candidateTools);
+  const visibleToolNames = buildPlannerVisibleTools(candidateTools, routing.groups).map((tool) => tool.name);
+  const comicGroup = routing.groups.find((group) => group.capability === "comic_asset");
+
+  assert.match(routing.summary, /Resource Gateway/u);
+  assert.equal(packet.resources.gatewayPlan.argumentHints.projectIdOrTitle, "comic_project_abc123");
+  assert.ok(comicGroup?.tools.some((tool) => tool.name === "comic_read_project" && tool.matchedNeeds.includes("resource_gateway")));
+  assert.ok(visibleToolNames.includes("comic_read_project"));
+  assert.ok(visibleToolNames.includes("comic_update_chapter"));
+  assert.equal(visibleToolNames.includes("writing_update_story_assets"), false);
 });

@@ -37,6 +37,10 @@ function isAbortError(error) {
 }
 
 function formatCommandFailureKind(failureKind) {
+  if (failureKind === "network_timeout") {
+    return "网络连接超时";
+  }
+
   if (failureKind === "schema_mismatch") {
     return "Schema 不匹配";
   }
@@ -88,6 +92,7 @@ const COMMAND_LIVE_ACTIVITY_STEP_TYPES = new Set([
   "mcp_authorized",
   "tool_discovery_started",
   "tool_discovery_completed",
+  "mcp_auto_planning",
   "model_response_started",
   "model_invoked",
   "completed"
@@ -197,28 +202,83 @@ function shouldForceCommandApplicationTools(input, applicationContext) {
   return mentionsApplication && wantsMutation;
 }
 
-function shouldAutoEnableCommandTools(input, attachments = []) {
+function isCommandContinuationInput(input) {
+  const text = String(input ?? "").trim();
+
+  return /^(确认|继续|继续下一步|下一步|开始|开始吧|执行|执行吧|生成|生成吧|可以|好的|好|ok|OK|yes|Yes|按这个|按默认|就这样)$/u.test(text);
+}
+
+function isCommandToolFollowupInput(input) {
+  const text = String(input ?? "").trim();
+
+  return /(?:轮询|继续查|继续查询|查询|查一下|刷新|获取|拿到|看看).*(?:生成结果|结果|状态|任务|taskId|task id|视频链接|音频链接|图片链接|链接|URL|url)|(?:生成结果|任务状态|视频链接|音频链接|图片链接|taskId|task id).*(?:查询|轮询|刷新|获取|看看)|(?:还在生成|running|processing|pending|生成中).*(?:继续|查询|轮询|刷新)/iu.test(text);
+}
+
+function hasPendingCommandToolIntent(messages = [], latestTaskLedger = null) {
+  const recentText = (Array.isArray(messages) ? messages : [])
+    .slice(-6)
+    .map((message) => `${message?.role ?? ""}: ${message?.content ?? ""}`)
+    .join("\n");
+  const ledgerText = latestTaskLedger
+    ? [
+        latestTaskLedger.objective,
+        latestTaskLedger.nextActionHint,
+        ...(latestTaskLedger.pendingSubtasks ?? []),
+        ...(latestTaskLedger.successCriteria ?? []),
+        ...(latestTaskLedger.failedAttempts ?? []).map((attempt) => `${attempt.action} ${attempt.recoveryHint ?? ""}`)
+      ].join("\n")
+    : "";
+  const text = `${recentText}\n${ledgerText}`;
+
+  return (
+    /(?:music_gen|video_gen|image_gen|Gordon Tools|音乐生成工具|图片生成工具|视频生成工具|生成音频|生成音乐|生成视频|视频生成|生成图片|生成产物|媒体生成|工具调用|任务\s*ID|taskId|task id|视频链接|音频链接|图片链接|running|processing|pending)/iu.test(
+      text
+    ) &&
+    /(?:尚未|未生成|未完成|未验证|没有实际调用|没有工具调用|下一步|需要|待执行|继续|调用|生成|查询|轮询|状态|running|processing|pending)/iu.test(text)
+  );
+}
+
+function shouldAutoEnableCommandTools(input, attachments = [], messages = [], latestTaskLedger = null) {
   const text = String(input ?? "");
 
   if (Array.isArray(attachments) && attachments.length) {
     return true;
   }
 
+  if (isCommandContinuationInput(text) && hasPendingCommandToolIntent(messages, latestTaskLedger)) {
+    return true;
+  }
+
+  if (isCommandToolFollowupInput(text) && hasPendingCommandToolIntent(messages, latestTaskLedger)) {
+    return true;
+  }
+
   return (
     /(https?:\/\/[^\s)\]}>"'，。；、]+)|\bwww\.[^\s)\]}>"'，。；、]+/iu.test(text) ||
+    /(?:有哪些|有什么|列出|查看|显示).*(?:工具|tool|MCP|能力)|(?:工具|tool|MCP|能力).*(?:清单|列表|可用|启用|有哪些|有什么)/iu.test(text) ||
     /搜索|上网|联网|查一下|查找|调研|资料|来源|引用|官方文档|最新|现在|今天|新闻|价格|版本|GitHub|开源|仓库|repo|repository/iu.test(text) ||
     /文件|目录|仓库|代码|README|package\.json|tsconfig|\.ts\b|\.js\b|\.vue\b|\.json\b|检查|读取|打开|搜索|替换|修改|更新|新增|创建|删除|移动|重命名|diff|对比|运行|测试|build|lint|打包/iu.test(text) ||
-    /图片|图像|海报|图标|logo|生成图|生图|音乐|歌曲|配乐|视频|生成视频|生成音乐/iu.test(text) ||
+    /(?:music_gen|video_gen|image_gen)|(?:生成|创作|制作|产出|调用|使用).*(?:图片|图像|海报|图标|logo|生成图|生图|文生图|图生图|视频|音乐|音频|歌曲|曲子|乐曲|配乐|伴奏|BGM|bgm|钢琴曲|笛子音乐|纯音乐)|(?:图片|图像|海报|图标|logo|生成图|生图|文生图|图生图|视频|音乐|音频|歌曲|曲子|乐曲|配乐|伴奏|BGM|bgm|钢琴|笛子|古筝|吉他|小提琴|纯音乐).*(?:生成|创作|制作|产出|调用|使用)/iu.test(text) ||
     /点击|输入|截图|窗口|浏览器|桌面|打开应用|菜单|按钮|复制|粘贴|飞书|Chrome|Safari|Electron/iu.test(text)
   );
 }
 
-function shouldUseCommandAutoToolPlanner(input, attachments = [], applicationContext = "", allowAutoTools = true) {
+function shouldUseCommandAutoToolPlanner(
+  input,
+  attachments = [],
+  applicationContext = "",
+  allowAutoTools = true,
+  messages = [],
+  latestTaskLedger = null
+) {
   if (!allowAutoTools) {
     return false;
   }
 
-  return shouldForceCommandApplicationTools(input, applicationContext) || shouldAutoEnableCommandTools(input, attachments);
+  return (
+    shouldForceCommandApplicationTools(input, applicationContext) ||
+    shouldAutoEnableCommandTools(input, attachments, messages, latestTaskLedger)
+  );
 }
 
 function collapseRepeatedCommandText(text) {
@@ -853,14 +913,19 @@ export function createCommandWorkshopActions({
 
     const applicationContext = buildCommandApplicationContext(ui, workbench);
     const agentUserInput = buildCommandUserInputForAgent(userInput, attachments, applicationContext);
+    const activeSession = toPlainIpcData(activeCommandSession.value, null);
+    const baseMessages = toPlainIpcData(activeSession?.messages ?? [], []);
+    const latestTaskLedger = findLatestCommandTaskLedger(baseMessages);
     const allowAutoTools = ui.command.form.autoSelectMcp;
     const forceApplicationTools = shouldForceCommandApplicationTools(userInput, applicationContext);
-    const autoEnableTools = shouldAutoEnableCommandTools(userInput, attachments);
+    const autoEnableTools = shouldAutoEnableCommandTools(userInput, attachments, baseMessages, latestTaskLedger);
     const effectiveAutoSelectMcp = shouldUseCommandAutoToolPlanner(
       userInput,
       attachments,
       applicationContext,
-      allowAutoTools
+      allowAutoTools,
+      baseMessages,
+      latestTaskLedger
     );
     const effectiveMcpServerId = forceApplicationTools && !ui.command.form.mcpToolName ? "" : ui.command.form.mcpServerId;
     const effectiveMcpToolName = forceApplicationTools && !ui.command.form.mcpToolName ? "" : ui.command.form.mcpToolName;
@@ -900,12 +965,9 @@ export function createCommandWorkshopActions({
       }
     }
 
-    const activeSession = toPlainIpcData(activeCommandSession.value, null);
     const sessionId = activeSession?.id ?? `command_session_${Date.now()}`;
     const startedAt = new Date().toISOString();
     const progressEventId = `command_progress_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    const baseMessages = toPlainIpcData(activeSession?.messages ?? [], []);
-    const latestTaskLedger = findLatestCommandTaskLedger(baseMessages);
     const userMessage = {
       id: `command_message_${Date.now()}`,
       role: "user",
@@ -1169,7 +1231,7 @@ export function createCommandWorkshopActions({
     const kind = String(artifact.kind ?? "").trim();
     const src = String(artifact.dataUrl || artifact.url || "").trim();
 
-    if (!["image", "audio"].includes(kind) || !src) {
+    if (!["image", "audio", "video"].includes(kind) || !src) {
       return null;
     }
 
@@ -1182,7 +1244,9 @@ export function createCommandWorkshopActions({
       id: String(artifact.id ?? "").trim() || `generated_product_${index}`,
       kind,
       src,
-      title: String(artifact.title ?? "").trim() || (kind === "audio" ? `生成音频 ${index + 1}` : `生成图片 ${index + 1}`),
+      title:
+        String(artifact.title ?? "").trim() ||
+        (kind === "audio" ? `生成音频 ${index + 1}` : kind === "video" ? `生成视频 ${index + 1}` : `生成图片 ${index + 1}`),
       url: String(artifact.url ?? "").trim(),
       meta
     };
@@ -1253,6 +1317,170 @@ export function createCommandWorkshopActions({
 
   function getCommandArtifactCallTitle(call) {
     return `使用工具：${call?.serverName ?? "工具服务"} / ${call?.toolName ?? "工具"}`;
+  }
+
+  function getCommandToolActionTitle(toolName, serverName = "") {
+    const normalizedToolName = String(toolName ?? "").trim();
+    const normalizedServerName = String(serverName ?? "").trim();
+    const lowerToolName = normalizedToolName.toLowerCase();
+
+    const toolTitleMap = {
+      read_web_page: "读取网页内容",
+      web_research: "联网研究资料",
+      web_search: "搜索网页资料",
+      web_search_v2: "搜索网页资料",
+      github_search_repositories: "搜索 GitHub 仓库",
+      read_file: "读取文件",
+      write_file: "写入文件",
+      list_directory: "查看目录",
+      inspect_path: "检查路径",
+      path_info: "检查路径",
+      diff_paths: "对比文件差异",
+      search_files: "搜索工作区",
+      search_workspace: "搜索工作区",
+      run_shell_command: "运行命令",
+      get_app_state: "读取桌面状态",
+      open_app: "打开桌面应用",
+      open_url: "打开网页",
+      take_screenshot: "截取桌面画面",
+      click: "点击界面",
+      type_text: "输入文本",
+      press_key: "发送按键",
+      image_gen: "生成图片",
+      video_gen: "生成视频",
+      music_gen: "生成音频",
+      writing_list_books: "读取小说列表",
+      writing_read_book: "读取小说资产",
+      writing_search_book: "检索小说内容",
+      writing_create_book: "创建小说资产",
+      writing_update_book_fields: "更新小说设定",
+      writing_update_chapter: "更新小说章节",
+      writing_update_story_assets: "更新故事资产",
+      comic_list_projects: "读取漫画项目列表",
+      comic_read_project: "读取漫画项目",
+      comic_update_project_fields: "更新漫画项目",
+      comic_create_chapter: "创建漫画章节",
+      comic_update_chapter: "更新章节分镜",
+      comic_update_chapter_images: "写入章节图片",
+      comic_update_assets: "更新漫画素材库"
+    };
+
+    if (toolTitleMap[lowerToolName]) {
+      return toolTitleMap[lowerToolName];
+    }
+
+    if (/workspace tools/iu.test(normalizedServerName)) {
+      return "处理工作区内容";
+    }
+
+    if (/search tools/iu.test(normalizedServerName)) {
+      return "检索外部资料";
+    }
+
+    if (/gordon tools/iu.test(normalizedServerName)) {
+      return "调用生成能力";
+    }
+
+    if (/application tools/iu.test(normalizedServerName)) {
+      return "处理应用资产";
+    }
+
+    return normalizedToolName ? `使用工具：${normalizedToolName}` : "执行工具动作";
+  }
+
+  function getCommandToolProcessTag(serverName, toolName) {
+    const normalizedServerName = String(serverName ?? "").trim();
+    const normalizedToolName = String(toolName ?? "").trim();
+
+    if (!normalizedToolName && !normalizedServerName) {
+      return null;
+    }
+
+    return {
+      label: normalizedToolName || normalizedServerName,
+      detail: [normalizedServerName, normalizedToolName].filter(Boolean).join(" / ")
+    };
+  }
+
+  function getCommandArgumentSummaryValue(value, maxLength = 96) {
+    if (value === null || value === undefined) {
+      return "";
+    }
+
+    if (typeof value === "object") {
+      return "";
+    }
+
+    return truncateCommandProcessText(value, maxLength);
+  }
+
+  function getCommandToolArgumentSummary(argumentsObject) {
+    if (!argumentsObject || typeof argumentsObject !== "object" || Array.isArray(argumentsObject)) {
+      return "";
+    }
+
+    const priorityEntries = [
+      ["url", "目标"],
+      ["href", "目标"],
+      ["path", "路径"],
+      ["filePath", "路径"],
+      ["sourcePath", "来源"],
+      ["targetPath", "目标"],
+      ["query", "关键词"],
+      ["q", "关键词"],
+      ["keyword", "关键词"],
+      ["bookIdOrTitle", "小说"],
+      ["bookId", "小说"],
+      ["projectIdOrTitle", "项目"],
+      ["projectId", "项目"],
+      ["chapterId", "章节"],
+      ["chapterIndex", "章节"],
+      ["taskId", "任务"],
+      ["mode", "模式"],
+      ["action", "动作"],
+      ["prompt", "提示词"]
+    ];
+    const parts = [];
+
+    for (const [key, label] of priorityEntries) {
+      if (parts.length >= 2) {
+        break;
+      }
+
+      const value = getCommandArgumentSummaryValue(argumentsObject[key], key === "prompt" ? 72 : 96);
+
+      if (value) {
+        parts.push(`${label}：${value}`);
+      }
+    }
+
+    return parts.join(" · ");
+  }
+
+  function getCommandSelectedStepArgumentsText(step) {
+    const detail = String(step?.detail ?? "");
+    const argumentText = detail.split(" / 参数：")[1] ?? "";
+
+    return argumentText
+      .split(" / 预期：")[0]
+      .split(" / 验证：")[0]
+      .trim();
+  }
+
+  function parseCommandSelectedStepArguments(step) {
+    const argumentText = getCommandSelectedStepArgumentsText(step);
+
+    if (!argumentText) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(argumentText);
+
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
   }
 
   function getCommandArtifactCallArgumentsText(call) {
@@ -1340,8 +1568,11 @@ export function createCommandWorkshopActions({
   function getCommandProcessCallDetail(call) {
     const detailParts = [];
     const argumentText = truncateCommandProcessText(stringifyCommandArtifactArguments(getCommandArtifactResolvedCallArguments(call)), 180);
+    const argumentSummary = getCommandToolArgumentSummary(getCommandArtifactResolvedCallArguments(call));
 
-    if (argumentText) {
+    if (argumentSummary) {
+      detailParts.push(argumentSummary);
+    } else if (argumentText) {
       detailParts.push(`参数：${argumentText}`);
     }
 
@@ -1515,7 +1746,8 @@ export function createCommandWorkshopActions({
     const output = truncateCommandProcessOutput(call.resultText);
     const selectedStep = options.selectedStep ?? null;
     const terminalStep = options.terminalStep ?? null;
-    const tags = options.tags ?? [];
+    const technicalTag = getCommandToolProcessTag(call.serverName, call.toolName);
+    const tags = [technicalTag, ...(options.tags ?? [])].filter(Boolean);
 
     return {
       id: selectedStep?.id ? `${selectedStep.id}_process_tool` : `process_call_${call.createdAt ?? "tool"}_${call.toolName ?? index}`,
@@ -1524,7 +1756,7 @@ export function createCommandWorkshopActions({
       marker: `${index + 1}`,
       label: call.isError ? "执行失败" : "执行",
       className: call.isError ? "is-execute is-error" : "is-execute is-done",
-      title: `${call.serverName ?? "工具服务"} / ${call.toolName ?? "工具"}`,
+      title: getCommandToolActionTitle(call.toolName, call.serverName),
       detail: getCommandProcessCallDetail(call),
       tags,
       output,
@@ -1549,8 +1781,10 @@ export function createCommandWorkshopActions({
       .find((step) => step?.type === "mcp_server_selected");
     const toolName = getCommandArtifactToolNameFromStep(selectedStep) || "工具";
     const serverName = getCommandArtifactServerNameFromStep(serverStep) || "工具服务";
-    const argumentText = String(selectedStep?.detail ?? "").split(" / 参数：")[1] ?? "";
-    const tags = getCommandToolPermissionTags(steps, selectedToolSteps.length - 1);
+    const argumentText = getCommandSelectedStepArgumentsText(selectedStep);
+    const argumentSummary = getCommandToolArgumentSummary(parseCommandSelectedStepArguments(selectedStep));
+    const technicalTag = getCommandToolProcessTag(serverName, toolName);
+    const tags = [technicalTag, ...getCommandToolPermissionTags(steps, selectedToolSteps.length - 1)].filter(Boolean);
     const permissionTone = getCommandToolPermissionTone(tags);
     const hasDeniedPermission = permissionTone === "error";
 
@@ -1561,8 +1795,8 @@ export function createCommandWorkshopActions({
       marker: `${calls.length + 1}`,
       label: hasDeniedPermission ? "执行受阻" : "执行中",
       className: hasDeniedPermission ? "is-execute is-error" : "is-execute is-running",
-      title: `${serverName} / ${toolName}`,
-      detail: argumentText ? `参数：${truncateCommandProcessText(argumentText, 180)}` : "参数已确定，正在等待工具返回。",
+      title: getCommandToolActionTitle(toolName, serverName),
+      detail: argumentSummary || (argumentText ? `参数：${truncateCommandProcessText(argumentText, 180)}` : "参数已确定，正在等待工具返回。"),
       tags,
       output: hasDeniedPermission ? "授权被拒绝，Gordon 会尝试调整路线或停止当前工具调用。" : "工具正在运行，返回后会把中间输出接在这里。",
       outputLabel: hasDeniedPermission ? "授权状态" : "中间输出",
@@ -1704,11 +1938,15 @@ export function createCommandWorkshopActions({
     }
 
     if (type === "tool_discovery_started") {
-      return "工具发现";
+      return "准备工具";
     }
 
     if (type === "tool_discovery_completed") {
-      return "工具视图";
+      return "准备工具";
+    }
+
+    if (type === "mcp_auto_planning") {
+      return "判断动作";
     }
 
     if (type === "model_response_started" || type === "model_invoked" || type === "completed") {
@@ -1730,31 +1968,91 @@ export function createCommandWorkshopActions({
     return "running";
   }
 
-  function getCommandLiveActivityItem(liveProgress) {
-    const artifact = liveProgress?.artifact;
+  function getCommandLiveToolActivityItem(artifact, liveProgress) {
     const steps = Array.isArray(artifact?.steps) ? artifact.steps : [];
     const calls = Array.isArray(artifact?.mcpCalls) ? artifact.mcpCalls : [];
     const selectedToolSteps = steps.filter((step) => step?.type === "mcp_tool_selected");
     const hasPendingTool = selectedToolSteps.length > calls.length;
+    const latestCall = calls[calls.length - 1];
+
+    if (!hasPendingTool && !latestCall) {
+      return null;
+    }
+
+    if (hasPendingTool) {
+      const selectedStep = selectedToolSteps[selectedToolSteps.length - 1];
+      const selectedStepIndex = steps.indexOf(selectedStep);
+      const serverStep = steps
+        .slice(0, selectedStepIndex)
+        .reverse()
+        .find((step) => step?.type === "mcp_server_selected");
+      const toolName = getCommandArtifactToolNameFromStep(selectedStep) || "工具";
+      const serverName = getCommandArtifactServerNameFromStep(serverStep) || "工具服务";
+      const argumentSummary = getCommandToolArgumentSummary(parseCommandSelectedStepArguments(selectedStep));
+
+      return {
+        id: selectedStep?.id ?? `live_tool_${liveProgress?.progressEventId ?? "current"}`,
+        label: "工具执行",
+        title: getCommandToolActionTitle(toolName, serverName),
+        detail: argumentSummary || "正在等待工具返回结果",
+        createdAt: selectedStep?.createdAt ?? liveProgress?.updatedAt ?? "",
+        tone: "running",
+        className: "is-running"
+      };
+    }
+
+    return {
+      id: `live_tool_${latestCall.createdAt ?? liveProgress?.progressEventId ?? "current"}`,
+      label: latestCall.isError ? "工具失败" : "工具完成",
+      title: getCommandToolActionTitle(latestCall.toolName, latestCall.serverName),
+      detail: latestCall.isError ? truncateCommandProcessText(latestCall.failureReason || latestCall.resultText, 140) : "正在基于工具结果判断下一步",
+      createdAt: latestCall.createdAt ?? liveProgress?.updatedAt ?? "",
+      tone: latestCall.isError ? "error" : "steady",
+      className: latestCall.isError ? "is-error" : "is-steady"
+    };
+  }
+
+  function getCommandLiveActivityItem(liveProgress) {
+    const artifact = liveProgress?.artifact;
+    const steps = Array.isArray(artifact?.steps) ? artifact.steps : [];
+    const calls = Array.isArray(artifact?.mcpCalls) ? artifact.mcpCalls : [];
+    const toolActivityItem = getCommandLiveToolActivityItem(artifact, liveProgress);
     const latestActivityStep = [...steps]
       .reverse()
       .find((step) => COMMAND_LIVE_ACTIVITY_STEP_TYPES.has(step?.type));
     const statusText = getCommandLiveStatusText(liveProgress);
 
     if (
-      hasPendingTool ||
-      (calls.length > 0 &&
-        !["model_response_started", "model_invoked", "completed"].includes(latestActivityStep?.type))
+      toolActivityItem &&
+      !["model_response_started", "model_invoked", "completed"].includes(latestActivityStep?.type)
     ) {
-      return null;
+      return toolActivityItem;
     }
 
     if (!latestActivityStep && !statusText) {
       return null;
     }
 
-    const title = normalizeCommandArtifactInlineText(latestActivityStep?.title) || statusText || "Gordon 正在处理";
-    const detail = normalizeCommandArtifactInlineText(latestActivityStep?.detail);
+    let title = normalizeCommandArtifactInlineText(latestActivityStep?.title) || statusText || "Gordon 正在处理";
+    let detail = normalizeCommandArtifactInlineText(latestActivityStep?.detail);
+
+    if (latestActivityStep?.type === "tool_discovery_started") {
+      title = "正在准备可用工具";
+      detail = "Gordon 正在为本轮任务筛选可执行能力";
+    } else if (latestActivityStep?.type === "tool_discovery_completed") {
+      title = "已准备可用工具";
+      detail = "接下来会选择最合适的动作执行";
+    } else if (latestActivityStep?.type === "mcp_auto_planning") {
+      title = "正在判断下一步动作";
+      detail = "Gordon 正在选择最合适的执行方式";
+    } else if (latestActivityStep?.type === "mcp_authorized") {
+      title = "已载入工具能力";
+      detail = "Gordon 会按任务需要选择工具";
+    } else if (latestActivityStep?.type === "model_response_started" || latestActivityStep?.type === "model_invoked") {
+      title = "正在整理回复";
+      detail = toolActivityItem?.title ? `已完成 ${toolActivityItem.title}` : detail;
+    }
+
     const createdAt = latestActivityStep?.createdAt ?? liveProgress?.updatedAt ?? "";
     const label = getCommandLiveActivityLabel(latestActivityStep);
     const tone = getCommandLiveActivityTone(latestActivityStep);

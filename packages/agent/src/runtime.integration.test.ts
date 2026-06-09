@@ -104,7 +104,7 @@ function createFakeModelServer(capturedRequests: CapturedRequest[]): Server {
     const systemMessage = getSystemMessage(body);
     let content = "Chrome 页面状态已通过 Computer Use 读取并验证。";
 
-    if (systemMessage.includes("工具规划器")) {
+    if (systemMessage.includes("工具规划器") || systemMessage.includes("资源任务规划器")) {
       plannerCalls += 1;
       const userMessage = getModelMessages(body).find((message) => message.role === "user")?.content ?? "";
 
@@ -577,7 +577,9 @@ test("runAgent keeps Computer Use selectable through capability routing", async 
       userInput: "打开 Chrome 并检查当前页面 UI 是否显示 Chrome Ready",
       autoSelectMcp: true
     });
-    const firstPlannerRequest = modelRequests.find((request) => getSystemMessage(request.body).includes("工具规划器"));
+    const firstPlannerRequest = modelRequests.find(
+      (request) => getSystemMessage(request.body).includes("工具规划器") || getSystemMessage(request.body).includes("资源任务规划器")
+    );
     const firstPlannerUserMessage = getModelMessages(firstPlannerRequest?.body ?? {}).find((message) => message.role === "user")?.content ?? "";
 
     assert.ok(firstPlannerRequest);

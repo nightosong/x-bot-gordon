@@ -4,6 +4,7 @@ import test from "node:test";
 import type { McpToolDefinition } from "../../shared/src/index.js";
 import type { AgentContextPacket } from "./context-packet.js";
 import { critiqueMcpToolPlan } from "./plan-critic.js";
+import { buildAgentResourceContext } from "./resource-registry.js";
 
 function createContextPacket(overrides: Partial<AgentContextPacket> = {}): AgentContextPacket {
   return {
@@ -12,6 +13,29 @@ function createContextPacket(overrides: Partial<AgentContextPacket> = {}): Agent
       objective: "实现 Plan Critic",
       taskPhase: "executing"
     },
+    resources: buildAgentResourceContext({
+      userInput: "继续推进 Plan Critic 代码实现",
+      conversationMessages: [],
+      taskLedger: {
+        taskPhase: "executing",
+        objective: "实现 Plan Critic",
+        constraints: [],
+        completedSubtasks: [],
+        pendingSubtasks: [],
+        activePlan: [],
+        decisionTrace: [],
+        decisionMemory: [],
+        observations: [],
+        evidenceGraph: [],
+        discoveredFacts: [],
+        failedAttempts: [],
+        environmentState: [],
+        userInterruptions: [],
+        successCriteria: [],
+        structuredSuccessCriteria: []
+      },
+      mcpCalls: []
+    }),
     constraints: [],
     plan: [],
     decisionMemory: [],

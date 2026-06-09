@@ -1043,6 +1043,19 @@ function buildPlannerToolViewSummary(contextPacket: AgentContextPacket, candidat
 
   return [
     `授权工具全集：${candidateTools.length} 个；本轮 Planner 可见工具：${visibleTools.length} 个；隐藏底层或低相关工具：${hiddenCount} 个。`,
+    `识别主资源：${
+      contextPacket.resources.primaryResource
+        ? `${contextPacket.resources.primaryResource.type}（${contextPacket.resources.primaryResource.label}）`
+        : "未识别强资源"
+    }；资源意图：${contextPacket.resources.capabilityFrame.intent}`,
+    `解析引用：${
+      contextPacket.resources.resolvedRefs.length
+        ? contextPacket.resources.resolvedRefs.map((ref) => `${ref.kind}:${ref.value}`).slice(0, 5).join(", ")
+        : "无"
+    }`,
+    `资源能力：${contextPacket.resources.capabilityRegistry.map((capability) => capability.id).slice(0, 6).join(", ") || "无"}`,
+    `资源网关：${contextPacket.resources.gatewayPlan.summary}`,
+    `资源网关参数提示：${Object.keys(contextPacket.resources.gatewayPlan.argumentHints).length ? stringifyArguments(contextPacket.resources.gatewayPlan.argumentHints) : "无"}`,
     `识别能力域：${routing.needs.map((need) => need.capability).join(", ") || "无"}`,
     `Planner 可见工具：${formatToolListForRuntime(visibleTools)}`
   ].join("\n");
@@ -1078,8 +1091,8 @@ async function planMcpToolSelection(
       messages: [
         {
           role: "system",
-          content: `你是 Gordon 的工具规划器。
-你的唯一任务是判断当前是否需要调用工具，以及如果需要，应该调用哪一个工具。
+          content: `你是 Gordon 的资源任务规划器。
+你的任务是先判断当前用户目标正在处理什么资源，再判断应该执行哪种资源能力，最后才决定是否需要调用工具以及调用哪一个工具。
 
 请严格输出 JSON，不要输出解释、标题、Markdown 或代码块之外的任何文字。
 JSON 结构必须为：
@@ -1113,6 +1126,14 @@ JSON 结构必须为：
 
 约束：
 - 纯解释、闲聊、无需当前上下文的常识问题可以不调用工具
+- 你会收到 Resource Registry：resources.primaryResource / resources.candidates 表示当前任务资源，resources.resolvedRefs 表示已解析的资源引用，resources.capabilityRegistry 表示资源可用能力，resources.capabilityFrame 表示资源意图、偏好执行域和风险边界
+- resources.gatewayPlan 是 Resource Gateway 给出的内部执行偏置，包含 inspect / act / verify 步骤、toolBias、argumentHints 和 verificationBias；它不是强制脚本，但应作为首选资源能力路线
+- 规划顺序必须是 Resource -> Capability -> Tool：先在 reason 和 ledgerPatch.decisionTrace 中体现目标资源、resolvedRefs、gatewayPlan 步骤与 capabilityRegistry 中的能力，再选择工具；不要从工具列表反推任务本身
+- 对代码、文件、网页、桌面应用、生成产物、小说书稿、漫画项目等资源，优先选择语义最贴近资源能力的工具；只有资源能力缺失时再退到底层文件或桌面原语
+- 如果资源上下文显示任务围绕 codebase.project，优先通过 Workspace Tools 做局部读取、搜索、修改和测试验证；不要把代码任务误判成普通聊天
+- 如果资源上下文显示任务围绕 writing.book / comic.project，优先通过 Application Tools 读回、预览、写回和验证应用资产；Application Tools 不覆盖时才 fallback 到 Workspace Tools
+- 如果资源上下文显示任务围绕 media.asset，优先通过 Gordon Tools 生成或查询媒体产物，并把产物作为 artifact 继续验证
+- 如果 resources.gatewayPlan.argumentHints 已给出 bookIdOrTitle、projectIdOrTitle、chapterId、chapterIndex、path、url 或 taskId，应优先用作工具参数；缺少关键参数时先选读/列表工具定位，不要凭空编造
 - 你必须把“任务账本”作为当前世界状态：优先推进 taskPhase、activePlan、pendingSubtasks、structuredSuccessCriteria 和 successCriteria，避免忘记最初目标
 - 如果任务复杂，先用 ledgerPatch.activePlan 维护分层计划；每次只选择最能推进当前计划的一步工具，不要变成看到什么点什么
 - active 的 decisionMemory 是下一步规划必须参考的工作记忆，尤其是已放弃路线、已证伪假设和恢复策略；不要重复 active 决策里明确放弃的同一路线，除非有新证据，并在 ledgerPatch.decisionMemory 中把旧记忆标记为 superseded
@@ -1427,6 +1448,7 @@ JSON 结构必须为：
 约束：
 - 只能从提供的可见 fallback 工具列表中选择
 - 不要继续选择刚失败的同一个 tool
+- 当前上下文包包含 resources.gatewayPlan；fallback 应优先保持同一目标资源和资源能力路线，只替换落地工具或参数
 - Capability Routing 已生成 fallback Tool View；隐藏的底层原语或低相关工具不可直接选择
 - 优先选择 schema 更贴合当前任务、且能绕开失败原因的工具
 - expectedOutcome 描述 fallback 成功后应得到的可观察结果；verificationMethod 描述如何判断 fallback 成功
@@ -1554,6 +1576,7 @@ JSON 结构必须为：
 - 如果已有工具历史足以验证，shouldVerify=false
 - 如果成功条件仍 pending/unknown，且可见工具里存在低风险或中风险读取/检查/状态类工具，应选择最小副作用工具验证
 - 你会收到“验证策略上下文”，其中 preferredCapabilities / preferredExecutionDomains / argumentHints / evidenceRequirements 是规划偏置，不是工具白名单
+- 当前上下文包包含 resources.gatewayPlan；验证时应优先按 gatewayPlan.verificationBias 和同一资源的读回/状态查询工具确认结果
 - Capability Routing 已生成验证 Tool View；隐藏的底层原语或低相关工具不可直接选择
 - 仍然必须从可见工具列表中自主判断最合适的验证工具
 - 不要为了验证选择写入、删除、生成、点击、输入等高副作用工具，除非成功条件明确要求该动作且没有更低风险替代
@@ -1650,7 +1673,7 @@ function buildSystemPrompt(
     sections.push(`工具上下文：\n${buildToolScopeText(authorizedMcpServers)}`);
   } else {
     sections.push(
-      "工具上下文：本轮尚未调用工具。请优先直接回应用户；不要声称已经读取、写入、搜索、生成、打开页面或修改本地/应用资产。若用户目标需要真实执行，请明确说明需要进入 Gordon 工具处理。"
+      "工具上下文：本轮没有进入工具编排。请优先直接回应用户；不要声称已经读取、写入、搜索、生成、打开页面或修改本地/应用资产。若用户目标明显需要真实执行，只能说明当前未执行并给出缺失的授权、配置或运行条件；不要要求用户手动“进入工具”，也不要把可执行任务包装成等待用户确认的空承诺。"
     );
   }
 
@@ -1676,12 +1699,14 @@ function buildFinalContextResultText(
   return `以下是本轮上下文包。它已经把最近会话、任务账本、工作记忆、证据、工具历史、验证状态和开放问题压缩成结构化上下文：
 ${contextPacketText}
 
+其中 resources 是 Resource Registry 生成的资源视图：请优先围绕目标资源、资源能力、版本状态和验证结果组织最终回复，不要把工具调用本身当成用户目标。
+
 ${plannerToolViewSummary ? `以下是本轮工具可见性摘要。注意：授权工具全集是 runtime 可用边界，Planner 每轮只能从可见工具白名单中选择：\n${plannerToolViewSummary}\n\n` : ""}
 ${
   hasToolCalls
     ? `以下是本轮工具返回的可见结果，请结合上下文包判断哪些目标已经完成、哪些仍有风险：
 ${mcpResultText || "本轮没有成功或可展示的工具返回文本。"}`
-    : "本轮没有工具调用，请只基于上下文包和用户请求回复，不要声称执行了外部动作。"
+    : "本轮没有工具调用，请只基于上下文包和用户请求回复，不要声称执行了外部动作；如果用户请求真实生成、写入、打开、搜索或运行，必须明确当前尚未执行，并说明需要开启自动工具、补齐配置或提供必要权限，不要要求用户手动进入某个工具。"
 }
 
 最终回复必须服务于 goal.objective、goal.taskPhase、plan、decisionMemory、verification.structuredSuccessCriteria 和 openQuestions；涉及未完成或未验证事项时，需要明确说明状态。`;

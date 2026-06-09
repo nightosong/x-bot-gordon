@@ -8284,6 +8284,36 @@ canvas {
   margin-top: -2px;
 }
 
+.video-shot-result-preview {
+  display: grid;
+  gap: 7px;
+  overflow: hidden;
+  border: 1px solid rgba(92, 225, 194, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 18, 24, 0.24);
+}
+
+.video-shot-result-preview video {
+  display: block;
+  width: 100%;
+  max-height: 280px;
+  object-fit: contain;
+  background: rgba(3, 8, 13, 0.72);
+}
+
+.video-shot-result-preview a {
+  width: fit-content;
+  margin: 0 10px 10px;
+  color: #bcf8ea;
+  font-size: 11px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.video-shot-result-preview a:hover {
+  color: #defef5;
+}
+
 .model-config-head {
   display: flex;
   align-items: center;
@@ -14838,6 +14868,24 @@ canvas {
   opacity: 0.82;
 }
 
+.command-live-activity.is-error {
+  border-color: rgba(255, 139, 122, 0.22);
+  background:
+    linear-gradient(115deg, rgba(255, 139, 122, 0.12), rgba(245, 200, 107, 0.045) 48%, rgba(151, 182, 216, 0.04)),
+    rgba(5, 16, 25, 0.46);
+}
+
+.command-live-activity.is-error .command-live-activity-label,
+.command-live-activity.is-error .command-live-activity-detail {
+  color: rgba(255, 210, 202, 0.74);
+}
+
+.command-live-activity.is-error .command-live-activity-mark span,
+.command-live-activity.is-error .command-live-activity-dots span {
+  background: #ffd2ca;
+  box-shadow: 0 0 16px rgba(255, 139, 122, 0.36);
+}
+
 .command-message-attachments {
   display: flex;
   flex-wrap: wrap;
@@ -14903,6 +14951,24 @@ canvas {
 .command-generated-product-audio audio {
   width: 100%;
   height: 34px;
+}
+
+.command-generated-product-video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(92, 225, 194, 0.12), rgba(151, 182, 216, 0.08)),
+    rgba(247, 243, 235, 0.045);
+}
+
+.command-generated-product-video video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: rgba(3, 8, 13, 0.72);
 }
 
 .command-generated-product-meta {

@@ -96,6 +96,7 @@ export type AgentRunStepType =
 
 export type McpErrorCategory = "retryable" | "non_retryable";
 export type McpFailureKind =
+  | "network_timeout"
   | "schema_mismatch"
   | "tool_unavailable"
   | "tool_execution"
@@ -1129,6 +1130,12 @@ export interface VideoShot {
   negativePrompt: string;
   reference: string;
   output: string;
+  taskId?: string;
+  videoUrl?: string;
+  lastFrameUrl?: string;
+  provider?: string;
+  model?: string;
+  rawResult?: Record<string, unknown>;
   status: VideoShotStatus;
   durationSeconds: number;
   updatedAt: string;

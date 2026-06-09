@@ -1,5 +1,6 @@
 import { computed } from "vue";
 
+import { BUILTIN_GORDON_TOOLS_MCP_ID } from "../../lib/presenter.js";
 import { WRITING_AUTOSAVE_DELAY } from "../writing/writingConfig.js";
 import {
   VIDEO_APP_NAME,
@@ -22,6 +23,10 @@ function writeRef(target, value) {
 
 function getErrorMessage(error) {
   return error instanceof Error ? error.message : "未知错误";
+}
+
+function normalizeVideoText(value) {
+  return String(value ?? "").trim();
 }
 
 export function createVideoActions({
@@ -113,6 +118,12 @@ export function createVideoActions({
       negativePrompt: String(shot?.negativePrompt ?? ""),
       reference: String(shot?.reference ?? ""),
       output: String(shot?.output ?? ""),
+      taskId: normalizeVideoText(shot?.taskId),
+      videoUrl: normalizeVideoText(shot?.videoUrl),
+      lastFrameUrl: normalizeVideoText(shot?.lastFrameUrl),
+      provider: normalizeVideoText(shot?.provider),
+      model: normalizeVideoText(shot?.model),
+      ...(shot?.rawResult && typeof shot.rawResult === "object" ? { rawResult: shot.rawResult } : {}),
       status: normalizeVideoShotStatusForUi(shot?.status),
       durationSeconds: normalizeVideoDurationSeconds(shot?.durationSeconds, 5),
       updatedAt: String(shot?.updatedAt ?? "").trim() || now
@@ -756,6 +767,114 @@ export function createVideoActions({
     touchVideoShot(shot);
   }
 
+  function extractVideoStructuredContent(toolResult) {
+    if (toolResult?.structuredContent && typeof toolResult.structuredContent === "object") {
+      return toolResult.structuredContent;
+    }
+
+    return {};
+  }
+
+  function extractVideoArtifact(toolResult) {
+    const structuredContent = extractVideoStructuredContent(toolResult);
+    const artifacts = Array.isArray(structuredContent.artifacts) ? structuredContent.artifacts : [];
+    return artifacts.find((artifact) => String(artifact?.kind ?? "") === "video" && String(artifact?.url ?? "").trim()) ?? null;
+  }
+
+  function extractVideoTaskId(toolResult) {
+    const structuredContent = extractVideoStructuredContent(toolResult);
+    return normalizeVideoText(structuredContent.taskId);
+  }
+
+  function extractVideoStatus(toolResult) {
+    const structuredContent = extractVideoStructuredContent(toolResult);
+    return normalizeVideoText(structuredContent.status);
+  }
+
+  function getVideoToolCompletionState(toolResult) {
+    const structuredContent = extractVideoStructuredContent(toolResult);
+    return {
+      pending: structuredContent.pending === true,
+      completed: structuredContent.completed === true,
+      pollExhausted: structuredContent.pollExhausted === true,
+      pollFailed: structuredContent.pollFailed === true,
+      pollError: normalizeVideoText(structuredContent.pollError)
+    };
+  }
+
+  function getVideoGenerationPrompt(project, shot) {
+    return [
+      normalizeVideoText(shot?.prompt),
+      normalizeVideoText(shot?.summary) ? `镜头说明：${normalizeVideoText(shot.summary)}` : "",
+      normalizeVideoText(project?.visualStyle) ? `视觉风格：${normalizeVideoText(project.visualStyle)}` : "",
+      normalizeVideoText(project?.summary) ? `项目目标：${normalizeVideoText(project.summary)}` : ""
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  function buildVideoToolArguments(project, shot) {
+    const prompt = getVideoGenerationPrompt(project, shot);
+    const reference = normalizeVideoText(shot?.reference);
+    const isImageToVideo = normalizeVideoProjectModeForUi(project?.mode) === "imageToVideo" && /^https?:\/\//iu.test(reference);
+
+    return {
+      operation: "submit",
+      provider: "seedance",
+      mode: isImageToVideo ? "first_frame_to_video" : "text_to_video",
+      prompt,
+      negativePrompt: shot?.negativePrompt ?? "",
+      ratio: normalizeVideoProjectAspectRatioForUi(project?.aspectRatio),
+      durationSeconds: normalizeVideoDurationSeconds(shot?.durationSeconds, project?.durationSeconds || 5),
+      ...(isImageToVideo ? { image: reference } : {})
+    };
+  }
+
+  function applyVideoToolResultToShot(shot, toolResult) {
+    const structuredContent = extractVideoStructuredContent(toolResult);
+    const artifact = extractVideoArtifact(toolResult);
+    const taskId = extractVideoTaskId(toolResult);
+    const status = extractVideoStatus(toolResult);
+
+    if (taskId) {
+      shot.taskId = taskId;
+    }
+
+    if (artifact) {
+      const metadata = artifact.metadata && typeof artifact.metadata === "object" ? artifact.metadata : {};
+      shot.videoUrl = normalizeVideoText(artifact.url);
+      shot.lastFrameUrl = normalizeVideoText(metadata.lastFrameUrl) || shot.lastFrameUrl;
+      shot.status = "done";
+    } else if (status && /succeed|success|done|complete|finished/iu.test(status)) {
+      shot.status = "done";
+    } else if (taskId || status) {
+      shot.status = "inProgress";
+    }
+
+    const provider = normalizeVideoText(structuredContent.provider);
+    const model = normalizeVideoText(structuredContent.model);
+
+    if (provider) {
+      shot.provider = provider;
+    }
+
+    if (model) {
+      shot.model = model;
+    }
+
+    shot.rawResult = structuredContent.result && typeof structuredContent.result === "object" ? structuredContent.result : structuredContent;
+    shot.output = [
+      shot.output,
+      taskId ? `任务 ID：${taskId}` : "",
+      status ? `任务状态：${status}` : "",
+      artifact ? `视频地址：${artifact.url}` : ""
+    ]
+      .map((line) => String(line ?? "").trim())
+      .filter(Boolean)
+      .join("\n\n");
+    touchVideoShot(shot);
+  }
+
   function setVideoShotDurationSeconds(shot, value) {
     if (!shot) {
       return;
@@ -772,16 +891,73 @@ export function createVideoActions({
     setVideoTab("generate");
   }
 
-  function submitVideoShot() {
+  async function submitVideoShot() {
     const shot = activeVideoShot.value;
+    const project = activeVideoProject.value;
 
     if (!shot) {
       return;
     }
 
-    shot.status = "done";
-    touchVideoShot(shot);
-    setStatus("视频镜头已提交。", "success");
+    if (ui.marketplace.video.isGenerating) {
+      return;
+    }
+
+    if (!desktopApi?.callMcpServerTool) {
+      setVideoFeedback("Gordon Tools 桥接未就绪。", "danger");
+      return;
+    }
+
+    try {
+      ui.marketplace.video.isGenerating = true;
+      const isQuery = Boolean(shot.taskId);
+      setVideoFeedback(isQuery ? "正在查询视频生成结果..." : "正在调用 video_gen 提交生成任务...", "neutral");
+      setStatus(`${VIDEO_APP_NAME}${isQuery ? "正在查询视频任务。" : "正在提交视频生成任务。"}`, "neutral");
+
+      const toolResult = await desktopApi.callMcpServerTool({
+        serverId: BUILTIN_GORDON_TOOLS_MCP_ID,
+        toolName: "video_gen",
+        arguments: isQuery
+          ? {
+              operation: "query",
+              provider: "seedance",
+              taskId: shot.taskId
+            }
+          : buildVideoToolArguments(project, shot)
+      });
+
+      if (toolResult?.isError) {
+        throw new Error(normalizeVideoText(toolResult.contentText) || "video_gen 调用失败");
+      }
+
+      applyVideoToolResultToShot(shot, toolResult);
+      const artifact = extractVideoArtifact(toolResult);
+      const taskId = extractVideoTaskId(toolResult);
+      const status = extractVideoStatus(toolResult);
+      const completionState = getVideoToolCompletionState(toolResult);
+
+      if (artifact) {
+        setVideoFeedback("已取得视频结果，视频地址已回填。", "success");
+        setStatus(`${VIDEO_APP_NAME}已取得视频。`, "success");
+      } else if (completionState.pollFailed) {
+        const suffix = completionState.pollError ? `：${completionState.pollError}` : "";
+        setVideoFeedback(`视频任务已提交，但查询生成结果失败${suffix}`, "warning");
+        setStatus(`${VIDEO_APP_NAME}视频生成查询失败。`, "warning");
+      } else if (completionState.pending || completionState.pollExhausted) {
+        setVideoFeedback(taskId ? `视频仍在生成中，任务 ID：${taskId}` : status ? `视频仍在生成中：${status}` : "视频仍在生成中。", "neutral");
+        setStatus(`${VIDEO_APP_NAME}视频仍在生成中。`, "neutral");
+      } else {
+        setVideoFeedback(taskId ? `视频任务已处理，任务 ID：${taskId}` : status ? `任务状态：${status}` : "视频任务已处理。", "neutral");
+        setStatus(`${VIDEO_APP_NAME}视频任务已处理。`, "neutral");
+      }
+    } catch (error) {
+      console.error("Failed to call video_gen", error);
+      const message = getErrorMessage(error);
+      setVideoFeedback(`视频生成失败：${message}`, "danger");
+      setStatus(`${VIDEO_APP_NAME}视频生成失败：${message}`, "danger");
+    } finally {
+      ui.marketplace.video.isGenerating = false;
+    }
   }
 
   function buildVideoQuickPrompt() {

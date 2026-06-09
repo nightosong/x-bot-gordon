@@ -1374,9 +1374,12 @@ function buildGordonConfirmWindowHtml(options: GordonConfirmWindowOptions, confi
 
       .dialog {
         position: relative;
+        display: flex;
+        flex-direction: column;
         width: 100vw;
+        height: 100vh;
         min-height: 100vh;
-        padding: 18px;
+        padding: 18px 18px 22px;
         overflow: hidden;
         border: 1px solid var(--line);
         border-radius: 0;
@@ -1504,7 +1507,9 @@ function buildGordonConfirmWindowHtml(options: GordonConfirmWindowOptions, confi
         z-index: 1;
         display: grid;
         gap: 7px;
-        max-height: 142px;
+        flex: 1 1 auto;
+        min-height: 58px;
+        max-height: 118px;
         margin: 13px 0 0;
         padding: 10px;
         border: 1px solid rgba(151, 182, 216, 0.13);
@@ -1562,11 +1567,13 @@ function buildGordonConfirmWindowHtml(options: GordonConfirmWindowOptions, confi
 
       .actions {
         position: relative;
-        z-index: 1;
+        z-index: 3;
+        flex: 0 0 auto;
         display: flex;
         justify-content: flex-end;
         gap: 9px;
-        margin-top: 16px;
+        margin-top: 14px;
+        padding-bottom: 2px;
         -webkit-app-region: no-drag;
       }
 
@@ -1684,7 +1691,7 @@ function showGordonConfirmWindow(ownerWindow: BrowserWindow | null, options: Gor
     const cancelUrl = `gordon-confirm://${requestId}/cancel`;
     const confirmWindow = new BrowserWindow({
       width: 540,
-      height: 358,
+      height: 374,
       parent: ownerWindow ?? undefined,
       modal: Boolean(ownerWindow),
       resizable: false,

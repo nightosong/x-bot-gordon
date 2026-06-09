@@ -152,6 +152,17 @@ function extractMusicStatus(toolResult) {
   return normalizeMusicText(structuredContent.status);
 }
 
+function getMusicToolCompletionState(toolResult) {
+  const structuredContent = extractMusicStructuredContent(toolResult);
+  return {
+    pending: structuredContent.pending === true,
+    completed: structuredContent.completed === true,
+    pollExhausted: structuredContent.pollExhausted === true,
+    pollFailed: structuredContent.pollFailed === true,
+    pollError: normalizeMusicText(structuredContent.pollError)
+  };
+}
+
 export function createMusicActions({
   activeFeature,
   createLocalId,
@@ -1018,8 +1029,22 @@ export function createMusicActions({
       applyMusicToolResultToTrack(track, toolResult);
       const artifact = extractMusicAudioArtifact(toolResult);
       const taskId = extractMusicTaskId(toolResult);
-      setMusicFeedback(artifact ? "音乐成品已回填到曲目播放器。" : taskId ? `生成任务已提交：${taskId}` : "生成任务已提交。", "success");
-      setStatus(artifact ? `${MUSIC_APP_NAME}已生成音频。` : `${MUSIC_APP_NAME}已提交音乐生成任务。`, "success");
+      const completionState = getMusicToolCompletionState(toolResult);
+
+      if (artifact) {
+        setMusicFeedback("音乐成品已回填到曲目播放器。", "success");
+        setStatus(`${MUSIC_APP_NAME}已生成音频。`, "success");
+      } else if (completionState.pollFailed) {
+        const suffix = completionState.pollError ? `：${completionState.pollError}` : "";
+        setMusicFeedback(`音乐任务已提交，但查询生成结果失败${suffix}`, "warning");
+        setStatus(`${MUSIC_APP_NAME}音乐生成查询失败。`, "warning");
+      } else if (completionState.pending || completionState.pollExhausted) {
+        setMusicFeedback(taskId ? `音乐仍在生成中，任务 ID：${taskId}` : "音乐仍在生成中。", "neutral");
+        setStatus(`${MUSIC_APP_NAME}音乐仍在生成中。`, "neutral");
+      } else {
+        setMusicFeedback(taskId ? `音乐任务已处理，任务 ID：${taskId}` : "音乐任务已处理。", "neutral");
+        setStatus(`${MUSIC_APP_NAME}音乐任务已处理。`, "neutral");
+      }
     } catch (error) {
       console.error("Failed to call music_gen", error);
       const message = getErrorMessage(error);
@@ -1068,7 +1093,18 @@ export function createMusicActions({
       applyMusicToolResultToTrack(track, toolResult);
       const artifact = extractMusicAudioArtifact(toolResult);
       const status = extractMusicStatus(toolResult);
-      setMusicFeedback(artifact ? "已取得音频结果。" : status ? `任务状态：${status}` : "已查询任务。", artifact ? "success" : "neutral");
+      const completionState = getMusicToolCompletionState(toolResult);
+
+      if (artifact) {
+        setMusicFeedback("已取得音频结果。", "success");
+      } else if (completionState.pollFailed) {
+        const suffix = completionState.pollError ? `：${completionState.pollError}` : "";
+        setMusicFeedback(`查询生成结果失败${suffix}`, "warning");
+      } else if (completionState.pending || completionState.pollExhausted) {
+        setMusicFeedback(status ? `音乐仍在生成中：${status}` : "音乐仍在生成中。", "neutral");
+      } else {
+        setMusicFeedback(status ? `任务状态：${status}` : "已查询任务。", "neutral");
+      }
     } catch (error) {
       console.error("Failed to query music_gen", error);
       const message = getErrorMessage(error);
