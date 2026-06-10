@@ -2435,6 +2435,7 @@
                         </label>
 
                         <div class="field writing-intro-field comic-storyboard-editor-field">
+                          <span class="field-label">分镜生图提示词</span>
                           <FieldAiOptimizer
                             :actions="fieldAiActions"
                             :state="ui.marketplace.fieldAi"
@@ -2549,14 +2550,6 @@
                       </details>
 
                       <template v-if="activeComicChapterImage">
-                        <section class="comic-selected-image-panel">
-                          <div>
-                            <p class="feature-kicker">Selected Image</p>
-                            <h3>{{ activeComicChapterImage.alt || `画面 ${activeComicChapterImageIndex + 1}` }}</h3>
-                          </div>
-                          <span class="status-pill">{{ activeComicChapterImageIndex + 1 }} / {{ activeComicStoryboardImages.length }}</span>
-                        </section>
-
                         <details class="comic-inspector-fold" open>
                           <summary>
                             <span>图片参数</span>
@@ -2616,13 +2609,6 @@
                           </div>
                         </details>
                       </template>
-
-                      <section v-else class="comic-selected-image-panel is-empty">
-                        <div>
-                          <p class="feature-kicker">Selected Image</p>
-                          <h3>暂无选中图片</h3>
-                        </div>
-                      </section>
                     </aside>
                   </div>
                 </div>

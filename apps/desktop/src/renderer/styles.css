@@ -4146,6 +4146,14 @@ canvas {
   min-height: 92px;
 }
 
+.comic-storyboard-editor-field .comic-prompt-textarea,
+.comic-storyboard-editor-field .comic-prompt-textarea.writing-editor-textarea {
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  font-size: 12px;
+  font-weight: 520;
+  line-height: 1.58;
+}
+
 .comic-compact-input {
   min-height: 30px;
   padding: 7px 9px;
@@ -4363,7 +4371,7 @@ canvas {
 
 .comic-storyboard-rail-head,
 .comic-storyboard-stage-head {
-  padding: 10px 11px;
+  padding: 7px 10px;
   border-bottom: 1px solid rgba(247, 243, 235, 0.08);
 }
 
@@ -4520,14 +4528,20 @@ canvas {
   min-width: 0;
 }
 
+.comic-storyboard-stage-copy .feature-kicker {
+  margin-bottom: 3px;
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+}
+
 .comic-storyboard-generate-button {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: 31px;
-  padding: 0 10px;
-  font-size: 11.5px;
+  gap: 5px;
+  min-height: 26px;
+  padding: 0 8px;
+  font-size: 10.5px;
   font-weight: 900;
   white-space: nowrap;
 }
@@ -4543,7 +4557,7 @@ canvas {
   margin: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 900;
   letter-spacing: 0;
   text-overflow: ellipsis;
@@ -4801,44 +4815,10 @@ canvas {
 }
 
 .comic-chapter-story-panel,
-.comic-selected-image-panel,
 .comic-inspector-fold {
   border: 1px solid rgba(247, 243, 235, 0.095);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.032);
-}
-
-.comic-selected-image-panel {
-  display: grid;
-  gap: 8px;
-  padding: 11px;
-}
-
-.comic-selected-image-panel:not(.is-empty) {
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-}
-
-.comic-selected-image-panel h3 {
-  min-width: 0;
-  margin: 0;
-  overflow: hidden;
-  color: var(--text);
-  font-size: 14px;
-  font-weight: 900;
-  letter-spacing: 0;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.comic-selected-image-panel p {
-  margin: 0;
-}
-
-.comic-selected-image-panel.is-empty p:last-child {
-  color: rgba(247, 243, 235, 0.62);
-  font-size: 12px;
-  line-height: 1.58;
 }
 
 .comic-chapter-story-panel {

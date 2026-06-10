@@ -239,6 +239,10 @@ function toStringArray(value) {
   return [];
 }
 
+function uniqueStrings(values) {
+  return [...new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean))];
+}
+
 function getImageQuality(argumentsObject, provider) {
   if (provider !== "openai") {
     return "";
@@ -666,6 +670,19 @@ async function getTools() {
 }
 
 function sanitizeImageDataItem(item, index) {
+  if (typeof item === "string") {
+    const value = item.trim();
+    const isUrl = /^https?:\/\//iu.test(value);
+    const isDataUrl = /^data:image\//iu.test(value);
+
+    return {
+      index,
+      ...(isUrl ? { url: value } : {}),
+      ...(isDataUrl ? { dataUrlBytes: Buffer.byteLength(value, "utf8") } : {}),
+      ...(!isUrl && !isDataUrl ? { valueBytes: Buffer.byteLength(value, "utf8") } : {})
+    };
+  }
+
   if (!item || typeof item !== "object") {
     return {
       index,
@@ -673,16 +690,120 @@ function sanitizeImageDataItem(item, index) {
     };
   }
 
-  const url = typeof item.url === "string" && item.url.trim() ? item.url.trim() : undefined;
+  const url = normalizeImageArtifactUrl(item) || undefined;
+  const dataUrl = normalizeImageArtifactDataUrl(item);
   const revisedPrompt = typeof item.revised_prompt === "string" && item.revised_prompt.trim() ? item.revised_prompt.trim() : undefined;
-  const b64Json = typeof item.b64_json === "string" ? item.b64_json : "";
 
   return {
     index,
     ...(url ? { url } : {}),
     ...(revisedPrompt ? { revisedPrompt } : {}),
-    ...(b64Json ? { b64JsonBytes: Buffer.byteLength(b64Json, "utf8") } : {})
+    ...(dataUrl ? { dataUrlBytes: Buffer.byteLength(dataUrl, "utf8") } : {}),
+    responseKeys: Object.keys(item)
   };
+}
+
+function getImagePayloadCandidates(responseJson) {
+  const candidates = [];
+  const seen = new WeakSet();
+
+  function addCandidate(value) {
+    if (!value || typeof value !== "object") {
+      return;
+    }
+
+    if (seen.has(value)) {
+      return;
+    }
+
+    seen.add(value);
+    candidates.push(value);
+
+    if (Array.isArray(value)) {
+      return;
+    }
+
+    for (const key of ["resp_data", "respData", "result", "data", "output", "outputs", "response"]) {
+      addCandidate(value[key]);
+    }
+  }
+
+  addCandidate(responseJson);
+  return candidates;
+}
+
+function addUniqueImageItem(items, seenObjectItems, seenPrimitiveItems, item) {
+  if (!item) {
+    return;
+  }
+
+  if (typeof item === "object") {
+    if (seenObjectItems.has(item)) {
+      return;
+    }
+
+    seenObjectItems.add(item);
+    items.push(item);
+    return;
+  }
+
+  const value = String(item).trim();
+
+  if (!value || seenPrimitiveItems.has(value)) {
+    return;
+  }
+
+  seenPrimitiveItems.add(value);
+  items.push(value);
+}
+
+function getImageDataItems(responseJson) {
+  const items = [];
+  const seenObjectItems = new WeakSet();
+  const seenPrimitiveItems = new Set();
+
+  for (const candidate of getImagePayloadCandidates(responseJson)) {
+    if (Array.isArray(candidate)) {
+      for (const item of candidate) {
+        addUniqueImageItem(items, seenObjectItems, seenPrimitiveItems, item);
+      }
+      continue;
+    }
+
+    if (!candidate || typeof candidate !== "object") {
+      continue;
+    }
+
+    for (const key of ["data", "images", "image_urls", "imageUrls", "output_urls", "outputUrls", "artifacts"]) {
+      if (Array.isArray(candidate[key])) {
+        for (const item of candidate[key]) {
+          addUniqueImageItem(items, seenObjectItems, seenPrimitiveItems, item);
+        }
+      }
+    }
+
+    for (const key of [
+      "image",
+      "image_url",
+      "imageUrl",
+      "url",
+      "dataUrl",
+      "data_url",
+      "outputUrl",
+      "output_url",
+      "b64_json",
+      "base64",
+      "image_base64",
+      "imageBase64"
+    ]) {
+      if (candidate[key]) {
+        addUniqueImageItem(items, seenObjectItems, seenPrimitiveItems, candidate);
+        break;
+      }
+    }
+  }
+
+  return items;
 }
 
 function sanitizeImageResponse(responseJson) {
@@ -692,16 +813,24 @@ function sanitizeImageResponse(responseJson) {
     };
   }
 
+  const respData = responseJson.resp_data && typeof responseJson.resp_data === "object" ? responseJson.resp_data : null;
+  const imageItems = getImageDataItems(responseJson);
+
   return {
     ...(responseJson.id ? { id: responseJson.id } : {}),
+    ...(responseJson.code !== undefined ? { code: responseJson.code } : {}),
+    ...(responseJson.code_msg ? { codeMsg: responseJson.code_msg } : {}),
+    ...(responseJson.trace_id ? { traceId: responseJson.trace_id } : {}),
     ...(responseJson.created ? { created: responseJson.created } : {}),
     ...(responseJson.usage ? { usage: responseJson.usage } : {}),
     ...(responseJson.cost ? { cost: responseJson.cost } : {}),
+    ...(respData ? { respDataKeys: Object.keys(respData) } : {}),
     ...(Array.isArray(responseJson.data)
       ? {
           data: responseJson.data.map((item, index) => sanitizeImageDataItem(item, index))
         }
       : {}),
+    ...(imageItems.length ? { imageItems: imageItems.map((item, index) => sanitizeImageDataItem(item, index)) } : {}),
     responseKeys: Object.keys(responseJson)
   };
 }
@@ -711,67 +840,149 @@ function getImageResponseError(responseJson) {
     return "";
   }
 
-  if (responseJson.error) {
-    const error = responseJson.error;
-
-    if (typeof error === "string") {
-      return error.trim();
+  for (const candidate of getImagePayloadCandidates(responseJson)) {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+      continue;
     }
 
-    if (typeof error === "object") {
-      const code = typeof error.code === "string" && error.code.trim() ? error.code.trim() : "";
-      const message = typeof error.message === "string" && error.message.trim() ? error.message.trim() : "";
-      return [code, message].filter(Boolean).join(": ");
+    const responseCode = candidate.code;
+    const responseCodeText = String(responseCode ?? "").trim().toLowerCase();
+    const isSuccessCode =
+      responseCode === undefined ||
+      responseCodeText === "" ||
+      responseCodeText === "0" ||
+      responseCodeText === "success" ||
+      responseCodeText === "ok" ||
+      responseCodeText === "succeeded";
+    const codeMessage = typeof candidate.code_msg === "string" && candidate.code_msg.trim() ? candidate.code_msg.trim() : "";
+
+    if (!isSuccessCode) {
+      return [String(candidate.code), codeMessage].filter(Boolean).join(": ");
     }
 
-    return String(error);
-  }
+    if (candidate.error) {
+      const error = candidate.error;
 
-  if (typeof responseJson.message === "string" && responseJson.message.trim()) {
-    return responseJson.message.trim();
+      if (typeof error === "string") {
+        return error.trim();
+      }
+
+      if (typeof error === "object") {
+        const code = typeof error.code === "string" && error.code.trim() ? error.code.trim() : "";
+        const message = typeof error.message === "string" && error.message.trim() ? error.message.trim() : "";
+        return [code, message].filter(Boolean).join(": ");
+      }
+
+      return String(error);
+    }
+
+    if (typeof candidate.message === "string" && candidate.message.trim()) {
+      const message = candidate.message.trim();
+
+      if (!/^(success|ok|succeeded)$/iu.test(message)) {
+        return message;
+      }
+    }
   }
 
   return "";
 }
 
 function normalizeImageArtifactUrl(item) {
+  if (typeof item === "string") {
+    const value = item.trim();
+    return /^https?:\/\//iu.test(value) ? value : "";
+  }
+
   if (!item || typeof item !== "object") {
     return "";
   }
 
-  const directUrl = typeof item.url === "string" && item.url.trim() ? item.url.trim() : "";
+  const directUrl = [
+    item.url,
+    item.imageUrl,
+    item.image_url,
+    item.outputUrl,
+    item.output_url
+  ]
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .find(Boolean);
 
-  if (directUrl) {
+  if (directUrl && !directUrl.startsWith("data:image/") && !isLikelyImageBase64(directUrl)) {
     return directUrl;
   }
 
   if (item.image_url && typeof item.image_url === "object" && typeof item.image_url.url === "string") {
-    return item.image_url.url.trim();
+    const nestedUrl = item.image_url.url.trim();
+    return nestedUrl && !nestedUrl.startsWith("data:image/") && !isLikelyImageBase64(nestedUrl) ? nestedUrl : "";
+  }
+
+  if (item.image && typeof item.image === "object") {
+    return normalizeImageArtifactUrl(item.image);
   }
 
   return "";
 }
 
+function isLikelyImageBase64(value) {
+  const text = String(value ?? "").trim();
+  return text.length > 80 && /^[A-Za-z0-9+/=\s]+$/u.test(text);
+}
+
 function normalizeImageArtifactDataUrl(item) {
-  if (!item || typeof item !== "object" || typeof item.b64_json !== "string" || !item.b64_json.trim()) {
+  if (typeof item === "string") {
+    const value = item.trim();
+
+    if (value.startsWith("data:image/")) {
+      return value;
+    }
+
+    return isLikelyImageBase64(value) ? `data:image/png;base64,${value}` : "";
+  }
+
+  if (!item || typeof item !== "object") {
     return "";
   }
 
-  const rawValue = item.b64_json.trim();
+  const rawValue = [
+    item.b64_json,
+    item.base64,
+    item.image_base64,
+    item.imageBase64,
+    item.dataUrl,
+    item.data_url,
+    item.url,
+    item.imageUrl,
+    item.image_url,
+    item.outputUrl,
+    item.output_url
+  ]
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .find(Boolean);
+
+  if (!rawValue && item.image && typeof item.image === "object") {
+    return normalizeImageArtifactDataUrl(item.image);
+  }
+
+  if (!rawValue) {
+    return "";
+  }
 
   if (rawValue.startsWith("data:image/")) {
     return rawValue;
   }
 
-  return `data:image/png;base64,${rawValue}`;
+  return isLikelyImageBase64(rawValue) ? `data:image/png;base64,${rawValue}` : "";
 }
 
 function extractImageArtifacts(responseJson, context) {
-  if (!responseJson || typeof responseJson !== "object" || !Array.isArray(responseJson.data)) {
+  const imageItems = getImageDataItems(responseJson);
+
+  if (!imageItems.length) {
     return [];
   }
 
-  return responseJson.data
+  return imageItems
     .map((item, index) => {
       const url = normalizeImageArtifactUrl(item);
       const dataUrl = normalizeImageArtifactDataUrl(item);
@@ -2397,9 +2608,10 @@ async function callImageGen(argumentsObject) {
 
   const { provider, runtime } = resolved;
   const prompt = String(argumentsObject?.prompt ?? "").trim();
-  const image = String(argumentsObject?.image ?? "").trim();
-  const images = toStringArray(argumentsObject?.images);
-  const hasImageInput = Boolean(image) || images.length > 0;
+  const imageInputs = uniqueStrings([String(argumentsObject?.image ?? "").trim(), ...toStringArray(argumentsObject?.images)]);
+  const image = imageInputs[0] ?? "";
+  const images = imageInputs;
+  const hasImageInput = imageInputs.length > 0;
   const operationName = hasImageInput ? "image_to_image" : "text_to_image";
   const operation = runtime.operations[operationName];
 
@@ -2454,7 +2666,7 @@ async function callImageGen(argumentsObject) {
     requestBody: sanitizedRequestBody,
     prompt: truncateText(prompt, 240),
     hasImage: Boolean(image),
-    imageCount: images.length,
+    imageCount: imageInputs.length,
     timeoutMs: IMAGE_GEN_TIMEOUT_MS
   };
   const requestStartedAt = Date.now();
