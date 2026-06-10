@@ -2292,6 +2292,22 @@
                             }}
                           </h3>
                         </div>
+                        <button
+                          type="button"
+                          class="model-action comic-storyboard-generate-button"
+                          :class="{ 'is-running': ui.marketplace.comic.isAiRunning && activeComicAiTask?.id === 'chapterImage' }"
+                          :disabled="ui.marketplace.comic.isAiRunning || !activeComicStoryboard"
+                          :aria-label="ui.marketplace.comic.isAiRunning && activeComicAiTask?.id === 'chapterImage' ? '正在生成单张漫画' : '生成单张漫画'"
+                          :title="activeComicStoryboard ? '生成单张漫画' : '请先选择分镜'"
+                          @click="generateCurrentComicStoryboardImage"
+                        >
+                          <GIcon
+                            :name="ui.marketplace.comic.isAiRunning && activeComicAiTask?.id === 'chapterImage' ? 'loading' : 'sparkles'"
+                            :spin="ui.marketplace.comic.isAiRunning && activeComicAiTask?.id === 'chapterImage'"
+                            :size="13"
+                          />
+                          <span>{{ ui.marketplace.comic.isAiRunning && activeComicAiTask?.id === 'chapterImage' ? "生成中" : "生成单张" }}</span>
+                        </button>
                       </div>
 
                       <div v-if="activeComicStoryboardImages.length" class="comic-chapter-image-list comic-storyboard-image-list">
@@ -3721,6 +3737,7 @@ const {
   applyComicAiOutput,
   comicAiImageSizeOptions,
   comicAiQualityOptions,
+  generateCurrentComicStoryboardImage,
   generateComicAiOutput,
   getComicAiFeedbackClass,
   getComicAiRunButtonLabel,

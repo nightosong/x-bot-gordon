@@ -857,6 +857,35 @@ export function createComicAiActions({
     }
   }
 
+  async function generateCurrentComicStoryboardImage() {
+    const state = getState();
+
+    if (state.isAiRunning) {
+      return;
+    }
+
+    if (!activeComicChapter.value) {
+      setComicAiFeedback("请先选择一个漫画章节。", "warning");
+      setStatus("请先选择一个漫画章节。", "warning");
+      return;
+    }
+
+    if (!activeComicStoryboard?.value) {
+      setComicAiFeedback("请先选择或新增一个分镜。", "warning");
+      setStatus("请先选择或新增一个分镜。", "warning");
+      return;
+    }
+
+    state.aiTaskId = "chapterImage";
+    state.aiImageCount = 1;
+
+    await generateComicAiOutput();
+
+    if (!state.isAiRunning && Array.isArray(state.aiGeneratedImages) && state.aiGeneratedImages.length) {
+      applyComicImageOutput("append");
+    }
+  }
+
   function getComicTextFieldValue(task) {
     const project = activeComicProject.value;
 
@@ -1049,6 +1078,7 @@ export function createComicAiActions({
     applyComicAiOutput,
     comicAiImageSizeOptions: COMIC_AI_IMAGE_SIZE_OPTIONS,
     comicAiQualityOptions: COMIC_AI_QUALITY_OPTIONS,
+    generateCurrentComicStoryboardImage,
     generateComicAiOutput,
     getComicAiFeedbackClass,
     getComicAiRunButtonLabel,

@@ -4469,6 +4469,23 @@ canvas {
   min-width: 0;
 }
 
+.comic-storyboard-generate-button {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 31px;
+  padding: 0 10px;
+  font-size: 11.5px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.comic-storyboard-generate-button.is-running {
+  border-color: rgba(245, 200, 107, 0.24);
+  background: rgba(245, 200, 107, 0.1);
+}
+
 .comic-storyboard-stage-head h3,
 .comic-storyboard-editor-head h3 {
   min-width: 0;
