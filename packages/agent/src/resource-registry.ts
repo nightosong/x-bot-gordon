@@ -648,9 +648,18 @@ function inferCandidates(text: string, resolvedRefs: AgentResourceResolvedRef[])
         confidence: 0.84,
         mentions: [text],
         resolvedRefs: refsForKinds(resolvedRefs, ["comic_project", "comic_chapter", "chapter", "artifact"]),
-        capabilities: ["read", "plan", "split_storyboard", "generate_image", "update", "verify_visual_continuity"],
+        capabilities: ["read", "plan", "import_story", "split_storyboard", "generate_image", "update", "verify_visual_continuity"],
         preferredExecutionDomains: ["comic_asset", "application_asset", "generation"],
-        toolHints: ["comic_list_projects", "comic_read_project", "comic_update_chapter", "comic_update_chapter_images", "comic_update_assets", "image_gen"],
+        toolHints: [
+          "comic_list_projects",
+          "comic_create_project",
+          "comic_read_project",
+          "comic_import_chapters",
+          "comic_update_chapter",
+          "comic_update_chapter_images",
+          "comic_update_assets",
+          "image_gen"
+        ],
         rationale: "任务涉及漫画、分镜、镜头或素材，应围绕漫画项目资源推进"
       })
     );
@@ -867,13 +876,24 @@ function buildCapabilityRegistry(candidates: AgentResourceCandidate[], intent: s
       riskBoundary: "read_only"
     });
     add({
+      id: "comic.import_story",
+      label: "导入小说故事到漫画项目",
+      intent: "update",
+      appliesTo: ["comic.project", "web.source"],
+      description: "把线上小说、上传文本或章节目录转入丹青溢彩，创建项目并批量写入章节正文/简介，供后续分镜和素材提取使用。",
+      preferredExecutionDomains: ["comic_asset", "application_asset", "web_research"],
+      toolHints: ["web_research", "read_web_page", "comic_create_project", "comic_import_chapters", "comic_read_project"],
+      verification: ["写回工具 applied=true", "读回项目章节数和来源信息"],
+      riskBoundary: "stateful"
+    });
+    add({
       id: "comic.split_storyboard",
       label: "拆分漫画分镜",
       intent: "generate",
       appliesTo: ["comic.project"],
       description: "基于章节正文或简介拆分多条分镜，维护镜头、画面、提示词和引用素材。",
       preferredExecutionDomains: ["comic_asset", "application_asset"],
-      toolHints: ["comic_read_project", "comic_update_chapter"],
+      toolHints: ["comic_read_project", "comic_import_chapters", "comic_update_chapter"],
       verification: ["章节 storyboards 数量与目标一致", "写后读回目标章节"],
       riskBoundary: "stateful"
     });
@@ -1037,6 +1057,14 @@ function buildResourceGatewayPlan(
   const argumentHints = buildGatewayArgumentHints(primaryResource, resolvedRefs);
   const capability = (id: string): AgentResourceCapabilityDefinition | undefined => findCapabilityDefinition(registry, id);
   const hasIntent = (...intents: string[]): boolean => intents.includes(context.intent);
+  const searchableResourceText = normalizeSearchText(
+    [
+      primaryResource?.mentions.join(" "),
+      primaryResource?.capabilities.join(" "),
+      context.capabilities.join(" "),
+      resolvedRefs.map((ref) => ref.value).join(" ")
+    ].join(" ")
+  );
 
   if (!primaryResource) {
     return {
@@ -1106,6 +1134,17 @@ function buildResourceGatewayPlan(
     addGatewayStep(steps, createGatewayStep(capability("comic.read_project"), "inspect", argumentHints));
 
     if (hasIntent("generate", "update")) {
+      if (/导入|提取|抓取|小说|章节|目录|正文|source|url|web|convert|转换|改编/u.test(searchableResourceText)) {
+        addGatewayStep(
+          steps,
+          createGatewayStep(capability("comic.import_story"), "act", argumentHints, {
+            toolHints: ["web_research", "read_web_page", "comic_create_project", "comic_import_chapters", "comic_read_project"],
+            expectedOutcome: "线上或上传的小说来源被整理为丹青溢彩项目和章节正文/简介",
+            verificationMethod: "调用 comic_read_project 读回项目，确认 source、chapterCount、章节 title/content 已写入"
+          })
+        );
+      }
+
       addGatewayStep(
         steps,
         createGatewayStep(capability("comic.split_storyboard"), "act", argumentHints, {

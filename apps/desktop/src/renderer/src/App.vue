@@ -646,6 +646,7 @@ const writingAiActions = createWritingAiActions({
   normalizeWritingStoryAssetsForUi,
   parseWritingChapterIndex,
   persistWritingBookById,
+  refreshWorkbenchSnapshot,
   selectWritingChapter,
   setStatus,
   setWritingAiTaskPickerOpen,
@@ -733,6 +734,7 @@ const marketplaceAgentActions = createMarketplaceAgentActions({
   appContextProviders: marketplaceAgentContextProviders,
   createLocalId,
   desktopApi,
+  refreshWorkbenchSnapshot,
   resultHandlers: {
     comic: ({ result, output, artifacts }) => {
       ui.marketplace.comic.aiOutput = output;
@@ -743,14 +745,6 @@ const marketplaceAgentActions = createMarketplaceAgentActions({
         ui.marketplace.comic.aiGeneratedImages = images;
       }
 
-      const hasAppliedComicTool = (Array.isArray(result?.mcpCalls) ? result.mcpCalls : []).some((call) => {
-        const structured = call?.structuredContent && typeof call.structuredContent === "object" ? call.structuredContent : null;
-        return structured?.applicationId === "comic" && structured?.applied === true;
-      });
-
-      if (hasAppliedComicTool) {
-        void refreshWorkbenchSnapshot();
-      }
     },
     video: ({ output }) => {
       const shot = videoActions.activeVideoShot.value;
@@ -1068,7 +1062,12 @@ function restoreCommandWorkshopEntryState() {
 }
 
 function setActiveFeature(featureId) {
+  const previousFeatureId = activeFeature.value;
   activeFeature.value = featureId;
+
+  if (featureId !== FEATURE_HOME && previousFeatureId === FEATURE_COMMAND_WORKSHOP) {
+    void refreshWorkbenchSnapshot();
+  }
 
   if (featureId === FEATURE_MODEL_MANAGEMENT) {
     backModelManagement();

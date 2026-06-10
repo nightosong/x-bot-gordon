@@ -11,6 +11,7 @@ import type {
   ComicAssetType,
   ComicAssetView,
   ComicAssetViewKind,
+  ComicAssetVariant,
   ComicChapter,
   ComicChapterImage,
   ComicChapterStatus,
@@ -19,6 +20,8 @@ import type {
   ComicProject,
   ComicProjectFormat,
   ComicProjectPalette,
+  ComicSourceMeta,
+  ComicSourceRef,
   CommandWorkshopSession,
   DatabaseConnectionItem,
   GithubSkillImportRequest,
@@ -3296,6 +3299,89 @@ function normalizeComicAssetRefs(input: unknown): string[] {
   );
 }
 
+function normalizeOptionalComicChapterIndex(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  const parsed = Math.round(Number(value));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function normalizeComicSourceType(value: unknown): ComicSourceRef["sourceType"] {
+  const sourceType = String(value ?? "").trim();
+  return sourceType === "web" || sourceType === "novel" || sourceType === "chapter" || sourceType === "file" || sourceType === "manual"
+    ? sourceType
+    : "manual";
+}
+
+function normalizeComicProjectSourceType(value: unknown): ComicSourceMeta["sourceType"] {
+  const sourceType = String(value ?? "").trim();
+  return sourceType === "web" || sourceType === "novel" || sourceType === "file" || sourceType === "manual" ? sourceType : "manual";
+}
+
+function normalizeComicSourceRef(input: Partial<ComicSourceRef> | null | undefined): ComicSourceRef | null {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+
+  const sourceUrl = String(input.sourceUrl ?? "").trim();
+  const sourceTitle = String(input.sourceTitle ?? "").trim();
+  const chapterIndex = normalizeOptionalComicChapterIndex(input.chapterIndex);
+  const chapterTitle = String(input.chapterTitle ?? "").trim();
+  const note = String(input.note ?? "").trim();
+
+  if (!sourceUrl && !sourceTitle && chapterIndex === undefined && !chapterTitle && !note) {
+    return null;
+  }
+
+  return {
+    sourceType: normalizeComicSourceType(input.sourceType),
+    ...(sourceUrl ? { sourceUrl } : {}),
+    ...(sourceTitle ? { sourceTitle } : {}),
+    ...(chapterIndex !== undefined ? { chapterIndex } : {}),
+    ...(chapterTitle ? { chapterTitle } : {}),
+    ...(note ? { note } : {})
+  };
+}
+
+function normalizeComicSourceRefs(input: unknown): ComicSourceRef[] {
+  return (Array.isArray(input) ? input : [])
+    .map((entry) => normalizeComicSourceRef(entry as Partial<ComicSourceRef>))
+    .filter((entry): entry is ComicSourceRef => Boolean(entry));
+}
+
+function normalizeComicProjectSource(input: Partial<ComicSourceMeta> | null | undefined): ComicSourceMeta | undefined {
+  if (!input || typeof input !== "object") {
+    return undefined;
+  }
+
+  const sourceUrl = String(input.sourceUrl ?? "").trim();
+  const sourceTitle = String(input.sourceTitle ?? "").trim();
+  const importedAt = String(input.importedAt ?? "").trim();
+  const importedBy = String(input.importedBy ?? "").trim();
+  const chapterCount = normalizeOptionalComicChapterIndex(input.chapterCount);
+  const extractionStatus = String(input.extractionStatus ?? "").trim();
+  const notes = String(input.notes ?? "").trim();
+
+  if (!sourceUrl && !sourceTitle && !importedAt && !importedBy && chapterCount === undefined && !extractionStatus && !notes) {
+    return undefined;
+  }
+
+  return {
+    sourceType: normalizeComicProjectSourceType(input.sourceType),
+    ...(sourceUrl ? { sourceUrl } : {}),
+    ...(sourceTitle ? { sourceTitle } : {}),
+    ...(importedAt ? { importedAt } : {}),
+    ...(importedBy ? { importedBy } : {}),
+    ...(chapterCount !== undefined ? { chapterCount } : {}),
+    ...(extractionStatus === "planned" || extractionStatus === "partial" || extractionStatus === "complete" || extractionStatus === "blocked"
+      ? { extractionStatus }
+      : {}),
+    ...(notes ? { notes } : {})
+  };
+}
+
 function cleanComicImageSource(value: unknown): string {
   const raw = String(value ?? "").trim().replace(/^<|>$/g, "");
   const titleStart = raw.search(/\s+["']/);
@@ -3572,6 +3658,7 @@ function normalizeComicChapter(input: Partial<ComicChapter> | null | undefined, 
     summary: String(input?.summary ?? ""),
     prompt: chapterPrompt,
     content: stripComicChapterImageMarkdown(content),
+    sourceRefs: normalizeComicSourceRefs(input?.sourceRefs),
     storyboards: storyboards.map((shot) => ({
       ...shot,
       imageIds: Array.from(
@@ -3629,6 +3716,47 @@ function normalizeComicAssetViews(input: unknown): ComicAssetView[] {
   return (Array.isArray(input) ? input : []).map((view, index) => normalizeComicAssetView(view as Partial<ComicAssetView>, index));
 }
 
+function normalizeComicAssetVariant(
+  input: Partial<ComicAssetVariant> | null | undefined,
+  index = 0,
+  fallbackViews: ComicAssetView[] = []
+): ComicAssetVariant | null {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+
+  const now = new Date().toISOString();
+  const views = normalizeComicAssetViews(input.views);
+  const label = String(input.label ?? "").trim();
+  const description = String(input.description ?? "");
+  const prompt = String(input.prompt ?? "");
+  const chapterStartIndex = normalizeOptionalComicChapterIndex(input.chapterStartIndex);
+  const chapterEndIndex = normalizeOptionalComicChapterIndex(input.chapterEndIndex);
+  const sourceRefs = normalizeComicSourceRefs(input.sourceRefs);
+
+  if (!label && !description && !prompt && chapterStartIndex === undefined && chapterEndIndex === undefined && !views.length && !sourceRefs.length) {
+    return null;
+  }
+
+  return {
+    id: String(input.id ?? "").trim() || `comic_asset_variant_${randomUUID()}`,
+    label: label || `版本 ${index + 1}`,
+    ...(chapterStartIndex !== undefined ? { chapterStartIndex } : {}),
+    ...(chapterEndIndex !== undefined ? { chapterEndIndex } : {}),
+    ...(description ? { description } : {}),
+    ...(prompt ? { prompt } : {}),
+    views: views.length ? views : fallbackViews,
+    ...(sourceRefs.length ? { sourceRefs } : {}),
+    updatedAt: String(input.updatedAt ?? "").trim() || now
+  };
+}
+
+function normalizeComicAssetVariants(input: unknown, fallbackViews: ComicAssetView[] = []): ComicAssetVariant[] {
+  return (Array.isArray(input) ? input : [])
+    .map((variant, index) => normalizeComicAssetVariant(variant as Partial<ComicAssetVariant>, index, fallbackViews))
+    .filter((variant): variant is ComicAssetVariant => Boolean(variant));
+}
+
 function isLegacyEmptyComicTurnaroundViewSet(type: ComicAssetType, views: ComicAssetView[]): boolean {
   if (type !== "character" && type !== "prop") {
     return false;
@@ -3681,6 +3809,11 @@ function normalizeComicAsset(
   const type = normalizeComicAssetType(input?.type);
   const defaultName = type === "character" ? "人物素材" : type === "prop" ? "物品素材" : "场景素材";
   const views = normalizeComicAssetViews(input?.views);
+  const normalizedViews = views.length && !isLegacyEmptyComicTurnaroundViewSet(type, views) ? views : getDefaultComicAssetViews(type);
+  const chapterStartIndex = normalizeOptionalComicChapterIndex(input?.chapterStartIndex);
+  const chapterEndIndex = normalizeOptionalComicChapterIndex(input?.chapterEndIndex);
+  const sourceRefs = normalizeComicSourceRefs(input?.sourceRefs);
+  const variants = normalizeComicAssetVariants(input?.variants, normalizedViews);
 
   return {
     id: String(input?.id ?? "").trim() || `comic_asset_${randomUUID()}`,
@@ -3688,7 +3821,12 @@ function normalizeComicAsset(
     type,
     description: String(input?.description ?? ""),
     prompt: String(input?.prompt ?? ""),
-    views: views.length && !isLegacyEmptyComicTurnaroundViewSet(type, views) ? views : getDefaultComicAssetViews(type),
+    variantLabel: String(input?.variantLabel ?? "").trim() || undefined,
+    ...(chapterStartIndex !== undefined ? { chapterStartIndex } : {}),
+    ...(chapterEndIndex !== undefined ? { chapterEndIndex } : {}),
+    ...(sourceRefs.length ? { sourceRefs } : {}),
+    views: normalizedViews,
+    ...(variants.length ? { variants } : {}),
     createdAt,
     updatedAt: String(input?.updatedAt ?? "").trim() || createdAt
   };
@@ -3737,6 +3875,7 @@ function normalizeComicProject(input: Partial<ComicProject> | null | undefined, 
     coverUrl: String(input?.coverUrl ?? "").trim(),
     coverPrompt: String(input?.coverPrompt ?? ""),
     coverShouldShowTitle: input?.coverShouldShowTitle !== false,
+    source: normalizeComicProjectSource(input?.source),
     assets,
     chapters,
     createdAt,

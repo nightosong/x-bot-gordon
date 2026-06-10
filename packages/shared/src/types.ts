@@ -1006,6 +1006,26 @@ export type ComicStoryboardKind = "dialogue" | "scene" | "action" | "transition"
 export type ComicAssetType = "character" | "prop" | "scene";
 export type ComicAssetViewKind = "turnaround" | "front" | "side" | "back" | "angle" | "wide" | "detail";
 
+export interface ComicSourceRef {
+  sourceType: "web" | "novel" | "chapter" | "file" | "manual";
+  sourceUrl?: string;
+  sourceTitle?: string;
+  chapterIndex?: number;
+  chapterTitle?: string;
+  note?: string;
+}
+
+export interface ComicSourceMeta {
+  sourceType: "web" | "novel" | "file" | "manual";
+  sourceUrl?: string;
+  sourceTitle?: string;
+  importedAt?: string;
+  importedBy?: string;
+  chapterCount?: number;
+  extractionStatus?: "planned" | "partial" | "complete" | "blocked";
+  notes?: string;
+}
+
 export interface ComicAssetView {
   id: string;
   kind: ComicAssetViewKind;
@@ -1014,13 +1034,30 @@ export interface ComicAssetView {
   prompt?: string;
 }
 
+export interface ComicAssetVariant {
+  id: string;
+  label: string;
+  chapterStartIndex?: number;
+  chapterEndIndex?: number;
+  description?: string;
+  prompt?: string;
+  views: ComicAssetView[];
+  sourceRefs?: ComicSourceRef[];
+  updatedAt: string;
+}
+
 export interface ComicAsset {
   id: string;
   name: string;
   type: ComicAssetType;
   description: string;
   prompt: string;
+  variantLabel?: string;
+  chapterStartIndex?: number;
+  chapterEndIndex?: number;
+  sourceRefs?: ComicSourceRef[];
   views: ComicAssetView[];
+  variants?: ComicAssetVariant[];
   createdAt: string;
   updatedAt: string;
 }
@@ -1057,6 +1094,7 @@ export interface ComicChapter {
   summary: string;
   prompt: string;
   content: string;
+  sourceRefs?: ComicSourceRef[];
   storyboards: ComicStoryboardShot[];
   images: ComicChapterImage[];
   status: ComicChapterStatus;
@@ -1079,6 +1117,7 @@ export interface ComicProject {
   coverUrl?: string;
   coverPrompt?: string;
   coverShouldShowTitle?: boolean;
+  source?: ComicSourceMeta;
   assets: ComicAsset[];
   chapters: ComicChapter[];
   createdAt: string;

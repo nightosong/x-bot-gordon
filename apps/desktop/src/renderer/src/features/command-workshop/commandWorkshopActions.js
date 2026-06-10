@@ -1,7 +1,6 @@
 import { computed } from "vue";
 
 import {
-  BUILTIN_APPLICATION_TOOLS_MCP_ID,
   BUILTIN_GORDON_AGENT_ID,
   buildCommandWorkshopArtifact,
   buildCommandWorkshopTitle,
@@ -10,6 +9,7 @@ import {
   summarizeCommandWorkshopContent,
   truncateText
 } from "../../lib/presenter.js";
+import { didAgentMutateWorkbenchResources } from "../shell/workbenchRefreshDetection.js";
 import {
   buildCommandApplicationContext,
   buildCommandUserInputForAgent,
@@ -1107,15 +1107,7 @@ export function createCommandWorkshopActions({
       ui.command.cancelRequested = false;
       ui.command.activeProgressEventId = null;
       ui.command.liveProgress = null;
-      if (
-        typeof refreshWorkbenchSnapshot === "function" &&
-        result.mcpCalls?.some(
-          (call) =>
-            call?.serverId === BUILTIN_APPLICATION_TOOLS_MCP_ID &&
-            call?.structuredContent?.applied === true &&
-            call?.isError !== true
-        )
-      ) {
+      if (typeof refreshWorkbenchSnapshot === "function" && didAgentMutateWorkbenchResources(result)) {
         await refreshWorkbenchSnapshot();
       }
       setStatus(`命令工坊已完成本轮响应（${result.profileLabel}）。`, "success");

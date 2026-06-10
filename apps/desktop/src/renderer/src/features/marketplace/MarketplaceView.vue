@@ -1768,22 +1768,34 @@
                         </button>
                       </div>
 
-                      <div v-if="!ui.marketplace.comic.isAssetRailCollapsed" class="comic-asset-create-row">
+                      <div v-if="!ui.marketplace.comic.isAssetRailCollapsed" class="comic-asset-toolbar">
+                        <div class="comic-asset-filter-tabs" role="tablist" aria-label="素材分类筛选">
+                          <button
+                            v-for="option in comicAssetFilterOptions"
+                            :key="option.value"
+                            type="button"
+                            class="comic-asset-filter-tab"
+                            :class="{ 'is-active': ui.marketplace.comic.assetTypeFilter === option.value }"
+                            :aria-selected="ui.marketplace.comic.assetTypeFilter === option.value ? 'true' : 'false'"
+                            @click="setComicAssetTypeFilter(option.value)"
+                          >
+                            {{ option.label }}
+                          </button>
+                        </div>
                         <button
-                          v-for="option in comicAssetTypeOptions"
-                          :key="option.value"
                           type="button"
-                          class="comic-asset-create-button"
-                          @click="createComicAsset(option.value)"
+                          class="comic-asset-create-button comic-asset-create-icon"
+                          aria-label="添加素材"
+                          title="添加素材"
+                          @click="createComicAsset(ui.marketplace.comic.assetTypeFilter)"
                         >
-                          <GIcon name="add" :size="12" />
-                          {{ option.label }}
+                          <GIcon name="add" :size="14" />
                         </button>
                       </div>
 
-                      <div v-if="!ui.marketplace.comic.isAssetRailCollapsed" class="comic-asset-list" :class="{ 'is-empty': !activeComicAssets.length }">
+                      <div v-if="!ui.marketplace.comic.isAssetRailCollapsed" class="comic-asset-list" :class="{ 'is-empty': !filteredComicAssets.length }">
                         <button
-                          v-for="asset in activeComicAssets"
+                          v-for="asset in filteredComicAssets"
                           :key="asset.id"
                           type="button"
                           class="comic-asset-list-item"
@@ -1803,14 +1815,16 @@
                             />
                           </span>
                         </button>
-                        <p v-if="!activeComicAssets.length" class="comic-asset-empty-text">暂无素材</p>
+                        <p v-if="!filteredComicAssets.length" class="comic-asset-empty-text">
+                          {{ activeComicAssets.length ? "当前分类暂无素材" : "暂无素材" }}
+                        </p>
                       </div>
                       <div v-else class="comic-asset-collapsed-count" aria-hidden="true">
                         {{ activeComicAssets.length }}
                       </div>
                     </section>
 
-                    <section v-if="activeComicAsset" class="comic-asset-detail-panel">
+                    <section v-if="activeComicAsset && activeComicAssetMatchesTypeFilter" ref="comicAssetDetailPanelRef" class="comic-asset-detail-panel">
                       <div class="comic-asset-detail-head">
                         <div>
                           <p class="feature-kicker">{{ getComicAssetTypeLabel(activeComicAsset.type) }}</p>
@@ -3588,6 +3602,7 @@ import WritingAiDrawer from "../writing/WritingAiDrawer.vue";
 import {
   COMIC_APP_NAME,
   COMIC_APP_TABS,
+  COMIC_ASSET_FILTER_OPTIONS,
   COMIC_PROJECT_FORMAT_META,
   COMIC_PROJECT_PALETTE_META,
   COMIC_ASSET_TYPE_META,
@@ -3622,6 +3637,7 @@ const { applicationCoverActions, comicActions, comicAiActions, fieldAiActions, f
 const { comicChapterDropdownMenuRef, videoShotDropdownMenuRef, writingChapterDropdownMenuRef } = refs;
 const editingComicChapterTitleId = ref("");
 const comicChapterTitleEditBaseline = ref("");
+const comicAssetDetailPanelRef = ref(null);
 const comicAssetPreviewOverlayRef = ref(null);
 const comicAssetPreviewImageRef = ref(null);
 const comicAssetPreviewImageSize = ref({
@@ -3635,7 +3651,9 @@ const activeComicAssetReferencePickerViewId = ref("");
 
 const {
   activeComicAsset,
+  activeComicAssetMatchesTypeFilter,
   activeComicAssets,
+  filteredComicAssets,
   activeComicChapter,
   activeComicChapterAssets,
   activeComicChapterImage,
@@ -3717,6 +3735,7 @@ const {
   setComicProjectSummary,
   setComicProjectTitle,
   setComicProjectVisualStyle,
+  setComicAssetTypeFilter,
   setComicIntroMode,
   setComicTab,
   submitComicChapter,
@@ -3757,6 +3776,7 @@ const comicAssetTypeOptions = Object.entries(COMIC_ASSET_TYPE_META).map(([value,
   value,
   label: meta.label
 }));
+const comicAssetFilterOptions = COMIC_ASSET_FILTER_OPTIONS;
 const comicAssetViewKindOptions = Object.entries(COMIC_ASSET_VIEW_KIND_META).map(([value, meta]) => ({
   value,
   label: meta.label

@@ -5,6 +5,7 @@ import {
   BUILTIN_GORDON_AGENT_ID,
   BUILTIN_WRITING_SKILL_ID
 } from "../../lib/presenter.js";
+import { didAgentMutateWorkbenchResources } from "../shell/workbenchRefreshDetection.js";
 import {
   WRITING_AI_TASKS,
   WRITING_APP_NAME,
@@ -100,6 +101,7 @@ export function createWritingAiActions({
   normalizeWritingStoryAssetsForUi,
   parseWritingChapterIndex,
   persistWritingBookById,
+  refreshWorkbenchSnapshot,
   selectWritingChapter,
   setStatus,
   setWritingAiTaskPickerOpen,
@@ -2397,6 +2399,9 @@ async function runWritingAgentTask() {
       ui.marketplace.writing.activeTab === "chapter" && !WRITING_CHAPTER_SUMMARY_TASK_IDS.has(activeWritingTask.value?.id)
         ? normalizeWritingChapterDraftOutput(result?.text ?? "")
         : String(result?.text ?? "").trim();
+    if (typeof refreshWorkbenchSnapshot === "function" && didAgentMutateWorkbenchResources(result)) {
+      await refreshWorkbenchSnapshot();
+    }
     finalizeWritingAgentProgress("completed", "Gordon 已完成处理。", {
       text: String(result?.text ?? ""),
       profileLabel: result?.profileLabel ?? ui.marketplace.writing.agentProgress?.profileLabel ?? null,

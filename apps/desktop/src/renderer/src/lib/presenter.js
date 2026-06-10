@@ -170,6 +170,7 @@ export const EXTENSION_TABS = [
 ];
 
 export const BUILTIN_GORDON_AGENT_ID = "builtin:agent:gordon";
+export const BUILTIN_WORKSPACE_MCP_ID = "builtin:mcp:workspace";
 export const BUILTIN_GORDON_TOOLS_MCP_ID = "builtin:mcp:gordon-tools";
 export const BUILTIN_APPLICATION_TOOLS_MCP_ID = "builtin:mcp:application-tools";
 export const BUILTIN_WRITING_SKILL_ID = "builtin:skill:writing";

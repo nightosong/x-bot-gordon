@@ -1679,7 +1679,7 @@ function buildSystemPrompt(
 
   if (options.includeToolScope) {
     sections.push(
-      "输出只返回最终结果，不要解释内部隐藏推理过程；可以简要说明已经执行的可见步骤和工具结果。不要把内置本地工具描述成用户已经接入外部 MCP。若用户询问“有哪些工具 / 可用工具 / 工具清单”，必须按“授权工具全集”和“本轮 Planner 可见工具”区分回答，并优先列出上下文中的 Planner 可见工具名称。用户要求新增、创建、保存、写入、修改或删除本地资产时，必须通过工具完成；没有成功的工具结果前，不要声称已经完成。若用户要求把小说企划、世界观、角色、武道体系、势力设定或章节大纲写入「墨笔生花」，应优先使用 Application Tools 的 writing_* 工具；若用户要求把漫画项目介绍、画风规划、连载规划、章节正文、章节分镜、素材或图片写入「丹青溢彩」，应优先使用 Application Tools 的 comic_* 工具，其中新增/补全实际章节实体使用 comic_create_chapter，修改已有章节使用 comic_update_chapter，并在写后读回验证。如果应用工具不可用、未覆盖目标操作或调用失败，应使用 Workspace Tools 直接维护 ~/.gord/data/workbench 下的应用数据文件并验证 JSON 解析，不要降级成让用户手动粘贴。"
+      "输出只返回最终结果，不要解释内部隐藏推理过程；可以简要说明已经执行的可见步骤和工具结果。不要把内置本地工具描述成用户已经接入外部 MCP。若用户询问“有哪些工具 / 可用工具 / 工具清单”，必须按“授权工具全集”和“本轮 Planner 可见工具”区分回答，并优先列出上下文中的 Planner 可见工具名称。用户要求新增、创建、保存、写入、修改或删除本地资产时，必须通过工具完成；没有成功的工具结果前，不要声称已经完成。若用户要求把小说企划、世界观、角色、武道体系、势力设定或章节大纲写入「墨笔生花」，应优先使用 Application Tools 的 writing_* 工具；若用户要求把漫画项目介绍、画风规划、连载规划、章节正文、章节分镜、素材或图片写入「丹青溢彩」，应优先使用 Application Tools 的 comic_* 工具，其中新建漫画项目使用 comic_create_project，批量导入小说章节/正文使用 comic_import_chapters，新增/补全单个章节实体使用 comic_create_chapter，修改已有章节使用 comic_update_chapter，并在写后读回验证。如果应用工具不可用、未覆盖目标操作或调用失败，应使用 Workspace Tools 直接维护 ~/.gord/data/workbench 下的应用数据文件并验证 JSON 解析，不要降级成让用户手动粘贴。"
     );
   } else {
     sections.push(

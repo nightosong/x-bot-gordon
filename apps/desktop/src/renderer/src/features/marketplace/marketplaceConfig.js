@@ -196,6 +196,13 @@ export const COMIC_ASSET_VIEW_KIND_META = {
   detail: { label: "细节" }
 };
 
+export const COMIC_ASSET_FILTER_OPTIONS = [
+  { value: "all", label: "全部" },
+  { value: "character", label: "人物" },
+  { value: "prop", label: "物品" },
+  { value: "scene", label: "场景" }
+];
+
 export const VIDEO_PROJECT_MODE_META = {
   textToVideo: { label: "文生视频", defaultDuration: 5 },
   imageToVideo: { label: "图生视频", defaultDuration: 6 }
@@ -306,6 +313,7 @@ export function createMarketplaceState() {
       activeChapterImageId: "",
       introMode: "settings",
       activeAssetId: "",
+      assetTypeFilter: "all",
       isAssetRailCollapsed: false,
       previewAssetViewId: "",
       aiTaskId: "splitStoryboards",

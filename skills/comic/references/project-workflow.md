@@ -7,6 +7,7 @@
 - `summary`：故事与画面目标，回答这部漫画讲什么、看点是什么、读者应获得什么情绪。
 - `visualStyle`：画风与镜头，回答线条、色彩、角色造型、构图、镜头运动和一致性规则。
 - `episodePlan`：海报构图规划或连载总规划，回答项目如何分章、分镜和持续出图。
+- `source`：来源元数据，记录原小说/文本来源、导入状态、章节数量和失败/部分导入说明。
 - `assets`：素材库，包含人物、物品和场景。
 - `chapters`：章节，每章有标题、章节内容简介、可选章节正文/故事内容、章节级提示、`storyboards` 分镜轨道、图片和素材引用。
 
@@ -31,6 +32,32 @@ Agent 不能把丹青溢彩当成单次图片生成器。它应把每次生成�
 - 章节级结果写入 `title / summary / content / prompt / storyboards / status / assetRefs`，其中 `summary` 是章节内容简介，`content` 是可选正文或小说转漫画的故事文本，`prompt` 是章节级分镜提示，`storyboards` 是真正可出图的分镜轨道。
 - 图片结果写入 `chapter.images`，并尽量通过 `storyboardId` 关联到当前分镜。
 - 素材结果写入 `assets`，不要塞到章节备注里。
+
+## 小说转漫画导入流程
+
+当用户给出线上小说、上传文本、已有书稿或“把这本小说转成漫画”时，先按命令工坊事务处理，不直接进入出图：
+
+1. 读取或研究来源，先确认目录页、章节链接、章节数量、来源标题和可读取状态。
+2. 若来源可读，抽取章节目录；若正文量大，按批次导入，例如每 10 章一批。
+3. 使用 `comic_create_project` 新建丹青溢彩项目，写入：
+   - `source.sourceUrl / source.sourceTitle / source.chapterCount / source.extractionStatus`
+   - `summary`：故事改编目标，不是原文大段粘贴。
+   - `visualStyle`：全局视觉圣经，包括高层画风、角色统一风格提示词、场景统一风格提示词、镜头规则和禁忌。
+   - `episodePlan`：导入批次、素材提取批次、分镜推进节奏和出图顺序。
+4. 使用 `comic_import_chapters` 批量写入章节。原文或故事内容进入 `chapter.content`，章节内容简介进入 `chapter.summary`，来源引用进入 `chapter.sourceRefs`。
+5. 完成章节导入后，再分批提取素材。人物、场景、物品写入 `assets`，角色服装或场景状态变化用：
+   - `variantLabel`
+   - `chapterStartIndex`
+   - `chapterEndIndex`
+   - `variants[]`
+6. 准备好素材后，才按章节进入 `storyboard_director`，把一章拆成多条可编辑分镜，再按分镜出图。
+
+命令工坊和丹青溢彩的边界：
+
+- 命令工坊负责来源抓取、目录统计、章节正文提取、项目创建、批量导入、素材候选提取和执行计划。
+- 丹青溢彩负责项目编辑、视觉圣经维护、素材图片生成、分镜轨道编辑、分镜图片生成和视觉连续性审核。
+
+如果网页遇到 Cloudflare、登录限制、反爬、版权限制或正文不可读，不要生成虚假章节数。应把状态标为 `blocked` 或 `partial`，并给用户明确下一步：换来源、使用浏览器读取、上传 txt/epub/docx、粘贴目录或粘贴章节正文。
 
 ## 写回策略
 

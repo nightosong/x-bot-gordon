@@ -11,6 +11,7 @@ description: "漫画创作工作流 Skill，适用于丹青溢彩漫画项目企
 
 | 场景 | 节点 |
 |---|---|
+| 从线上小说、上传文本或已有书稿导入漫画项目 | `source_importer` |
 | 从题材、角色和视觉目标生成漫画项目方向 | `project_planner` |
 | 设计角色、物品、场景素材并保持出图一致性 | `asset_director` |
 | 规划章节目录、单章目标和连载节奏 | `chapter_planner` |
@@ -23,7 +24,8 @@ description: "漫画创作工作流 Skill，适用于丹青溢彩漫画项目企
 ## 工作流
 
 ```text
-project_planner
+source_importer（有小说/正文来源时）
+  -> project_planner
   -> asset_director
   -> chapter_planner
   -> storyboard_director
@@ -38,8 +40,11 @@ project_planner
 丹青溢彩相关任务优先使用 Application Tools 的漫画工具：
 
 - `comic_list_projects`：定位项目。
+- `comic_create_project`：新建漫画项目，适合把线上小说、上传文本或漫画企划转入丹青溢彩。
 - `comic_read_project`：读取项目、章节、素材和图片。
+- `comic_import_chapters`：批量导入或更新章节正文、章节简介和来源引用，适合中篇/长篇小说分批转漫画。
 - `comic_update_project_fields`：写回项目级字段。
+- `comic_create_chapter`：新增或补全单个实际章节实体。
 - `comic_update_chapter`：写回章节标题、章节内容简介、章节正文/故事内容、章节级提示、`storyboards` 分镜轨道、状态和引用素材。
 - `comic_update_chapter_images`：写回章节图片产物，可通过 `storyboardId` 或 `storyboardIndex` 挂到当前分镜。
 - `comic_update_assets`：写回角色、物品、场景素材库。
@@ -53,6 +58,8 @@ project_planner
 - 出图前必须提炼稳定视觉约束：角色身份、年龄感、服饰、发型、关键道具、场景、色彩、画幅和构图。
 - 有素材库视图图时优先作为参考图使用；没有参考图时必须用文字约束保持一致性，不声称已参考图片。
 - 章节文本只是分镜依据，最终漫画创作主体是 `chapter.storyboards[]` 与每条分镜下的图片。
+- 小说转漫画时，命令工坊应先完成来源发现、目录/章节正文提取、项目创建和批量章节导入；丹青溢彩主要负责视觉圣经、素材图、分镜图和成图连续性。
+- 遇到 Cloudflare、登录、版权或来源不可读时，不要假装已提取章节；应写入 `source.extractionStatus=blocked/partial` 或在回复里说明可恢复路径：换来源、浏览器读取、上传文本、粘贴目录/正文。
 - 生成多条分镜时，每条必须推进一个明确故事节点，不要只给章节修改说明或抽象美术词。
 - 生成多张连续图时，每张图必须推进一个明确动作节点，不要只换姿势或重复同一画面。
 - 写入分镜图片区时，每张图片必须带 `alt / src / prompt / size / quality / storyboardId`，并保留用于复现的生图提示词。

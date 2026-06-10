@@ -4,6 +4,7 @@ import {
   BUILTIN_GORDON_AGENT_ID,
   BUILTIN_GORDON_TOOLS_MCP_ID
 } from "../../lib/presenter.js";
+import { didAgentMutateWorkbenchResources } from "../shell/workbenchRefreshDetection.js";
 
 const MARKETPLACE_AGENT_APP_META = {
   comic: {
@@ -403,6 +404,7 @@ export function createMarketplaceAgentActions({
   appContextProviders = {},
   createLocalId,
   desktopApi,
+  refreshWorkbenchSnapshot,
   resultHandlers = {},
   setStatus,
   toPlainIpcData,
@@ -940,6 +942,10 @@ export function createMarketplaceAgentActions({
 
       if (typeof handler === "function") {
         handler({ result, output, artifacts, context, options });
+      }
+
+      if (typeof refreshWorkbenchSnapshot === "function" && didAgentMutateWorkbenchResources(result)) {
+        await refreshWorkbenchSnapshot();
       }
 
       finalizeProgress("completed", "Gordon 已完成处理。", {
