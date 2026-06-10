@@ -1510,16 +1510,25 @@
         >
           <div
             v-if="activeComicAsset && activeComicAssetPreviewView"
+            ref="comicAssetPreviewOverlayRef"
             class="comic-asset-preview-overlay"
             role="dialog"
             aria-modal="true"
             aria-label="放大素材图"
             @click="closeComicAssetPreviewView"
           >
-            <div class="comic-asset-preview-dialog" @click.stop>
+            <div
+              class="comic-asset-preview-dialog"
+              :class="comicAssetPreviewImageClass"
+              :style="comicAssetPreviewImageStyle"
+              @click.stop
+            >
               <img
+                ref="comicAssetPreviewImageRef"
                 :src="activeComicAssetPreviewView.src"
                 :alt="activeComicAssetPreviewView.label || getComicAssetViewKindLabel(activeComicAssetPreviewView.kind)"
+                :class="comicAssetPreviewImageClass"
+                @load="handleComicAssetPreviewImageLoad"
               />
               <button
                 type="button"
@@ -3512,7 +3521,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import ApplicationCoverDialog from "./ApplicationCoverDialog.vue";
 import ComicAiDrawer from "./ComicAiDrawer.vue";
@@ -3560,6 +3569,15 @@ const { applicationCoverActions, comicActions, comicAiActions, fieldAiActions, f
 const { comicChapterDropdownMenuRef, videoShotDropdownMenuRef, writingChapterDropdownMenuRef } = refs;
 const editingComicChapterTitleId = ref("");
 const comicChapterTitleEditBaseline = ref("");
+const comicAssetPreviewOverlayRef = ref(null);
+const comicAssetPreviewImageRef = ref(null);
+const comicAssetPreviewImageSize = ref({
+  width: 720,
+  height: 405,
+  maxWidth: 720,
+  maxHeight: 405,
+  ratioType: "landscape"
+});
 
 const {
   activeComicAsset,
@@ -3754,6 +3772,138 @@ function finishComicChapterTitleEdit() {
   editingComicChapterTitleId.value = "";
   comicChapterTitleEditBaseline.value = "";
 }
+
+const comicAssetPreviewImageClass = computed(() => `is-${comicAssetPreviewImageSize.value.ratioType}`);
+const comicAssetPreviewImageStyle = computed(() => ({
+  "--comic-asset-preview-image-width": `${comicAssetPreviewImageSize.value.width}px`,
+  "--comic-asset-preview-image-height": `${comicAssetPreviewImageSize.value.height}px`,
+  "--comic-asset-preview-image-max-width": `${comicAssetPreviewImageSize.value.maxWidth}px`,
+  "--comic-asset-preview-image-max-height": `${comicAssetPreviewImageSize.value.maxHeight}px`
+}));
+
+function getComicAssetPreviewBounds() {
+  const overlay = comicAssetPreviewOverlayRef.value;
+  const overlayRect = overlay?.getBoundingClientRect?.();
+  const viewportWidth = window.innerWidth || document.documentElement?.clientWidth || 1180;
+  const viewportHeight = window.innerHeight || document.documentElement?.clientHeight || 760;
+  const sourceWidth = overlayRect?.width || viewportWidth;
+  const sourceHeight = overlayRect?.height || viewportHeight;
+  const edgePadding = Math.max(28, Math.min(52, Math.round(Math.min(sourceWidth, sourceHeight) * 0.07)));
+  const width = Math.max(280, Math.floor(sourceWidth - edgePadding * 2));
+  const height = Math.max(260, Math.floor(sourceHeight - edgePadding * 2));
+
+  return { width, height };
+}
+
+function getComicAssetPreviewRatioType(width, height) {
+  if (!width || !height) {
+    return "landscape";
+  }
+
+  const ratio = width / height;
+
+  if (ratio > 1.22) {
+    return "landscape";
+  }
+
+  if (ratio < 0.82) {
+    return "portrait";
+  }
+
+  return "square";
+}
+
+function getDefaultComicAssetPreviewImageSize() {
+  const bounds = getComicAssetPreviewBounds();
+  const ratio = 16 / 9;
+  const width = Math.min(bounds.width, Math.round(bounds.height * ratio));
+  const height = Math.min(bounds.height, Math.round(width / ratio));
+
+  return {
+    width,
+    height,
+    maxWidth: width,
+    maxHeight: height,
+    ratioType: "landscape"
+  };
+}
+
+function fitComicAssetPreviewImageSize(naturalWidth, naturalHeight, bounds) {
+  const ratioType = getComicAssetPreviewRatioType(naturalWidth, naturalHeight);
+  const rawRatio = naturalWidth && naturalHeight ? naturalWidth / naturalHeight : 16 / 9;
+  const ratio = Math.min(Math.max(rawRatio, 0.5), 2.4);
+  let width = Math.min(bounds.width, Math.round(bounds.height * ratio));
+  let height = Math.round(width / ratio);
+
+  if (height > bounds.height) {
+    height = bounds.height;
+    width = Math.round(height * ratio);
+  }
+
+  if (ratioType === "square") {
+    const side = Math.min(bounds.width, bounds.height);
+    width = side;
+    height = side;
+  }
+
+  return {
+    width,
+    height,
+    maxWidth: width,
+    maxHeight: height,
+    ratioType
+  };
+}
+
+function updateComicAssetPreviewImageSize(image) {
+  const naturalWidth = image?.naturalWidth ?? 0;
+  const naturalHeight = image?.naturalHeight ?? 0;
+  const bounds = getComicAssetPreviewBounds();
+  comicAssetPreviewImageSize.value = fitComicAssetPreviewImageSize(naturalWidth, naturalHeight, bounds);
+}
+
+async function handleComicAssetPreviewImageLoad(event) {
+  await nextTick();
+  updateComicAssetPreviewImageSize(event.target);
+}
+
+async function refreshComicAssetPreviewImageSize() {
+  await nextTick();
+  const image = comicAssetPreviewImageRef.value;
+
+  if (image?.complete && image.naturalWidth && image.naturalHeight) {
+    updateComicAssetPreviewImageSize(image);
+  }
+}
+
+function handleComicAssetPreviewResize() {
+  if (!activeComicAssetPreviewView.value) {
+    return;
+  }
+
+  void refreshComicAssetPreviewImageSize();
+}
+
+watch(
+  () => activeComicAssetPreviewView.value?.src,
+  async (src) => {
+    if (!src) {
+      return;
+    }
+
+    comicAssetPreviewImageSize.value = getDefaultComicAssetPreviewImageSize();
+    await refreshComicAssetPreviewImageSize();
+  },
+  { flush: "post" }
+);
+
+onMounted(() => {
+  window.addEventListener("resize", handleComicAssetPreviewResize);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("resize", handleComicAssetPreviewResize);
+});
 
 const {
   cancelMarketplaceAgentRun,
