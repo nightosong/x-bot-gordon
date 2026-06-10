@@ -2340,10 +2340,6 @@
                           <div class="comic-chapter-image-frame">
                             <img :src="image.src" :alt="image.alt || `分镜图片 ${index + 1}`" />
                           </div>
-                          <figcaption>
-                            <span>{{ image.alt || `画面 ${index + 1}` }}</span>
-                            <small>分镜 {{ activeComicStoryboardIndex + 1 }}</small>
-                          </figcaption>
                         </figure>
                       </div>
 
