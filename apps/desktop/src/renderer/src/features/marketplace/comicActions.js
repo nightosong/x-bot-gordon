@@ -1550,7 +1550,8 @@ export function createComicActions({
       line.startsWith("生成物品三视图设定表") ||
       line.startsWith("不要加入无关文字说明") ||
       line.startsWith("不要做成多图拼贴") ||
-      line.startsWith("画面只保留一个明确素材主体")
+      line.startsWith("画面只保留一个明确素材主体") ||
+      line.startsWith("当前视图优先：")
     );
   }
 
@@ -1578,11 +1579,134 @@ export function createComicActions({
     return lines;
   }
 
+  function getComicAssetViewIdentityText(view) {
+    return [view?.label, view?.prompt].map((value) => String(value ?? "").trim()).filter(Boolean).join(" ");
+  }
+
+  function isComicAssetTurnaroundView(view) {
+    const kind = normalizeComicAssetViewKindForUi(view?.kind);
+
+    if (kind === "turnaround") {
+      return true;
+    }
+
+    return /三视图|三視圖|turnaround|three[-\s]?view|3[-\s]?view/i.test(getComicAssetViewIdentityText(view));
+  }
+
+  function normalizeComicAssetReferenceKey(value) {
+    return String(value ?? "")
+      .trim()
+      .replace(/^@+/u, "")
+      .replace(/\s+/g, "")
+      .replace(/[「」《》【】[\]（）()]/g, "")
+      .toLowerCase();
+  }
+
+  function extractComicAssetReferenceTokens(text) {
+    const tokens = [];
+    const seen = new Set();
+    const pattern = /@([^\s@，,。；;：:\n\r]+)/gu;
+    let match = pattern.exec(String(text ?? ""));
+
+    while (match) {
+      const token = normalizeText(match[1]);
+      const key = normalizeComicAssetReferenceKey(token);
+
+      if (token && key && !seen.has(key)) {
+        seen.add(key);
+        tokens.push(token);
+      }
+
+      match = pattern.exec(String(text ?? ""));
+    }
+
+    return tokens;
+  }
+
+  function getComicAssetReferenceOptions(assetId = "") {
+    const options = [];
+
+    activeComicAssets.value.forEach((asset) => {
+      const views = Array.isArray(asset?.views) ? asset.views : [];
+
+      views.forEach((view) => {
+        const src = normalizeText(view?.src);
+
+        if (!src) {
+          return;
+        }
+
+        const assetName = normalizeText(asset?.name) || "未命名素材";
+        const viewLabel = normalizeText(view?.label) || getComicAssetViewKindLabel(view?.kind);
+        const label = `${assetName} / ${viewLabel}`;
+        const insertText = `@${assetName}/${viewLabel}`.replace(/\s+/g, "");
+        const aliases = [
+          assetName,
+          viewLabel,
+          label,
+          insertText,
+          `${assetName}/${viewLabel}`,
+          `${assetName}-${viewLabel}`,
+          `${assetName}_${viewLabel}`
+        ].map((value) => normalizeComicAssetReferenceKey(value));
+
+        options.push({
+          id: `${asset?.id || "asset"}:${view?.id || "view"}`,
+          assetId: asset?.id ?? "",
+          viewId: view?.id ?? "",
+          assetName,
+          viewLabel,
+          label,
+          insertText,
+          src,
+          isCurrentAsset: Boolean(assetId && asset?.id === assetId),
+          aliases
+        });
+      });
+    });
+
+    return options;
+  }
+
+  function getComicAssetViewReferenceOptions(assetId, view) {
+    const tokens = extractComicAssetReferenceTokens(view?.prompt);
+    const options = getComicAssetReferenceOptions(assetId);
+    const resolved = [];
+    const seen = new Set();
+
+    tokens.forEach((token) => {
+      const key = normalizeComicAssetReferenceKey(token);
+      const option = options.find((entry) => entry.aliases.includes(key));
+
+      if (option && !seen.has(option.id)) {
+        seen.add(option.id);
+        resolved.push(option);
+      }
+    });
+
+    return resolved;
+  }
+
+  function getComicAssetViewReferenceImages(assetId, view) {
+    const seen = new Set();
+
+    return getComicAssetViewReferenceOptions(assetId, view)
+      .map((option) => option.src)
+      .filter((src) => {
+        if (!src || seen.has(src)) {
+          return false;
+        }
+
+        seen.add(src);
+        return true;
+      });
+  }
+
   function getComicAssetViewGenerationSize(asset, view) {
     const kind = normalizeComicAssetViewKindForUi(view?.kind);
     const type = normalizeComicAssetTypeForUi(asset?.type);
 
-    if (kind === "turnaround" || type === "scene") {
+    if (isComicAssetTurnaroundView(view) || type === "scene") {
       return "1536x1024";
     }
 
@@ -1596,8 +1720,9 @@ export function createComicActions({
   function getComicAssetViewGenerationDirectives(asset, view) {
     const kind = normalizeComicAssetViewKindForUi(view?.kind);
     const type = normalizeComicAssetTypeForUi(asset?.type);
+    const isTurnaroundView = isComicAssetTurnaroundView(view);
 
-    if (kind === "turnaround" && type === "character") {
+    if (isTurnaroundView && type === "character") {
       return [
         "生成角色三视图设定表：同一名角色的正面、侧面、背面三个完整全身立姿并排展示。",
         "必须从头顶到脚底完整可见，保留靴子/鞋底/衣摆/武器全长，不得裁切身体。",
@@ -1606,7 +1731,7 @@ export function createComicActions({
       ];
     }
 
-    if (kind === "turnaround" && type === "prop") {
+    if (isTurnaroundView && type === "prop") {
       return [
         "生成物品三视图设定表：同一件物品的正面、侧面、背面三个完整视角并排展示。",
         "必须完整展示物品轮廓、比例、材质、磨损痕迹和关键结构，不得裁切。",
@@ -1642,10 +1767,15 @@ export function createComicActions({
   function buildComicAssetViewGenerationPrompt(asset, view) {
     const typeLabel = getComicAssetTypeLabel(asset?.type);
     const viewLabel = normalizeText(view?.label) || getComicAssetViewKindLabel(view?.kind);
-    const promptLines = normalizeComicPromptLines(view?.prompt, asset?.description, asset?.prompt);
+    const isTurnaroundView = isComicAssetTurnaroundView(view);
+    const viewPrompt = normalizeText(view?.prompt);
+    const promptLines = isTurnaroundView
+      ? normalizeComicPromptLines(viewPrompt || asset?.description)
+      : normalizeComicPromptLines(view?.prompt, asset?.description, asset?.prompt);
     const lines = [
       "请生成一张可长期复用的漫画素材设定图。",
       "优先级：视图规格与完整度 > 角色/物品识别点 > 服饰/道具一致性 > 氛围与画风。",
+      isTurnaroundView ? "当前视图优先：本次只执行目标视图的三视图规格，不继承素材总提示词或其它视图里的全景图、关系图、群像图要求。" : "",
       promptLines.length ? `创作简报：\n${promptLines.map((line) => `- ${line}`).join("\n")}` : "",
       `素材类型：${typeLabel}`,
       `素材名称：${normalizeText(asset?.name) || "未命名素材"}`,
@@ -1671,6 +1801,7 @@ export function createComicActions({
     }
 
     const prompt = buildComicAssetViewGenerationPrompt(asset, view);
+    const referenceImages = getComicAssetViewReferenceImages(asset.id, view);
 
     if (!normalizeText(prompt)) {
       setStatus("请先填写视图提示词或素材描述。", "warning");
@@ -1678,18 +1809,29 @@ export function createComicActions({
     }
 
     ui.marketplace.comic.generatingAssetViewId = view.id;
-    setStatus(`正在生成素材视图：${asset.name} / ${view.label || getComicAssetViewKindLabel(view.kind)}`, "neutral");
+    setStatus(
+      referenceImages.length
+        ? `正在参考 ${referenceImages.length} 张素材图生成：${asset.name} / ${view.label || getComicAssetViewKindLabel(view.kind)}`
+        : `正在生成素材视图：${asset.name} / ${view.label || getComicAssetViewKindLabel(view.kind)}`,
+      "neutral"
+    );
 
     try {
+      const toolArguments = {
+        prompt,
+        size: getComicAssetViewGenerationSize(asset, view),
+        n: 1,
+        quality: "high"
+      };
+
+      if (referenceImages.length) {
+        toolArguments.images = referenceImages;
+      }
+
       const toolResult = await desktopApi.callMcpServerTool({
         serverId: BUILTIN_GORDON_TOOLS_MCP_ID,
         toolName: "image_gen",
-        arguments: {
-          prompt,
-          size: getComicAssetViewGenerationSize(asset, view),
-          n: 1,
-          quality: "high"
-        }
+        arguments: toolArguments
       });
 
       if (toolResult?.isError) {
@@ -1707,9 +1849,12 @@ export function createComicActions({
       view.prompt = normalizeText(view.prompt) || image.prompt || "";
       touchComicAsset(asset);
       setStatus(
-        image.provider || image.model
-          ? `素材图已生成并写入视图：${[image.provider, image.model].filter(Boolean).join(" / ")}`
-          : "素材图已生成并写入当前视图。",
+        [
+          referenceImages.length ? `已参考 ${referenceImages.length} 张素材图` : "",
+          image.provider || image.model ? `素材图已生成并写入视图：${[image.provider, image.model].filter(Boolean).join(" / ")}` : "素材图已生成并写入当前视图。"
+        ]
+          .filter(Boolean)
+          .join("；"),
         "success"
       );
     } catch (error) {
@@ -2462,7 +2607,9 @@ export function createComicActions({
     appendComicChapterImages,
     getComicAssetFilledViewCount,
     getComicAssetTypeLabel,
+    getComicAssetReferenceOptions,
     getComicAssetViewKindLabel,
+    getComicAssetViewReferenceOptions,
     getComicChapterDisplayTitle,
     getComicChapterReferencedAssets,
     getComicChapterStatusClass,

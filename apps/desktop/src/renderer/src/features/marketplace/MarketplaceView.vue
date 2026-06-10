@@ -1949,13 +1949,50 @@
                             </div>
                           </div>
 
-                          <label class="field">
+                          <label class="field comic-asset-reference-editor">
                             <span class="field-label">视图提示词</span>
+                            <div
+                              v-if="getComicAssetViewResolvedReferences(view).length"
+                              class="comic-asset-reference-chips"
+                              aria-label="已引用素材"
+                            >
+                              <span
+                                v-for="reference in getComicAssetViewResolvedReferences(view)"
+                                :key="reference.id"
+                                class="comic-asset-reference-chip"
+                              >
+                                <img :src="reference.src" :alt="reference.label" />
+                                <span>{{ reference.label }}</span>
+                              </span>
+                            </div>
                             <textarea
                               :value="view.prompt"
                               class="field-textarea writing-editor-textarea comic-asset-view-prompt"
-                              @input="setComicAssetViewField(activeComicAsset.id, view.id, 'prompt', $event.target.value)"
+                              @focus="updateComicAssetReferencePickerFromInput(view.id, $event)"
+                              @click="updateComicAssetReferencePickerFromInput(view.id, $event)"
+                              @keyup="updateComicAssetReferencePickerFromInput(view.id, $event)"
+                              @blur="closeComicAssetReferencePickerSoon(view.id)"
+                              @input="setComicAssetViewPromptFromInput(activeComicAsset.id, view.id, $event)"
                             ></textarea>
+                            <div
+                              v-if="activeComicAssetReferencePickerViewId === view.id && getComicAssetViewReferencePickerOptions(view.id).length"
+                              class="comic-asset-reference-picker"
+                            >
+                              <button
+                                v-for="option in getComicAssetViewReferencePickerOptions(view.id)"
+                                :key="option.id"
+                                type="button"
+                                class="comic-asset-reference-option"
+                                :class="{ 'is-current': option.isCurrentAsset }"
+                                @mousedown.prevent="insertComicAssetViewReference(activeComicAsset.id, view, option, $event)"
+                              >
+                                <img :src="option.src" :alt="option.label" />
+                                <span>
+                                  <strong>{{ option.assetName }}</strong>
+                                  <small>{{ option.viewLabel }}</small>
+                                </span>
+                              </button>
+                            </div>
                           </label>
                         </article>
                       </div>
@@ -3578,6 +3615,7 @@ const comicAssetPreviewImageSize = ref({
   maxHeight: 405,
   ratioType: "landscape"
 });
+const activeComicAssetReferencePickerViewId = ref("");
 
 const {
   activeComicAsset,
@@ -3616,7 +3654,9 @@ const {
   filteredComicChapterEntries,
   getComicAssetFilledViewCount,
   getComicAssetTypeLabel,
+  getComicAssetReferenceOptions,
   getComicAssetViewKindLabel,
+  getComicAssetViewReferenceOptions,
   getComicChapterDisplayTitle,
   getComicChapterImages,
   getComicChapterReferencedAssets,
@@ -3771,6 +3811,77 @@ function finishComicChapterTitleEdit() {
 
   editingComicChapterTitleId.value = "";
   comicChapterTitleEditBaseline.value = "";
+}
+
+function setComicAssetViewPromptFromInput(assetId, viewId, event) {
+  const value = event?.target?.value ?? "";
+
+  setComicAssetViewField(assetId, viewId, "prompt", value);
+  updateComicAssetReferencePickerFromInput(viewId, event);
+}
+
+function shouldShowComicAssetReferencePicker(value, cursorPosition = String(value ?? "").length) {
+  const text = String(value ?? "");
+  const beforeCursor = text.slice(0, Math.max(0, cursorPosition));
+
+  return /@([^\s@，,。；;：:\n\r]*)$/u.test(beforeCursor);
+}
+
+function updateComicAssetReferencePickerFromInput(viewId, event) {
+  const textarea = event?.target ?? null;
+  const value = textarea?.value ?? "";
+  const cursorPosition = typeof textarea?.selectionStart === "number" ? textarea.selectionStart : String(value).length;
+
+  activeComicAssetReferencePickerViewId.value = shouldShowComicAssetReferencePicker(value, cursorPosition) ? viewId : "";
+}
+
+function getComicAssetViewReferencePickerOptions(viewId) {
+  return getComicAssetReferenceOptions(activeComicAsset.value?.id).filter((option) => option.viewId !== viewId);
+}
+
+function getComicAssetViewResolvedReferences(view) {
+  return getComicAssetViewReferenceOptions(activeComicAsset.value?.id, view);
+}
+
+function insertComicAssetViewReference(assetId, view, option, event) {
+  const textarea = event?.currentTarget?.closest?.(".comic-asset-reference-editor")?.querySelector?.("textarea");
+  const marker = option?.insertText || (option?.label ? `@${option.label}` : "");
+
+  if (!view || !marker) {
+    return;
+  }
+
+  const currentPrompt = String(view.prompt ?? "");
+  const selectionStart = typeof textarea?.selectionStart === "number" ? textarea.selectionStart : currentPrompt.length;
+  const selectionEnd = typeof textarea?.selectionEnd === "number" ? textarea.selectionEnd : selectionStart;
+  const beforeCursor = currentPrompt.slice(0, selectionStart);
+  const afterCursor = currentPrompt.slice(selectionEnd);
+  const activeMentionMatch = /@([^\s@，,。；;：:\n\r]*)$/u.exec(beforeCursor);
+  const insertValue = `${marker} `;
+  const nextPrompt = activeMentionMatch
+    ? `${beforeCursor.slice(0, activeMentionMatch.index)}${insertValue}${afterCursor}`
+    : `${currentPrompt}${currentPrompt && !/\s$/u.test(currentPrompt) ? " " : ""}${insertValue}`;
+
+  setComicAssetViewField(assetId, view.id, "prompt", nextPrompt);
+  activeComicAssetReferencePickerViewId.value = view.id;
+
+  void nextTick(() => {
+    if (!textarea) {
+      return;
+    }
+
+    const nextCursor = activeMentionMatch ? activeMentionMatch.index + insertValue.length : nextPrompt.length;
+    textarea.focus?.();
+    textarea.setSelectionRange?.(nextCursor, nextCursor);
+  });
+}
+
+function closeComicAssetReferencePickerSoon(viewId) {
+  window.setTimeout(() => {
+    if (activeComicAssetReferencePickerViewId.value === viewId) {
+      activeComicAssetReferencePickerViewId.value = "";
+    }
+  }, 120);
 }
 
 const comicAssetPreviewImageClass = computed(() => `is-${comicAssetPreviewImageSize.value.ratioType}`);
