@@ -225,7 +225,16 @@
 
       <div v-if="isImageTask && hasGeneratedImages" class="comic-ai-image-grid">
         <figure v-for="(image, index) in state.aiGeneratedImages" :key="image.id || index" class="comic-ai-image-card">
-          <img :src="image.src" :alt="image.title || `生成图片 ${index + 1}`" />
+          <img
+            :src="image.src"
+            :alt="image.title || `生成图片 ${index + 1}`"
+            role="button"
+            tabindex="0"
+            :title="`放大 ${image.title || `生成图片 ${index + 1}`}`"
+            @click="openComicAiImagePreview(image, index)"
+            @keydown.enter.prevent="openComicAiImagePreview(image, index)"
+            @keydown.space.prevent="openComicAiImagePreview(image, index)"
+          />
           <figcaption>
             <span>{{ image.title || `生成图片 ${index + 1}` }}</span>
             <small v-if="image.meta">{{ image.meta }}</small>
@@ -368,6 +377,25 @@ function selectComicAiImageSize(value) {
 function selectComicAiImageQuality(value) {
   props.setComicAiImageQuality(value);
   closeControlPicker();
+}
+
+function openComicAiImagePreview(image, index) {
+  if (!image?.src) {
+    return;
+  }
+
+  const title = image.title || `生成图片 ${index + 1}`;
+
+  window.dispatchEvent(
+    new CustomEvent("gordon:image-preview:open", {
+      detail: {
+        src: image.src,
+        alt: title,
+        title,
+        downloadTitle: title
+      }
+    })
+  );
 }
 
 watch(

@@ -141,6 +141,12 @@
                       :alt="product.title"
                       class="command-generated-product-image"
                       loading="lazy"
+                      role="button"
+                      tabindex="0"
+                      :title="`放大 ${product.title || '图片'}`"
+                      @click="openGeneratedImagePreview(product)"
+                      @keydown.enter.prevent="openGeneratedImagePreview(product)"
+                      @keydown.space.prevent="openGeneratedImagePreview(product)"
                     />
                     <div v-else-if="product.kind === 'audio'" class="command-generated-product-audio">
                       <GIcon name="music" :size="20" />
@@ -308,6 +314,12 @@
                       :alt="product.title"
                       class="command-generated-product-image"
                       loading="lazy"
+                      role="button"
+                      tabindex="0"
+                      :title="`放大 ${product.title || '图片'}`"
+                      @click="openGeneratedImagePreview(product)"
+                      @keydown.enter.prevent="openGeneratedImagePreview(product)"
+                      @keydown.space.prevent="openGeneratedImagePreview(product)"
                     />
                     <div v-else-if="product.kind === 'audio'" class="command-generated-product-audio">
                       <GIcon name="music" :size="20" />
@@ -650,6 +662,23 @@ function scrollCommandToBottom() {
   if (commandMessagesRef.value) {
     commandMessagesRef.value.scrollTop = commandMessagesRef.value.scrollHeight;
   }
+}
+
+function openGeneratedImagePreview(product) {
+  if (!product?.src) {
+    return;
+  }
+
+  window.dispatchEvent(
+    new CustomEvent("gordon:image-preview:open", {
+      detail: {
+        src: product.src,
+        alt: product.title || "生成图片",
+        title: product.title || "生成图片",
+        downloadTitle: product.title || "生成图片"
+      }
+    })
+  );
 }
 
 defineExpose({

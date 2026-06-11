@@ -2169,6 +2169,8 @@ export function createComicActions({
   function previewComicAssetView(viewId) {
     const views = Array.isArray(activeComicAsset.value?.views) ? activeComicAsset.value.views : [];
     const view = views.find((entry) => entry.id === viewId);
+    const asset = activeComicAsset.value;
+    const project = activeComicProject.value;
 
     if (!normalizeText(view?.src)) {
       setStatus("当前视图还没有可放大的素材图。", "warning");
@@ -2176,6 +2178,16 @@ export function createComicActions({
     }
 
     ui.marketplace.comic.previewAssetViewId = view.id;
+    window.dispatchEvent(
+      new CustomEvent("gordon:image-preview:open", {
+        detail: {
+          src: normalizeText(view.src),
+          alt: view.label || getComicAssetViewKindLabel(view.kind),
+          title: view.label || asset?.name || "素材图",
+          downloadTitle: [project?.title, asset?.name, view.label || getComicAssetViewKindLabel(view.kind)].filter(Boolean).join("-")
+        }
+      })
+    );
   }
 
   function closeComicAssetPreviewView() {

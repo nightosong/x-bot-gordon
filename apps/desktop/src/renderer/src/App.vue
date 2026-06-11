@@ -262,13 +262,25 @@
       @resolve="resolveGordonDialog"
     />
 
+    <ImageLightbox
+      :image="imageLightbox.image"
+      :zoom="imageLightbox.zoom"
+      :is-downloading="imageLightbox.isDownloading"
+      @close="closeImageLightbox"
+      @download="downloadImageLightboxImage"
+      @zoom-in="zoomImageLightboxIn"
+      @zoom-out="zoomImageLightboxOut"
+      @zoom-wheel="handleImageLightboxWheel"
+    />
+
   </div>
 </template>
 
 <script setup>
-import { computed, nextTick, reactive, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 
 import GordonDialog from "./components/GordonDialog.vue";
+import ImageLightbox from "./components/ImageLightbox.vue";
 import { useGordonDialog } from "./composables/useGordonDialog.js";
 import { createCommandWorkshopActions } from "./features/command-workshop/commandWorkshopActions.js";
 import { createCommandWorkshopState } from "./features/command-workshop/commandWorkshopState.js";
@@ -349,6 +361,12 @@ const weeklyTaskRewriteIds = ref([]);
 const status = reactive({
   text: "正在加载工作台...",
   tone: "neutral"
+});
+
+const imageLightbox = reactive({
+  image: null,
+  zoom: 1,
+  isDownloading: false
 });
 
 const workbench = reactive({
@@ -1005,6 +1023,124 @@ function setStatus(text, tone = "neutral") {
   status.tone = tone;
 }
 
+function normalizeImageLightboxPayload(payload) {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const src = String(payload.src ?? payload.url ?? "").trim();
+
+  if (!src) {
+    return null;
+  }
+
+  const title = String(payload.title ?? payload.alt ?? "图片预览").trim();
+
+  return {
+    src,
+    title,
+    alt: String(payload.alt ?? title).trim(),
+    downloadTitle: String(payload.downloadTitle ?? title).trim() || "图片预览"
+  };
+}
+
+function clampImageLightboxZoom(value) {
+  const normalizedValue = Number(value);
+
+  if (!Number.isFinite(normalizedValue)) {
+    return 1;
+  }
+
+  return Math.min(4, Math.max(0.25, Math.round(normalizedValue * 100) / 100));
+}
+
+function openImageLightbox(payload) {
+  const image = normalizeImageLightboxPayload(payload);
+
+  if (!image) {
+    setStatus("当前没有可放大的图片。", "warning");
+    return;
+  }
+
+  imageLightbox.image = image;
+  imageLightbox.zoom = 1;
+  imageLightbox.isDownloading = false;
+}
+
+function closeImageLightbox() {
+  imageLightbox.image = null;
+  imageLightbox.zoom = 1;
+  imageLightbox.isDownloading = false;
+}
+
+function zoomImageLightboxIn() {
+  imageLightbox.zoom = clampImageLightboxZoom(imageLightbox.zoom + 0.1);
+}
+
+function zoomImageLightboxOut() {
+  imageLightbox.zoom = clampImageLightboxZoom(imageLightbox.zoom - 0.1);
+}
+
+function handleImageLightboxWheel(direction) {
+  if (direction === "in") {
+    zoomImageLightboxIn();
+    return;
+  }
+
+  zoomImageLightboxOut();
+}
+
+async function downloadImageLightboxImage() {
+  const image = imageLightbox.image;
+  const saveImage = desktopApi?.saveApplicationCoverImage ?? desktopApi?.saveWritingBookCoverImage;
+
+  if (!image?.src) {
+    setStatus("当前没有可下载的图片。", "warning");
+    return;
+  }
+
+  if (!saveImage) {
+    setStatus("图片下载桥接未就绪。", "danger");
+    return;
+  }
+
+  imageLightbox.isDownloading = true;
+
+  try {
+    const result = await saveImage({
+      title: image.downloadTitle || image.title || "图片预览",
+      imageUrl: image.src
+    });
+
+    if (result?.fileName) {
+      setStatus(`图片已下载：${result.fileName}`, "success");
+    } else {
+      setStatus("图片下载已取消。", "neutral");
+    }
+  } catch (error) {
+    console.error("Failed to download lightbox image", error);
+    setStatus(`下载图片失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+  } finally {
+    imageLightbox.isDownloading = false;
+  }
+}
+
+function handleImageLightboxOpenEvent(event) {
+  openImageLightbox(event?.detail ?? null);
+}
+
+function handleImageLightboxKeydown(event) {
+  if (!imageLightbox.image?.src) {
+    return;
+  }
+
+  if (event.key === "Escape") {
+    event.preventDefault();
+    event.stopPropagation();
+    closeImageLightbox();
+  }
+}
+
 function resolveBoundModelName(modelProfileId) {
   if (!modelProfileId) {
     return "未绑定模型";
@@ -1183,6 +1319,16 @@ workbenchRuntime = createWorkbenchRuntime({
 });
 
 const handleRichTextClick = createRichTextClickHandler({ setStatus });
+
+onMounted(() => {
+  window.addEventListener("gordon:image-preview:open", handleImageLightboxOpenEvent);
+  window.addEventListener("keydown", handleImageLightboxKeydown, true);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("gordon:image-preview:open", handleImageLightboxOpenEvent);
+  window.removeEventListener("keydown", handleImageLightboxKeydown, true);
+});
 
 setupRootWatchers({
   activeCommandMessages,
