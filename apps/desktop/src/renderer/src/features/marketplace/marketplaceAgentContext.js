@@ -19,6 +19,8 @@ export function createMarketplaceAgentContextProviders({
     const chapter = comicActions.activeComicChapter.value;
     const task = comicAiActions.activeComicAiTask.value;
     const assets = comicActions.activeComicChapterAssets.value ?? [];
+    const sourceRefs = chapter ? comicActions.getComicChapterSourceRefs(chapter) : [];
+    const storyboards = Array.isArray(chapter?.storyboards) ? chapter.storyboards : [];
 
     if (!project) {
       return null;
@@ -33,7 +35,7 @@ export function createMarketplaceAgentContextProviders({
       writeOutputTarget:
         "用户明确要求写回时，优先使用 Application Tools 修改丹青溢彩项目 / 章节 / 分镜 / 素材字段，并读回验证；最终同时把执行摘要回填到灵绘小筑输出区。",
       applicationToolHint:
-        "丹青溢彩任务优先使用 Application Tools：comic_create_project 新建漫画项目；comic_import_chapters 批量导入小说章节/正文；comic_read_project 读取当前项目；comic_create_chapter 新增/补全单个章节实体；comic_update_project_fields 写项目字段；comic_update_assets 写素材库；comic_update_chapter 写已有章节标题、内容简介、章节正文和分镜提示；comic_update_chapter_images 写章节图片。实际出图使用 Gordon Tools / image_gen。",
+        "丹青溢彩任务优先使用 Application Tools：comic_create_project 新建漫画项目；comic_import_chapters 按章节批量导入小说目录/正文/sourceRefs/summary/prompt/storyboards；comic_read_project 读取当前项目；comic_create_chapter 新增/补全单个章节实体；comic_update_project_fields 写项目字段；comic_update_assets 写素材库并保留 sourceRefs；comic_update_chapter 写已有章节标题、来源对照、内容简介、章节正文、中文分镜提示、storyboards 和 assetRefs；comic_update_chapter_images 写章节图片。实际出图使用 Gordon Tools / image_gen。",
       contextText: compactMarketplaceContext([
         `项目 ID：${project.id}`,
         `项目：${project.title}`,
@@ -49,13 +51,26 @@ export function createMarketplaceAgentContextProviders({
         `当前章节 ID：${chapter?.id ?? "暂无"}`,
         `当前章节：${chapter ? comicActions.getComicChapterDisplayTitle(chapter, comicActions.activeComicChapterIndex.value) : "暂无"}`,
         chapter ? `章节更新时间：${chapter.updatedAt || "暂无"}` : "",
+        chapter
+          ? `来源对照：${
+              sourceRefs.length
+                ? sourceRefs
+                    .slice(0, 5)
+                    .map((ref, index) => `${index + 1}. ${comicActions.getComicSourceRefTitle(ref)} / ${comicActions.getComicSourceRefUrl(ref) || comicActions.getComicSourceRefMeta(ref)}`)
+                    .join("；")
+                : "暂无；小说转漫画任务必须先逐章读取来源并写入 sourceRefs/content"
+            }`
+          : "",
         chapter ? `章节内容简介：${chapter.summary || "暂无"}` : "",
         chapter ? `章节正文/故事内容：${truncateText(chapter.content || "暂无", 1400)}` : "",
         chapter ? `分镜与出图提示：${chapter.prompt || "暂无"}` : "",
+        chapter ? `已有分镜：${storyboards.length} 条` : "",
+        ...storyboards.slice(0, 8).map((storyboard) => `分镜 ${storyboard.index}：${storyboard.title || "未命名"} / ${truncateText(storyboard.prompt || storyboard.beat || "暂无", 260)}`),
         `项目更新时间：${project.updatedAt || "暂无"}`,
         `当前任务：${task?.label ?? "未选择"} / ${task?.goal ?? ""}`,
         `引用素材：${assets.length} 个`,
-        ...assets.map((asset, index) => `${index + 1}. ${asset.name} / ${asset.description || asset.prompt || "暂无描述"}`)
+        ...assets.map((asset, index) => `${index + 1}. ${asset.name} / ${asset.description || "暂无描述"} / 提示词：${truncateText(asset.prompt || "暂无", 260)}`),
+        "硬约束：中文小说改编时，章节内容、素材提示词、章节分镜提示词和分镜生图提示词都使用中文；必须完全尊重原著当前章节，不添加原文未出现的人物、装备、服饰、盔甲、武器、场景或剧情结果；来源不可读时不能编造。"
       ])
     };
   }

@@ -541,6 +541,76 @@ export function createComicActions({
     };
   }
 
+  function getComicSourceRefsForUi(sourceRefs = []) {
+    return (Array.isArray(sourceRefs) ? sourceRefs : [])
+      .map((ref) => normalizeComicSourceRefForUi(ref))
+      .filter(Boolean);
+  }
+
+  function getComicChapterSourceRefs(chapter) {
+    return getComicSourceRefsForUi(chapter?.sourceRefs);
+  }
+
+  function getComicSourceRefTitle(ref, fallback = "来源") {
+    const chapterTitle = String(ref?.chapterTitle ?? "").trim();
+    const sourceTitle = String(ref?.sourceTitle ?? "").trim();
+    const chapterIndex = normalizeOptionalComicChapterIndexForUi(ref?.chapterIndex);
+
+    if (chapterTitle && chapterIndex !== undefined) {
+      return `第 ${chapterIndex} 章 · ${chapterTitle}`;
+    }
+
+    if (chapterTitle) {
+      return chapterTitle;
+    }
+
+    if (sourceTitle && chapterIndex !== undefined) {
+      return `${sourceTitle} · 第 ${chapterIndex} 章`;
+    }
+
+    if (sourceTitle) {
+      return sourceTitle;
+    }
+
+    return chapterIndex !== undefined ? `第 ${chapterIndex} 章` : fallback;
+  }
+
+  function getComicSourceRefMeta(ref) {
+    const url = String(ref?.sourceUrl ?? "").trim();
+    const note = String(ref?.note ?? "").trim();
+
+    if (url) {
+      try {
+        const parsed = new URL(url);
+        return parsed.hostname.replace(/^www\./u, "");
+      } catch {
+        return url.replace(/^https?:\/\//u, "").split("/")[0] || "网页来源";
+      }
+    }
+
+    return note || "手动来源";
+  }
+
+  function getComicSourceRefUrl(ref) {
+    return String(ref?.sourceUrl ?? "").trim();
+  }
+
+  function getComicChapterSourceLabel(chapter) {
+    const refs = getComicChapterSourceRefs(chapter);
+
+    if (!refs.length) {
+      return "未对照来源";
+    }
+
+    return getComicSourceRefTitle(refs[0], "来源对照");
+  }
+
+  function getComicChapterSourceCountLabel(chapter) {
+    const refs = getComicChapterSourceRefs(chapter);
+
+    return refs.length ? `${refs.length} 条来源` : "无来源";
+  }
+
   function normalizeComicSourceRefsForUi(refs = []) {
     return (Array.isArray(refs) ? refs : []).map((ref) => normalizeComicSourceRefForUi(ref)).filter(Boolean);
   }
@@ -1935,7 +2005,7 @@ export function createComicActions({
       .toLowerCase();
 
     return (
-      /多人|群体|组合|队伍|导师团|老师群|群像设定图|五位|四位|三位|二人|两人|一家/.test(identityText) ||
+      /多人|群体|组合|队伍|导师团|老师群|群像|阵列|并排展示|五位|四位|三位|二位|二人|两位|两人|一家|搭档|同伴/.test(identityText) ||
       /character lineup|group reference|multiple characters|team lineup|five .*mentors|mentor lineup/.test(promptText)
     );
   }
@@ -1951,7 +2021,7 @@ export function createComicActions({
 
     const text = buildComicAssetPromptSearchText(asset, view).toLowerCase();
 
-    return /关系图|关系设定|坐骑|伙伴|伴随|同行|站在.+旁|standing beside|relationship reference|relationship concept|mount|blue dragon|dragon sally/.test(text);
+    return /关系图|关系设定|关系参考|坐骑|伙伴|伴随|同行|站在.+旁|与.+旁边|蓝龙|莎莉|standing beside|relationship reference|relationship concept|mount|blue dragon|dragon sally/.test(text);
   }
 
   function getComicAssetViewGenerationSize(asset, view) {
@@ -2003,6 +2073,15 @@ export function createComicActions({
       ];
     }
 
+    if (kind === "wide" && type === "character") {
+      return [
+        "生成角色状态参考设定图：在同一张 16:9 横图中完整展示该角色/生物当前阶段的整体轮廓、状态变化和关键细节。",
+        "如果是同一角色的阶段版本，必须保留原有身份识别点、体型比例、材质和标志性结构，不要改成新角色。",
+        "可补充局部细节参考，但主体必须完整可见，比例和场景尺度清楚。",
+        "禁止把状态参考图误画成单人三视图；禁止随机改种族、随机加盔甲、文字标签、UI 标注。"
+      ];
+    }
+
     if (isTurnaroundView && type === "character" && isSkeleton) {
       return [
         "生成特殊形态角色三视图设定表：同一名角色的正面、侧面、背面三个完整全身立姿并排展示。",
@@ -2029,6 +2108,16 @@ export function createComicActions({
         "必须完整展示物品轮廓、比例、材质、磨损痕迹和关键结构，不得裁切。",
         "三视图颜色、纹样、材质和结构必须一致，背景保持干净。",
         "禁止单角度海报、局部特写、剧情场景、文字标签、UI 标注。"
+      ];
+    }
+
+    if (isSkeleton) {
+      return [
+        "生成特殊形态角色设定参考图，完整全身站姿优先，从头顶到脚底完整可见，不要裁切。",
+        "主体必须是原著描述的骨骼本体，例如暗金色金刚骨骼、红色眼眶、骨缝微弱红光；不要把骨骼误画成穿盔甲的战士。",
+        "重点表现头骨轮廓、胸腔骨架、脊柱、四肢骨相、手骨比例、暗金材质和可反复复用的漫画识别点。",
+        "禁止衣服、盔甲、披风、胸甲、肩甲、头盔、面具、外骨骼装饰、皮革、布料、鞋靴、武器和随机服饰。",
+        "背景干净或只保留极淡氛围，不要喧宾夺主；禁止半身图、头像特写、文字标签。"
       ];
     }
 
@@ -2993,6 +3082,9 @@ export function createComicActions({
     getComicAssetViewKindLabel,
     getComicAssetViewReferenceOptions,
     getComicChapterDisplayTitle,
+    getComicChapterSourceCountLabel,
+    getComicChapterSourceLabel,
+    getComicChapterSourceRefs,
     getComicChapterReferencedAssets,
     getComicChapterStatusClass,
     getComicChapterStatusLabel,
@@ -3002,6 +3094,9 @@ export function createComicActions({
     getComicProjectPaletteLabel,
     getComicStoryboardImages,
     getComicStoryboardKindLabel,
+    getComicSourceRefMeta,
+    getComicSourceRefTitle,
+    getComicSourceRefUrl,
     generateComicAssetViewImage,
     activeComicAssetPreviewView,
     goComicChapter,

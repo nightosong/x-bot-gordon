@@ -39,7 +39,7 @@ Gordon 是一个面向持续演进的工作助手，当前以桌面端和 CLI �
   - `model-management`：模型管理页面组件、模型编辑状态、余额 / 用量运行态、Provider 字段配置与页面事件 actions 归属
   - `weekly`：任务笔记 / 任务清单的页面组件、配置、初始状态、任务树运行时 helper、日报 / 周报 / 述职报告辅助转换、编辑器同步、自动保存、报表输出状态、页面事件 actions 与后续业务逻辑归属
   - `command-workshop`：命令工坊页面组件、会话草稿、输入区状态、附件上下文拼装、Agent 消息转换、会话动作与运行编排归属
-  - `workflow-library`：流程中心页面组件、workflow 配置、环境草稿、请求步骤草稿、curl / Body 解析、运行结果展示 helper、页面事件 actions 与执行编排归属
+  - `workflow-library`：流程中心页面组件、信息雷达窗口配置、workflow 配置、环境草稿、请求步骤草稿、curl / Body 解析、信息刷新 / 运行结果展示 helper、页面事件 actions 与执行编排归属
   - `marketplace`：应用广场页面组件、小说 / 漫画 / 视频 / 音乐 / 运势占卜应用入口配置、项目型应用通用封面管理、应用 Gordon 处理层、共享 AI 助手操作条、共享过程流组件、应用上下文 provider、漫画与视频项目 actions、音乐创作与运势解读 actions 与应用级状态归属
   - `writing`：`墨笔生花` 的配置、prompt 构建、书稿基础 actions、AI 工作流 actions 与 AI 抽屉组件
   - `extensions`：能力拓展页面组件、Agent / Skill / MCP / TOOL 编辑状态、Runner 状态与页面事件 actions 归属
@@ -53,7 +53,7 @@ Gordon 是一个面向持续演进的工作助手，当前以桌面端和 CLI �
   - 应用广场应用级 AI 助手统一使用 `AiAssistantActionBar.vue` 表达“状态 / 快速模式 / Gordon 处理”三段动作；快速模式负责轻量生成或专用工具调用，Gordon 处理负责默认 Agent 主导的深度任务推进，其中墨笔生花显式结合内置 `writing` Skill，丹青溢彩显式结合内置 `comic` Skill
   - 应用广场字段级 AI 优化能力，支持在具体编辑框旁唤起紧凑悬浮面板，调用优先模型生成结果并替换或追加回当前字段
   - 应用广场项目型资产通用封面能力，墨笔生花书籍、丹青溢彩漫画项目、流光绘影视频项目和瑶琴映月音乐专辑均支持封面 URL、本地上传、`image_gen` 生成、草稿预览、确认写回和下载；灵犀照命当前为对话态应用，暂不挂项目封面
-  - 流程中心页面，当前以横向木块入口与独立 curl 工作流舞台为主
+  - 流程中心页面，当前包含信息雷达与模型接口测试两类入口：信息雷达用于维护动态信息窗口、RSS / 网页来源、关键词过滤和刷新结果；模型接口测试继续承接独立 curl 工作流舞台
   - 命令工坊页面
   - 命令工坊输入区附件上传，支持图片、视频、文本、文档、表格和数据类文件作为会话上下文
   - 能力拓展管理页面
@@ -124,7 +124,7 @@ Gordon 是一个面向持续演进的工作助手，当前以桌面端和 CLI �
 - `packages/agent/src/runtime.ts` 当前只保留运行编排、权限、Skill Handler、工具执行和最终回复组装；任务账本、Resource Registry、Context Packet、Capability Routing、Evidence Graph、Plan Critic、工具元数据、失败分类和成功条件验证分别拆到 `ledger.ts`、`resource-registry.ts`、`context-packet.ts`、`capability-router.ts`、`evidence-graph.ts`、`plan-critic.ts`、`tool-metadata.ts`、`failure-classifier.ts` 与 `verifier.ts`，并通过 `pnpm run test:agent` 覆盖关键纯逻辑和 runtime 级集成回归；当前集成回归会用本地假模型与假 MCP 服务跑完整 `runAgent` 自动工具链，验证 Planner Tool View 收敛候选后 Computer Use 仍可被模型选择执行
 - 默认 Gordon Agent 已按持续执行型工程 Agent 重新组织系统提示词：通过 Discuss / Explore / Research / Execute / Verify 模式、目标状态维护、约束集收敛、局部上下文读取、工具优先级树、默认验证、失败恢复和停止条件，约束其持续推进任务到可验证结果，而不是把可执行任务降级为建议
 - 内置 `arthur-research` Skill 承接原 Arthur Research OS 科研能力，作为 Gordon 可加载的科研协作技能，而不是独立 Agent；它面向问题发现、假设形成、创新性拆解、证据验证、早期错误方向识别、论文写作、审稿评价、rebuttal（审稿回复）和投稿打磨，并通过 `references/` 拆分 Research OS 生命周期与 claim 控制、核心研究协议、研究模式、审稿模拟、研究台账和化工结晶领域适配；旧 Arthur 会话会兼容迁移到 Gordon + `arthur-research`
-- 内置 `Gordon Tools` 作为能力工具服务接入默认 Agent，会按能力拓展 TOOL 配置动态暴露已启用工具；当前 `image_gen` 可通过 OpenAI 系列图片配置调用 `imagen` / `imagen/edit` 并同步返回图片产物，图生图会按上游要求使用 multipart 图片字段上传引用图，支持 URL、data URL、base64 和本地图片文件输入；`video_gen` 可通过 Seedance 的提交接口、轮询接口、`taskIdPath` 和 `resultUrlPath` 配置提交文生视频、图生视频、首尾帧生视频、参考图生视频任务，`submit / query` 默认都会执行工具层短轮询并把 `pending / completed / pollExhausted / pollFailed / pollHistory` 写入结构化结果，`music_gen` 可通过 Mureka / Suno 配置发起歌曲 / 配乐生成或查询任务，生成与查询同样默认在工具层短轮询并尽量一次调用返回音频 URL
+- 内置 `Gordon Tools` 作为能力工具服务接入默认 Agent，会按能力拓展 TOOL 配置动态暴露已启用工具；当前 `image_gen` 可通过 OpenAI 系列图片配置调用 `imagen` / `imagen/edit` 并同步返回图片产物，图生图会按上游要求使用 multipart 图片字段上传引用图，支持 URL、data URL、base64 和本地图片文件输入；`video_gen` 可通过 Seedance 配置提交文生视频、首帧生视频、首尾帧生视频、参考图生视频任务，支持提交接口、轮询接口、`taskIdPath` 和 `resultUrlPath` 配置，`submit / query` 默认都会执行工具层短轮询并把 `pending / completed / pollExhausted / pollFailed / pollHistory` 写入结构化结果，`music_gen` 可通过 Mureka / Suno 配置发起歌曲 / 配乐生成或查询任务，生成与查询同样默认在工具层短轮询并尽量一次调用返回音频 URL
 - 内置 `Application Tools` 作为应用广场资产工具服务接入默认 Agent，当前支持 `墨笔生花` 小说书稿的新建、列表读取、章节读取、全文检索、章节修改预览 / 写回、书籍字段修改预览 / 写回和故事资产写回；同时支持 `丹青溢彩` 漫画项目新建、来源元数据记录、批量章节导入、项目/章节/素材/图片读取、项目字段预览 / 写回、实际章节实体创建、已有章节分镜轨道预览 / 写回、分镜图片追加 / 替换和素材库合并 / 替换。写回优先走工作台仓储能力。若 Application Tools 不可用、未覆盖目标能力或调用失败，Agent 可 fallback 到 `Workspace Tools` 直接维护 `~/.gord/data/workbench` 下的应用数据文件，并在写入后校验关键 JSON 可解析
 - 内置 `Search Tools` 作为独立联网搜索与研究工具服务接入默认 Agent，提供 `web_search_v2`、`web_research` 与 `github_search_repositories`：优先使用 Tavily / Brave Search / Serper / SearXNG API，缺少配置时回退 Bing / Baidu / Google；`web_research` 会执行多查询、域名偏好、去重排序、落地页正文读取和页面内相关链接发现，适合最新事实、官方文档、技术 / 产品调研和带来源结论；GitHub 仓库搜索直接走 GitHub API，适合开源项目、参考实现和生态对比
 - 命令工坊会话消息已支持附件元数据沉淀；桌面端主进程负责文件选择、基础类型识别和正文提取，并把可读取内容注入本轮 Agent 上下文
@@ -191,7 +191,7 @@ Gordon 是一个面向持续演进的工作助手，当前以桌面端和 CLI �
 - 按周归档的任务笔记、周报和述职报告记录
 - 面向日报 / 周报 / 述职报告的项目级任务树、任务状态与阶段备注
 - 数据库连接列表
-- 流程中心资产与可复用 curl 工作流记录
+- 流程中心资产、信息雷达窗口与可复用 curl 工作流记录
 - 模型配置列表
 - 优先模型设置
 - Skill 配置列表
@@ -351,12 +351,12 @@ Gordon 是一个面向持续演进的工作助手，当前以桌面端和 CLI �
 
 ### 流程中心
 
-- 已从“效率工具”收敛为 `流程中心 / workflow`，采用“首页工作流卡片 -> 工作流列表 -> 执行 / 配置页”的三段式结构
-- 首页主舞台默认采用黄金比例横向卡片布局，每行 3 张，卡片只保留标题、记录数与少量标签
-- 当前首个落地卡片为 `模型接口测试`
-- `模型接口测试` 当前承接历史工作流记录、动态请求步骤、`$BASE_URL / $API_KEY / $TASK_ID` 风格变量、步骤产出变量 JSONPath 提取、dev/test/pre/prod 环境 Base URL + APIKEY 注入、步骤级单次 / 轮询执行、轮询终止判断、请求 Body 快捷编辑与 JSON 修复、实时 stdout / stderr 输出和运行中主动中断，并支持从界面新建、编辑、删除和执行 curl 工作流
-- 渲染层 `features/workflow-library/workflowConfig.js` 承接流程中心默认配置与草稿工厂，`features/workflow-library/workflowRuntime.js` 承接 curl 解析、Body 修复、环境归一化、record 草稿转换和运行结果展示 helper，`features/workflow-library/workflowActions.js` 承接选择同步、编辑保存、复制删除、环境 / Body 写回、运行中断和 IPC 进度回显动作
-- 工作流资产统一通过本地 JSON 仓储持久化：`~/.gord/data/workbench/workflow-library.json`
+- 已从“效率工具”收敛为 `流程中心 / workflow`，采用“首页工作流卡片 -> 当前资源工作区 / 工作流列表 -> 执行 / 配置页”的结构；首页只承担入口，不把信息流、curl 详情和配置面板摊平
+- 当前内置两个默认卡片：`信息雷达` 与 `模型接口测试`
+- `信息雷达` 采用 Resource-Oriented Agent（面向资源的 Agent）思路，核心资源是 `InfoRadarWindow` 信息窗口；每个窗口维护 `sources / keywords / negativeKeywords / digestPrompt / items / runHistory / cadence`，用于追踪技术、政治、金融、科研、公众号等来源。首版支持 RSS / Atom 和普通网页由桌面主进程刷新，按关键词与排除词过滤、去重、记录刷新结果；搜索和公众号先作为可配置来源保留，后续接入 Search Tools 与公众号专项采集能力
+- `模型接口测试` 继续承接历史工作流记录、动态请求步骤、`$BASE_URL / $API_KEY / $TASK_ID` 风格变量、步骤产出变量 JSONPath 提取、dev/test/pre/prod 环境 Base URL + APIKEY 注入、步骤级单次 / 轮询执行、轮询终止判断、请求 Body 快捷编辑与 JSON 修复、实时 stdout / stderr 输出和运行中主动中断，并支持从界面新建、编辑、删除和执行 curl 工作流
+- 渲染层 `features/workflow-library/workflowConfig.js` 承接流程中心默认配置、信息窗口草稿与 curl 记录草稿工厂，`features/workflow-library/workflowRuntime.js` 承接信息雷达展示 helper、curl 解析、Body 修复、环境归一化、record 草稿转换和运行结果展示 helper，`features/workflow-library/workflowActions.js` 承接选择同步、信息窗口编辑保存 / 删除 / 刷新、记录保存 / 复制 / 删除、环境 / Body 写回、运行中断和 IPC 进度回显动作
+- 流程中心资产统一通过本地 JSON 仓储持久化：`~/.gord/data/workbench/workflow-library.json`；其中 `WorkflowLibraryItem.kind` 当前支持 `info-radar` 与 `api-test`，旧 `api-suite` 会继续迁移为 `api-test`
 - 编辑页头部在滚动时会保持固定，项目推进视图也已移除项目卡片外层的额外包裹容器
 - 编辑页滚动已下沉到内部内容壳层，修复 sticky 头部滚动时的轻微上移感，并将滚动条收口为自动弱显的短轨样式
 - 返回列表已改为折线箭头图标入口，继续保留原有返回语义

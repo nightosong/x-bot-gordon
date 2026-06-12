@@ -36,6 +36,11 @@ import type {
   MusicTrackKind,
   MusicTrackProvider,
   MusicTrackStatus,
+  InfoRadarItem,
+  InfoRadarRefreshRun,
+  InfoRadarSource,
+  InfoRadarSourceKind,
+  InfoRadarWindow,
   SkillKind,
   SkillDefinition,
   ToolConfig,
@@ -93,6 +98,9 @@ import {
 import { readPromptAsset } from "./prompt-assets.js";
 
 const RETIRED_AGENT_PROFILE_IDS = new Set(["builtin:agent:arthur"]);
+const DEFAULT_INFO_RADAR_CARD_ID = "workflow_info_radar";
+const DEFAULT_API_WORKFLOW_CARD_ID = "workflow_api_test";
+const INFO_RADAR_SOURCE_KINDS = new Set<InfoRadarSourceKind>(["rss", "web_page", "search", "wechat", "manual"]);
 
 async function readJsonFile<T>(filePath: string): Promise<T> {
   const content = await readFile(filePath, "utf8");
@@ -4527,11 +4535,307 @@ function normalizeLegacyWorkflowLibrary(legacyEntries: unknown[]): WorkflowLibra
     }));
 }
 
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.map((entry) => String(entry ?? "").trim()).filter(Boolean);
+}
+
+function normalizeInfoRadarSourceKind(value: unknown): InfoRadarSourceKind {
+  const kind = String(value ?? "").trim();
+  return INFO_RADAR_SOURCE_KINDS.has(kind as InfoRadarSourceKind) ? (kind as InfoRadarSourceKind) : "web_page";
+}
+
+function normalizeInfoRadarSource(input: Partial<InfoRadarSource> | null | undefined, windowId = ""): InfoRadarSource | null {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+
+  const kind = normalizeInfoRadarSourceKind(input.kind);
+  const title = String(input.title ?? "").trim();
+  const url = String(input.url ?? "").trim();
+  const query = String(input.query ?? "").trim();
+  const hasLocator = kind === "search" ? Boolean(query || url) : kind === "manual" ? Boolean(title || url || query) : Boolean(url);
+
+  if (!hasLocator && !title) {
+    return null;
+  }
+
+  const timestamp = String(input.updatedAt ?? "").trim() || new Date().toISOString();
+
+  return {
+    id: String(input.id ?? "").trim() || `info_source_${windowId || randomUUID()}_${randomUUID()}`,
+    kind,
+    title: title || query || url || "未命名来源",
+    url,
+    query,
+    enabled: input.enabled !== false,
+    tags: normalizeStringArray(input.tags),
+    notes: String(input.notes ?? "").trim(),
+    updatedAt: timestamp
+  };
+}
+
+function normalizeInfoRadarItem(input: Partial<InfoRadarItem> | null | undefined): InfoRadarItem | null {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+
+  const title = String(input.title ?? "").trim();
+  const url = String(input.url ?? "").trim();
+
+  if (!title && !url) {
+    return null;
+  }
+
+  const sourceKind = normalizeInfoRadarSourceKind(input.sourceKind);
+  const fetchedAt = String(input.fetchedAt ?? "").trim() || new Date().toISOString();
+  const status = input.status === "saved" || input.status === "ignored" ? input.status : "new";
+
+  return {
+    id: String(input.id ?? "").trim() || `info_item_${randomUUID()}`,
+    sourceId: String(input.sourceId ?? "").trim(),
+    sourceTitle: String(input.sourceTitle ?? "").trim() || "未知来源",
+    sourceKind,
+    title: title || url,
+    url,
+    summary: String(input.summary ?? "").trim(),
+    ...(input.author ? { author: String(input.author).trim() } : {}),
+    ...(input.publishedAt ? { publishedAt: String(input.publishedAt).trim() } : {}),
+    fetchedAt,
+    tags: normalizeStringArray(input.tags),
+    score: Number.isFinite(Number(input.score)) ? Number(input.score) : 0,
+    status
+  };
+}
+
+function normalizeInfoRadarRefreshRun(input: Partial<InfoRadarRefreshRun> | null | undefined): InfoRadarRefreshRun | null {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+
+  const startedAt = String(input.startedAt ?? "").trim() || new Date().toISOString();
+  const finishedAt = String(input.finishedAt ?? "").trim() || startedAt;
+  const status = input.status === "success" || input.status === "partial" || input.status === "failed" ? input.status : "success";
+
+  return {
+    id: String(input.id ?? "").trim() || `info_run_${randomUUID()}`,
+    status,
+    startedAt,
+    finishedAt,
+    sourceCount: Math.max(0, Number(input.sourceCount ?? 0) || 0),
+    itemCount: Math.max(0, Number(input.itemCount ?? 0) || 0),
+    message: String(input.message ?? "").trim()
+  };
+}
+
+function normalizeInfoRadarWindow(input: Partial<InfoRadarWindow> | null | undefined): InfoRadarWindow | null {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+
+  const title = String(input.title ?? "").trim();
+
+  if (!title) {
+    return null;
+  }
+
+  const timestamp = String(input.updatedAt ?? input.createdAt ?? "").trim() || new Date().toISOString();
+  const windowId = String(input.id ?? "").trim() || `info_window_${randomUUID()}`;
+  const sources = (Array.isArray(input.sources) ? input.sources : [])
+    .map((source) => normalizeInfoRadarSource(source, windowId))
+    .filter((source): source is InfoRadarSource => Boolean(source));
+  const items = (Array.isArray(input.items) ? input.items : [])
+    .map(normalizeInfoRadarItem)
+    .filter((item): item is InfoRadarItem => Boolean(item))
+    .slice(0, 200);
+  const runHistory = (Array.isArray(input.runHistory) ? input.runHistory : [])
+    .map(normalizeInfoRadarRefreshRun)
+    .filter((run): run is InfoRadarRefreshRun => Boolean(run))
+    .slice(0, 20);
+
+  return {
+    id: windowId,
+    title,
+    summary: String(input.summary ?? "").trim(),
+    category: String(input.category ?? "").trim() || "综合",
+    status: input.status === "paused" ? "paused" : "active",
+    cadence:
+      input.cadence === "hourly" || input.cadence === "daily" || input.cadence === "weekly" ? input.cadence : "manual",
+    keywords: normalizeStringArray(input.keywords),
+    negativeKeywords: normalizeStringArray(input.negativeKeywords),
+    sources,
+    digestPrompt: String(input.digestPrompt ?? "").trim(),
+    items,
+    runHistory,
+    createdAt: String(input.createdAt ?? "").trim() || timestamp,
+    updatedAt: timestamp,
+    ...(input.lastRefreshedAt ? { lastRefreshedAt: String(input.lastRefreshedAt).trim() } : {})
+  };
+}
+
+function createDefaultInfoRadarCard(): WorkflowLibraryItem {
+  const now = new Date().toISOString();
+
+  return {
+    id: DEFAULT_INFO_RADAR_CARD_ID,
+    kind: "info-radar",
+    title: "信息雷达",
+    summary: "长期追踪技术、金融、科研、政治等外部信息，并沉淀为可复用的信息窗口。",
+    description: "把常看的信息源、关键词和总结规则配置成窗口，手动或定时刷新后形成个人情报台。",
+    tags: ["资讯", "研究", "雷达"],
+    status: "active",
+    usageCount: 0,
+    createdAt: now,
+    updatedAt: now,
+    records: [],
+    infoWindows: [
+      {
+        id: "info_window_tech_radar",
+        title: "技术与 Agent 趋势",
+        summary: "跟踪 AI、Agent、模型发布、开源工具和工程实践。",
+        category: "技术",
+        status: "active",
+        cadence: "manual",
+        keywords: ["AI", "Agent", "模型", "开源", "工程"],
+        negativeKeywords: [],
+        digestPrompt: "按重要性归纳：重大变化、可行动线索、需要继续深挖的问题。",
+        sources: [
+          {
+            id: "info_source_openai_blog",
+            kind: "rss",
+            title: "OpenAI Blog",
+            url: "https://openai.com/news/rss.xml",
+            query: "",
+            enabled: true,
+            tags: ["AI", "官方"],
+            notes: "官方发布源",
+            updatedAt: now
+          },
+          {
+            id: "info_source_hn_frontpage",
+            kind: "rss",
+            title: "Hacker News",
+            url: "https://hnrss.org/frontpage",
+            query: "",
+            enabled: true,
+            tags: ["技术", "社区"],
+            notes: "",
+            updatedAt: now
+          }
+        ],
+        items: [],
+        runHistory: [],
+        createdAt: now,
+        updatedAt: now
+      },
+      {
+        id: "info_window_research_radar",
+        title: "科研论文观察",
+        summary: "关注 arXiv、实验室博客和研究动态，保留后续接论文工具的入口。",
+        category: "科研",
+        status: "active",
+        cadence: "manual",
+        keywords: ["paper", "research", "benchmark", "agent"],
+        negativeKeywords: [],
+        digestPrompt: "提取论文问题、方法、证据强度、潜在复现实验和与现有项目的关系。",
+        sources: [
+          {
+            id: "info_source_arxiv_ai",
+            kind: "rss",
+            title: "arXiv cs.AI",
+            url: "https://export.arxiv.org/rss/cs.AI",
+            query: "",
+            enabled: true,
+            tags: ["论文", "AI"],
+            notes: "",
+            updatedAt: now
+          }
+        ],
+        items: [],
+        runHistory: [],
+        createdAt: now,
+        updatedAt: now
+      }
+    ]
+  };
+}
+
+function createDefaultApiWorkflowCard(): WorkflowLibraryItem {
+  const now = new Date().toISOString();
+
+  return {
+    id: DEFAULT_API_WORKFLOW_CARD_ID,
+    kind: "api-test",
+    title: "模型接口测试",
+    summary: "沉淀可复用 curl 流程，用于提交、轮询和结果检查。",
+    description: "维护多步骤 API 请求、环境变量和轮询终止条件。",
+    tags: ["API", "curl", "调试"],
+    status: "active",
+    usageCount: 0,
+    createdAt: now,
+    updatedAt: now,
+    records: []
+  };
+}
+
+function normalizeWorkflowLibraryItem(input: Partial<WorkflowLibraryItem> | null | undefined): WorkflowLibraryItem | null {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+
+  const kind = input.kind === "info-radar" ? "info-radar" : "api-test";
+  const now = new Date().toISOString();
+  const normalized: WorkflowLibraryItem = {
+    id: String(input.id ?? "").trim() || (kind === "info-radar" ? DEFAULT_INFO_RADAR_CARD_ID : `workflow_${randomUUID()}`),
+    kind,
+    title: String(input.title ?? "").trim() || (kind === "info-radar" ? "信息雷达" : "模型接口测试"),
+    summary: String(input.summary ?? "").trim(),
+    description: String(input.description ?? "").trim(),
+    tags: normalizeStringArray(input.tags),
+    status: input.status === "draft" ? "draft" : "active",
+    usageCount: Math.max(0, Number(input.usageCount ?? 0) || 0),
+    createdAt: String(input.createdAt ?? "").trim() || now,
+    updatedAt: String(input.updatedAt ?? "").trim() || now,
+    ...(input.lastUsedAt ? { lastUsedAt: String(input.lastUsedAt).trim() } : {}),
+    records: Array.isArray(input.records) ? (input.records as WorkflowRecord[]) : []
+  };
+
+  if (kind === "info-radar") {
+    normalized.infoWindows = (Array.isArray(input.infoWindows) ? input.infoWindows : [])
+      .map(normalizeInfoRadarWindow)
+      .filter((window): window is InfoRadarWindow => Boolean(window));
+  }
+
+  return normalized;
+}
+
+function ensureWorkflowLibraryDefaults(items: WorkflowLibraryItem[]): WorkflowLibraryItem[] {
+  const normalizedItems = items
+    .map(normalizeWorkflowLibraryItem)
+    .filter((item): item is WorkflowLibraryItem => Boolean(item));
+  const hasInfoRadar = normalizedItems.some((item) => item.kind === "info-radar");
+  const hasApiWorkflow = normalizedItems.some((item) => item.kind === "api-test");
+  const nextItems = [...normalizedItems];
+
+  if (!hasInfoRadar) {
+    nextItems.unshift(createDefaultInfoRadarCard());
+  }
+
+  if (!hasApiWorkflow) {
+    nextItems.push(createDefaultApiWorkflowCard());
+  }
+
+  return sortByUpdatedAtDescending(nextItems);
+}
+
 export async function listWorkflowLibrary(): Promise<WorkflowLibraryItem[]> {
   const filePath = getWorkflowLibraryFilePath();
 
   try {
-    return sortByUpdatedAtDescending(await readWorkbenchCollection<WorkflowLibraryItem>(filePath));
+    return ensureWorkflowLibraryDefaults(await readWorkbenchCollection<WorkflowLibraryItem>(filePath));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
       throw error;
@@ -4539,18 +4843,24 @@ export async function listWorkflowLibrary(): Promise<WorkflowLibraryItem[]> {
   }
 
   const legacyEntries = await readWorkbenchCollection<unknown>(getLegacyEfficiencyToolsFilePath());
-  return sortByUpdatedAtDescending(normalizeLegacyWorkflowLibrary(legacyEntries));
+  return ensureWorkflowLibraryDefaults(normalizeLegacyWorkflowLibrary(legacyEntries));
 }
 
 export async function upsertWorkflowLibraryItem(item: WorkflowLibraryItem): Promise<WorkflowLibraryItem[]> {
+  const normalizedItem = normalizeWorkflowLibraryItem(item);
+
+  if (!normalizedItem) {
+    return listWorkflowLibrary();
+  }
+
   const current = await listWorkflowLibrary();
-  const existingIndex = current.findIndex((entry) => entry.id === item.id);
+  const existingIndex = current.findIndex((entry) => entry.id === normalizedItem.id);
   const nextItems = [...current];
 
   if (existingIndex >= 0) {
-    nextItems[existingIndex] = item;
+    nextItems[existingIndex] = normalizedItem;
   } else {
-    nextItems.unshift(item);
+    nextItems.unshift(normalizedItem);
   }
 
   await writeWorkbenchCollection(getWorkflowLibraryFilePath(), sortByUpdatedAtDescending(nextItems));

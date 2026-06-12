@@ -16,12 +16,16 @@ export type ProviderKind =
   | "openai_like";
 export type WeeklyProgressStatus = "active" | "archived";
 export type WeeklyProgressItemStatus = "planned" | "in_progress" | "completed" | "blocked";
-export type WorkflowLibraryItemKind = "api-test";
+export type WorkflowLibraryItemKind = "api-test" | "info-radar";
 export type WorkflowLibraryItemStatus = "active" | "draft";
 export type WorkflowEnvironmentId = "dev" | "test" | "pre" | "prod" | string;
 export type WorkflowVariableSource = "manual" | "response";
 export type WorkflowProtocolMode = "single" | "sequential" | "polling";
 export type WorkflowStepExecutionMode = "once" | "polling";
+export type InfoRadarSourceKind = "rss" | "web_page" | "search" | "wechat" | "manual";
+export type InfoRadarWindowStatus = "active" | "paused";
+export type InfoRadarRefreshCadence = "manual" | "hourly" | "daily" | "weekly";
+export type InfoRadarRefreshStatus = "success" | "partial" | "failed";
 export type ModelModality =
   | "text"
   | "vision"
@@ -410,6 +414,68 @@ export interface WorkflowRecord {
   protocol: WorkflowProtocolDefinition;
 }
 
+export interface InfoRadarSource {
+  id: string;
+  kind: InfoRadarSourceKind;
+  title: string;
+  url: string;
+  query: string;
+  enabled: boolean;
+  tags: string[];
+  notes: string;
+  updatedAt: string;
+}
+
+export interface InfoRadarItem {
+  id: string;
+  sourceId: string;
+  sourceTitle: string;
+  sourceKind: InfoRadarSourceKind;
+  title: string;
+  url: string;
+  summary: string;
+  author?: string;
+  publishedAt?: string;
+  fetchedAt: string;
+  tags: string[];
+  score: number;
+  status: "new" | "saved" | "ignored";
+}
+
+export interface InfoRadarRefreshRun {
+  id: string;
+  status: InfoRadarRefreshStatus;
+  startedAt: string;
+  finishedAt: string;
+  sourceCount: number;
+  itemCount: number;
+  message: string;
+}
+
+export interface InfoRadarWindow {
+  id: string;
+  title: string;
+  summary: string;
+  category: string;
+  status: InfoRadarWindowStatus;
+  cadence: InfoRadarRefreshCadence;
+  keywords: string[];
+  negativeKeywords: string[];
+  sources: InfoRadarSource[];
+  digestPrompt: string;
+  items: InfoRadarItem[];
+  runHistory: InfoRadarRefreshRun[];
+  createdAt: string;
+  updatedAt: string;
+  lastRefreshedAt?: string;
+}
+
+export interface InfoRadarRefreshResult {
+  card: WorkflowLibraryItem;
+  window: InfoRadarWindow;
+  run: InfoRadarRefreshRun;
+}
+
 export interface WorkflowLibraryItem {
   id: string;
   kind: WorkflowLibraryItemKind;
@@ -423,6 +489,7 @@ export interface WorkflowLibraryItem {
   updatedAt: string;
   lastUsedAt?: string;
   records: WorkflowRecord[];
+  infoWindows?: InfoRadarWindow[];
 }
 
 export interface ModelProfile {

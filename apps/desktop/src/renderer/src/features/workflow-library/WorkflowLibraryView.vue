@@ -74,6 +74,49 @@
           >
             <GIcon name="add" />
           </button>
+          <template v-else-if="ui.workflow.view === 'info'">
+            <span class="status-pill">{{ infoRadarMetrics.activeItemCount }} 条信息</span>
+            <button
+              type="button"
+              class="model-icon-button"
+              aria-label="新建信息窗口"
+              title="新建信息窗口"
+              @click="openInfoRadarWindowEditor()"
+            >
+              <GIcon name="add" />
+            </button>
+            <button
+              v-if="activeInfoWindow"
+              type="button"
+              class="model-icon-button"
+              aria-label="编辑信息窗口"
+              title="编辑信息窗口"
+              @click="openInfoRadarWindowEditor(activeInfoWindow)"
+            >
+              <GIcon name="edit" />
+            </button>
+            <button
+              v-if="activeInfoWindow"
+              type="button"
+              class="model-icon-button model-action-danger"
+              aria-label="删除信息窗口"
+              title="删除信息窗口"
+              @click="deleteInfoRadarWindow(activeInfoWindow.id)"
+            >
+              <GIcon name="delete" />
+            </button>
+            <button
+              v-if="activeInfoWindow"
+              type="button"
+              class="model-icon-button workflow-library-run-control"
+              :aria-label="ui.workflow.isRefreshingInfoWindow ? '刷新中' : '刷新信息窗口'"
+              :title="ui.workflow.isRefreshingInfoWindow ? '刷新中' : '刷新信息窗口'"
+              :disabled="ui.workflow.isRefreshingInfoWindow"
+              @click="refreshActiveInfoRadarWindow"
+            >
+              <GIcon name="refresh" :spin="ui.workflow.isRefreshingInfoWindow" />
+            </button>
+          </template>
           <template v-else-if="ui.workflow.view === 'run' && activeWorkflowRecord">
             <button
               type="button"
@@ -100,7 +143,306 @@
       </section>
 
       <section class="workflow-library-main-stage">
-        <template v-if="ui.workflow.view === 'list'">
+        <template v-if="ui.workflow.view === 'info'">
+          <section class="workflow-info-stage">
+            <aside class="workflow-info-rail">
+              <div class="workflow-info-rail-head">
+                <div>
+                  <p class="feature-kicker">Radar</p>
+                  <p class="model-section-title">信息窗口</p>
+                </div>
+                <span class="pill pill-neutral">{{ infoRadarMetrics.windowCount }}</span>
+              </div>
+
+              <div v-if="activeInfoWindows.length" class="workflow-info-window-list">
+                <button
+                  v-for="infoWindow in activeInfoWindows"
+                  :key="infoWindow.id"
+                  type="button"
+                  class="workflow-info-window-card"
+                  :class="{ 'is-active': activeInfoWindow?.id === infoWindow.id }"
+                  @click="openInfoRadarWindow(infoWindow.id)"
+                >
+                  <span class="workflow-info-window-category">{{ infoWindow.category || "综合" }}</span>
+                  <strong>{{ infoWindow.title }}</strong>
+                  <span>{{ infoWindow.items?.length ?? 0 }} 条 · {{ getInfoRadarCadenceLabel(infoWindow.cadence) }}</span>
+                </button>
+              </div>
+
+              <div v-else class="workflow-info-empty">
+                <p>还没有信息窗口。</p>
+                <button type="button" class="model-action-secondary" @click="openInfoRadarWindowEditor()">
+                  <GIcon name="add" />
+                  新建
+                </button>
+              </div>
+            </aside>
+
+            <section v-if="activeInfoWindow" class="workflow-info-feed-panel">
+              <div class="workflow-info-feed-head">
+                <div class="workflow-info-feed-title-block">
+                  <div class="model-section-actions">
+                    <span class="pill">{{ activeInfoWindow.category || "综合" }}</span>
+                    <span class="pill pill-neutral">{{ getInfoRadarCadenceLabel(activeInfoWindow.cadence) }}</span>
+                    <span
+                      v-if="activeInfoWindow.status === 'paused'"
+                      class="status-pill is-warning"
+                    >
+                      已暂停
+                    </span>
+                  </div>
+                  <p class="workflow-info-feed-title">{{ activeInfoWindow.title }}</p>
+                  <p v-if="activeInfoWindow.summary" class="workflow-info-feed-summary">{{ activeInfoWindow.summary }}</p>
+                </div>
+
+                <div class="workflow-info-feed-metrics">
+                  <span>{{ activeInfoWindow.sources?.length ?? 0 }} 来源</span>
+                  <span>{{ activeInfoWindow.items?.length ?? 0 }} 条目</span>
+                  <span v-if="activeInfoWindow.lastRefreshedAt">刷新 {{ formatLocalDateTime(activeInfoWindow.lastRefreshedAt) }}</span>
+                  <span v-else>未刷新</span>
+                </div>
+              </div>
+
+              <div class="workflow-info-source-strip">
+                <span
+                  v-for="source in activeInfoWindow.sources"
+                  :key="source.id"
+                  class="workflow-info-source-chip"
+                  :class="{ 'is-disabled': source.enabled === false }"
+                  :title="source.url || source.query || source.notes"
+                >
+                  {{ getInfoRadarSourceKindLabel(source.kind) }} · {{ source.title }}
+                </span>
+              </div>
+
+              <div
+                v-if="activeInfoWindow.runHistory?.[0]"
+                class="workflow-info-run-note"
+                :class="getInfoRadarRunStatusTone(activeInfoWindow.runHistory[0].status)"
+              >
+                <span>{{ getInfoRadarRunStatusLabel(activeInfoWindow.runHistory[0].status) }}</span>
+                <p>{{ activeInfoWindow.runHistory[0].message }}</p>
+              </div>
+
+              <section class="workflow-library-main-card workflow-info-toolbar">
+                <label class="field workflow-library-search-field">
+                  <span class="field-label">筛选</span>
+                  <input
+                    v-model="ui.workflow.infoSearchQuery"
+                    class="field-input"
+                    placeholder="搜索标题、摘要、来源或标签"
+                  />
+                </label>
+                <div class="model-section-actions">
+                  <button type="button" class="model-action-secondary" @click="openInfoRadarWindowEditor(activeInfoWindow)">
+                    <GIcon name="settings" />
+                    配置
+                  </button>
+                  <button
+                    type="button"
+                    class="model-action"
+                    :disabled="ui.workflow.isRefreshingInfoWindow"
+                    @click="refreshActiveInfoRadarWindow"
+                  >
+                    <GIcon name="refresh" :spin="ui.workflow.isRefreshingInfoWindow" />
+                    {{ ui.workflow.isRefreshingInfoWindow ? "刷新中" : "刷新" }}
+                  </button>
+                </div>
+              </section>
+
+              <div v-if="filteredInfoRadarItems.length" class="workflow-info-feed-list">
+                <article
+                  v-for="item in filteredInfoRadarItems"
+                  :key="item.id"
+                  class="workflow-info-item"
+                >
+                  <div class="workflow-info-item-head">
+                    <div>
+                      <p class="workflow-info-item-title">{{ item.title }}</p>
+                      <p class="workflow-info-item-meta">
+                        {{ item.sourceTitle }} · {{ getInfoRadarSourceKindLabel(item.sourceKind) }}
+                        <span v-if="item.publishedAt"> · {{ formatLocalDateTime(item.publishedAt) }}</span>
+                      </p>
+                    </div>
+                    <span class="status-pill">{{ getInfoRadarItemStatusLabel(item.status) }}</span>
+                  </div>
+                  <p v-if="item.summary" class="workflow-info-item-summary">{{ item.summary }}</p>
+                  <div class="workflow-info-item-footer">
+                    <div class="extension-tag-row">
+                      <span v-for="tag in item.tags?.slice(0, 4)" :key="tag" class="pill pill-neutral">{{ tag }}</span>
+                      <span v-if="item.score" class="pill pill-neutral">score {{ item.score }}</span>
+                    </div>
+                    <a
+                      v-if="getInfoRadarItemHref(item)"
+                      class="workflow-info-item-link"
+                      :href="getInfoRadarItemHref(item)"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      打开来源
+                    </a>
+                  </div>
+                </article>
+              </div>
+
+              <div v-else class="workflow-info-empty workflow-info-feed-empty">
+                <p>当前窗口还没有匹配的信息。可以先刷新，或调整来源与关键词。</p>
+              </div>
+            </section>
+
+            <section v-else class="workflow-info-feed-panel workflow-info-empty">
+              <p>选择或新建一个信息窗口。</p>
+              <button type="button" class="model-action" @click="openInfoRadarWindowEditor()">
+                <GIcon name="add" />
+                新建窗口
+              </button>
+            </section>
+          </section>
+        </template>
+
+        <form
+          v-else-if="ui.workflow.view === 'info-editor'"
+          class="workflow-library-compose-card workflow-info-editor"
+          @submit.prevent="saveInfoRadarWindow"
+        >
+          <div class="workflow-library-main-card-head">
+            <div>
+              <p class="feature-kicker">Info Window</p>
+              <p class="model-section-title">{{ ui.workflow.editingInfoWindowId ? "编辑信息窗口" : "新建信息窗口" }}</p>
+            </div>
+
+            <div class="model-section-actions">
+              <button type="button" class="model-action-secondary" @click="handleWorkflowBack">取消</button>
+              <button type="button" class="model-action" :disabled="ui.workflow.isSavingInfoWindow" @click="saveInfoRadarWindow">
+                <GIcon :name="ui.workflow.isSavingInfoWindow ? 'loading' : 'check'" :spin="ui.workflow.isSavingInfoWindow" />
+                保存
+              </button>
+            </div>
+          </div>
+
+          <div class="model-form workflow-library-compose-form workflow-info-editor-form">
+            <label class="field">
+              <span class="field-label">窗口名称</span>
+              <input v-model="ui.workflow.infoWindowDraft.title" class="field-input" placeholder="例如：技术与 Agent 趋势" />
+            </label>
+
+            <label class="field">
+              <span class="field-label">分类</span>
+              <input v-model="ui.workflow.infoWindowDraft.category" class="field-input" placeholder="技术 / 金融 / 科研 / 政治" />
+            </label>
+
+            <label class="field">
+              <span class="field-label">刷新频率</span>
+              <select v-model="ui.workflow.infoWindowDraft.cadence" class="field-input">
+                <option value="manual">手动</option>
+                <option value="hourly">每小时</option>
+                <option value="daily">每日</option>
+                <option value="weekly">每周</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span class="field-label">状态</span>
+              <select v-model="ui.workflow.infoWindowDraft.status" class="field-input">
+                <option value="active">启用</option>
+                <option value="paused">暂停</option>
+              </select>
+            </label>
+
+            <label class="field field-full">
+              <span class="field-label">简介</span>
+              <textarea
+                v-model="ui.workflow.infoWindowDraft.summary"
+                class="field-textarea workflow-info-compact-textarea"
+                rows="2"
+                placeholder="这个窗口主要追踪什么信息"
+              ></textarea>
+            </label>
+
+            <label class="field">
+              <span class="field-label">关键词</span>
+              <input v-model="ui.workflow.infoWindowDraft.keywordsText" class="field-input" placeholder="AI，Agent，金融监管" />
+            </label>
+
+            <label class="field">
+              <span class="field-label">排除词</span>
+              <input v-model="ui.workflow.infoWindowDraft.negativeKeywordsText" class="field-input" placeholder="广告，招聘，课程" />
+            </label>
+
+            <label class="field field-full">
+              <span class="field-label">摘要规则</span>
+              <textarea
+                v-model="ui.workflow.infoWindowDraft.digestPrompt"
+                class="field-textarea workflow-info-compact-textarea"
+                rows="2"
+                placeholder="例如：按影响、证据强度、后续行动线索归纳"
+              ></textarea>
+            </label>
+
+            <section class="field field-full workflow-info-source-editor">
+              <div class="workflow-library-inline-head">
+                <div>
+                  <span class="field-label">信息来源</span>
+                  <p class="workflow-library-inline-copy">RSS 和普通网页可直接刷新；搜索与公众号先保存配置，后续接入专项能力。</p>
+                </div>
+                <button type="button" class="model-action-secondary" @click="addInfoRadarSourceDraft">
+                  <GIcon name="add" />
+                  添加来源
+                </button>
+              </div>
+
+              <div class="workflow-info-source-editor-list">
+                <article
+                  v-for="source in ui.workflow.infoWindowDraft.sources"
+                  :key="source.id"
+                  class="workflow-info-source-editor-row"
+                >
+                  <label class="workflow-info-source-toggle">
+                    <input v-model="source.enabled" type="checkbox" />
+                    <span>启用</span>
+                  </label>
+                  <label class="field workflow-info-source-kind-field">
+                    <span class="field-label">类型</span>
+                    <select v-model="source.kind" class="field-input">
+                      <option value="rss">RSS</option>
+                      <option value="web_page">网页</option>
+                      <option value="search">搜索</option>
+                      <option value="wechat">公众号</option>
+                      <option value="manual">手工</option>
+                    </select>
+                  </label>
+                  <label class="field workflow-info-source-title-field">
+                    <span class="field-label">名称</span>
+                    <input v-model="source.title" class="field-input" placeholder="OpenAI Blog" />
+                  </label>
+                  <label class="field workflow-info-source-url-field">
+                    <span class="field-label">URL</span>
+                    <input v-model="source.url" class="field-input" placeholder="https://example.com/rss.xml" />
+                  </label>
+                  <label class="field workflow-info-source-query-field">
+                    <span class="field-label">查询</span>
+                    <input v-model="source.query" class="field-input" placeholder="用于搜索/公众号关键词" />
+                  </label>
+                  <label class="field workflow-info-source-tags-field">
+                    <span class="field-label">标签</span>
+                    <input v-model="source.tagsText" class="field-input" placeholder="AI，官方" />
+                  </label>
+                  <button
+                    type="button"
+                    class="model-icon-button model-action-danger workflow-info-source-remove"
+                    aria-label="删除来源"
+                    title="删除来源"
+                    @click="removeInfoRadarSourceDraft(source.id)"
+                  >
+                    <GIcon name="delete" />
+                  </button>
+                </article>
+              </div>
+            </section>
+          </div>
+        </form>
+
+        <template v-else-if="ui.workflow.view === 'list'">
           <section class="workflow-library-main-card workflow-library-list-toolbar">
             <label class="field workflow-library-search-field">
               <span class="field-label">搜索</span>
@@ -732,6 +1074,10 @@ defineProps({
   ui: { type: Object, required: true },
   workflowLibraryCards: { type: Array, default: () => [] },
   workflowDetailTitle: { type: String, default: "流程中心" },
+  activeInfoWindow: { type: Object, default: null },
+  activeInfoWindows: { type: Array, default: () => [] },
+  filteredInfoRadarItems: { type: Array, default: () => [] },
+  infoRadarMetrics: { type: Object, default: () => ({ windowCount: 0, itemCount: 0, sourceCount: 0, activeSourceCount: 0, activeItemCount: 0 }) },
   filteredWorkflowRecords: { type: Array, default: () => [] },
   activeWorkflowRecord: { type: Object, default: null },
   activeWorkflowMetrics: { type: Object, default: () => ({ timeoutMs: 0 }) },
@@ -745,14 +1091,22 @@ defineProps({
   workflowRunStatusLabel: { type: String, default: "待执行" },
   workflowRunStatusTone: { type: String, default: "" },
   activeWorkflowSteps: { type: Array, default: () => [] },
+  addInfoRadarSourceDraft: { type: Function, required: true },
   addWorkflowDraftEnvironment: { type: Function, required: true },
   addWorkflowDraftStep: { type: Function, required: true },
   addWorkflowStepOutput: { type: Function, required: true },
   cancelActiveWorkflowRun: { type: Function, required: true },
+  deleteInfoRadarWindow: { type: Function, required: true },
   deleteWorkflowRecord: { type: Function, required: true },
   duplicateWorkflowRecord: { type: Function, required: true },
   formatDurationMs: { type: Function, required: true },
   formatLocalDateTime: { type: Function, required: true },
+  getInfoRadarCadenceLabel: { type: Function, required: true },
+  getInfoRadarItemHref: { type: Function, required: true },
+  getInfoRadarItemStatusLabel: { type: Function, required: true },
+  getInfoRadarRunStatusLabel: { type: Function, required: true },
+  getInfoRadarRunStatusTone: { type: Function, required: true },
+  getInfoRadarSourceKindLabel: { type: Function, required: true },
   getWorkflowCardCountLabel: { type: Function, required: true },
   getWorkflowRunCompletedCount: { type: Function, required: true },
   getWorkflowRunDurationLabel: { type: Function, required: true },
@@ -769,6 +1123,8 @@ defineProps({
   handleWorkflowBodyStepSelect: { type: Function, required: true },
   handleWorkflowCurlCopy: { type: Function, required: true },
   isWorkflowStepExpanded: { type: Function, required: true },
+  openInfoRadarWindow: { type: Function, required: true },
+  openInfoRadarWindowEditor: { type: Function, required: true },
   openWorkflowCard: { type: Function, required: true },
   openWorkflowRecord: { type: Function, required: true },
   openWorkflowRecordEditor: { type: Function, required: true },
@@ -777,8 +1133,11 @@ defineProps({
   removeWorkflowDraftEnvironment: { type: Function, required: true },
   removeWorkflowDraftStep: { type: Function, required: true },
   removeWorkflowStepOutput: { type: Function, required: true },
+  removeInfoRadarSourceDraft: { type: Function, required: true },
   repairWorkflowBodyDraft: { type: Function, required: true },
+  refreshActiveInfoRadarWindow: { type: Function, required: true },
   runActiveWorkflowRecord: { type: Function, required: true },
+  saveInfoRadarWindow: { type: Function, required: true },
   saveWorkflowRecord: { type: Function, required: true },
   selectWorkflowEnvironment: { type: Function, required: true },
   syncWorkflowBodyDraftFromActiveStep: { type: Function, required: true },

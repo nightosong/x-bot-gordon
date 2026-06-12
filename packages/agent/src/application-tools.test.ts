@@ -326,3 +326,89 @@ test("comic_import_chapters batch upserts chapter content and asset variants sur
     assert.equal(project?.assets?.[0]?.variants?.length, 1);
   });
 });
+
+test("comic_update_chapter writes source refs, storyboard prompts and asset refs", async () => {
+  await withTempGordonHome(async () => {
+    await upsertComicProject({
+      ...createTestComicProject(),
+      assets: [
+        {
+          id: "comic_asset_hero",
+          name: "刀梦",
+          type: "character",
+          description: "黑发少年刀客。",
+          prompt: "黑发少年刀客，青灰短衫，旧刀。",
+          views: [],
+          createdAt: "2026-06-01T00:00:00.000Z",
+          updatedAt: "2026-06-01T00:00:00.000Z"
+        }
+      ]
+    });
+
+    const updateResult = await callApplicationTool(APPLICATION_SERVER, {
+      serverId: APPLICATION_SERVER.id,
+      toolName: "comic_update_chapter",
+      arguments: {
+        projectIdOrTitle: "寂寞青梅",
+        chapterIndex: 1,
+        sourceRefs: [
+          {
+            sourceType: "chapter",
+            sourceUrl: "https://example.test/book/2/1.html",
+            sourceTitle: "寂寞青梅原文",
+            chapterIndex: 1,
+            chapterTitle: "青梅旧影"
+          }
+        ],
+        content: "第一章原文/忠实故事内容。",
+        prompt: "中文分镜提示：根据第一章原文拆成 3 张图，不新增原文之外的角色。",
+        storyboards: [
+          {
+            index: 1,
+            kind: "scene",
+            title: "青梅树下",
+            beat: "刀梦站在青梅树下，看见旧信。",
+            dialogue: "",
+            camera: "中远景，树影压住人物。",
+            prompt: "中文生图提示词：古风青梅树下，黑发少年刀客手持旧信，中远景。"
+          }
+        ],
+        assetRefs: ["comic_asset_hero"],
+        dryRun: false
+      }
+    });
+
+    assert.equal(updateResult.isError, false);
+    assert.equal(updateResult.structuredContent?.applied, true);
+
+    const readResult = await callApplicationTool(APPLICATION_SERVER, {
+      serverId: APPLICATION_SERVER.id,
+      toolName: "comic_read_project",
+      arguments: {
+        projectIdOrTitle: "寂寞青梅",
+        chapterIndex: 1,
+        includeAssets: true,
+        includeImages: false
+      }
+    });
+    const project = readResult.structuredContent?.project as
+      | {
+          selectedChapters?: Array<{
+            content?: string;
+            prompt?: string;
+            sourceRefs?: Array<{ sourceUrl?: string; chapterTitle?: string }>;
+            storyboards?: Array<{ prompt?: string }>;
+            assetRefs?: string[];
+          }>;
+        }
+      | undefined;
+    const chapter = project?.selectedChapters?.[0];
+
+    assert.match(chapter?.content ?? "", /第一章原文/u);
+    assert.equal(chapter?.sourceRefs?.[0]?.sourceUrl, "https://example.test/book/2/1.html");
+    assert.equal(chapter?.sourceRefs?.[0]?.chapterTitle, "青梅旧影");
+    assert.match(chapter?.prompt ?? "", /中文分镜提示/u);
+    assert.match(chapter?.storyboards?.[0]?.prompt ?? "", /中文生图提示词/u);
+    assert.deepEqual(chapter?.assetRefs, ["comic_asset_hero"]);
+  });
+});

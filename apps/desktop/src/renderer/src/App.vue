@@ -109,6 +109,10 @@
               :ui="ui"
               :workflow-library-cards="workflowLibraryCards"
               :workflow-detail-title="workflowDetailTitle"
+              :active-info-window="activeInfoWindow"
+              :active-info-windows="activeInfoWindows"
+              :filtered-info-radar-items="filteredInfoRadarItems"
+              :info-radar-metrics="infoRadarMetrics"
               :filtered-workflow-records="filteredWorkflowRecords"
               :active-workflow-record="activeWorkflowRecord"
               :active-workflow-metrics="activeWorkflowMetrics"
@@ -122,14 +126,22 @@
               :workflow-run-status-label="workflowRunStatusLabel"
               :workflow-run-status-tone="workflowRunStatusTone"
               :active-workflow-steps="activeWorkflowSteps"
+              :add-info-radar-source-draft="addInfoRadarSourceDraft"
               :add-workflow-draft-environment="addWorkflowDraftEnvironment"
               :add-workflow-draft-step="addWorkflowDraftStep"
               :add-workflow-step-output="addWorkflowStepOutput"
               :cancel-active-workflow-run="cancelActiveWorkflowRun"
+              :delete-info-radar-window="deleteInfoRadarWindow"
               :delete-workflow-record="deleteWorkflowRecord"
               :duplicate-workflow-record="duplicateWorkflowRecord"
               :format-duration-ms="formatDurationMs"
               :format-local-date-time="formatLocalDateTime"
+              :get-info-radar-cadence-label="getInfoRadarCadenceLabel"
+              :get-info-radar-item-href="getInfoRadarItemHref"
+              :get-info-radar-item-status-label="getInfoRadarItemStatusLabel"
+              :get-info-radar-run-status-label="getInfoRadarRunStatusLabel"
+              :get-info-radar-run-status-tone="getInfoRadarRunStatusTone"
+              :get-info-radar-source-kind-label="getInfoRadarSourceKindLabel"
               :get-workflow-card-count-label="getWorkflowCardCountLabel"
               :get-workflow-run-completed-count="getWorkflowRunCompletedCount"
               :get-workflow-run-duration-label="getWorkflowRunDurationLabel"
@@ -146,6 +158,8 @@
               :handle-workflow-body-step-select="handleWorkflowBodyStepSelect"
               :handle-workflow-curl-copy="handleWorkflowCurlCopy"
               :is-workflow-step-expanded="isWorkflowStepExpanded"
+              :open-info-radar-window="openInfoRadarWindow"
+              :open-info-radar-window-editor="openInfoRadarWindowEditor"
               :open-workflow-card="openWorkflowCard"
               :open-workflow-record="openWorkflowRecord"
               :open-workflow-record-editor="openWorkflowRecordEditor"
@@ -154,8 +168,11 @@
               :remove-workflow-draft-environment="removeWorkflowDraftEnvironment"
               :remove-workflow-draft-step="removeWorkflowDraftStep"
               :remove-workflow-step-output="removeWorkflowStepOutput"
+              :remove-info-radar-source-draft="removeInfoRadarSourceDraft"
               :repair-workflow-body-draft="repairWorkflowBodyDraft"
+              :refresh-active-info-radar-window="refreshActiveInfoRadarWindow"
               :run-active-workflow-record="runActiveWorkflowRecord"
+              :save-info-radar-window="saveInfoRadarWindow"
               :save-workflow-record="saveWorkflowRecord"
               :select-workflow-environment="selectWorkflowEnvironment"
               :sync-workflow-body-draft-from-active-step="syncWorkflowBodyDraftFromActiveStep"
@@ -850,6 +867,8 @@ function handleRootAgentRunProgress(payload) {
   marketplaceAgentActions.handleMarketplaceAgentRunProgress(payload);
 }
 const {
+  activeInfoWindow,
+  activeInfoWindows,
   activeWorkflowApiKeyInputType,
   activeWorkflowBodyStepOptions,
   activeWorkflowEnvironment,
@@ -857,14 +876,23 @@ const {
   activeWorkflowMetrics,
   activeWorkflowRecord,
   activeWorkflowSteps,
+  addInfoRadarSourceDraft,
   addWorkflowDraftEnvironment,
   addWorkflowDraftStep,
   addWorkflowStepOutput,
   cancelActiveWorkflowRun,
+  deleteInfoRadarWindow,
   deleteWorkflowRecord,
   duplicateWorkflowRecord,
+  filteredInfoRadarItems,
   filteredWorkflowRecords,
   formatDurationMs,
+  getInfoRadarCadenceLabel,
+  getInfoRadarItemHref,
+  getInfoRadarItemStatusLabel,
+  getInfoRadarRunStatusLabel,
+  getInfoRadarRunStatusTone,
+  getInfoRadarSourceKindLabel,
   getWorkflowCardCountLabel,
   getWorkflowRunCompletedCount,
   getWorkflowRunDurationLabel,
@@ -882,6 +910,9 @@ const {
   handleWorkflowCurlCopy,
   handleWorkflowRunProgress,
   isWorkflowStepExpanded,
+  infoRadarMetrics,
+  openInfoRadarWindow,
+  openInfoRadarWindowEditor,
   openWorkflowCard,
   openWorkflowRecord,
   openWorkflowRecordEditor,
@@ -890,8 +921,11 @@ const {
   removeWorkflowDraftEnvironment,
   removeWorkflowDraftStep,
   removeWorkflowStepOutput,
+  removeInfoRadarSourceDraft,
   repairWorkflowBodyDraft,
+  refreshActiveInfoRadarWindow,
   runActiveWorkflowRecord,
+  saveInfoRadarWindow,
   saveWorkflowRecord,
   selectWorkflowEnvironment,
   syncWorkflowBodyDraftFromActiveStep,

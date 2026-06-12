@@ -265,12 +265,28 @@ const COMIC_CHAPTER_SCHEMA = {
     index: { type: "integer", minimum: 1 },
     title: { type: "string" },
     summary: { type: "string", description: "章节内容简介：故事事件、角色目标、冲突变化和结尾钩子" },
-    prompt: { type: "string", description: "章节级分镜与出图提示词：图片数量建议、画面节点、景别、构图和一致性约束" },
-    content: { type: "string", description: "可选章节正文/故事内容，可由小说正文、剧情草稿或本章完整文本转入，用作分镜和出图参考" },
-    sourceRefs: { type: "array", items: COMIC_SOURCE_REF_SCHEMA, description: "可选，原小说/网页/文件来源引用" },
+    prompt: {
+      type: "string",
+      description:
+        "章节级中文分镜与出图提示词：必须基于本章 sourceRefs/content/summary，写图片数量建议、画面节点、景别、构图、素材引用和一致性约束；不要写修改说明。"
+    },
+    content: {
+      type: "string",
+      description:
+        "可选章节正文/故事内容。小说转漫画时应放入逐章访问得到的原文或忠于原文的章节故事内容，用作分镜和出图依据。"
+    },
+    sourceRefs: {
+      type: "array",
+      items: COMIC_SOURCE_REF_SCHEMA,
+      description: "小说转漫画时推荐必填。记录本项目章节对应的原文章节 URL、原文章节标题和原文序号，用于逐章对照与回溯。"
+    },
     status: { type: "string", enum: ["todo", "inProgress", "done"] },
     assetRefs: { type: "array", items: { type: "string" }, description: "引用素材 id" },
-    storyboards: { type: "array", items: COMIC_STORYBOARD_SCHEMA, description: "章节内的分镜轨道，每条分镜对应一张或多张漫画图" },
+    storyboards: {
+      type: "array",
+      items: COMIC_STORYBOARD_SCHEMA,
+      description: "章节内的中文分镜轨道，每条分镜对应一张或多张漫画图；必须尊重原著本章事件，不凭空增加剧情。"
+    },
     images: { type: "array", items: COMIC_CHAPTER_IMAGE_SCHEMA }
   },
   additionalProperties: false
@@ -283,7 +299,10 @@ const COMIC_ASSET_VIEW_SCHEMA = {
     kind: { type: "string", enum: ["turnaround", "front", "side", "back", "angle", "wide", "detail"] },
     label: { type: "string" },
     src: { type: "string", description: "素材视图图片 URL、file URL 或 data URL" },
-    prompt: { type: "string", description: "该视角的稳定视觉约束" }
+    prompt: {
+      type: "string",
+      description: "该视角的稳定中文视觉约束。必须忠于原著/来源描述；不要自动添加未出现的服装、盔甲、披风、武器或装饰。"
+    }
   },
   additionalProperties: false
 } as const;
@@ -296,7 +315,10 @@ const COMIC_ASSET_VARIANT_SCHEMA = {
     chapterStartIndex: { type: "integer", minimum: 1 },
     chapterEndIndex: { type: "integer", minimum: 1 },
     description: { type: "string" },
-    prompt: { type: "string", description: "该版本稳定出图提示词" },
+    prompt: {
+      type: "string",
+      description: "该版本稳定中文出图提示词。必须忠于原著/来源描述；特殊形态角色要写清本体形态与禁止项。"
+    },
     views: { type: "array", items: COMIC_ASSET_VIEW_SCHEMA },
     sourceRefs: { type: "array", items: COMIC_SOURCE_REF_SCHEMA },
     updatedAt: { type: "string" }
@@ -311,7 +333,10 @@ const COMIC_ASSET_SCHEMA = {
     name: { type: "string" },
     type: { type: "string", enum: ["character", "prop", "scene"] },
     description: { type: "string" },
-    prompt: { type: "string", description: "素材级出图一致性提示词" },
+    prompt: {
+      type: "string",
+      description: "素材级中文出图一致性提示词。必须忠于原著/来源描述；不要自动添加未出现的服装、盔甲、披风、武器或装饰。"
+    },
     variantLabel: { type: "string", description: "当前主版本标签，例如 初始形象 / 十章后 / 夜战装" },
     chapterStartIndex: { type: "integer", minimum: 1, description: "该素材主版本适用起始章节" },
     chapterEndIndex: { type: "integer", minimum: 1, description: "该素材主版本适用结束章节" },
@@ -1797,8 +1822,9 @@ function getApplicationToolDefinitions(server: McpServerConfig): McpToolDefiniti
           chapterIndex: { type: "integer", minimum: 1, description: "可选，新章节序号；默认追加到末尾。若该序号已存在会拒绝创建" },
           title: { type: "string", description: "可选，新章节标题；默认“第 N 章”" },
           summary: { type: "string", description: "可选，章节内容简介：故事事件、角色目标、冲突变化和结尾钩子" },
-          prompt: { type: "string", description: "可选，章节级分镜与出图提示词" },
-          content: { type: "string", description: "可选章节正文/故事内容" },
+          prompt: { type: "string", description: "可选，章节级中文分镜与出图提示词，必须基于本章正文/来源，不输出修改说明" },
+          content: { type: "string", description: "可选章节正文/故事内容；小说转漫画时放入逐章访问得到的原文或忠于原文的内容" },
+          sourceRefs: { type: "array", items: COMIC_SOURCE_REF_SCHEMA, description: "可选，原文章节 URL、原文标题和原文序号，用于逐章对照" },
           storyboards: { type: "array", items: COMIC_STORYBOARD_SCHEMA, description: "可选，新章节初始分镜轨道" },
           images: { type: "array", items: COMIC_CHAPTER_IMAGE_SCHEMA, description: "可选，新章节初始图片数组" },
           status: { type: "string", enum: ["todo", "inProgress", "done"], description: "可选，新章节状态，默认 todo" },
@@ -1812,7 +1838,7 @@ function getApplicationToolDefinitions(server: McpServerConfig): McpToolDefiniti
     createToolDefinition(server, {
       name: "comic_import_chapters",
       description:
-        "批量导入或更新「丹青溢彩」漫画项目章节。适合命令工坊把线上小说目录/正文、用户上传文本或分批提取结果一次性写入项目。可 append、upsert 或 replaceRange，避免中篇/长篇小说逐章调用 comic_create_chapter。默认 dryRun=true；用户明确导入/写入/保存时设置 dryRun=false。",
+        "批量导入或更新「丹青溢彩」漫画项目章节。适合命令工坊按章节访问线上小说目录/正文、用户上传文本或分批提取结果，并把每个原文章节对照写入项目章节。可 append、upsert 或 replaceRange，避免中篇/长篇小说逐章调用 comic_create_chapter。默认 dryRun=true；用户明确导入/写入/保存时设置 dryRun=false。",
       inputSchema: {
         type: "object",
         required: ["projectIdOrTitle", "chapters"],
@@ -1825,7 +1851,12 @@ function getApplicationToolDefinitions(server: McpServerConfig): McpToolDefiniti
           },
           startIndex: { type: "integer", minimum: 1, description: "replaceRange 起始章节；也可作为 append/upsert 的重编号起点" },
           endIndex: { type: "integer", minimum: 1, description: "replaceRange 结束章节" },
-          chapters: { type: "array", items: COMIC_CHAPTER_SCHEMA, description: "待导入章节，每项可包含 title、summary、content、prompt、sourceRefs、storyboards" },
+          chapters: {
+            type: "array",
+            items: COMIC_CHAPTER_SCHEMA,
+            description:
+              "待导入章节。小说转漫画时每项应包含原文章节 title/index/sourceRefs，content 放原文或忠于原文的章节内容，summary 放章节内容简介，prompt/storyboards 放中文分镜提示和分镜轨道。"
+          },
           source: COMIC_SOURCE_META_SCHEMA,
           dryRun: { type: "boolean", description: "可选，默认 true。true 只预览，false 写回本地项目" },
           expectedProjectUpdatedAt: { type: "string", description: "可选，乐观锁：若项目更新时间不一致则拒绝写回" }
@@ -1836,7 +1867,7 @@ function getApplicationToolDefinitions(server: McpServerConfig): McpToolDefiniti
     createToolDefinition(server, {
       name: "comic_update_chapter",
       description:
-        "预览或写回「丹青溢彩」指定漫画章节的标题、章节内容简介、章节正文/故事内容、分镜与出图提示、状态或引用素材。默认 dryRun=true；用户明确保存/写回/直接修改时设置 dryRun=false。",
+        "预览或写回「丹青溢彩」指定漫画章节的标题、来源对照、章节内容简介、章节正文/故事内容、中文分镜与出图提示、分镜轨道、状态或引用素材。默认 dryRun=true；用户明确保存/写回/直接修改时设置 dryRun=false。",
       inputSchema: {
         type: "object",
         required: ["projectIdOrTitle"],
@@ -1847,8 +1878,9 @@ function getApplicationToolDefinitions(server: McpServerConfig): McpToolDefiniti
           chapterTitle: { type: "string" },
           title: { type: "string" },
           summary: { type: "string", description: "章节内容简介：故事事件、角色目标、冲突变化和结尾钩子" },
-          prompt: { type: "string", description: "章节级分镜与出图提示词：图片数量建议、画面节点、景别、构图和一致性约束" },
+          prompt: { type: "string", description: "章节级中文分镜与出图提示词：图片数量建议、画面节点、景别、构图和一致性约束；必须基于本章来源/正文，不输出修改说明" },
           content: { type: "string", description: "可选章节正文/故事内容，可由小说正文、剧情草稿或本章完整文本转入，用作分镜和出图参考" },
+          sourceRefs: { type: "array", items: COMIC_SOURCE_REF_SCHEMA, description: "原文章节 URL、原文标题和原文序号，用于逐章对照与回溯" },
           storyboards: { type: "array", items: COMIC_STORYBOARD_SCHEMA, description: "当前章节的分镜轨道；替换写入时应包含完整目标分镜列表" },
           status: { type: "string", enum: ["todo", "inProgress", "done"] },
           assetRefs: { type: "array", items: { type: "string" }, description: "引用素材 id" },
@@ -3119,6 +3151,7 @@ async function handleComicCreateChapter(args: JsonObject) {
     summary: String(args.summary ?? ""),
     prompt: String(args.prompt ?? ""),
     content: String(args.content ?? ""),
+    sourceRefs: normalizeComicSourceRefsInput(args.sourceRefs),
     storyboards,
     images,
     status: asComicChapterStatus(args.status),
@@ -3375,6 +3408,7 @@ async function handleComicUpdateChapter(args: JsonObject) {
     ...(args.summary !== undefined ? { summary: String(args.summary ?? "") } : {}),
     ...(args.prompt !== undefined ? { prompt: String(args.prompt ?? "") } : {}),
     ...(args.content !== undefined ? { content: String(args.content ?? "") } : {}),
+    ...(args.sourceRefs !== undefined ? { sourceRefs: normalizeComicSourceRefsInput(args.sourceRefs) } : {}),
     ...(args.storyboards !== undefined ? { storyboards: normalizeComicStoryboardsInput(args.storyboards, chapter.storyboards) } : {}),
     ...(args.status !== undefined ? { status: asComicChapterStatus(args.status) } : {}),
     ...(args.assetRefs !== undefined ? { assetRefs: normalizeComicAssetRefsForTool(args.assetRefs, project) } : {}),
@@ -3383,10 +3417,10 @@ async function handleComicUpdateChapter(args: JsonObject) {
   const nextChapter = syncComicStoryboardImageIdsForTool(nextChapterBase);
   const fields: JsonObject = {};
 
-  for (const field of ["title", "summary", "prompt", "content", "storyboards", "status", "assetRefs"] as const) {
+  for (const field of ["title", "summary", "prompt", "content", "sourceRefs", "storyboards", "status", "assetRefs"] as const) {
     if (args[field] !== undefined) {
       fields[field] =
-        field === "assetRefs" || field === "storyboards"
+        field === "assetRefs" || field === "storyboards" || field === "sourceRefs"
           ? buildStructuredFieldPreview(chapter[field], nextChapter[field])
           : buildFieldPreview(chapter[field], nextChapter[field]);
     }

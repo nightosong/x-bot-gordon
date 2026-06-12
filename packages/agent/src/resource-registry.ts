@@ -880,7 +880,7 @@ function buildCapabilityRegistry(candidates: AgentResourceCandidate[], intent: s
       label: "导入小说故事到漫画项目",
       intent: "update",
       appliesTo: ["comic.project", "web.source"],
-      description: "把线上小说、上传文本或章节目录转入丹青溢彩，创建项目并批量写入章节正文/简介，供后续分镜和素材提取使用。",
+      description: "按章节访问线上小说、上传文本或章节目录，把原文章节 URL/标题/序号写入 sourceRefs，把原文或忠实故事内容写入 content，并批量写入章节简介、中文分镜提示、分镜轨道和素材引用，供后续素材提取与出图使用。",
       preferredExecutionDomains: ["comic_asset", "application_asset", "web_research"],
       toolHints: ["web_research", "read_web_page", "comic_create_project", "comic_import_chapters", "comic_read_project"],
       verification: ["写回工具 applied=true", "读回项目章节数和来源信息"],
@@ -891,7 +891,7 @@ function buildCapabilityRegistry(candidates: AgentResourceCandidate[], intent: s
       label: "拆分漫画分镜",
       intent: "generate",
       appliesTo: ["comic.project"],
-      description: "基于章节正文或简介拆分多条分镜，维护镜头、画面、提示词和引用素材。",
+      description: "基于章节 sourceRefs/content/summary 严格拆分多条中文分镜，维护镜头、画面、提示词和引用素材；不能编造原著未出现的人物、装备、场景或剧情结果。",
       preferredExecutionDomains: ["comic_asset", "application_asset"],
       toolHints: ["comic_read_project", "comic_import_chapters", "comic_update_chapter"],
       verification: ["章节 storyboards 数量与目标一致", "写后读回目标章节"],
@@ -1139,8 +1139,8 @@ function buildResourceGatewayPlan(
           steps,
           createGatewayStep(capability("comic.import_story"), "act", argumentHints, {
             toolHints: ["web_research", "read_web_page", "comic_create_project", "comic_import_chapters", "comic_read_project"],
-            expectedOutcome: "线上或上传的小说来源被整理为丹青溢彩项目和章节正文/简介",
-            verificationMethod: "调用 comic_read_project 读回项目，确认 source、chapterCount、章节 title/content 已写入"
+            expectedOutcome: "线上或上传的小说来源被逐章整理为丹青溢彩项目章节，章节含 sourceRefs、content、summary、prompt/storyboards 和必要素材引用",
+            verificationMethod: "调用 comic_read_project 读回项目，确认 source、chapterCount、目标章节 sourceRefs/title/content/prompt 已写入"
           })
         );
       }
@@ -1148,8 +1148,8 @@ function buildResourceGatewayPlan(
       addGatewayStep(
         steps,
         createGatewayStep(capability("comic.split_storyboard"), "act", argumentHints, {
-          expectedOutcome: "目标章节获得可编辑的分镜轨道、章节正文引用和出图提示",
-          verificationMethod: "写回后调用 comic_read_project 读回目标章节，确认 storyboards 数量、标题、画面和 prompt"
+          expectedOutcome: "目标章节获得忠于原文的可编辑中文分镜轨道、素材引用和出图提示",
+          verificationMethod: "写回后调用 comic_read_project 读回目标章节，确认 storyboards 数量、标题、画面、prompt、assetRefs 和 sourceRefs"
         })
       );
     }

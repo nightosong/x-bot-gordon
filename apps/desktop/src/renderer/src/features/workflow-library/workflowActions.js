@@ -2,12 +2,16 @@ import { computed } from "vue";
 
 import {
   createDefaultWorkflowEnvironments,
+  createInfoRadarSourceDraft as createInfoRadarSourceDraftFromConfig,
+  createInfoRadarWindowDraft as createInfoRadarWindowDraftFromConfig,
+  createInfoRadarWindowDraftFromWindow as createInfoRadarWindowDraftFromWindowConfig,
   createWorkflowOutputDraft as createWorkflowOutputDraftFromConfig,
   createWorkflowRecordDraft as createWorkflowRecordDraftFromConfig,
   createWorkflowState as createWorkflowStateFromConfig,
   createWorkflowStepDraft as createWorkflowStepDraftFromConfig
 } from "./workflowConfig.js";
 import {
+  buildInfoRadarWindowFromDraft,
   buildWorkflowInitialRunResult,
   buildWorkflowRecordFromDraft as buildWorkflowRecordFromDraftRuntime,
   createWorkflowRecordDraftFromRecord as createWorkflowRecordDraftFromRecordRuntime,
@@ -15,6 +19,12 @@ import {
   extractCurlUrl,
   findWorkflowCurlBodySegment,
   formatDurationMs,
+  getInfoRadarCadenceLabel,
+  getInfoRadarItemHref,
+  getInfoRadarItemStatusLabel,
+  getInfoRadarRunStatusLabel,
+  getInfoRadarRunStatusTone,
+  getInfoRadarSourceKindLabel,
   getWorkflowCardCountLabel,
   getWorkflowRunCompletedCount,
   getWorkflowRunDurationLabel,
@@ -64,6 +74,18 @@ function buildWorkflowRecordFromDraft(createLocalId, draft, existingRecord = nul
   return buildWorkflowRecordFromDraftRuntime(draft, existingRecord, { createLocalId });
 }
 
+function createInfoRadarSourceDraft(createLocalId, overrides = {}) {
+  return createInfoRadarSourceDraftFromConfig(overrides, createLocalId);
+}
+
+function createInfoRadarWindowDraft(createLocalId, overrides = {}) {
+  return createInfoRadarWindowDraftFromConfig(createLocalId, overrides);
+}
+
+function createInfoRadarWindowDraftFromWindow(createLocalId, infoWindow) {
+  return createInfoRadarWindowDraftFromWindowConfig(infoWindow, createLocalId);
+}
+
 export function createWorkflowState(createLocalId) {
   return createWorkflowStateFromConfig(createLocalId);
 }
@@ -89,6 +111,44 @@ export function createWorkflowActions({
   const activeWorkflowRecord = computed(
     () => activeWorkflowRecords.value.find((record) => record.id === ui.workflow.activeRecordId) ?? activeWorkflowRecords.value[0] ?? null
   );
+  const activeInfoWindows = computed(() => activeWorkflowCard.value?.infoWindows ?? []);
+  const activeInfoWindow = computed(
+    () => activeInfoWindows.value.find((infoWindow) => infoWindow.id === ui.workflow.activeInfoWindowId) ?? activeInfoWindows.value[0] ?? null
+  );
+  const filteredInfoRadarItems = computed(() => {
+    const query = String(ui.workflow.infoSearchQuery ?? "").trim().toLowerCase();
+    const items = activeInfoWindow.value?.items ?? [];
+
+    if (!query) {
+      return items;
+    }
+
+    return items.filter((item) =>
+      [
+        item.title,
+        item.summary,
+        item.sourceTitle,
+        item.author,
+        item.tags?.join(" ")
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(query)
+    );
+  });
+  const infoRadarMetrics = computed(() => {
+    const windows = activeInfoWindows.value;
+    const items = windows.flatMap((infoWindow) => infoWindow.items ?? []);
+    const sources = windows.flatMap((infoWindow) => infoWindow.sources ?? []);
+
+    return {
+      windowCount: windows.length,
+      itemCount: items.length,
+      sourceCount: sources.length,
+      activeSourceCount: sources.filter((source) => source.enabled !== false).length,
+      activeItemCount: activeInfoWindow.value?.items?.length ?? 0
+    };
+  });
   const activeWorkflowSteps = computed(() => activeWorkflowRecord.value?.steps ?? []);
   const activeWorkflowBodyStepOptions = computed(() =>
     activeWorkflowSteps.value
@@ -156,6 +216,14 @@ export function createWorkflowActions({
     );
   });
   const workflowDetailTitle = computed(() => {
+    if (ui.workflow.view === "info-editor") {
+      return ui.workflow.editingInfoWindowId ? "编辑信息窗口" : "新建信息窗口";
+    }
+
+    if (ui.workflow.view === "info") {
+      return activeInfoWindow.value?.title ?? activeWorkflowCard.value?.title ?? "信息雷达";
+    }
+
     if (ui.workflow.view === "editor") {
       return ui.workflow.editingRecordId ? "编辑工作流" : "新建工作流";
     }
@@ -527,6 +595,7 @@ export function createWorkflowActions({
     if (!workbench.workflowLibrary.length) {
       ui.workflow.activeCardId = null;
       ui.workflow.activeRecordId = null;
+      ui.workflow.activeInfoWindowId = null;
       ui.workflow.copiedStepId = null;
       ui.workflow.expandedStepIds = [];
       return;
@@ -536,25 +605,52 @@ export function createWorkflowActions({
       workbench.workflowLibrary.find((entry) => entry.id === ui.workflow.activeCardId) ?? workbench.workflowLibrary[0];
     ui.workflow.activeCardId = nextCard?.id ?? null;
 
-    const nextRecord = nextCard?.records?.find((record) => record.id === ui.workflow.activeRecordId) ?? nextCard?.records?.[0] ?? null;
-    ui.workflow.activeRecordId = nextRecord?.id ?? null;
+    if (nextCard?.kind === "info-radar") {
+      const nextWindow =
+        nextCard?.infoWindows?.find((infoWindow) => infoWindow.id === ui.workflow.activeInfoWindowId) ??
+        nextCard?.infoWindows?.[0] ??
+        null;
+      ui.workflow.activeInfoWindowId = nextWindow?.id ?? null;
+      ui.workflow.activeRecordId = null;
+    } else {
+      const nextRecord = nextCard?.records?.find((record) => record.id === ui.workflow.activeRecordId) ?? nextCard?.records?.[0] ?? null;
+      ui.workflow.activeRecordId = nextRecord?.id ?? null;
+      ui.workflow.activeInfoWindowId = null;
+    }
+
     ui.workflow.copiedStepId = null;
     ui.workflow.expandedStepIds = [];
   }
 
   function openWorkflowCard(cardId) {
     writeRef(activeFeature, featureWorkflowLibraryId);
-    ui.workflow.view = "list";
     ui.workflow.activeCardId = cardId;
     const card = workbench.workflowLibrary.find((entry) => entry.id === cardId);
-    ui.workflow.activeRecordId = card?.records?.[0]?.id ?? null;
+    const isInfoRadar = card?.kind === "info-radar";
+
+    ui.workflow.view = isInfoRadar ? "info" : "list";
+    ui.workflow.activeRecordId = isInfoRadar ? null : card?.records?.[0]?.id ?? null;
+    ui.workflow.activeInfoWindowId = isInfoRadar ? card?.infoWindows?.[0]?.id ?? null : null;
     ui.workflow.copiedStepId = null;
     ui.workflow.searchQuery = "";
+    ui.workflow.infoSearchQuery = "";
     ui.workflow.runResult = null;
     ui.workflow.expandedStepIds = [];
   }
 
   function handleWorkflowBack() {
+    if (ui.workflow.view === "info-editor") {
+      ui.workflow.view = "info";
+      ui.workflow.editingInfoWindowId = null;
+      ui.workflow.infoWindowDraft = createInfoRadarWindowDraft(createLocalId);
+      return;
+    }
+
+    if (ui.workflow.view === "info") {
+      backToWorkflowLibrary();
+      return;
+    }
+
     if (ui.workflow.view === "run" || ui.workflow.view === "editor") {
       ui.workflow.view = "list";
       ui.workflow.editingRecordId = null;
@@ -568,8 +664,165 @@ export function createWorkflowActions({
   function backToWorkflowLibrary() {
     ui.workflow.view = "library";
     ui.workflow.editingRecordId = null;
+    ui.workflow.editingInfoWindowId = null;
     ui.workflow.runResult = null;
     syncWorkflowSelection();
+  }
+
+  function openInfoRadarWindow(windowId) {
+    ui.workflow.activeInfoWindowId = windowId;
+    ui.workflow.infoSearchQuery = "";
+    ui.workflow.view = "info";
+  }
+
+  function openInfoRadarWindowEditor(infoWindow = null) {
+    ui.workflow.editingInfoWindowId = infoWindow?.id ?? null;
+    ui.workflow.infoWindowDraft = infoWindow
+      ? createInfoRadarWindowDraftFromWindow(createLocalId, infoWindow)
+      : createInfoRadarWindowDraft(createLocalId);
+    ui.workflow.view = "info-editor";
+  }
+
+  function addInfoRadarSourceDraft() {
+    ui.workflow.infoWindowDraft.sources = [
+      ...(ui.workflow.infoWindowDraft.sources ?? []),
+      createInfoRadarSourceDraft(createLocalId)
+    ];
+  }
+
+  function removeInfoRadarSourceDraft(sourceId) {
+    const nextSources = (ui.workflow.infoWindowDraft.sources ?? []).filter((source) => source.id !== sourceId);
+    ui.workflow.infoWindowDraft.sources = nextSources.length ? nextSources : [createInfoRadarSourceDraft(createLocalId)];
+  }
+
+  async function saveInfoRadarWindow() {
+    const card = activeWorkflowCard.value;
+
+    if (ui.workflow.isSavingInfoWindow) {
+      return;
+    }
+
+    if (!desktopApi?.upsertWorkflowLibraryItem || !card || card.kind !== "info-radar") {
+      setStatus("信息雷达仓储未就绪，暂时无法保存。", "danger");
+      return;
+    }
+
+    try {
+      ui.workflow.isSavingInfoWindow = true;
+      setStatus("正在保存信息窗口...", "neutral");
+
+      const existingWindow = (card.infoWindows ?? []).find((infoWindow) => infoWindow.id === ui.workflow.editingInfoWindowId) ?? null;
+      const nextWindow = buildInfoRadarWindowFromDraft(ui.workflow.infoWindowDraft, existingWindow, { createLocalId });
+      const nextWindows = existingWindow
+        ? (card.infoWindows ?? []).map((infoWindow) => (infoWindow.id === existingWindow.id ? nextWindow : infoWindow))
+        : [nextWindow, ...(card.infoWindows ?? [])];
+      const nextCard = {
+        ...card,
+        usageCount: Number(card.usageCount ?? 0) + (existingWindow ? 0 : 1),
+        updatedAt: nextWindow.updatedAt,
+        lastUsedAt: nextWindow.updatedAt,
+        infoWindows: nextWindows
+      };
+
+      workbench.workflowLibrary = await desktopApi.upsertWorkflowLibraryItem(toPlainIpcData(nextCard));
+      ui.workflow.activeCardId = nextCard.id;
+      ui.workflow.activeInfoWindowId = nextWindow.id;
+      ui.workflow.editingInfoWindowId = null;
+      ui.workflow.infoWindowDraft = createInfoRadarWindowDraft(createLocalId);
+      ui.workflow.view = "info";
+      setStatus(`已保存「${nextWindow.title}」。`, "success");
+    } catch (error) {
+      console.error("Failed to save info radar window", error);
+      const message = getErrorMessage(error);
+      setStatus(`保存信息窗口失败：${message}`, "danger");
+      void showAlertDialog({
+        tone: "danger",
+        title: "保存信息窗口失败",
+        message,
+        confirmText: "知道了"
+      });
+    } finally {
+      ui.workflow.isSavingInfoWindow = false;
+    }
+  }
+
+  async function deleteInfoRadarWindow(windowId) {
+    const card = activeWorkflowCard.value;
+
+    if (!desktopApi?.upsertWorkflowLibraryItem || !card || card.kind !== "info-radar") {
+      setStatus("信息雷达仓储未就绪，暂时无法删除。", "danger");
+      return;
+    }
+
+    const infoWindow = (card.infoWindows ?? []).find((entry) => entry.id === windowId) ?? null;
+    const confirmed = await showConfirmDialog({
+      tone: "danger",
+      title: "删除信息窗口",
+      message: `确认删除「${infoWindow?.title ?? "当前窗口"}」吗？已抓取的信息条目也会从该窗口移除。`,
+      confirmText: "删除",
+      cancelText: "取消"
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
+    const nextCard = {
+      ...card,
+      updatedAt: new Date().toISOString(),
+      infoWindows: (card.infoWindows ?? []).filter((entry) => entry.id !== windowId)
+    };
+
+    try {
+      workbench.workflowLibrary = await desktopApi.upsertWorkflowLibraryItem(toPlainIpcData(nextCard));
+      ui.workflow.activeInfoWindowId = nextCard.infoWindows[0]?.id ?? null;
+      setStatus("已删除信息窗口。", "success");
+    } catch (error) {
+      console.error("Failed to delete info radar window", error);
+      setStatus(`删除信息窗口失败：${getErrorMessage(error)}`, "danger");
+    }
+  }
+
+  async function refreshActiveInfoRadarWindow() {
+    const card = activeWorkflowCard.value;
+    const infoWindow = activeInfoWindow.value;
+
+    if (ui.workflow.isRefreshingInfoWindow) {
+      return;
+    }
+
+    if (!desktopApi?.refreshInfoRadarWindow || !card || !infoWindow) {
+      setStatus("信息刷新桥接未就绪。", "danger");
+      return;
+    }
+
+    try {
+      ui.workflow.isRefreshingInfoWindow = true;
+      setStatus(`正在刷新「${infoWindow.title}」...`, "neutral");
+      const result = await desktopApi.refreshInfoRadarWindow(
+        toPlainIpcData({
+          cardId: card.id,
+          windowId: infoWindow.id
+        })
+      );
+      const nextCard = result?.card;
+
+      if (nextCard) {
+        workbench.workflowLibrary = workbench.workflowLibrary.map((entry) => (entry.id === nextCard.id ? nextCard : entry));
+        ui.workflow.activeCardId = nextCard.id;
+        ui.workflow.activeInfoWindowId = result?.window?.id ?? infoWindow.id;
+      }
+
+      const run = result?.run;
+      const succeeded = run?.status === "success";
+      const partial = run?.status === "partial";
+      setStatus(run?.message || "信息窗口刷新完成。", succeeded ? "success" : partial ? "warning" : "danger");
+    } catch (error) {
+      console.error("Failed to refresh info radar window", error);
+      setStatus(`刷新信息窗口失败：${getErrorMessage(error)}`, "danger");
+    } finally {
+      ui.workflow.isRefreshingInfoWindow = false;
+    }
   }
 
   function openWorkflowRecord(recordId) {
@@ -839,6 +1092,8 @@ export function createWorkflowActions({
   }
 
   return {
+    activeInfoWindow,
+    activeInfoWindows,
     activeWorkflowApiKeyInputType,
     activeWorkflowBodyStepOptions,
     activeWorkflowEnvironment,
@@ -846,15 +1101,24 @@ export function createWorkflowActions({
     activeWorkflowMetrics,
     activeWorkflowRecord,
     activeWorkflowSteps,
+    addInfoRadarSourceDraft,
     addWorkflowDraftEnvironment,
     addWorkflowDraftStep,
     addWorkflowStepOutput,
     backToWorkflowLibrary,
     cancelActiveWorkflowRun,
+    deleteInfoRadarWindow,
     deleteWorkflowRecord,
     duplicateWorkflowRecord,
+    filteredInfoRadarItems,
     filteredWorkflowRecords,
     formatDurationMs,
+    getInfoRadarCadenceLabel,
+    getInfoRadarItemHref,
+    getInfoRadarItemStatusLabel,
+    getInfoRadarRunStatusLabel,
+    getInfoRadarRunStatusTone,
+    getInfoRadarSourceKindLabel,
     getWorkflowCardCountLabel,
     getWorkflowRunCompletedCount,
     getWorkflowRunDurationLabel,
@@ -872,6 +1136,9 @@ export function createWorkflowActions({
     handleWorkflowCurlCopy,
     handleWorkflowRunProgress,
     isWorkflowStepExpanded,
+    infoRadarMetrics,
+    openInfoRadarWindow,
+    openInfoRadarWindowEditor,
     openWorkflowCard,
     openWorkflowRecord,
     openWorkflowRecordEditor,
@@ -880,8 +1147,11 @@ export function createWorkflowActions({
     removeWorkflowDraftEnvironment,
     removeWorkflowDraftStep,
     removeWorkflowStepOutput,
+    removeInfoRadarSourceDraft,
     repairWorkflowBodyDraft,
+    refreshActiveInfoRadarWindow,
     runActiveWorkflowRecord,
+    saveInfoRadarWindow,
     saveWorkflowRecord,
     selectWorkflowEnvironment,
     syncWorkflowBodyDraftFromActiveStep,

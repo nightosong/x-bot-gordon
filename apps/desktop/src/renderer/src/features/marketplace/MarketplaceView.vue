@@ -2457,6 +2457,25 @@
                       </span>
                     </div>
 
+                    <div class="comic-source-ref-strip" :class="{ 'is-empty': !getComicChapterSourceRefs(activeComicChapter).length }">
+                      <span class="comic-source-ref-label">来源对照</span>
+                      <template v-if="getComicChapterSourceRefs(activeComicChapter).length">
+                        <a
+                          v-for="(sourceRef, sourceIndex) in getComicChapterSourceRefs(activeComicChapter).slice(0, 3)"
+                          :key="`${activeComicChapter.id}-outline-source-${sourceIndex}`"
+                          class="comic-source-ref-chip"
+                          :href="getComicSourceRefUrl(sourceRef) || undefined"
+                          target="_blank"
+                          rel="noreferrer"
+                          :title="getComicSourceRefUrl(sourceRef) || getComicSourceRefMeta(sourceRef)"
+                        >
+                          <span>{{ getComicSourceRefTitle(sourceRef, getComicChapterSourceLabel(activeComicChapter)) }}</span>
+                          <small>{{ getComicSourceRefMeta(sourceRef) }}</small>
+                        </a>
+                      </template>
+                      <span v-else class="comic-source-ref-empty">等待命令工坊逐章写入原文来源</span>
+                    </div>
+
                     <details class="comic-inspector-fold comic-outline-fold" :open="ui.marketplace.comic.isOutlineChapterSummaryOpen">
                       <summary @click.prevent="toggleComicOutlineChapterSummary">
                         <GIcon name="chevronDown" />
@@ -2837,10 +2856,33 @@
 
                       <details class="comic-inspector-fold comic-chapter-source-fold" :open="ui.marketplace.comic.isChapterStoryInputOpen">
                         <summary @click.prevent="toggleComicChapterStoryInput">
-                          <span>故事输入 <small>{{ activeComicChapter.content.length || activeComicChapter.summary.length }} 字</small></span>
+                          <span>
+                            故事输入
+                            <small>{{ activeComicChapter.content.length || activeComicChapter.summary.length }} 字</small>
+                            <small>{{ getComicChapterSourceCountLabel(activeComicChapter) }}</small>
+                          </span>
                           <GIcon name="chevronDown" />
                         </summary>
                         <div class="comic-chapter-source-body">
+                          <div class="comic-source-ref-strip comic-source-ref-strip-compact" :class="{ 'is-empty': !getComicChapterSourceRefs(activeComicChapter).length }">
+                            <span class="comic-source-ref-label">来源</span>
+                            <template v-if="getComicChapterSourceRefs(activeComicChapter).length">
+                              <a
+                                v-for="(sourceRef, sourceIndex) in getComicChapterSourceRefs(activeComicChapter).slice(0, 3)"
+                                :key="`${activeComicChapter.id}-generate-source-${sourceIndex}`"
+                                class="comic-source-ref-chip"
+                                :href="getComicSourceRefUrl(sourceRef) || undefined"
+                                target="_blank"
+                                rel="noreferrer"
+                                :title="getComicSourceRefUrl(sourceRef) || getComicSourceRefMeta(sourceRef)"
+                              >
+                                <span>{{ getComicSourceRefTitle(sourceRef, getComicChapterSourceLabel(activeComicChapter)) }}</span>
+                                <small>{{ getComicSourceRefMeta(sourceRef) }}</small>
+                              </a>
+                            </template>
+                            <span v-else class="comic-source-ref-empty">未写入原文章节来源</span>
+                          </div>
+
                           <FieldAiOptimizer
                             :actions="fieldAiActions"
                             :state="ui.marketplace.fieldAi"
@@ -2914,6 +2956,8 @@
                             <span class="comic-asset-ref-copy">
                               <strong>{{ asset.name }}</strong>
                               <small>{{ getComicAssetTypeLabel(asset.type) }} / {{ getComicAssetViewCountLabel(asset) }}</small>
+                              <em v-if="getComicAssetMetaLine(asset)">{{ getComicAssetMetaLine(asset) }}</em>
+                              <em v-if="asset.prompt">{{ truncateText(asset.prompt, 58) }}</em>
                             </span>
                             <span v-if="getComicAssetPreviewViews(asset, 2).length" class="comic-asset-ref-thumbs" aria-hidden="true">
                               <img
@@ -4048,12 +4092,18 @@ const {
   getComicAssetViewKindLabel,
   getComicAssetViewReferenceOptions,
   getComicChapterDisplayTitle,
+  getComicChapterSourceCountLabel,
+  getComicChapterSourceLabel,
+  getComicChapterSourceRefs,
   getComicChapterImages,
   getComicChapterReferencedAssets,
   getComicChapterStatusClass,
   getComicChapterStatusLabel,
   getComicStoryboardImages,
   getComicStoryboardKindLabel,
+  getComicSourceRefMeta,
+  getComicSourceRefTitle,
+  getComicSourceRefUrl,
   getComicProjectFormatLabel,
   getComicProjectPaletteLabel,
   generateComicAssetViewImage,
@@ -4735,6 +4785,20 @@ function getVideoAssetViewCountLabel(asset) {
   return `${filledCount}/${totalCount} 图`;
 }
 
+function getComicAssetMetaLine(asset) {
+  const variant = String(asset?.variantLabel ?? "").trim();
+  const start = Number(asset?.chapterStartIndex);
+  const end = Number(asset?.chapterEndIndex);
+  const range =
+    Number.isFinite(start) && start > 0 && Number.isFinite(end) && end > 0
+      ? `第 ${start}-${end} 章`
+      : Number.isFinite(start) && start > 0
+        ? `第 ${start} 章起`
+        : "";
+
+  return [variant, range].filter(Boolean).join(" / ");
+}
+
 function getComicImageParamValue(value) {
   return String(value ?? "").trim() || "未记录";
 }
@@ -4842,34 +4906,64 @@ function buildComicAssetViewFieldAiContext(asset, view, fieldLabel) {
   const references = getComicAssetViewResolvedReferences(view)
     .map((reference) => reference.label)
     .join("、");
+  const assetBrief = [asset?.name, asset?.description, asset?.prompt, view?.label, view?.prompt].join("\n");
+  const isGroupAsset = /多人|群体|组合|队伍|导师团|老师群|群像|阵列|并排展示|五位|四位|三位|二位|二人|两位|两人|一家|搭档|同伴|character lineup|group reference|multiple characters|team lineup|mentor lineup/i.test(assetBrief);
+  const isRelationshipAsset = /关系图|关系设定|关系参考|坐骑|伙伴|伴随|同行|站在.+旁|与.+旁边|蓝龙|莎莉|standing beside|relationship reference|relationship concept|mount|blue dragon|dragon sally/i.test(assetBrief);
+  const isStageReference = /状态参考|阶段版本|重伤|濒死|战后状态|形态|版本/i.test(assetBrief);
 
   return compactFieldAiContext([
     buildComicProjectFieldAiContext(fieldLabel),
     `素材：${asset?.name ?? ""}`,
     `素材类型：${getComicAssetTypeLabel(asset?.type)}`,
     `素材描述：${asset?.description ?? ""}`,
-    `素材总提示词：${asset?.prompt ?? ""}`,
-    `视图：${view?.label || getComicAssetViewKindLabel(view?.kind)}`,
+    `素材级提示词：${asset?.prompt ?? ""}`,
+    `素材版本：${asset?.variantLabel ?? ""}`,
+    `适用章节：${asset?.chapterStartIndex || ""}${asset?.chapterEndIndex ? `-${asset.chapterEndIndex}` : ""}`,
+    `当前视图：${view?.label || getComicAssetViewKindLabel(view?.kind)}`,
     `视图类型：${getComicAssetViewKindLabel(view?.kind)}`,
     `已引用素材：${references || "暂无"}`,
-    fieldLabel === "视图提示词" ? "" : `视图提示词：${view?.prompt ?? ""}`
+    fieldLabel === "视图提示词" ? "" : `视图提示词：${view?.prompt ?? ""}`,
+    "输出要求：必须使用中文自然语言，不要输出英文 tag 串；必须忠于原著/用户描述，不自动添加未出现的服装、盔甲、披风、武器或装饰。",
+    isGroupAsset ? "多人/群像素材约束：不要写成单人三视图；应写成多人角色阵列设定图，完整展示所有成员，并保持每个成员的身份、轮廓和材质差异。" : "",
+    isRelationshipAsset ? "关系型素材约束：不要写成单人三视图；应写成角色与坐骑/伙伴/关联对象的关系设定图，完整展示双方比例、站位和识别点。" : "",
+    isStageReference ? "阶段/状态素材约束：如果是同一角色或生物的后续状态，不要改成新角色；应保留原始身份识别点，并突出当前阶段变化。" : "",
+    "如果素材是赵乾坤的金刚骷髅形态，必须明确暗金色骨骼本体、三视图、红色眼眶/骨缝微光，并禁止盔甲衣服。"
   ]);
 }
 
 function buildComicChapterFieldAiContext(chapter, fieldLabel) {
-  const referencedAssets = getComicChapterReferencedAssets(chapter)
+  const sourceRefs = getComicChapterSourceRefs(chapter);
+  const referencedAssets = getComicChapterReferencedAssets(chapter);
+  const referencedAssetNames = referencedAssets
     .map((asset) => `${getComicAssetTypeLabel(asset.type)}「${asset.name}」`)
     .join("、");
+  const referencedAssetPrompts = referencedAssets
+    .slice(0, 8)
+    .map((asset) => {
+      const meta = getComicAssetMetaLine(asset);
+      const prompt = String(asset?.prompt ?? "").trim();
+      return `${asset.name}${meta ? `（${meta}）` : ""}：${prompt || asset.description || "暂无提示词"}`;
+    })
+    .join("\n");
+  const sourceLines = sourceRefs
+    .slice(0, 5)
+    .map((ref, index) => `${index + 1}. ${getComicSourceRefTitle(ref, "来源")} / ${getComicSourceRefUrl(ref) || getComicSourceRefMeta(ref)}`)
+    .join("\n");
 
   return compactFieldAiContext([
     `项目：${activeComicProject.value?.title ?? ""}`,
     `总介绍：${activeComicProject.value?.summary ?? ""}`,
     `画风与镜头：${activeComicProject.value?.visualStyle ?? ""}`,
     `章节：${chapter ? getComicChapterDisplayTitle(chapter, activeComicChapterIndex.value) : ""}`,
-    `引用素材：${referencedAssets || "暂无"}`,
+    `来源对照：${sourceLines || "暂无；如果正在从小说改编，必须先逐章读取来源并写入 sourceRefs/content 后再生成分镜。"}`,
+    `分镜数量：${Array.isArray(chapter?.storyboards) ? chapter.storyboards.length : 0}`,
+    `引用素材：${referencedAssetNames || "暂无"}`,
+    referencedAssetPrompts ? `素材提示词摘要：\n${referencedAssetPrompts}` : "",
     fieldLabel === "章节内容简介" ? "" : `章节内容简介：${chapter?.summary ?? ""}`,
     fieldLabel === "章节正文" ? "" : `章节正文/故事内容：${chapter?.content ?? ""}`,
-    fieldLabel === "分镜与出图提示" || fieldLabel === "生图提示词" ? "" : `分镜与出图提示：${chapter?.prompt ?? ""}`
+    fieldLabel === "分镜与出图提示" || fieldLabel === "生图提示词" ? "" : `分镜与出图提示：${chapter?.prompt ?? ""}`,
+    "输出约束：只使用中文；完全尊重原著当前章节和来源对照；不要输出英文 tag 串；不要写修改说明、保留取舍或工作计划；不要添加原文未出现的人物、装备、服饰、盔甲、武器、场景或剧情结果。",
+    "如果来源不可读或章节正文不足，应说明无法补全，不能编造分镜提示词。"
   ]);
 }
 
@@ -4897,7 +4991,8 @@ function buildComicStoryboardFieldAiContext(chapter, storyboard, fieldLabel) {
     fieldLabel === "画面内容" ? "" : `画面内容：${storyboard?.beat ?? ""}`,
     fieldLabel === "对白 / 旁白" ? "" : `对白/旁白：${storyboard?.dialogue ?? ""}`,
     fieldLabel === "镜头 / 构图" ? "" : `镜头/构图：${storyboard?.camera ?? ""}`,
-    fieldLabel === "分镜生图提示词" ? "" : `分镜生图提示词：${storyboard?.prompt ?? ""}`
+    fieldLabel === "分镜生图提示词" ? "" : `分镜生图提示词：${storyboard?.prompt ?? ""}`,
+    "分镜输出要求：每条分镜必须推进一个明确原文故事节点；对白只能来自原文或忠实改写；生图提示词要包含角色、动作、场景、景别、构图、光线、画风和素材一致性约束。"
   ]);
 }
 

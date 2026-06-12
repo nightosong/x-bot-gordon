@@ -1,9 +1,10 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell } from "electron";
 import { spawn } from "node:child_process";
-import { createHmac } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { XMLParser } from "fast-xml-parser";
 import JSZip from "jszip";
 
 import { callToolOnMcpServer, listToolsFromMcpServer, runAgent } from "../../../packages/agent/src/index.js";
@@ -34,6 +35,7 @@ import {
   listWeeklyProgress,
   listVideoProjects,
   listWritingBooks,
+  listWorkflowLibrary,
   listModelSettings,
   reorderModelProfiles,
   saveWeeklyFeishuSettings,
@@ -62,6 +64,11 @@ import type {
   CommandWorkshopMessageExportRequest,
   ComicProjectExportFormat,
   ComicProjectExportRequest,
+  InfoRadarItem,
+  InfoRadarRefreshResult,
+  InfoRadarRefreshRun,
+  InfoRadarSource,
+  InfoRadarWindow,
   MusicProjectExportFormat,
   MusicProjectExportRequest,
   MusicProject,
@@ -193,6 +200,9 @@ type WorkflowActiveRunContext = {
 };
 
 const WORKFLOW_RUN_CANCELLED_MESSAGE = "执行已中断";
+const INFO_RADAR_FETCH_TIMEOUT_MS = 18_000;
+const INFO_RADAR_MAX_ITEMS_PER_SOURCE = 12;
+const INFO_RADAR_MAX_WINDOW_ITEMS = 160;
 const activeWorkflowRuns = new Map<string, WorkflowActiveRunContext>();
 const WRITING_BOOK_EXPORT_EXTENSIONS = new Set<WritingBookExportFormat>(["txt", "md"]);
 const COMIC_PROJECT_EXPORT_EXTENSIONS = new Set<ComicProjectExportFormat>(["md"]);
@@ -2488,6 +2498,520 @@ function cancelWorkflowRecordRun(progressEventId: unknown): { cancelled: boolean
   return { cancelled: true, progressEventId: runId };
 }
 
+type InfoRadarRefreshRequest = {
+  cardId?: string;
+  windowId?: string;
+};
+
+type InfoRadarSourceFetchResult = {
+  items: InfoRadarItem[];
+  message?: string;
+};
+
+const infoRadarXmlParser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: "@_",
+  textNodeName: "#text",
+  cdataPropName: "#cdata",
+  trimValues: true
+});
+
+function toArray<T>(value: T | T[] | null | undefined): T[] {
+  if (value === null || value === undefined) {
+    return [];
+  }
+
+  return Array.isArray(value) ? value : [value];
+}
+
+function decodeBasicHtmlEntities(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#39;/gi, "'")
+    .replace(/&#(\d+);/g, (_match, code) => {
+      const valueCode = Number(code);
+      return Number.isFinite(valueCode) ? String.fromCodePoint(valueCode) : "";
+    });
+}
+
+function stripHtml(value: unknown): string {
+  return decodeBasicHtmlEntities(
+    String(value ?? "")
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/p>/gi, "\n")
+      .replace(/<[^>]+>/g, " ")
+  )
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function truncateInfoRadarText(value: unknown, maxLength = 280): string {
+  const text = stripHtml(value);
+
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  return `${text.slice(0, maxLength - 1).trim()}…`;
+}
+
+function readXmlText(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(readXmlText).filter(Boolean).join(" ");
+  }
+
+  if (typeof value !== "object") {
+    return "";
+  }
+
+  const record = value as Record<string, unknown>;
+  return readXmlText(record["#cdata"] ?? record["#text"] ?? record.value ?? "");
+}
+
+function resolveInfoRadarUrl(value: unknown, baseUrl = ""): string {
+  const raw = String(value ?? "").trim();
+
+  if (!raw) {
+    return "";
+  }
+
+  try {
+    return baseUrl ? new URL(raw, baseUrl).toString() : new URL(raw).toString();
+  } catch {
+    return raw;
+  }
+}
+
+function readAtomLink(value: unknown, baseUrl = ""): string {
+  for (const link of toArray(value)) {
+    if (typeof link === "string") {
+      return resolveInfoRadarUrl(link, baseUrl);
+    }
+
+    if (!link || typeof link !== "object") {
+      continue;
+    }
+
+    const record = link as Record<string, unknown>;
+    const href = String(record["@_href"] ?? "").trim();
+    const rel = String(record["@_rel"] ?? "alternate").trim();
+
+    if (href && (!rel || rel === "alternate")) {
+      return resolveInfoRadarUrl(href, baseUrl);
+    }
+  }
+
+  return "";
+}
+
+function readRssItemLink(item: Record<string, unknown>, baseUrl = ""): string {
+  const link = item.link;
+
+  if (typeof link === "string") {
+    return resolveInfoRadarUrl(link, baseUrl);
+  }
+
+  if (link && typeof link === "object") {
+    const linkRecord = link as Record<string, unknown>;
+    const href = String(linkRecord["@_href"] ?? linkRecord.href ?? "").trim();
+
+    if (href) {
+      return resolveInfoRadarUrl(href, baseUrl);
+    }
+
+    const text = readXmlText(link);
+
+    if (text) {
+      return resolveInfoRadarUrl(text, baseUrl);
+    }
+  }
+
+  const guid = item.guid;
+
+  if (typeof guid === "string" && /^https?:\/\//i.test(guid)) {
+    return resolveInfoRadarUrl(guid, baseUrl);
+  }
+
+  return "";
+}
+
+function normalizeInfoRadarDate(value: unknown): string | undefined {
+  const text = readXmlText(value).trim();
+
+  if (!text) {
+    return undefined;
+  }
+
+  const timestamp = new Date(text).getTime();
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : text;
+}
+
+function buildInfoRadarItem(
+  source: InfoRadarSource,
+  rawItem: {
+    title?: unknown;
+    url?: unknown;
+    summary?: unknown;
+    author?: unknown;
+    publishedAt?: unknown;
+    tags?: unknown[];
+  },
+  baseUrl = ""
+): InfoRadarItem | null {
+  const title = truncateInfoRadarText(readXmlText(rawItem.title), 180);
+  const url = resolveInfoRadarUrl(rawItem.url, baseUrl);
+  const summary = truncateInfoRadarText(rawItem.summary, 320);
+
+  if (!title && !url) {
+    return null;
+  }
+
+  const fetchedAt = new Date().toISOString();
+  const stableKey = [source.id, url || title].join(":");
+
+  return {
+    id: `info_item_${Buffer.from(stableKey).toString("base64url").slice(0, 28)}_${randomUUID().slice(0, 8)}`,
+    sourceId: source.id,
+    sourceTitle: source.title,
+    sourceKind: source.kind,
+    title: title || url,
+    url,
+    summary,
+    ...(rawItem.author ? { author: truncateInfoRadarText(readXmlText(rawItem.author), 80) } : {}),
+    ...(rawItem.publishedAt ? { publishedAt: normalizeInfoRadarDate(rawItem.publishedAt) ?? readXmlText(rawItem.publishedAt) } : {}),
+    fetchedAt,
+    tags: [...(source.tags ?? []), ...(rawItem.tags ?? []).map((tag) => readXmlText(tag)).filter(Boolean)].slice(0, 8),
+    score: 0,
+    status: "new"
+  };
+}
+
+function parseInfoRadarFeed(xmlText: string, source: InfoRadarSource, baseUrl = ""): InfoRadarItem[] {
+  const parsed = infoRadarXmlParser.parse(xmlText) as Record<string, unknown>;
+  const rssChannel = (parsed.rss as Record<string, unknown> | undefined)?.channel as Record<string, unknown> | undefined;
+  const rdfChannel = (parsed["rdf:RDF"] ?? parsed.RDF) as Record<string, unknown> | undefined;
+  const atomFeed = parsed.feed as Record<string, unknown> | undefined;
+
+  const rssItems = toArray(rssChannel?.item ?? rdfChannel?.item).map((item) => item as Record<string, unknown>);
+  const atomEntries = toArray(atomFeed?.entry).map((entry) => entry as Record<string, unknown>);
+  const items: InfoRadarItem[] = [];
+
+  for (const item of rssItems) {
+    const normalized = buildInfoRadarItem(
+      source,
+      {
+        title: item.title,
+        url: readRssItemLink(item, baseUrl),
+        summary: item.description ?? item["content:encoded"] ?? item.summary,
+        author: item.author ?? item["dc:creator"],
+        publishedAt: item.pubDate ?? item.published ?? item.updated,
+        tags: toArray(item.category)
+      },
+      baseUrl
+    );
+
+    if (normalized) {
+      items.push(normalized);
+    }
+  }
+
+  for (const entry of atomEntries) {
+    const normalized = buildInfoRadarItem(
+      source,
+      {
+        title: entry.title,
+        url: readAtomLink(entry.link, baseUrl) || readXmlText(entry.id),
+        summary: entry.summary ?? entry.content,
+        author: (entry.author as Record<string, unknown> | undefined)?.name ?? entry.author,
+        publishedAt: entry.published ?? entry.updated,
+        tags: toArray(entry.category)
+      },
+      baseUrl
+    );
+
+    if (normalized) {
+      items.push(normalized);
+    }
+  }
+
+  return items;
+}
+
+function readHtmlMeta(htmlText: string, name: string): string {
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`<meta[^>]+(?:name|property)=["']${escapedName}["'][^>]+content=["']([^"']+)["'][^>]*>`, "i");
+  const reversePattern = new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:name|property)=["']${escapedName}["'][^>]*>`, "i");
+  return decodeBasicHtmlEntities(htmlText.match(pattern)?.[1] ?? htmlText.match(reversePattern)?.[1] ?? "").trim();
+}
+
+function parseInfoRadarWebPage(htmlText: string, source: InfoRadarSource, finalUrl = ""): InfoRadarItem[] {
+  const html = String(htmlText ?? "");
+  const title =
+    readHtmlMeta(html, "og:title") ||
+    stripHtml(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "") ||
+    source.title;
+  const summary =
+    readHtmlMeta(html, "description") ||
+    readHtmlMeta(html, "og:description") ||
+    truncateInfoRadarText(html.match(/<p[^>]*>([\s\S]*?)<\/p>/i)?.[1] ?? "", 320);
+  const item = buildInfoRadarItem(
+    source,
+    {
+      title,
+      url: finalUrl || source.url,
+      summary,
+      tags: source.tags
+    },
+    source.url
+  );
+
+  return item ? [item] : [];
+}
+
+async function fetchInfoRadarText(url: string, timeoutMs = INFO_RADAR_FETCH_TIMEOUT_MS): Promise<{ text: string; finalUrl: string }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, text/html;q=0.8, */*;q=0.5",
+        "user-agent": "Gordon Info Radar/1.0"
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    return {
+      text: await response.text(),
+      finalUrl: response.url || url
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function scoreInfoRadarItem(item: InfoRadarItem, radarWindow: InfoRadarWindow): InfoRadarItem | null {
+  const keywords = (radarWindow.keywords ?? []).map((keyword) => keyword.trim().toLowerCase()).filter(Boolean);
+  const negativeKeywords = (radarWindow.negativeKeywords ?? []).map((keyword) => keyword.trim().toLowerCase()).filter(Boolean);
+  const searchableText = [
+    item.title,
+    item.summary,
+    item.sourceTitle,
+    item.author,
+    item.tags?.join(" ")
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  if (negativeKeywords.some((keyword) => searchableText.includes(keyword))) {
+    return null;
+  }
+
+  const keywordMatches = keywords.filter((keyword) => searchableText.includes(keyword));
+
+  if (keywords.length && !keywordMatches.length) {
+    return null;
+  }
+
+  return {
+    ...item,
+    score: keywordMatches.length * 10 + (item.publishedAt ? 3 : 0) + (item.summary ? 2 : 0)
+  };
+}
+
+function getInfoRadarItemDedupeKey(item: InfoRadarItem): string {
+  const url = String(item.url ?? "").trim().toLowerCase().replace(/#.*$/, "").replace(/\/$/, "");
+  const title = String(item.title ?? "").trim().toLowerCase();
+  return url || `${item.sourceId}:${title}`;
+}
+
+function mergeInfoRadarItems(existingItems: InfoRadarItem[], fetchedItems: InfoRadarItem[]): InfoRadarItem[] {
+  const byKey = new Map<string, InfoRadarItem>();
+
+  for (const item of existingItems ?? []) {
+    const key = getInfoRadarItemDedupeKey(item);
+
+    if (key) {
+      byKey.set(key, item);
+    }
+  }
+
+  for (const item of fetchedItems) {
+    const key = getInfoRadarItemDedupeKey(item);
+    const existing = byKey.get(key);
+
+    byKey.set(key, {
+      ...item,
+      id: existing?.id ?? item.id,
+      status: existing?.status ?? item.status,
+      fetchedAt: item.fetchedAt || existing?.fetchedAt || new Date().toISOString()
+    });
+  }
+
+  return Array.from(byKey.values())
+    .sort((left, right) => {
+      const leftTime = new Date(left.publishedAt ?? left.fetchedAt ?? 0).getTime();
+      const rightTime = new Date(right.publishedAt ?? right.fetchedAt ?? 0).getTime();
+      const leftRank = Number.isFinite(leftTime) ? leftTime : 0;
+      const rightRank = Number.isFinite(rightTime) ? rightTime : 0;
+      return rightRank - leftRank || (right.score ?? 0) - (left.score ?? 0);
+    })
+    .slice(0, INFO_RADAR_MAX_WINDOW_ITEMS);
+}
+
+async function fetchInfoRadarSource(source: InfoRadarSource): Promise<InfoRadarSourceFetchResult> {
+  if (!source.enabled) {
+    return { items: [] };
+  }
+
+  if (source.kind === "search") {
+    return {
+      items: [],
+      message: `${source.title} 需要接入 Search Tools 后才能自动刷新`
+    };
+  }
+
+  if (source.kind === "wechat") {
+    return {
+      items: [],
+      message: `${source.title} 需要公众号专项采集能力，当前仅保存配置`
+    };
+  }
+
+  if (source.kind === "manual") {
+    return {
+      items: [],
+      message: `${source.title} 是手工来源，刷新时不会自动抓取`
+    };
+  }
+
+  if (!source.url) {
+    return {
+      items: [],
+      message: `${source.title} 缺少 URL`
+    };
+  }
+
+  const response = await fetchInfoRadarText(source.url);
+  const items =
+    source.kind === "rss"
+      ? parseInfoRadarFeed(response.text, source, response.finalUrl)
+      : parseInfoRadarWebPage(response.text, source, response.finalUrl);
+
+  return {
+    items: items.slice(0, INFO_RADAR_MAX_ITEMS_PER_SOURCE)
+  };
+}
+
+async function refreshInfoRadarWindow(request: InfoRadarRefreshRequest): Promise<InfoRadarRefreshResult> {
+  const cardId = String(request?.cardId ?? "").trim();
+  const windowId = String(request?.windowId ?? "").trim();
+  const library = await listWorkflowLibrary();
+  const card =
+    library.find((entry) => entry.id === cardId && entry.kind === "info-radar") ??
+    library.find((entry) => entry.kind === "info-radar");
+
+  if (!card) {
+    throw new Error("未找到信息雷达卡片");
+  }
+
+  const radarWindow =
+    (card.infoWindows ?? []).find((entry) => entry.id === windowId) ??
+    (card.infoWindows ?? [])[0];
+
+  if (!radarWindow) {
+    throw new Error("未找到信息窗口");
+  }
+
+  const startedAt = new Date().toISOString();
+  const enabledSources = (radarWindow.sources ?? []).filter((source) => source.enabled !== false);
+  const fetchedItems: InfoRadarItem[] = [];
+  const messages: string[] = [];
+
+  if (!enabledSources.length) {
+    messages.push("当前窗口没有启用的信息源");
+  }
+
+  for (const source of enabledSources) {
+    try {
+      const result = await fetchInfoRadarSource(source);
+      fetchedItems.push(
+        ...result.items
+          .map((item) => scoreInfoRadarItem(item, radarWindow))
+          .filter((item): item is InfoRadarItem => Boolean(item))
+      );
+
+      if (result.message) {
+        messages.push(result.message);
+      }
+    } catch (error) {
+      messages.push(`${source.title || source.url}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  const now = new Date().toISOString();
+  const status: InfoRadarRefreshRun["status"] =
+    messages.length && fetchedItems.length
+      ? "partial"
+      : messages.length
+        ? "failed"
+        : "success";
+  const run: InfoRadarRefreshRun = {
+    id: `info_run_${randomUUID()}`,
+    status,
+    startedAt,
+    finishedAt: now,
+    sourceCount: enabledSources.length,
+    itemCount: fetchedItems.length,
+    message:
+      messages.length > 0
+        ? messages.slice(0, 4).join("；")
+        : fetchedItems.length > 0
+          ? `刷新完成，获取 ${fetchedItems.length} 条信息`
+          : "刷新完成，暂无匹配的新信息"
+  };
+  const nextWindow: InfoRadarWindow = {
+    ...radarWindow,
+    items: mergeInfoRadarItems(radarWindow.items ?? [], fetchedItems),
+    runHistory: [run, ...(radarWindow.runHistory ?? [])].slice(0, 20),
+    lastRefreshedAt: now,
+    updatedAt: now
+  };
+  const nextCard = {
+    ...card,
+    updatedAt: now,
+    lastUsedAt: now,
+    infoWindows: (card.infoWindows ?? []).map((entry) => (entry.id === nextWindow.id ? nextWindow : entry))
+  };
+  const nextLibrary = await upsertWorkflowLibraryItem(nextCard);
+  const savedCard = nextLibrary.find((entry) => entry.id === nextCard.id) ?? nextCard;
+  const savedWindow = (savedCard.infoWindows ?? []).find((entry) => entry.id === nextWindow.id) ?? nextWindow;
+
+  return {
+    card: savedCard,
+    window: savedWindow,
+    run
+  };
+}
+
 async function createMainWindow(): Promise<void> {
   const window = new BrowserWindow({
     width: MAIN_WINDOW_MIN_WIDTH,
@@ -2870,6 +3394,9 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("gordon:workflow-library:cancel-run", async (_event, progressEventId) =>
     cancelWorkflowRecordRun(progressEventId)
+  );
+  ipcMain.handle("gordon:workflow-library:refresh-info-window", async (_event, request: InfoRadarRefreshRequest) =>
+    toCloneableIpcValue(await refreshInfoRadarWindow(request))
   );
   ipcMain.handle("gordon:comic-projects:list", async () => listComicProjects());
   ipcMain.handle("gordon:comic-projects:upsert", async (_event, project) => upsertComicProject(project));

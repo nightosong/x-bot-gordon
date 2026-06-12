@@ -17,6 +17,7 @@ import type {
   CommandWorkshopSession,
   DailyReportGenerateRequest,
   GithubSkillImportRequest,
+  InfoRadarRefreshResult,
   McpToolCallRequest,
   McpServerConfig,
   McpToolDefinition,
@@ -183,6 +184,8 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
     ipcRenderer.invoke("gordon:workflow-library:run-record", toPlainIpcData(record)),
   cancelWorkflowRecordRun: (progressEventId: string) =>
     ipcRenderer.invoke("gordon:workflow-library:cancel-run", progressEventId),
+  refreshInfoRadarWindow: (request: { cardId: string; windowId: string }): Promise<InfoRadarRefreshResult> =>
+    ipcRenderer.invoke("gordon:workflow-library:refresh-info-window", toPlainIpcData(request)),
   onWorkflowRunProgress: (listener: (payload: unknown) => void): string => {
     const listenerId = `workflow_progress_listener_${Date.now()}_${progressListenerIdSeed++}`;
     const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload);
