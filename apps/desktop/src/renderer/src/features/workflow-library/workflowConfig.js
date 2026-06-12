@@ -29,6 +29,7 @@ export function createWorkflowState(createLocalId = createFallbackLocalId) {
     apiKeyVisible: false,
     searchQuery: "",
     infoSearchQuery: "",
+    infoRailCollapsed: false,
     editingRecordId: null,
     editingInfoWindowId: null,
     isRunning: false,

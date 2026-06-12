@@ -28,13 +28,21 @@
           @keydown.enter.prevent="openWorkflowCard(entry.id)"
           @keydown.space.prevent="openWorkflowCard(entry.id)"
         >
-          <div class="workflow-library-card-body">
-            <p class="workflow-library-card-title">{{ entry.title }}</p>
-            <p class="workflow-library-card-subtitle">{{ getWorkflowCardCountLabel(entry) }}</p>
+          <div class="workflow-library-card-icon" aria-hidden="true">
+            <GIcon :name="getWorkflowCardIconName(entry)" :size="16" />
           </div>
 
-          <div class="extension-tag-row workflow-library-card-tags">
-            <span v-for="tag in entry.tags.slice(0, 2)" :key="tag" class="pill pill-neutral">{{ tag }}</span>
+          <div class="workflow-library-card-body">
+            <div class="workflow-library-card-heading">
+              <p class="workflow-library-card-title">{{ entry.title }}</p>
+              <span class="workflow-library-card-arrow" aria-hidden="true">
+                <GIcon name="chevronRight" :size="15" />
+              </span>
+            </div>
+            <p class="workflow-library-card-subtitle">{{ getWorkflowCardCountLabel(entry) }}</p>
+            <div class="workflow-library-card-tags">
+              <span v-for="tag in (entry.tags ?? []).slice(0, 3)" :key="tag" class="workflow-library-card-tag">{{ tag }}</span>
+            </div>
           </div>
         </article>
       </div>
@@ -144,28 +152,54 @@
 
       <section class="workflow-library-main-stage">
         <template v-if="ui.workflow.view === 'info'">
-          <section class="workflow-info-stage">
-            <aside class="workflow-info-rail">
+          <section
+            class="workflow-info-stage"
+            :class="{ 'is-rail-collapsed': ui.workflow.infoRailCollapsed }"
+          >
+            <aside class="workflow-info-rail" :class="{ 'is-collapsed': ui.workflow.infoRailCollapsed }">
               <div class="workflow-info-rail-head">
-                <div>
+                <div class="workflow-info-rail-title-block">
                   <p class="feature-kicker">Radar</p>
                   <p class="model-section-title">信息窗口</p>
                 </div>
-                <span class="pill pill-neutral">{{ infoRadarMetrics.windowCount }}</span>
+                <div class="workflow-info-rail-actions">
+                  <button
+                    type="button"
+                    class="model-icon-button workflow-info-rail-toggle"
+                    :aria-expanded="String(!ui.workflow.infoRailCollapsed)"
+                    :aria-label="ui.workflow.infoRailCollapsed ? '展开信息窗口列表' : '折叠信息窗口列表'"
+                    :title="ui.workflow.infoRailCollapsed ? '展开窗口列表' : '折叠窗口列表'"
+                    @click="ui.workflow.infoRailCollapsed = !ui.workflow.infoRailCollapsed"
+                  >
+                    <GIcon :name="ui.workflow.infoRailCollapsed ? 'chevronRight' : 'chevronLeft'" />
+                  </button>
+                </div>
               </div>
 
-              <div v-if="activeInfoWindows.length" class="workflow-info-window-list">
+              <div
+                v-if="activeInfoWindows.length"
+                class="workflow-info-window-list"
+                :class="{ 'is-compact': ui.workflow.infoRailCollapsed }"
+              >
                 <button
                   v-for="infoWindow in activeInfoWindows"
                   :key="infoWindow.id"
                   type="button"
                   class="workflow-info-window-card"
                   :class="{ 'is-active': activeInfoWindow?.id === infoWindow.id }"
+                  :aria-label="`打开 ${infoWindow.title}`"
+                  :title="`${infoWindow.title} · ${infoWindow.items?.length ?? 0} 条`"
                   @click="openInfoRadarWindow(infoWindow.id)"
                 >
                   <span class="workflow-info-window-category">{{ infoWindow.category || "综合" }}</span>
                   <strong>{{ infoWindow.title }}</strong>
-                  <span>{{ infoWindow.items?.length ?? 0 }} 条 · {{ getInfoRadarCadenceLabel(infoWindow.cadence) }}</span>
+                  <span class="workflow-info-window-meta">
+                    <span>{{ infoWindow.items?.length ?? 0 }} 条</span>
+                    <span>{{ getInfoRadarCadenceLabel(infoWindow.cadence) }}</span>
+                  </span>
+                  <span class="workflow-info-window-compact-mark">
+                    {{ String(infoWindow.category || infoWindow.title || "窗").slice(0, 1) }}
+                  </span>
                 </button>
               </div>
 
@@ -181,25 +215,30 @@
             <section v-if="activeInfoWindow" class="workflow-info-feed-panel">
               <div class="workflow-info-feed-head">
                 <div class="workflow-info-feed-title-block">
-                  <div class="model-section-actions">
-                    <span class="pill">{{ activeInfoWindow.category || "综合" }}</span>
-                    <span class="pill pill-neutral">{{ getInfoRadarCadenceLabel(activeInfoWindow.cadence) }}</span>
+                  <div class="workflow-info-feed-title-row">
+                    <p class="workflow-info-feed-title">{{ activeInfoWindow.title }}</p>
                     <span
                       v-if="activeInfoWindow.status === 'paused'"
-                      class="status-pill is-warning"
+                      class="status-pill is-warning workflow-info-title-status"
                     >
                       已暂停
                     </span>
                   </div>
-                  <p class="workflow-info-feed-title">{{ activeInfoWindow.title }}</p>
                   <p v-if="activeInfoWindow.summary" class="workflow-info-feed-summary">{{ activeInfoWindow.summary }}</p>
                 </div>
 
                 <div class="workflow-info-feed-metrics">
-                  <span>{{ activeInfoWindow.sources?.length ?? 0 }} 来源</span>
-                  <span>{{ activeInfoWindow.items?.length ?? 0 }} 条目</span>
-                  <span v-if="activeInfoWindow.lastRefreshedAt">刷新 {{ formatLocalDateTime(activeInfoWindow.lastRefreshedAt) }}</span>
-                  <span v-else>未刷新</span>
+                  <div class="workflow-info-feed-metric">
+                    <strong>{{ activeInfoWindow.items?.length ?? 0 }}</strong>
+                    <span>条目</span>
+                  </div>
+                  <div class="workflow-info-feed-metric">
+                    <strong>{{ activeInfoWindow.sources?.length ?? 0 }}</strong>
+                    <span>来源</span>
+                  </div>
+                  <p class="workflow-info-feed-refresh">
+                    {{ activeInfoWindow.lastRefreshedAt ? `刷新 ${formatLocalDateTime(activeInfoWindow.lastRefreshedAt)}` : "未刷新" }}
+                  </p>
                 </div>
               </div>
 
@@ -226,7 +265,7 @@
 
               <section class="workflow-library-main-card workflow-info-toolbar">
                 <label class="field workflow-library-search-field">
-                  <span class="field-label">筛选</span>
+                  <span class="field-label">快速筛选</span>
                   <input
                     v-model="ui.workflow.infoSearchQuery"
                     class="field-input"
@@ -257,20 +296,24 @@
                   class="workflow-info-item"
                 >
                   <div class="workflow-info-item-head">
-                    <div>
+                    <div class="workflow-info-item-title-block">
                       <p class="workflow-info-item-title">{{ item.title }}</p>
                       <p class="workflow-info-item-meta">
                         {{ item.sourceTitle }} · {{ getInfoRadarSourceKindLabel(item.sourceKind) }}
                         <span v-if="item.publishedAt"> · {{ formatLocalDateTime(item.publishedAt) }}</span>
                       </p>
                     </div>
-                    <span class="status-pill">{{ getInfoRadarItemStatusLabel(item.status) }}</span>
                   </div>
                   <p v-if="item.summary" class="workflow-info-item-summary">{{ item.summary }}</p>
                   <div class="workflow-info-item-footer">
-                    <div class="extension-tag-row">
-                      <span v-for="tag in item.tags?.slice(0, 4)" :key="tag" class="pill pill-neutral">{{ tag }}</span>
-                      <span v-if="item.score" class="pill pill-neutral">score {{ item.score }}</span>
+                    <div class="extension-tag-row workflow-info-item-tags">
+                      <span
+                        v-for="tag in item.tags?.slice(0, 4)"
+                        :key="tag"
+                        class="pill pill-neutral workflow-info-item-tag"
+                      >
+                        {{ tag }}
+                      </span>
                     </div>
                     <a
                       v-if="getInfoRadarItemHref(item)"
@@ -331,23 +374,25 @@
               <input v-model="ui.workflow.infoWindowDraft.category" class="field-input" placeholder="技术 / 金融 / 科研 / 政治" />
             </label>
 
-            <label class="field">
+            <div class="field">
               <span class="field-label">刷新频率</span>
-              <select v-model="ui.workflow.infoWindowDraft.cadence" class="field-input">
-                <option value="manual">手动</option>
-                <option value="hourly">每小时</option>
-                <option value="daily">每日</option>
-                <option value="weekly">每周</option>
-              </select>
-            </label>
+              <GCompactSelect
+                v-model="ui.workflow.infoWindowDraft.cadence"
+                class="workflow-library-config-select"
+                aria-label="刷新频率"
+                :options="INFO_RADAR_CADENCE_OPTIONS"
+              />
+            </div>
 
-            <label class="field">
+            <div class="field">
               <span class="field-label">状态</span>
-              <select v-model="ui.workflow.infoWindowDraft.status" class="field-input">
-                <option value="active">启用</option>
-                <option value="paused">暂停</option>
-              </select>
-            </label>
+              <GCompactSelect
+                v-model="ui.workflow.infoWindowDraft.status"
+                class="workflow-library-config-select"
+                aria-label="状态"
+                :options="INFO_RADAR_STATUS_OPTIONS"
+              />
+            </div>
 
             <label class="field field-full">
               <span class="field-label">简介</span>
@@ -398,19 +443,17 @@
                   class="workflow-info-source-editor-row"
                 >
                   <label class="workflow-info-source-toggle">
-                    <input v-model="source.enabled" type="checkbox" />
-                    <span>启用</span>
+                    <input v-model="source.enabled" type="checkbox" aria-label="启用来源" />
                   </label>
-                  <label class="field workflow-info-source-kind-field">
+                  <div class="field workflow-info-source-kind-field">
                     <span class="field-label">类型</span>
-                    <select v-model="source.kind" class="field-input">
-                      <option value="rss">RSS</option>
-                      <option value="web_page">网页</option>
-                      <option value="search">搜索</option>
-                      <option value="wechat">公众号</option>
-                      <option value="manual">手工</option>
-                    </select>
-                  </label>
+                    <GCompactSelect
+                      v-model="source.kind"
+                      class="workflow-library-config-select workflow-info-source-kind-select"
+                      aria-label="来源类型"
+                      :options="INFO_RADAR_SOURCE_KIND_OPTIONS"
+                    />
+                  </div>
                   <label class="field workflow-info-source-title-field">
                     <span class="field-label">名称</span>
                     <input v-model="source.title" class="field-input" placeholder="OpenAI Blog" />
@@ -639,13 +682,15 @@
                       <span class="field-label">前置等待 ms</span>
                       <input v-model="step.waitBeforeMs" class="field-input" inputmode="numeric" placeholder="0" />
                     </label>
-                    <label class="field workflow-library-step-mode-field">
+                    <div class="field workflow-library-step-mode-field">
                       <span class="field-label">执行方式</span>
-                      <select v-model="step.executionMode" class="field-input">
-                        <option value="once">单次</option>
-                        <option value="polling">轮询</option>
-                      </select>
-                    </label>
+                      <GCompactSelect
+                        v-model="step.executionMode"
+                        class="workflow-library-config-select workflow-library-step-mode-select"
+                        aria-label="执行方式"
+                        :options="WORKFLOW_STEP_MODE_OPTIONS"
+                      />
+                    </div>
                     <button
                       type="button"
                       class="model-icon-button model-action-danger"
@@ -847,18 +892,16 @@
               </div>
 
               <div v-if="!ui.workflow.bodyPanelCollapsed" class="workflow-library-body-toolbar">
-                <label class="field workflow-library-body-step-field">
+                <div class="field workflow-library-body-step-field">
                   <span class="field-label">请求步骤</span>
-                  <select
+                  <GCompactSelect
                     v-model="ui.workflow.bodyStepId"
-                    class="field-input workflow-library-body-step-select"
+                    class="workflow-library-config-select workflow-library-body-step-select"
+                    aria-label="请求步骤"
+                    :options="getWorkflowBodyStepSelectOptions(activeWorkflowBodyStepOptions)"
                     @change="handleWorkflowBodyStepSelect"
-                  >
-                    <option v-for="entry in activeWorkflowBodyStepOptions" :key="entry.id" :value="entry.id">
-                      {{ entry.label }} · {{ entry.method }}
-                    </option>
-                  </select>
-                </label>
+                  />
+                </div>
 
                 <div class="model-section-actions workflow-library-body-actions">
                   <button type="button" class="model-action-secondary" @click="repairWorkflowBodyDraft">
@@ -1068,7 +1111,48 @@
 </template>
 
 <script setup>
+import GCompactSelect from "../../components/GCompactSelect.vue";
 import GIcon from "../../components/GIcon.vue";
+
+const INFO_RADAR_CADENCE_OPTIONS = [
+  { value: "manual", label: "手动" },
+  { value: "hourly", label: "每小时" },
+  { value: "daily", label: "每日" },
+  { value: "weekly", label: "每周" }
+];
+
+const INFO_RADAR_STATUS_OPTIONS = [
+  { value: "active", label: "启用" },
+  { value: "paused", label: "暂停" }
+];
+
+const INFO_RADAR_SOURCE_KIND_OPTIONS = [
+  { value: "rss", label: "RSS" },
+  { value: "web_page", label: "网页" },
+  { value: "search", label: "搜索" },
+  { value: "wechat", label: "公众号" },
+  { value: "manual", label: "手工" }
+];
+
+const WORKFLOW_STEP_MODE_OPTIONS = [
+  { value: "once", label: "单次" },
+  { value: "polling", label: "轮询" }
+];
+
+function getWorkflowCardIconName(entry) {
+  if (entry?.kind === "info-radar") {
+    return "stats";
+  }
+
+  return "fileText";
+}
+
+function getWorkflowBodyStepSelectOptions(entries = []) {
+  return entries.map((entry) => ({
+    value: entry.id,
+    label: `${entry.label} · ${entry.method}`
+  }));
+}
 
 defineProps({
   ui: { type: Object, required: true },
