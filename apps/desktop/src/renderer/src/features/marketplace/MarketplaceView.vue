@@ -1372,85 +1372,82 @@
                             </button>
                           </div>
 
-                          <label class="field">
-                            <span class="field-label">图片源</span>
-                            <input
-                              :value="view.src"
-                              class="field-input"
-                              placeholder="URL / data URL / base64"
-                              @input="setVideoAssetViewField(activeVideoAsset.id, view.id, 'src', $event.target.value)"
-                            />
-                          </label>
-
-                          <div v-if="view.src" class="comic-asset-view-preview">
-                            <img :src="view.src" :alt="view.label || getVideoAssetViewKindLabel(view.kind)" />
-                            <div class="comic-asset-view-tools" aria-label="素材图操作">
-                              <button
-                                type="button"
-                                class="model-icon-button comic-asset-view-tool"
-                                aria-label="放大素材图"
-                                title="放大素材图"
-                                @click.stop="previewVideoAssetView(view.id)"
-                              >
-                                <GIcon name="maximize" :size="13" />
-                              </button>
-                              <button
-                                type="button"
-                                class="model-icon-button comic-asset-view-tool"
-                                aria-label="下载素材图"
-                                title="下载素材图"
-                                @click.stop="downloadVideoAssetViewImage(activeVideoAsset.id, view.id)"
-                              >
-                                <GIcon name="download" :size="13" />
-                              </button>
+                          <div class="comic-asset-view-body">
+                            <div class="comic-asset-view-preview" :class="{ 'is-empty': !view.src }">
+                              <img v-if="view.src" :src="view.src" :alt="view.label || getVideoAssetViewKindLabel(view.kind)" />
+                              <div v-else class="comic-asset-view-placeholder" aria-hidden="true">
+                                <GIcon name="image" :size="18" />
+                              </div>
+                              <div v-if="view.src" class="comic-asset-view-tools" aria-label="素材图操作">
+                                <button
+                                  type="button"
+                                  class="model-icon-button comic-asset-view-tool"
+                                  aria-label="放大素材图"
+                                  title="放大素材图"
+                                  @click.stop="previewVideoAssetView(view.id)"
+                                >
+                                  <GIcon name="maximize" :size="13" />
+                                </button>
+                                <button
+                                  type="button"
+                                  class="model-icon-button comic-asset-view-tool"
+                                  aria-label="下载素材图"
+                                  title="下载素材图"
+                                  @click.stop="downloadVideoAssetViewImage(activeVideoAsset.id, view.id)"
+                                >
+                                  <GIcon name="download" :size="13" />
+                                </button>
+                              </div>
                             </div>
-                          </div>
 
-                          <label class="field comic-asset-reference-editor">
-                            <span class="field-label">视图提示词</span>
-                            <div
-                              v-if="getVideoAssetViewResolvedReferences(view).length"
-                              class="comic-asset-reference-chips"
-                              aria-label="已引用素材"
-                            >
-                              <span
-                                v-for="reference in getVideoAssetViewResolvedReferences(view)"
-                                :key="reference.id"
-                                class="comic-asset-reference-chip"
-                              >
-                                <img :src="reference.src" :alt="reference.label" />
-                                <span>{{ reference.label }}</span>
-                              </span>
-                            </div>
-                            <textarea
-                              :value="view.prompt"
-                              class="field-textarea writing-editor-textarea comic-asset-view-prompt"
-                              @focus="updateVideoAssetReferencePickerFromInput(view.id, $event)"
-                              @click="updateVideoAssetReferencePickerFromInput(view.id, $event)"
-                              @keyup="updateVideoAssetReferencePickerFromInput(view.id, $event)"
-                              @blur="closeVideoAssetReferencePickerSoon(view.id)"
-                              @input="setVideoAssetViewPromptFromInput(activeVideoAsset.id, view.id, $event)"
-                            ></textarea>
-                            <div
-                              v-if="activeVideoAssetReferencePickerViewId === view.id && getVideoAssetViewReferencePickerOptions(view.id).length"
-                              class="comic-asset-reference-picker"
-                            >
-                              <button
-                                v-for="option in getVideoAssetViewReferencePickerOptions(view.id)"
-                                :key="option.id"
-                                type="button"
-                                class="comic-asset-reference-option"
-                                :class="{ 'is-current': option.isCurrentAsset }"
-                                @mousedown.prevent="insertVideoAssetViewReference(activeVideoAsset.id, view, option, $event)"
-                              >
-                                <img :src="option.src" :alt="option.label" />
-                                <span>
-                                  <strong>{{ option.assetName }}</strong>
-                                  <small>{{ option.viewLabel }}</small>
+                            <label class="field comic-asset-reference-editor">
+                              <span class="comic-asset-reference-header">
+                                <span class="field-label">视图提示词</span>
+                                <span
+                                  v-if="getVideoAssetViewResolvedReferences(view).length"
+                                  class="comic-asset-reference-chips"
+                                  aria-label="已引用素材"
+                                >
+                                  <span
+                                    v-for="reference in getVideoAssetViewResolvedReferences(view)"
+                                    :key="reference.id"
+                                    class="comic-asset-reference-chip"
+                                  >
+                                    <img :src="reference.src" :alt="reference.label" />
+                                    <span>{{ reference.label }}</span>
+                                  </span>
                                 </span>
-                              </button>
-                            </div>
-                          </label>
+                              </span>
+                              <textarea
+                                :value="view.prompt"
+                                class="field-textarea writing-editor-textarea comic-asset-view-prompt"
+                                @focus="updateVideoAssetReferencePickerFromInput(view.id, $event)"
+                                @click="updateVideoAssetReferencePickerFromInput(view.id, $event)"
+                                @keyup="updateVideoAssetReferencePickerFromInput(view.id, $event)"
+                                @blur="closeVideoAssetReferencePickerSoon(view.id)"
+                                @input="setVideoAssetViewPromptFromInput(activeVideoAsset.id, view.id, $event)"
+                              ></textarea>
+                              <div
+                                v-if="activeVideoAssetReferencePickerViewId === view.id && getVideoAssetViewReferencePickerOptions(view.id).length"
+                                class="comic-asset-reference-picker"
+                              >
+                                <button
+                                  v-for="option in getVideoAssetViewReferencePickerOptions(view.id)"
+                                  :key="option.id"
+                                  type="button"
+                                  class="comic-asset-reference-option"
+                                  :class="{ 'is-current': option.isCurrentAsset }"
+                                  @mousedown.prevent="insertVideoAssetViewReference(activeVideoAsset.id, view, option, $event)"
+                                >
+                                  <img :src="option.src" :alt="option.label" />
+                                  <span>
+                                    <strong>{{ option.assetName }}</strong>
+                                    <small>{{ option.viewLabel }}</small>
+                                  </span>
+                                </button>
+                              </div>
+                            </label>
+                          </div>
                         </article>
                       </div>
                     </section>
@@ -2274,85 +2271,82 @@
                             </button>
                           </div>
 
-                          <label class="field">
-                            <span class="field-label">图片源</span>
-                            <input
-                              :value="view.src"
-                              class="field-input"
-                              placeholder="URL / data URL / base64"
-                              @input="setComicAssetViewField(activeComicAsset.id, view.id, 'src', $event.target.value)"
-                            />
-                          </label>
-
-                          <div v-if="view.src" class="comic-asset-view-preview">
-                            <img :src="view.src" :alt="view.label || getComicAssetViewKindLabel(view.kind)" />
-                            <div class="comic-asset-view-tools" aria-label="素材图操作">
-                              <button
-                                type="button"
-                                class="model-icon-button comic-asset-view-tool"
-                                aria-label="放大素材图"
-                                title="放大素材图"
-                                @click.stop="previewComicAssetView(view.id)"
-                              >
-                                <GIcon name="maximize" :size="13" />
-                              </button>
-                              <button
-                                type="button"
-                                class="model-icon-button comic-asset-view-tool"
-                                aria-label="下载素材图"
-                                title="下载素材图"
-                                @click.stop="downloadComicAssetViewImage(activeComicAsset.id, view.id)"
-                              >
-                                <GIcon name="download" :size="13" />
-                              </button>
+                          <div class="comic-asset-view-body">
+                            <div class="comic-asset-view-preview" :class="{ 'is-empty': !view.src }">
+                              <img v-if="view.src" :src="view.src" :alt="view.label || getComicAssetViewKindLabel(view.kind)" />
+                              <div v-else class="comic-asset-view-placeholder" aria-hidden="true">
+                                <GIcon name="image" :size="18" />
+                              </div>
+                              <div v-if="view.src" class="comic-asset-view-tools" aria-label="素材图操作">
+                                <button
+                                  type="button"
+                                  class="model-icon-button comic-asset-view-tool"
+                                  aria-label="放大素材图"
+                                  title="放大素材图"
+                                  @click.stop="previewComicAssetView(view.id)"
+                                >
+                                  <GIcon name="maximize" :size="13" />
+                                </button>
+                                <button
+                                  type="button"
+                                  class="model-icon-button comic-asset-view-tool"
+                                  aria-label="下载素材图"
+                                  title="下载素材图"
+                                  @click.stop="downloadComicAssetViewImage(activeComicAsset.id, view.id)"
+                                >
+                                  <GIcon name="download" :size="13" />
+                                </button>
+                              </div>
                             </div>
-                          </div>
 
-                          <label class="field comic-asset-reference-editor">
-                            <span class="field-label">视图提示词</span>
-                            <div
-                              v-if="getComicAssetViewResolvedReferences(view).length"
-                              class="comic-asset-reference-chips"
-                              aria-label="已引用素材"
-                            >
-                              <span
-                                v-for="reference in getComicAssetViewResolvedReferences(view)"
-                                :key="reference.id"
-                                class="comic-asset-reference-chip"
-                              >
-                                <img :src="reference.src" :alt="reference.label" />
-                                <span>{{ reference.label }}</span>
-                              </span>
-                            </div>
-                            <textarea
-                              :value="view.prompt"
-                              class="field-textarea writing-editor-textarea comic-asset-view-prompt"
-                              @focus="updateComicAssetReferencePickerFromInput(view.id, $event)"
-                              @click="updateComicAssetReferencePickerFromInput(view.id, $event)"
-                              @keyup="updateComicAssetReferencePickerFromInput(view.id, $event)"
-                              @blur="closeComicAssetReferencePickerSoon(view.id)"
-                              @input="setComicAssetViewPromptFromInput(activeComicAsset.id, view.id, $event)"
-                            ></textarea>
-                            <div
-                              v-if="activeComicAssetReferencePickerViewId === view.id && getComicAssetViewReferencePickerOptions(view.id).length"
-                              class="comic-asset-reference-picker"
-                            >
-                              <button
-                                v-for="option in getComicAssetViewReferencePickerOptions(view.id)"
-                                :key="option.id"
-                                type="button"
-                                class="comic-asset-reference-option"
-                                :class="{ 'is-current': option.isCurrentAsset }"
-                                @mousedown.prevent="insertComicAssetViewReference(activeComicAsset.id, view, option, $event)"
-                              >
-                                <img :src="option.src" :alt="option.label" />
-                                <span>
-                                  <strong>{{ option.assetName }}</strong>
-                                  <small>{{ option.viewLabel }}</small>
+                            <label class="field comic-asset-reference-editor">
+                              <span class="comic-asset-reference-header">
+                                <span class="field-label">视图提示词</span>
+                                <span
+                                  v-if="getComicAssetViewResolvedReferences(view).length"
+                                  class="comic-asset-reference-chips"
+                                  aria-label="已引用素材"
+                                >
+                                  <span
+                                    v-for="reference in getComicAssetViewResolvedReferences(view)"
+                                    :key="reference.id"
+                                    class="comic-asset-reference-chip"
+                                  >
+                                    <img :src="reference.src" :alt="reference.label" />
+                                    <span>{{ reference.label }}</span>
+                                  </span>
                                 </span>
-                              </button>
-                            </div>
-                          </label>
+                              </span>
+                              <textarea
+                                :value="view.prompt"
+                                class="field-textarea writing-editor-textarea comic-asset-view-prompt"
+                                @focus="updateComicAssetReferencePickerFromInput(view.id, $event)"
+                                @click="updateComicAssetReferencePickerFromInput(view.id, $event)"
+                                @keyup="updateComicAssetReferencePickerFromInput(view.id, $event)"
+                                @blur="closeComicAssetReferencePickerSoon(view.id)"
+                                @input="setComicAssetViewPromptFromInput(activeComicAsset.id, view.id, $event)"
+                              ></textarea>
+                              <div
+                                v-if="activeComicAssetReferencePickerViewId === view.id && getComicAssetViewReferencePickerOptions(view.id).length"
+                                class="comic-asset-reference-picker"
+                              >
+                                <button
+                                  v-for="option in getComicAssetViewReferencePickerOptions(view.id)"
+                                  :key="option.id"
+                                  type="button"
+                                  class="comic-asset-reference-option"
+                                  :class="{ 'is-current': option.isCurrentAsset }"
+                                  @mousedown.prevent="insertComicAssetViewReference(activeComicAsset.id, view, option, $event)"
+                                >
+                                  <img :src="option.src" :alt="option.label" />
+                                  <span>
+                                    <strong>{{ option.assetName }}</strong>
+                                    <small>{{ option.viewLabel }}</small>
+                                  </span>
+                                </button>
+                              </div>
+                            </label>
+                          </div>
                         </article>
                       </div>
                     </section>

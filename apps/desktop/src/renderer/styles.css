@@ -3960,17 +3960,32 @@ canvas {
 }
 
 .comic-asset-view-prompt.writing-editor-textarea {
-  min-height: 80px;
-  max-height: 172px;
+  min-height: 0;
+  height: 100%;
+  max-height: none;
+  resize: none;
 }
 
 .comic-asset-reference-editor {
   position: relative;
 }
 
+.comic-asset-reference-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  gap: 6px;
+}
+
+.comic-asset-reference-header > .field-label {
+  flex: 0 0 auto;
+}
+
 .comic-asset-reference-chips {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 5px;
   min-width: 0;
 }
@@ -4087,7 +4102,7 @@ canvas {
 
 .comic-asset-view-card {
   display: grid;
-  gap: 7px;
+  gap: 6px;
   grid-auto-rows: max-content;
   align-content: start;
   min-height: 0;
@@ -4107,6 +4122,31 @@ canvas {
   gap: 6px;
 }
 
+.comic-asset-view-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.comic-asset-view-body .comic-asset-reference-editor {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: stretch;
+  align-self: stretch;
+  gap: 5px;
+  aspect-ratio: 16 / 9;
+  height: auto;
+  min-height: 0;
+  overflow: visible;
+}
+
+.comic-asset-view-body .comic-asset-reference-editor .comic-asset-view-prompt {
+  align-self: stretch;
+  min-height: 0;
+}
+
 .comic-asset-view-preview {
   position: relative;
   display: grid;
@@ -4123,6 +4163,13 @@ canvas {
     rgba(7, 13, 22, 0.62);
 }
 
+.comic-asset-view-preview.is-empty {
+  border-style: dashed;
+  background:
+    linear-gradient(135deg, rgba(7, 13, 22, 0.48), rgba(18, 34, 47, 0.28)),
+    rgba(7, 13, 22, 0.42);
+}
+
 .comic-asset-view-preview img {
   display: block;
   width: 100%;
@@ -4130,15 +4177,26 @@ canvas {
   object-fit: contain;
 }
 
+.comic-asset-view-placeholder {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(247, 243, 235, 0.1);
+  border-radius: 999px;
+  color: rgba(247, 243, 235, 0.42);
+  background: rgba(255, 255, 255, 0.035);
+}
+
 .comic-asset-view-tools {
   position: absolute;
-  right: 7px;
-  bottom: 7px;
+  right: 8px;
+  bottom: 8px;
   z-index: 2;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  opacity: 0.86;
+  gap: 6px;
+  opacity: 0.72;
   transform: translateY(0) scale(0.98);
   transition: opacity 150ms ease, transform 150ms ease;
 }
@@ -4150,26 +4208,22 @@ canvas {
 }
 
 .comic-asset-view-tool {
-  width: 28px;
-  height: 28px;
-  border: 1px solid rgba(247, 243, 235, 0.12);
+  width: 26px;
+  height: 26px;
+  border: 1px solid rgba(247, 243, 235, 0.16);
   border-radius: 999px;
-  background:
-    linear-gradient(135deg, rgba(92, 225, 194, 0.14), rgba(124, 219, 255, 0.06)),
-    rgba(8, 15, 24, 0.76);
-  color: rgba(247, 243, 235, 0.78);
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
-  backdrop-filter: blur(14px);
+  background: rgba(8, 15, 24, 0.46);
+  color: rgba(247, 243, 235, 0.82);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(16px) saturate(1.18);
 }
 
 .comic-asset-view-tool:hover,
 .comic-asset-view-tool:focus-visible {
   transform: translateY(-1px);
-  border-color: rgba(92, 225, 194, 0.36);
+  border-color: rgba(92, 225, 194, 0.42);
   color: #d8fff6;
-  background:
-    linear-gradient(135deg, rgba(92, 225, 194, 0.24), rgba(124, 219, 255, 0.1)),
-    rgba(8, 15, 24, 0.82);
+  background: rgba(8, 15, 24, 0.68);
 }
 
 .comic-asset-detail-empty {
@@ -9368,6 +9422,25 @@ canvas {
   border-color: rgba(255, 141, 119, 0.24);
   background: rgba(255, 141, 119, 0.1);
   color: #ffd0c6;
+}
+
+.model-icon-button.comic-asset-view-tool {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border-color: rgba(247, 243, 235, 0.16);
+  background: rgba(8, 15, 24, 0.46);
+  color: rgba(247, 243, 235, 0.82);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(16px) saturate(1.18);
+}
+
+.model-icon-button.comic-asset-view-tool:hover,
+.model-icon-button.comic-asset-view-tool:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(92, 225, 194, 0.42);
+  background: rgba(8, 15, 24, 0.68);
+  color: #d8fff6;
 }
 
 .action-icon {
@@ -16941,6 +17014,7 @@ canvas {
   .writing-outline-board,
   .comic-asset-library,
   .comic-asset-form-grid,
+  .comic-asset-view-body,
   .comic-chapter-visual-workspace,
   .fortune-workbench,
   .fortune-form-grid,
