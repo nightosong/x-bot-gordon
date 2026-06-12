@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const workspaceRoot = path.resolve(process.env.GORDON_WORKSPACE_ROOT || process.cwd());
 const gordonHome = path.resolve(process.env.GORDON_HOME || path.join(os.homedir(), ".gord"));
@@ -1470,17 +1471,179 @@ function inferAudioMimeType(filePath) {
   return "audio/mpeg";
 }
 
-async function postMultipartFile(url, apiKey, filePath, fieldName = "file", options = {}) {
-  const normalizedFilePath = String(filePath ?? "").trim();
+function inferImageMimeType(source = "", fallback = "") {
+  const fallbackMime = String(fallback ?? "").split(";")[0].trim().toLowerCase();
 
-  if (!normalizedFilePath) {
-    throw new Error("vocal_clone 需要 filePath 参数");
+  if (fallbackMime.startsWith("image/")) {
+    return fallbackMime;
   }
 
-  const bytes = await fs.readFile(normalizedFilePath);
-  const form = new FormData();
-  const blob = new Blob([bytes], { type: inferAudioMimeType(normalizedFilePath) });
-  form.append(fieldName, blob, path.basename(normalizedFilePath));
+  const pathname = (() => {
+    try {
+      return new URL(String(source ?? "")).pathname;
+    } catch {
+      return String(source ?? "");
+    }
+  })();
+  const extension = path.extname(pathname).toLowerCase();
+
+  if (extension === ".jpg" || extension === ".jpeg") {
+    return "image/jpeg";
+  }
+
+  if (extension === ".webp") {
+    return "image/webp";
+  }
+
+  if (extension === ".gif") {
+    return "image/gif";
+  }
+
+  if (extension === ".bmp") {
+    return "image/bmp";
+  }
+
+  return "image/png";
+}
+
+function inferImageFilename(source = "", index = 0, mimeType = "") {
+  const fallbackExtension = (() => {
+    if (mimeType === "image/jpeg") {
+      return "jpg";
+    }
+
+    const subtype = String(mimeType ?? "").match(/^image\/([a-z0-9.+-]+)$/iu)?.[1];
+    return subtype ? subtype.replace(/[^a-z0-9]+/giu, "-").replace(/^-|-$/gu, "") || "png" : "png";
+  })();
+  const fallbackName = `image-${index + 1}.${fallbackExtension}`;
+  const pathname = (() => {
+    try {
+      return new URL(String(source ?? "")).pathname;
+    } catch {
+      return String(source ?? "");
+    }
+  })();
+  const basename = decodeURIComponent(path.basename(pathname || ""));
+
+  if (!basename || basename === "." || !path.extname(basename)) {
+    return fallbackName;
+  }
+
+  return basename.replace(/[\r\n"]/gu, "_");
+}
+
+function parseDataUrlImage(value) {
+  const match = String(value ?? "").match(/^data:([^,]*),(.*)$/isu);
+
+  if (!match) {
+    return null;
+  }
+
+  const metadata = match[1] || "image/png";
+  const mimeType = inferImageMimeType("", metadata.split(";")[0] || "image/png");
+  const payload = match[2] || "";
+  const isBase64 = metadata
+    .split(";")
+    .map((part) => part.trim().toLowerCase())
+    .includes("base64");
+  const bytes = isBase64
+    ? Buffer.from(payload.replace(/\s+/gu, ""), "base64")
+    : Buffer.from(decodeURIComponent(payload), "utf8");
+
+  return {
+    bytes,
+    mimeType
+  };
+}
+
+function looksLikeBase64Image(value) {
+  const text = String(value ?? "").replace(/\s+/gu, "");
+
+  if (text.length < 80 || text.length % 4 !== 0) {
+    return false;
+  }
+
+  return /^[a-z0-9+/]+={0,2}$/iu.test(text);
+}
+
+function toLocalImagePath(value) {
+  const text = String(value ?? "").trim();
+
+  if (/^file:/iu.test(text)) {
+    return fileURLToPath(text);
+  }
+
+  return text;
+}
+
+async function fetchImageInputBytes(url, index) {
+  const response = await fetch(url);
+  const arrayBuffer = await response.arrayBuffer().catch(() => null);
+
+  if (!response.ok) {
+    const bodyText = arrayBuffer ? Buffer.from(arrayBuffer).toString("utf8") : "";
+    throw new Error(`下载引用图片 ${index + 1} 失败：HTTP ${response.status}：${truncateText(bodyText, 800)}`);
+  }
+
+  const contentType = response.headers.get("content-type") || "";
+
+  if (contentType && !contentType.toLowerCase().startsWith("image/")) {
+    throw new Error(`下载引用图片 ${index + 1} 失败：响应类型不是图片（${contentType}）`);
+  }
+
+  const mimeType = inferImageMimeType(url, contentType);
+
+  return {
+    bytes: Buffer.from(arrayBuffer ?? new ArrayBuffer(0)),
+    mimeType,
+    filename: inferImageFilename(url, index, mimeType)
+  };
+}
+
+async function resolveImageInputToFilePart(input, index) {
+  const value = String(input ?? "").trim();
+
+  if (!value) {
+    throw new Error(`第 ${index + 1} 张引用图片为空`);
+  }
+
+  const dataUrl = parseDataUrlImage(value);
+
+  if (dataUrl) {
+    return {
+      ...dataUrl,
+      filename: inferImageFilename("", index, dataUrl.mimeType)
+    };
+  }
+
+  if (/^https?:\/\//iu.test(value)) {
+    return await fetchImageInputBytes(value, index);
+  }
+
+  if (looksLikeBase64Image(value)) {
+    const mimeType = inferImageMimeType("", "image/png");
+
+    return {
+      bytes: Buffer.from(value.replace(/\s+/gu, ""), "base64"),
+      mimeType,
+      filename: inferImageFilename("", index, mimeType)
+    };
+  }
+
+  const localPath = toLocalImagePath(value);
+  const bytes = await fs.readFile(localPath).catch((error) => {
+    throw new Error(`读取引用图片 ${index + 1} 失败：${error instanceof Error ? error.message : String(error)}`);
+  });
+  const mimeType = inferImageMimeType(localPath);
+
+  return {
+    bytes,
+    mimeType,
+    filename: inferImageFilename(localPath, index, mimeType)
+  };
+}
+
+async function postMultipartForm(url, apiKey, form, options = {}) {
   const timeoutMs = readRequestTimeoutMs(options.timeoutMs);
   const timeoutLabel = String(options.timeoutLabel ?? "请求").trim() || "请求";
   const controller = new AbortController();
@@ -1518,6 +1681,42 @@ async function postMultipartFile(url, apiKey, filePath, fieldName = "file", opti
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function postMultipartFile(url, apiKey, filePath, fieldName = "file", options = {}) {
+  const normalizedFilePath = String(filePath ?? "").trim();
+
+  if (!normalizedFilePath) {
+    throw new Error("vocal_clone 需要 filePath 参数");
+  }
+
+  const bytes = await fs.readFile(normalizedFilePath);
+  const form = new FormData();
+  const blob = new Blob([bytes], { type: inferAudioMimeType(normalizedFilePath) });
+  form.append(fieldName, blob, path.basename(normalizedFilePath));
+  return await postMultipartForm(url, apiKey, form, options);
+}
+
+async function postImageEditMultipart(url, apiKey, requestBody, imageInputs, options = {}) {
+  const form = new FormData();
+
+  ["prompt", "model", "size", "n", "quality"].forEach((fieldName) => {
+    const value = requestBody?.[fieldName];
+
+    if (value !== undefined && value !== null && value !== "") {
+      form.append(fieldName, String(value));
+    }
+  });
+
+  const imageParts = await Promise.all(imageInputs.map((input, index) => resolveImageInputToFilePart(input, index)));
+
+  imageParts.forEach((part, index) => {
+    const fieldName = imageParts.length === 1 ? "image" : `image[${index}]`;
+    const blob = new Blob([part.bytes], { type: part.mimeType });
+    form.append(fieldName, blob, part.filename);
+  });
+
+  return await postMultipartForm(url, apiKey, form, options);
 }
 
 function normalizeMusicOperation(value) {
@@ -2955,10 +3154,16 @@ async function callImageGen(argumentsObject) {
   let response;
 
   try {
-    response = await postJson(endpoint, apiKey, requestBody, {
-      timeoutMs: IMAGE_GEN_TIMEOUT_MS,
-      timeoutLabel: "image_gen 请求"
-    });
+    response =
+      operationName === "image_to_image"
+        ? await postImageEditMultipart(endpoint, apiKey, requestBody, imageInputs, {
+            timeoutMs: IMAGE_GEN_TIMEOUT_MS,
+            timeoutLabel: "image_gen 图生图请求"
+          })
+        : await postJson(endpoint, apiKey, requestBody, {
+            timeoutMs: IMAGE_GEN_TIMEOUT_MS,
+            timeoutLabel: "image_gen 请求"
+          });
   } catch (error) {
     logToolCall("image_gen failure", {
       ...callLog,
