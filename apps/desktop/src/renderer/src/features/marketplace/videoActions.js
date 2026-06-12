@@ -156,7 +156,7 @@ export function createVideoActions({
 
   function normalizeVideoProjectAspectRatioForUi(value) {
     const aspectRatio = String(value ?? "").trim();
-    return VIDEO_PROJECT_ASPECT_RATIO_META[aspectRatio] ? aspectRatio : "16:9";
+    return VIDEO_PROJECT_ASPECT_RATIO_META[aspectRatio] ? aspectRatio : "adaptive";
   }
 
   function normalizeVideoDurationSeconds(value, fallback = 5) {
@@ -730,7 +730,7 @@ export function createVideoActions({
       id: createLocalId("video_project"),
       title: `未命名视频 ${videoProjects.value.length + 1}`,
       mode: "textToVideo",
-      aspectRatio: "16:9",
+      aspectRatio: "adaptive",
       genre: "视频 / 待定类型",
       status: "新建",
       summary: "写下视频的主题、主体、情绪目标和最终用途。",
@@ -1575,9 +1575,10 @@ export function createVideoActions({
       mode: isImageToVideo ? "first_frame_to_video" : "text_to_video",
       prompt,
       negativePrompt: shot?.negativePrompt ?? "",
-      ratio: normalizeVideoProjectAspectRatioForUi(project?.aspectRatio),
+      ratio: normalizeVideoProjectAspectRatioForUi(project?.aspectRatio) || "adaptive",
       durationSeconds: normalizeVideoDurationSeconds(shot?.durationSeconds, project?.durationSeconds || 5),
-      ...(referenceImage ? { image: referenceImage, referenceImages: [referenceImage] } : {})
+      generateAudio: false,
+      ...(referenceImage ? { image: referenceImage } : {})
     };
   }
 

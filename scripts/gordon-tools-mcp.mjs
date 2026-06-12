@@ -29,8 +29,13 @@ const MAX_RESULT_TEXT_CHARS = 12_000;
 const MUSIC_PROVIDER_VALUES = new Set(["mureka", "suno"]);
 const VIDEO_PROVIDER_VALUES = new Set(["seedance"]);
 const DEFAULT_VIDEO_DURATION_SECONDS = 5;
-const DEFAULT_VIDEO_RATIO = "16:9";
+const DEFAULT_VIDEO_RATIO = "adaptive";
 const DEFAULT_VIDEO_RESOLUTION = "720p";
+const DEFAULT_SEEDANCE_MODEL = "doubao-seedance-2-0-260128";
+const DEFAULT_SEEDANCE_SUBMIT_URL = "https://api-maas-test.singularity-ai.com/gpt-proxy/volengine/video/submit";
+const DEFAULT_SEEDANCE_QUERY_URL = "https://api-maas-test.singularity-ai.com/gpt-proxy/volengine/video/task/{task_id}";
+const DEFAULT_SEEDANCE_TASK_ID_PATH = "$.data.task_id";
+const DEFAULT_SEEDANCE_RESULT_URL_PATH = "$.data.video_url";
 const DEFAULT_VIDEO_POLL_INTERVAL_MS = readTimeoutMsFromEnv("GORDON_VIDEO_GEN_POLL_INTERVAL_MS", 5_000);
 const DEFAULT_VIDEO_POLL_ATTEMPTS = readIntegerFromEnv("GORDON_VIDEO_GEN_POLL_ATTEMPTS", 12);
 const VIDEO_QUERY_NETWORK_RETRY_ATTEMPTS = readIntegerFromEnv("GORDON_VIDEO_GEN_QUERY_NETWORK_RETRY_ATTEMPTS", 2);
@@ -58,7 +63,7 @@ const TOOL_RUNTIME = {
     seedance: {
       operations: {
         submit: {
-          endpoint: "api/v3/contents/generations/tasks",
+          endpoint: "gpt-proxy/volengine/video/submit",
           parameters: [
             "mode",
             "prompt",
@@ -79,7 +84,7 @@ const TOOL_RUNTIME = {
           ]
         },
         query: {
-          endpoint: "api/v3/contents/generations/tasks/{task_id}",
+          endpoint: "gpt-proxy/volengine/video/task/{task_id}",
           parameters: ["taskId"]
         }
       }
@@ -1205,6 +1210,12 @@ function normalizeNetworkErrorMessage(message) {
     return "网络连接失败：未返回错误详情";
   }
 
+  const httpErrorMatch = text.match(/HTTP\s+(\d{3})[：:]\s*([\s\S]*)/iu);
+
+  if (httpErrorMatch) {
+    return formatHttpErrorMessage(httpErrorMatch[1], httpErrorMatch[2]);
+  }
+
   if (/curl:\s*\(28\)|exit\s*28|timed out|timeout was reached|ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT/iu.test(text)) {
     return `网络连接超时：${truncateText(text, 1000)}`;
   }
@@ -1218,6 +1229,59 @@ function normalizeNetworkErrorMessage(message) {
   }
 
   return text;
+}
+
+function isHtmlResponseText(text) {
+  return /<!doctype\s+html|<html[\s>]|<body[\s>]|<head[\s>]|<center[\s>]|<title[\s>]/iu.test(String(text ?? ""));
+}
+
+function stripHtmlResponseText(text) {
+  return String(text ?? "")
+    .replace(/<script[\s\S]*?<\/script>/giu, " ")
+    .replace(/<style[\s\S]*?<\/style>/giu, " ")
+    .replace(/<[^>]+>/gu, " ")
+    .replace(/&nbsp;/giu, " ")
+    .replace(/&lt;/giu, "<")
+    .replace(/&gt;/giu, ">")
+    .replace(/&amp;/giu, "&")
+    .replace(/&quot;/giu, "\"")
+    .replace(/&#39;/giu, "'")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function formatHttpErrorMessage(statusValue, payload) {
+  const status = Number(statusValue);
+  const rawPayload = typeof payload === "string" ? payload.trim() : JSON.stringify(payload ?? "");
+  const readableDetail = isHtmlResponseText(rawPayload) ? stripHtmlResponseText(rawPayload) : rawPayload;
+  const detail = truncateText(readableDetail, 500);
+  const suffix = detail ? `。上游摘要：${detail}` : "";
+
+  if (status === 429) {
+    return `上游服务请求过于频繁（HTTP 429）：当前生成服务触发限流，请稍后重试${suffix}`;
+  }
+
+  if (status === 502) {
+    return `上游服务网关异常（HTTP 502）：生成服务网关暂时不可用，请稍后重试${suffix}`;
+  }
+
+  if (status === 503) {
+    return `上游服务暂时不可用（HTTP 503）：生成服务网关或上游接口临时过载，请稍后重试${suffix}`;
+  }
+
+  if (status === 504) {
+    return `上游服务响应超时（HTTP 504）：生成服务处理时间过长，请稍后查询或重试${suffix}`;
+  }
+
+  if (status >= 500) {
+    return `上游服务内部错误（HTTP ${status || "unknown"}）：生成服务暂时异常，请稍后重试${suffix}`;
+  }
+
+  if (status === 401 || status === 403) {
+    return `上游服务鉴权失败（HTTP ${status}）：请检查 API Key、Base URL 或账号权限${suffix}`;
+  }
+
+  return `HTTP ${status || "unknown"}：${detail || "上游未返回错误详情"}`;
 }
 
 function isNetworkErrorMessage(message) {
@@ -1295,7 +1359,7 @@ function curlJsonRequest(url, apiKey, options = {}) {
       }
 
       if (!Number.isFinite(status) || status < 200 || status >= 300) {
-        reject(new Error(`HTTP ${statusText || "unknown"}：${truncateText(json ? JSON.stringify(json) : bodyText || stderr, 1200)}`));
+        reject(new Error(formatHttpErrorMessage(statusText || "unknown", json ? JSON.stringify(json) : bodyText || stderr)));
         return;
       }
 
@@ -1330,7 +1394,7 @@ async function postJson(url, apiKey, body, options = {}) {
     }
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}：${truncateText(json ? JSON.stringify(json) : text, 1200)}`);
+      throw new Error(formatHttpErrorMessage(response.status, json ? JSON.stringify(json) : text));
     }
 
     return json ?? text;
@@ -1382,7 +1446,7 @@ async function getJson(url, apiKey, options = {}) {
     }
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}：${truncateText(json ? JSON.stringify(json) : text, 1200)}`);
+      throw new Error(formatHttpErrorMessage(response.status, json ? JSON.stringify(json) : text));
     }
 
     return json ?? text;
@@ -1886,6 +1950,66 @@ function pickNestedText(value, keys) {
     if (typeof candidate === "number" && Number.isFinite(candidate)) {
       return String(candidate);
     }
+  }
+
+  return "";
+}
+
+function normalizeSimpleJsonPath(pathValue) {
+  const normalized = String(pathValue ?? "").trim();
+
+  if (!normalized) {
+    return "";
+  }
+
+  const dataPathMatch = normalized.match(/(?:^|\n)\s*data\s*:\s*([^\n]+)/iu);
+  return dataPathMatch?.[1]?.trim() ?? normalized;
+}
+
+function readSimpleJsonPath(input, pathValue) {
+  const pathText = normalizeSimpleJsonPath(pathValue);
+
+  if (!pathText) {
+    return undefined;
+  }
+
+  const normalizedPath = pathText
+    .replace(/\.\[(\d+)\]/gu, "[$1]")
+    .replace(/\[(\d+)\]/gu, ".$1")
+    .replace(/^\$?\.?/u, "");
+  const tokens = normalizedPath
+    .split(".")
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+  return tokens.reduce((current, token) => {
+    if (current === null || current === undefined) {
+      return undefined;
+    }
+
+    if (Array.isArray(current) && /^\d+$/u.test(token)) {
+      return current[Number(token)];
+    }
+
+    if (typeof current === "object") {
+      return current[token];
+    }
+
+    return undefined;
+  }, input);
+}
+
+function normalizeProtocolText(value) {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
   }
 
   return "";
@@ -2516,8 +2640,12 @@ function buildSeedanceVideoRequestBody(operationName, argumentsObject, model) {
     ...(typeof argumentsObject?.returnLastFrame === "boolean" ? { return_last_frame: argumentsObject.returnLastFrame } : {}),
     ...(typeof argumentsObject?.return_last_frame === "boolean" ? { return_last_frame: argumentsObject.return_last_frame } : {}),
     ...(callbackUrl ? { callback_url: callbackUrl } : {}),
-    ...(typeof argumentsObject?.generateAudio === "boolean" ? { generate_audio: argumentsObject.generateAudio } : {}),
-    ...(typeof argumentsObject?.generate_audio === "boolean" ? { generate_audio: argumentsObject.generate_audio } : {}),
+    generate_audio:
+      typeof argumentsObject?.generateAudio === "boolean"
+        ? argumentsObject.generateAudio
+        : typeof argumentsObject?.generate_audio === "boolean"
+          ? argumentsObject.generate_audio
+          : false,
     ...(typeof argumentsObject?.cameraFixed === "boolean" ? { camera_fixed: argumentsObject.cameraFixed } : {}),
     ...(typeof argumentsObject?.camera_fixed === "boolean" ? { camera_fixed: argumentsObject.camera_fixed } : {}),
     ...(typeof argumentsObject?.draft === "boolean" ? { draft: argumentsObject.draft } : {}),
@@ -2530,12 +2658,42 @@ function buildSeedanceVideoRequestBody(operationName, argumentsObject, model) {
   };
 }
 
-function buildVideoQueryUrl(baseUrl, operation, taskId) {
-  return joinUrl(baseUrl, operation.endpoint.replace("{task_id}", encodeURIComponent(taskId)));
+function normalizeVideoProviderUrl(value) {
+  return String(value ?? "")
+    .trim()
+    .replace(/^["']+/u, "")
+    .replace(/["']+$/u, "");
 }
 
-function buildVideoSubmitUrl(baseUrl, operation) {
+function buildVideoOperationUrl(baseUrl, operation, configuredUrl = "") {
+  const normalizedConfiguredUrl = normalizeVideoProviderUrl(configuredUrl);
+
+  if (normalizedConfiguredUrl) {
+    return /^https?:\/\//iu.test(normalizedConfiguredUrl)
+      ? normalizedConfiguredUrl
+      : joinUrl(baseUrl, normalizedConfiguredUrl);
+  }
+
   return joinUrl(baseUrl, operation.endpoint);
+}
+
+function buildVideoQueryUrl(baseUrl, operation, taskId, configuredUrl = "") {
+  const encodedTaskId = encodeURIComponent(taskId);
+  const endpoint = buildVideoOperationUrl(baseUrl, operation, configuredUrl);
+
+  if (endpoint.includes("{task_id}")) {
+    return endpoint.replaceAll("{task_id}", encodedTaskId);
+  }
+
+  if (endpoint.includes("{taskId}")) {
+    return endpoint.replaceAll("{taskId}", encodedTaskId);
+  }
+
+  return endpoint.replace(/\/+$/u, "") + `/${encodedTaskId}`;
+}
+
+function buildVideoSubmitUrl(baseUrl, operation, configuredUrl = "") {
+  return buildVideoOperationUrl(baseUrl, operation, configuredUrl);
 }
 
 function getVideoPollAttempts(argumentsObject) {
@@ -2608,8 +2766,8 @@ function isVideoFailedStatus(status) {
   );
 }
 
-function buildVideoQueryContext({ provider, operation, baseUrl, apiKey, model, prompt, mode, taskId }) {
-  const endpoint = buildVideoQueryUrl(baseUrl, operation, taskId);
+function buildVideoQueryContext({ provider, operation, baseUrl, apiKey, model, prompt, mode, taskId, queryUrl, protocol }) {
+  const endpoint = buildVideoQueryUrl(baseUrl, operation, taskId, queryUrl);
 
   return {
     endpoint,
@@ -2625,9 +2783,10 @@ function buildVideoQueryContext({ provider, operation, baseUrl, apiKey, model, p
         prompt,
         operation: "query",
         mode,
-        endpoint: operation.endpoint,
+        endpoint,
         taskId,
-        status
+        status,
+        resultUrlPath: protocol.resultUrlPath
       });
 
       return {
@@ -2640,7 +2799,7 @@ function buildVideoQueryContext({ provider, operation, baseUrl, apiKey, model, p
   };
 }
 
-async function probeVideoProxyHealth({ baseUrl, apiKey, queryOperation }) {
+async function probeVideoProxyHealth({ baseUrl, apiKey, queryOperation, queryUrl, protocol }) {
   if (!queryOperation) {
     return {
       ok: false,
@@ -2650,7 +2809,7 @@ async function probeVideoProxyHealth({ baseUrl, apiKey, queryOperation }) {
   }
 
   const probeTaskId = `gordon-healthcheck-${Date.now()}`;
-  const endpoint = buildVideoQueryUrl(baseUrl, queryOperation, probeTaskId);
+  const endpoint = buildVideoQueryUrl(baseUrl, queryOperation, probeTaskId, queryUrl);
   const startedAt = Date.now();
 
   try {
@@ -2662,7 +2821,7 @@ async function probeVideoProxyHealth({ baseUrl, apiKey, queryOperation }) {
     });
     const errorText = getVideoResponseError(response);
     const errorClass = classifyVideoResponseError(errorText);
-    const sanitized = sanitizeVideoResponse(response);
+    const sanitized = sanitizeVideoResponse(response, protocol);
 
     if (errorClass.kind === "nonexistent_entity") {
       return {
@@ -2819,7 +2978,13 @@ function classifyVideoResponseError(errorText) {
   };
 }
 
-function extractVideoTaskId(responseJson) {
+function extractVideoTaskId(responseJson, taskIdPath = "") {
+  const protocolTaskId = normalizeProtocolText(readSimpleJsonPath(responseJson, taskIdPath));
+
+  if (protocolTaskId) {
+    return protocolTaskId;
+  }
+
   const seen = new WeakSet();
   const queue = [responseJson];
 
@@ -3013,6 +3178,31 @@ function extractVideoArtifacts(responseJson, context) {
   const seenObjects = new WeakSet();
   const seenUrls = new Set();
 
+  const protocolVideoUrl = normalizeProtocolText(readSimpleJsonPath(responseJson, context.resultUrlPath));
+
+  if (protocolVideoUrl && /^https?:\/\//iu.test(protocolVideoUrl)) {
+    seenUrls.add(protocolVideoUrl);
+    artifacts.push({
+      id: `video_gen_${Date.now()}_${artifacts.length + 1}`,
+      kind: "video",
+      title: `video_gen 结果 ${artifacts.length + 1}`,
+      mimeType: "video/mp4",
+      url: protocolVideoUrl,
+      provider: context.provider,
+      model: context.model,
+      prompt: context.prompt,
+      metadata: {
+        operation: context.operation,
+        mode: context.mode,
+        endpoint: context.endpoint,
+        taskId: context.taskId,
+        status: context.status,
+        resultUrlPath: context.resultUrlPath,
+        lastFrameUrl: ""
+      }
+    });
+  }
+
   function visit(item, pathSegments = []) {
     if (!item || typeof item !== "object") {
       return;
@@ -3063,7 +3253,7 @@ function extractVideoArtifacts(responseJson, context) {
   return artifacts;
 }
 
-function sanitizeVideoResponse(responseJson) {
+function sanitizeVideoResponse(responseJson, protocol = {}) {
   if (!responseJson || typeof responseJson !== "object") {
     return {
       raw: responseJson
@@ -3071,7 +3261,7 @@ function sanitizeVideoResponse(responseJson) {
   }
 
   return {
-    taskId: extractVideoTaskId(responseJson),
+    taskId: extractVideoTaskId(responseJson, protocol.taskIdPath),
     status: extractVideoStatus(responseJson),
     responseKeys: Object.keys(responseJson),
     raw: responseJson
@@ -3251,14 +3441,29 @@ async function callVideoGen(argumentsObject) {
 
   const apiKey = String(provider.apiKey ?? "").trim();
   const baseUrl = normalizeBaseUrl(provider.baseUrl, "video_gen", provider.provider);
-  const model = String(argumentsObject?.model ?? provider.model ?? "").trim();
+  const submitUrl =
+    normalizeVideoProviderUrl(provider.submitUrl) ||
+    (baseUrl ? buildVideoOperationUrl(baseUrl, runtime.operations.submit, "") : DEFAULT_SEEDANCE_SUBMIT_URL);
+  const queryUrl =
+    normalizeVideoProviderUrl(provider.queryUrl) ||
+    (baseUrl ? buildVideoOperationUrl(baseUrl, runtime.operations.query, "") : DEFAULT_SEEDANCE_QUERY_URL);
+  const protocol = {
+    taskIdPath: String(provider.taskIdPath ?? DEFAULT_SEEDANCE_TASK_ID_PATH).trim() || DEFAULT_SEEDANCE_TASK_ID_PATH,
+    resultUrlPath: String(provider.resultUrlPath ?? DEFAULT_SEEDANCE_RESULT_URL_PATH).trim() || DEFAULT_SEEDANCE_RESULT_URL_PATH
+  };
+  const configuredModel = String(argumentsObject?.model ?? provider.model ?? "").trim();
+  const model = configuredModel === "doubao-seedance-2-0-260128-video" ? DEFAULT_SEEDANCE_MODEL : configuredModel;
 
   if (!apiKey) {
     throw new Error(`${provider.label || provider.provider} 已启用，但缺少 API Key`);
   }
 
-  if (!baseUrl) {
-    throw new Error(`${provider.label || provider.provider} 已启用，但缺少 Base URL`);
+  if (operationName === "submit" && !submitUrl) {
+    throw new Error(`${provider.label || provider.provider} 已启用，但缺少提交接口`);
+  }
+
+  if (operationName === "query" && !queryUrl) {
+    throw new Error(`${provider.label || provider.provider} 已启用，但缺少轮询接口`);
   }
 
   if (operationName === "submit" && !model) {
@@ -3269,7 +3474,7 @@ async function callVideoGen(argumentsObject) {
   const mode = normalizeVideoMode(argumentsObject?.mode, argumentsObject);
   const taskId = String(argumentsObject?.taskId ?? argumentsObject?.task_id ?? "").trim();
   const requestStartedAt = Date.now();
-  let endpoint = buildVideoSubmitUrl(baseUrl, operation);
+  let endpoint = buildVideoSubmitUrl(baseUrl, operation, submitUrl);
   let requestBody = null;
   let response;
 
@@ -3278,7 +3483,7 @@ async function callVideoGen(argumentsObject) {
       throw new Error("video_gen 查询需要 taskId 参数");
     }
 
-    endpoint = buildVideoQueryUrl(baseUrl, operation, taskId);
+    endpoint = buildVideoQueryUrl(baseUrl, operation, taskId, queryUrl);
   } else {
     requestBody = buildSeedanceVideoRequestBody(operationName, argumentsObject, model);
   }
@@ -3290,6 +3495,7 @@ async function callVideoGen(argumentsObject) {
     url: endpoint,
     model,
     operation: operationName,
+    protocol,
     ...(operationName === "submit" ? { mode } : {}),
     ...(taskId ? { taskId } : {}),
     ...(requestBody ? { requestBody: sanitizeVideoRequestBody(requestBody) } : {}),
@@ -3320,7 +3526,9 @@ async function callVideoGen(argumentsObject) {
       healthCheck = await probeVideoProxyHealth({
         baseUrl,
         apiKey,
-        queryOperation: runtime.operations.query
+        queryOperation: runtime.operations.query,
+        queryUrl,
+        protocol
       });
       const healthText = healthCheck.ok
         ? `健康检查通过：${healthCheck.message}${healthCheck.durationMs ? `（${healthCheck.durationMs}ms）` : ""}`
@@ -3341,8 +3549,8 @@ async function callVideoGen(argumentsObject) {
     throw new Error(diagnosticMessage);
   }
 
-  const sanitized = sanitizeVideoResponse(response);
-  const responseTaskId = extractVideoTaskId(response) || taskId;
+  const sanitized = sanitizeVideoResponse(response, protocol);
+  const responseTaskId = extractVideoTaskId(response, protocol.taskIdPath) || taskId;
   let responseStatus = extractVideoStatus(response);
   const responseError = getVideoResponseError(response);
 
@@ -3357,9 +3565,10 @@ async function callVideoGen(argumentsObject) {
     prompt,
     operation: operationName,
     mode,
-    endpoint: operation.endpoint,
+    endpoint,
     taskId: responseTaskId,
-    status: responseStatus
+    status: responseStatus,
+    resultUrlPath: protocol.resultUrlPath
   });
   let finalResult = response;
   let finalSanitized = sanitized;
@@ -3382,7 +3591,9 @@ async function callVideoGen(argumentsObject) {
         model,
         prompt,
         mode,
-        taskId: responseTaskId
+        taskId: responseTaskId,
+        queryUrl,
+        protocol
       });
 
       for (let pollIndex = 1; pollIndex <= pollAttempts; pollIndex += 1) {
@@ -3499,7 +3710,7 @@ async function callVideoGen(argumentsObject) {
   return buildTextResult(
     `video_gen 调用完成
 provider=${provider.label || provider.provider}
-endpoint=${operation.endpoint}
+endpoint=${endpoint}
 ${model ? `model=${model}\n` : ""}operation=${operationName}
 ${operationName === "submit" ? `mode=${mode}\n` : ""}${responseTaskId ? `taskId=${responseTaskId}\n` : ""}${responseStatus ? `status=${responseStatus}\n` : ""}${pollHistory.length ? `polls=${pollHistory.length}\n` : ""}${pollError ? `pollError=${pollError}\n` : ""}pending=${isPending}
 completed=${isCompleted}
@@ -3509,7 +3720,10 @@ artifacts=${artifacts.length}
 ${truncateText(JSON.stringify(finalSanitized.raw ?? finalSanitized, null, 2))}`,
     {
       provider: provider.provider,
-      endpoint: operation.endpoint,
+      endpoint,
+      submitUrl,
+      queryUrl,
+      protocol,
       model,
       operation: operationName,
       mode,

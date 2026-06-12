@@ -209,6 +209,7 @@ export const VIDEO_PROJECT_MODE_META = {
 };
 
 export const VIDEO_PROJECT_ASPECT_RATIO_META = {
+  adaptive: { label: "自适应" },
   "16:9": { label: "横屏 16:9" },
   "9:16": { label: "竖屏 9:16" },
   "1:1": { label: "方屏 1:1" }

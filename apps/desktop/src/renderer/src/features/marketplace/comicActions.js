@@ -2775,6 +2775,74 @@ export function createComicActions({
     setComicChapterImageField(chapter, imageId, "prompt", value);
   }
 
+  function getComicChapterImageDownloadTitle(chapter, image) {
+    const project = activeComicProject.value;
+    const images = getComicChapterImages(chapter);
+    const imageIndex = Math.max(0, images.findIndex((entry) => entry.id === image?.id));
+
+    return [
+      project?.title,
+      chapter ? getComicChapterDisplayTitle(chapter, activeComicChapterIndex.value) : "",
+      image?.alt || (imageIndex >= 0 ? `图片${imageIndex + 1}` : "章节图片")
+    ]
+      .filter(Boolean)
+      .join("-");
+  }
+
+  function previewComicChapterImage(chapter, imageId) {
+    const targetChapter = chapter ?? activeComicChapter.value;
+    const image = getComicChapterImages(targetChapter).find((entry) => entry.id === String(imageId ?? "").trim());
+    const imageUrl = normalizeText(image?.src);
+
+    if (!imageUrl) {
+      setStatus("当前章节图片不可放大。", "warning");
+      return;
+    }
+
+    ui.marketplace.comic.activeChapterImageId = image.id;
+    window.dispatchEvent(
+      new CustomEvent("gordon:image-preview:open", {
+        detail: {
+          src: imageUrl,
+          alt: image.alt || "章节图片",
+          title: image.alt || "章节图片",
+          downloadTitle: getComicChapterImageDownloadTitle(targetChapter, image)
+        }
+      })
+    );
+  }
+
+  async function downloadComicChapterImage(chapter, imageId) {
+    const targetChapter = chapter ?? activeComicChapter.value;
+    const image = getComicChapterImages(targetChapter).find((entry) => entry.id === String(imageId ?? "").trim());
+    const imageUrl = normalizeText(image?.src);
+    const saveImage = desktopApi?.saveApplicationCoverImage ?? desktopApi?.saveWritingBookCoverImage;
+
+    if (!imageUrl) {
+      setStatus("当前章节图片不可下载。", "warning");
+      return;
+    }
+
+    if (!saveImage) {
+      setStatus("图片下载桥接未就绪。", "danger");
+      return;
+    }
+
+    try {
+      const result = await saveImage({
+        title: getComicChapterImageDownloadTitle(targetChapter, image),
+        imageUrl
+      });
+
+      if (result?.fileName) {
+        setStatus(`章节图片已下载：${result.fileName}`, "success");
+      }
+    } catch (error) {
+      console.error("Failed to download comic chapter image", error);
+      setStatus(`下载章节图片失败：${getErrorMessage(error)}`, "danger");
+    }
+  }
+
   function goComicChapter(chapterId) {
     selectComicChapter(chapterId);
     ui.marketplace.comic.chapterSearchQuery = "";
@@ -2912,6 +2980,7 @@ export function createComicActions({
     createComicStoryboard,
     deleteComicAsset,
     downloadComicAssetViewImage,
+    downloadComicChapterImage,
     deleteComicProjectFromShelf,
     deleteComicStoryboard,
     exportActiveComicProject,
@@ -2941,6 +3010,7 @@ export function createComicActions({
     openComicExportDialog,
     openComicProject,
     previewComicAssetView,
+    previewComicChapterImage,
     rememberComicAssetNameBaseline,
     rememberComicProjectTitleBaseline,
     removeComicAssetView,

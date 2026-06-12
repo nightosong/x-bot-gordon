@@ -577,6 +577,14 @@ export function buildPlannerVisibleTools(
   const hasVerifyNeed = needs.has("verify");
   const hasMediaOperationNeed = needs.has("operate_media");
   const effectiveDomains = domainNeeds.size ? domainNeeds : new Set(["read"]);
+  const pinnedToolNames = new Set<string>();
+
+  if (domainNeeds.has("generation")) {
+    for (const toolName of DOMAIN_VISIBLE_TOOL_NAMES.generation ?? []) {
+      pinnedToolNames.add(toolName);
+    }
+  }
+
   const addTool = (tool: McpToolDefinition | undefined, options: { allowPrimitive?: boolean } = {}): void => {
     if (!tool) {
       return;
@@ -680,11 +688,16 @@ export function buildPlannerVisibleTools(
 
   if (selected.size > maxVisibleTools) {
     const routedKeys = new Set(groups.flatMap((group) => group.tools.map((tool) => `${tool.serverId}:${tool.name}`)));
+    const pinnedKeys = new Set(
+      [...selected.values()].filter((tool) => pinnedToolNames.has(tool.name)).map((tool) => toolKey(tool))
+    );
     const entries = [...selected.values()].sort((left, right) => {
+      const leftPinned = pinnedKeys.has(toolKey(left)) ? 0 : 1;
+      const rightPinned = pinnedKeys.has(toolKey(right)) ? 0 : 1;
       const leftRouted = routedKeys.has(toolKey(left)) ? 0 : 1;
       const rightRouted = routedKeys.has(toolKey(right)) ? 0 : 1;
 
-      return leftRouted - rightRouted || comparePlannerTools(left, right);
+      return leftPinned - rightPinned || leftRouted - rightRouted || comparePlannerTools(left, right);
     });
 
     return entries.slice(0, maxVisibleTools);

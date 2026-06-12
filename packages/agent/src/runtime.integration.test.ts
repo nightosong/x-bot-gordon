@@ -77,6 +77,12 @@ function closeServer(server: Server): Promise<void> {
   });
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 function getModelMessages(body: Record<string, unknown>): ModelMessage[] {
   return Array.isArray(body.messages) ? (body.messages as ModelMessage[]) : [];
 }
@@ -325,6 +331,139 @@ function createFakeModelServer(capturedRequests: CapturedRequest[]): Server {
   });
 }
 
+function createFakeDirectGenerationModelServer(capturedRequests: CapturedRequest[]): Server {
+  return createServer(async (request, response) => {
+    if (request.method !== "POST") {
+      response.writeHead(404);
+      response.end();
+      return;
+    }
+
+    const body = await readRequestBody(request);
+    capturedRequests.push({
+      url: request.url ?? "",
+      body
+    });
+
+    const systemMessage = getSystemMessage(body);
+    let content = "视频生成任务已提交，返回了可播放视频。";
+
+    if (systemMessage.includes("工具规划器") || systemMessage.includes("资源任务规划器")) {
+      content = JSON.stringify({
+        shouldCall: false,
+        serverId: null,
+        toolName: null,
+        arguments: {},
+        reason: "direct generation test should not invoke planner"
+      });
+    } else if (systemMessage.includes("任务账本维护器")) {
+      content = JSON.stringify({
+        objective: "生成 5 秒小猫跳舞视频",
+        taskPhase: "finalizing",
+        constraints: [],
+        completedSubtasks: ["video_gen 已返回可播放视频"],
+        pendingSubtasks: [],
+        activePlan: [],
+        decisionMemory: [],
+        decisionTrace: [],
+        observations: [
+          {
+            source: "Gordon Tools / video_gen",
+            rawRef: "mcp:1",
+            summary: "视频生成工具返回了可播放 URL",
+            durableFacts: ["video_gen 可用于明确视频生成请求"],
+            ephemeralFacts: [],
+            evidenceRefs: ["mcp:1"]
+          }
+        ],
+        discoveredFacts: ["video_gen 返回 artifacts[0].url"],
+        failedAttempts: [],
+        environmentState: [],
+        userInterruptions: [],
+        successCriteria: ["返回可播放视频 URL"],
+        structuredSuccessCriteria: [
+          {
+            type: "artifact_exists",
+            target: "video_gen",
+            expected: "返回可展示媒体 artifact、可播放 URL 或可继续查询的 taskId",
+            verificationMethod: "检查 video_gen structuredContent 中的 artifacts",
+            status: "pending"
+          }
+        ],
+        nextActionHint: "整理最终回复"
+      });
+    } else if (systemMessage.includes("主动验证规划器")) {
+      content = JSON.stringify({
+        shouldVerify: false,
+        serverId: null,
+        toolName: null,
+        arguments: {},
+        reason: "已有 video_gen artifact 足以完成验证",
+        expectedOutcome: "",
+        verificationMethod: ""
+      });
+    }
+
+    sendJson(response, {
+      choices: [
+        {
+          message: {
+            content
+          }
+        }
+      ]
+    });
+  });
+}
+
+function createSlowPlannerModelServer(capturedRequests: CapturedRequest[]): Server {
+  return createServer(async (request, response) => {
+    if (request.method !== "POST") {
+      response.writeHead(404);
+      response.end();
+      return;
+    }
+
+    const body = await readRequestBody(request);
+    capturedRequests.push({
+      url: request.url ?? "",
+      body
+    });
+
+    const systemMessage = getSystemMessage(body);
+
+    if (systemMessage.includes("工具规划器") || systemMessage.includes("资源任务规划器")) {
+      await delay(200);
+      sendJson(response, {
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                shouldCall: false,
+                serverId: null,
+                toolName: null,
+                arguments: {},
+                reason: "slow planner response"
+              })
+            }
+          }
+        ]
+      });
+      return;
+    }
+
+    sendJson(response, {
+      choices: [
+        {
+          message: {
+            content: "前置工具规划超时，本轮未执行工具。"
+          }
+        }
+      ]
+    });
+  });
+}
+
 function buildToolDefinitions(pathname: string): unknown[] {
   if (pathname.includes("computer")) {
     return [
@@ -370,6 +509,54 @@ function buildToolDefinitions(pathname: string): unknown[] {
             visualStyle: { type: "string" },
             episodePlan: { type: "string" },
             dryRun: { type: "boolean" }
+          }
+        }
+      }
+    ];
+  }
+
+  if (pathname.includes("generation")) {
+    return [
+      {
+        name: "image_gen",
+        description: "Generate image assets",
+        inputSchema: {
+          type: "object",
+          required: ["prompt"],
+          properties: {
+            prompt: { type: "string" },
+            size: { type: "string" }
+          }
+        }
+      },
+      {
+        name: "video_gen",
+        description: "使用 Seedance 视频生成能力，提交 / 查询视频生成任务。",
+        inputSchema: {
+          type: "object",
+          required: ["operation"],
+          properties: {
+            operation: { type: "string" },
+            provider: { type: "string" },
+            mode: { type: "string" },
+            prompt: { type: "string" },
+            durationSeconds: { type: "integer" },
+            ratio: { type: "string" },
+            resolution: { type: "string" },
+            watermark: { type: "boolean" }
+          }
+        }
+      },
+      {
+        name: "music_gen",
+        description: "Generate music assets",
+        inputSchema: {
+          type: "object",
+          required: ["operation", "prompt"],
+          properties: {
+            operation: { type: "string" },
+            prompt: { type: "string" },
+            durationSeconds: { type: "integer" }
           }
         }
       }
@@ -466,6 +653,8 @@ function createFakeMcpServer(capturedRequests: CapturedRequest[]): Server {
                 ? "activeApp=Google Chrome\nvisibleText=Chrome Ready"
                 : pathname.includes("application") && toolName === "comic_update_project_fields"
                   ? "applied=true\nproject=寂寞青梅\nsummary includes 刀梦 小梅\nvisualStyle=古风武侠彩绘分镜\nepisodePlan=24 页首章规划"
+                  : pathname.includes("generation") && toolName === "video_gen"
+                    ? "video_gen 调用完成\noperation=submit\nmode=text_to_video\ntaskId=video-task-1\nstatus=completed\nartifacts=1"
                   : "workspace file content"
             }
           ],
@@ -484,9 +673,27 @@ function createFakeMcpServer(capturedRequests: CapturedRequest[]): Server {
                     episodePlan: "24 页首章规划"
                   }
                 }
-            : {
-                content: "workspace file content"
-              }
+              : pathname.includes("generation") && toolName === "video_gen"
+                ? {
+                    provider: "seedance",
+                    operation: "submit",
+                    taskId: "video-task-1",
+                    status: "completed",
+                    artifacts: [
+                      {
+                        id: "video_gen_1",
+                        kind: "video",
+                        title: "video_gen 结果 1",
+                        url: "https://example.test/cat-dance.mp4",
+                        mimeType: "video/mp4",
+                        provider: "seedance",
+                        model: "seedance-test"
+                      }
+                    ]
+                  }
+              : {
+                  content: "workspace file content"
+                }
         }
       });
       return;
@@ -600,6 +807,206 @@ test("runAgent keeps Computer Use selectable through capability routing", async 
   } finally {
     process.env.GORDON_HOME = previousHome;
     process.env.GORDON_DATA_ROOT = previousDataRoot;
+    await Promise.allSettled([closeServer(modelServer), closeServer(mcpServer)]);
+    await rm(tempHome, { recursive: true, force: true });
+  }
+});
+
+test("runAgent directly routes explicit generation requests without planner latency", async () => {
+  const previousHome = process.env.GORDON_HOME;
+  const previousDataRoot = process.env.GORDON_DATA_ROOT;
+  const tempHome = await mkdtemp(path.join(tmpdir(), "gordon-agent-runtime-direct-video-"));
+  const modelRequests: CapturedRequest[] = [];
+  const mcpRequests: CapturedRequest[] = [];
+  const permissionRequests: unknown[] = [];
+  const modelServer = createFakeDirectGenerationModelServer(modelRequests);
+  const mcpServer = createFakeMcpServer(mcpRequests);
+
+  try {
+    const [modelBaseUrl, mcpBaseUrl] = await Promise.all([listen(modelServer), listen(mcpServer)]);
+    process.env.GORDON_HOME = tempHome;
+    process.env.GORDON_DATA_ROOT = path.join(tempHome, "data");
+
+    const timestamp = "2026-06-01T00:00:00.000Z";
+    const modelProfile: ModelProfile = {
+      id: "test:model:fake-direct-video",
+      provider: "openai_like",
+      displayName: "Fake Direct Video Model",
+      model: "fake-direct-video",
+      apiKey: "test-key",
+      baseUrl: modelBaseUrl,
+      apiFormat: "chat_completions",
+      supportsStreaming: false,
+      updatedAt: timestamp
+    };
+    const generationToolsServer: McpServerConfig = {
+      id: "test:mcp:generation-tools",
+      name: "Generation Tools",
+      description: "Built-in generation tools",
+      transport: "http",
+      url: `${mcpBaseUrl}/generation`,
+      env: {},
+      toolAllowlist: [],
+      enabled: true,
+      updatedAt: timestamp
+    };
+    const agentProfile: AgentProfile = {
+      id: "test:agent:direct-video",
+      name: "Direct Video Test Agent",
+      description: "Integration test agent",
+      mode: "chat",
+      modelProfileId: modelProfile.id,
+      systemPrompt: "Use tools when users ask to generate media.",
+      allowedSkillIds: [],
+      allowedMcpServerIds: [generationToolsServer.id],
+      enabled: true,
+      updatedAt: timestamp
+    };
+
+    await saveModelSettings({
+      profiles: [modelProfile],
+      activeProfileId: modelProfile.id
+    });
+    await upsertMcpServer(generationToolsServer);
+    await upsertAgentProfile(agentProfile);
+
+    const log = await runAgent(
+      {
+        agentProfileId: agentProfile.id,
+        userInput: "帮我生成一段5s的小猫跳舞视频\n\n当前应用广场上下文：\n应用：丹青溢彩（comic）\n当前项目：测试项目",
+        autoSelectMcp: true
+      },
+      {
+        onToolPermissionRequest: async (request) => {
+          permissionRequests.push(request);
+          return true;
+        }
+      }
+    );
+    const genericPlannerRequests = modelRequests.filter((request) => {
+      const systemMessage = getSystemMessage(request.body);
+      return systemMessage.includes("资源任务规划器");
+    });
+    const toolCallRequest = mcpRequests.find((request) => request.url.includes("/generation") && request.body.method === "tools/call");
+    const toolParams = toolCallRequest?.body.params as { arguments?: Record<string, unknown>; name?: string } | undefined;
+
+    assert.equal(genericPlannerRequests.length, 0);
+    assert.equal(permissionRequests.length, 1);
+    assert.ok(log.steps.some((step) => step.type === "mcp_auto_planning" && /已识别为视频生成任务/u.test(step.title)));
+    assert.equal(log.mcpCalls?.[0]?.serverId, "test:mcp:generation-tools");
+    assert.equal(log.mcpCalls?.[0]?.toolName, "video_gen");
+    assert.equal(log.mcpCalls?.[0]?.isError, false);
+    assert.equal(toolParams?.name, "video_gen");
+    assert.deepEqual(toolParams?.arguments, {
+      operation: "submit",
+      provider: "seedance",
+      mode: "text_to_video",
+      prompt: "一段5s的小猫跳舞视频",
+      durationSeconds: 5,
+      ratio: "16:9",
+      resolution: "720p",
+      watermark: false
+    });
+    assert.equal(log.mcpCalls?.[0]?.artifacts?.[0]?.url, "https://example.test/cat-dance.mp4");
+  } finally {
+    process.env.GORDON_HOME = previousHome;
+    process.env.GORDON_DATA_ROOT = previousDataRoot;
+    await Promise.allSettled([closeServer(modelServer), closeServer(mcpServer)]);
+    await rm(tempHome, { recursive: true, force: true });
+  }
+});
+
+test("runAgent stops generic tool planning when the planner exceeds the latency budget", async () => {
+  const previousHome = process.env.GORDON_HOME;
+  const previousDataRoot = process.env.GORDON_DATA_ROOT;
+  const previousPlannerTimeout = process.env.GORDON_MCP_PLANNER_TIMEOUT_MS;
+  const tempHome = await mkdtemp(path.join(tmpdir(), "gordon-agent-runtime-planner-timeout-"));
+  const modelRequests: CapturedRequest[] = [];
+  const mcpRequests: CapturedRequest[] = [];
+  const permissionRequests: unknown[] = [];
+  const modelServer = createSlowPlannerModelServer(modelRequests);
+  const mcpServer = createFakeMcpServer(mcpRequests);
+
+  try {
+    const [modelBaseUrl, mcpBaseUrl] = await Promise.all([listen(modelServer), listen(mcpServer)]);
+    process.env.GORDON_HOME = tempHome;
+    process.env.GORDON_DATA_ROOT = path.join(tempHome, "data");
+    process.env.GORDON_MCP_PLANNER_TIMEOUT_MS = "50";
+
+    const timestamp = "2026-06-01T00:00:00.000Z";
+    const modelProfile: ModelProfile = {
+      id: "test:model:slow-planner",
+      provider: "openai_like",
+      displayName: "Slow Planner Model",
+      model: "slow-planner",
+      apiKey: "test-key",
+      baseUrl: modelBaseUrl,
+      apiFormat: "chat_completions",
+      supportsStreaming: false,
+      updatedAt: timestamp
+    };
+    const workspaceServer: McpServerConfig = {
+      id: "test:mcp:workspace-timeout",
+      name: "Workspace Tools",
+      description: "Read files",
+      transport: "http",
+      url: `${mcpBaseUrl}/workspace`,
+      env: {},
+      toolAllowlist: [],
+      enabled: true,
+      updatedAt: timestamp
+    };
+    const agentProfile: AgentProfile = {
+      id: "test:agent:planner-timeout",
+      name: "Planner Timeout Test Agent",
+      description: "Integration test agent",
+      mode: "chat",
+      modelProfileId: modelProfile.id,
+      systemPrompt: "Use tools when useful.",
+      allowedSkillIds: [],
+      allowedMcpServerIds: [workspaceServer.id],
+      enabled: true,
+      updatedAt: timestamp
+    };
+
+    await saveModelSettings({
+      profiles: [modelProfile],
+      activeProfileId: modelProfile.id
+    });
+    await upsertMcpServer(workspaceServer);
+    await upsertAgentProfile(agentProfile);
+
+    const log = await runAgent(
+      {
+        agentProfileId: agentProfile.id,
+        userInput: "检查一下当前项目里的 README 文件是否存在",
+        autoSelectMcp: true
+      },
+      {
+        onToolPermissionRequest: async (request) => {
+          permissionRequests.push(request);
+          return true;
+        }
+      }
+    );
+    const genericPlannerRequests = modelRequests.filter((request) => {
+      const systemMessage = getSystemMessage(request.body);
+      return systemMessage.includes("资源任务规划器");
+    });
+
+    assert.equal(genericPlannerRequests.length, 1);
+    assert.equal(permissionRequests.length, 0);
+    assert.equal(log.mcpCalls?.length ?? 0, 0);
+    assert.match(log.stopReason ?? "", /前置工具规划超过/u);
+    assert.ok(log.steps.some((step) => step.type === "mcp_auto_stopped" && /工具规划超时/u.test(step.title)));
+  } finally {
+    process.env.GORDON_HOME = previousHome;
+    process.env.GORDON_DATA_ROOT = previousDataRoot;
+    if (previousPlannerTimeout === undefined) {
+      delete process.env.GORDON_MCP_PLANNER_TIMEOUT_MS;
+    } else {
+      process.env.GORDON_MCP_PLANNER_TIMEOUT_MS = previousPlannerTimeout;
+    }
     await Promise.allSettled([closeServer(modelServer), closeServer(mcpServer)]);
     await rm(tempHome, { recursive: true, force: true });
   }

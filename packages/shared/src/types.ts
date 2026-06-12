@@ -560,6 +560,10 @@ export interface ToolProviderConfig {
   model: string;
   apiKey: string;
   baseUrl?: string;
+  submitUrl?: string;
+  queryUrl?: string;
+  taskIdPath?: string;
+  resultUrlPath?: string;
   enabled: boolean;
   notes?: string;
   runtime?: ToolProviderRuntimeConfig;

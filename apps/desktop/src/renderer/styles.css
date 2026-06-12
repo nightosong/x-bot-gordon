@@ -160,18 +160,33 @@ canvas {
   overflow: auto;
   cursor: default;
   scrollbar-width: none;
+  touch-action: none;
+  user-select: none;
 }
 
 .image-lightbox-stage::-webkit-scrollbar {
   display: none;
 }
 
+.image-lightbox-stage.is-draggable {
+  cursor: grab;
+}
+
+.image-lightbox-stage.is-dragging {
+  cursor: grabbing;
+}
+
 .image-lightbox-image {
   display: block;
   object-fit: contain;
-  transition: width 120ms ease, height 120ms ease;
+  pointer-events: none;
+  transition: width 120ms ease, height 120ms ease, transform 80ms ease-out;
   user-select: none;
   filter: drop-shadow(0 22px 54px rgba(0, 0, 0, 0.42));
+}
+
+.image-lightbox-stage.is-dragging .image-lightbox-image {
+  transition: none;
 }
 
 .image-lightbox-actions {
@@ -4147,6 +4162,21 @@ canvas {
   min-height: 0;
 }
 
+.comic-asset-view-body .comic-asset-reference-editor > .field-ai-target {
+  grid-template-rows: minmax(0, 1fr);
+  height: 100%;
+}
+
+.comic-asset-view-body .comic-asset-reference-editor > .field-ai-target > .comic-asset-view-prompt {
+  height: 100%;
+  padding-right: 42px;
+}
+
+.comic-asset-view-body .comic-asset-reference-editor > .field-ai-target > .field-ai-trigger {
+  top: 7px;
+  right: 8px;
+}
+
 .comic-asset-view-preview {
   position: relative;
   display: grid;
@@ -4832,6 +4862,7 @@ canvas {
 }
 
 .comic-chapter-image-frame {
+  position: relative;
   display: grid;
   place-items: center;
   min-height: 320px;
@@ -4864,6 +4895,29 @@ canvas {
   max-width: 100%;
   max-height: min(68vh, 680px);
   object-fit: contain;
+}
+
+.comic-chapter-image-tools {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0.72;
+  transform: translateY(0) scale(0.98);
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.comic-chapter-image-item:hover .comic-chapter-image-tools,
+.comic-chapter-image-item:focus-within .comic-chapter-image-tools {
+  opacity: 1;
+  transform: translateY(-1px) scale(1);
+}
+
+.comic-chapter-image-tool {
+  flex: 0 0 auto;
 }
 
 .comic-chapter-image-item figcaption {
@@ -11194,6 +11248,19 @@ canvas {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 9px 10px;
+}
+
+.extensions-shell .tool-provider-protocol {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.extensions-shell .tool-provider-protocol-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(180px, 0.65fr);
+  gap: 9px 10px;
+  min-width: 0;
 }
 
 .extensions-shell .tool-provider-notes {

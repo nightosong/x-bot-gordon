@@ -192,6 +192,89 @@ test("buildPlannerVisibleTools exposes video_gen for video generation tasks", ()
   assert.ok(visibleToolNames.includes("video_gen"));
 });
 
+test("buildPlannerVisibleTools keeps video_gen visible when comic context crowds the planner view", () => {
+  const failedInput = `帮我生成一段5s的小猫跳舞视频
+
+当前应用广场上下文：
+应用：丹青溢彩（comic）
+视图：comicDetail
+当前项目：金刚骷髅：漫画改编（id=comic_project_27e41ce48d9546e8）
+当前 tab：intro
+当前章节：第 1 章 序章：魔法陨落（id=comic_chapter_1c1676f473624aba）
+当用户要求读取、保存、写回、创建或修改漫画项目 / 章节 / 分镜 / 素材时，优先使用 Application Tools 的 comic_* 工具。`;
+  const taskLedger = {
+    taskPhase: "planning" as const,
+    objective: "生成 5 秒小猫跳舞视频",
+    constraints: [],
+    completedSubtasks: [],
+    pendingSubtasks: [],
+    activePlan: [],
+    decisionTrace: [],
+    decisionMemory: [],
+    observations: [],
+    evidenceGraph: [],
+    discoveredFacts: [],
+    failedAttempts: [],
+    environmentState: [],
+    userInterruptions: [],
+    successCriteria: [],
+    structuredSuccessCriteria: []
+  };
+  const candidateTools = [
+    createTool({ serverId: "builtin:mcp:workspace", serverName: "Workspace Tools", name: "list_directory", description: "List files" }),
+    createTool({ serverId: "builtin:mcp:workspace", serverName: "Workspace Tools", name: "read_file", description: "Read file" }),
+    createTool({ serverId: "builtin:mcp:workspace", serverName: "Workspace Tools", name: "read_web_page", description: "Read web page" }),
+    createTool({ serverId: "builtin:mcp:workspace", serverName: "Workspace Tools", name: "search_files", description: "Search files" }),
+    createTool({ serverId: "builtin:mcp:workspace", serverName: "Workspace Tools", name: "validate_json_file", description: "Validate JSON" }),
+    createTool({ serverId: "builtin:mcp:workspace", serverName: "Workspace Tools", name: "diff_paths", description: "Diff files" }),
+    createTool({ serverId: "builtin:mcp:workspace", serverName: "Workspace Tools", name: "run_shell_command", description: "Run shell command" }),
+    createTool({ serverId: "builtin:mcp:search-tools", serverName: "Search Tools", name: "web_research", description: "Research web pages" }),
+    createTool({ serverId: "builtin:mcp:search-tools", serverName: "Search Tools", name: "github_search_repositories", description: "Search GitHub" }),
+    createTool({ serverId: "builtin:mcp:computer-use", serverName: "Computer Use", name: "get_app_state", description: "Read desktop app state" }),
+    createTool({ serverId: "builtin:mcp:computer-use", serverName: "Computer Use", name: "open_app", description: "Open app" }),
+    createTool({ serverId: "builtin:mcp:computer-use", serverName: "Computer Use", name: "open_url", description: "Open URL" }),
+    createTool({ serverId: "builtin:mcp:computer-use", serverName: "Computer Use", name: "wait", description: "Wait" }),
+    createTool({ serverId: "builtin:mcp:computer-use", serverName: "Computer Use", name: "click_text", description: "Click visible text" }),
+    createTool({ serverId: "builtin:mcp:computer-use", serverName: "Computer Use", name: "play_media", description: "Play media" }),
+    createTool({ serverId: "builtin:mcp:gordon-tools", serverName: "Gordon Tools", name: "image_gen", description: "Generate image assets" }),
+    createTool({ serverId: "builtin:mcp:gordon-tools", serverName: "Gordon Tools", name: "video_gen", description: "Submit and query Seedance video generation tasks" }),
+    createTool({ serverId: "builtin:mcp:gordon-tools", serverName: "Gordon Tools", name: "music_gen", description: "Generate music assets" }),
+    createTool({ serverId: "builtin:mcp:application-tools", serverName: "Application Tools", name: "writing_list_books", description: "List writing books" }),
+    createTool({ serverId: "builtin:mcp:application-tools", serverName: "Application Tools", name: "writing_read_book", description: "Read writing book" }),
+    createTool({ serverId: "builtin:mcp:application-tools", serverName: "Application Tools", name: "writing_search_book", description: "Search writing book" }),
+    createTool({ serverId: "builtin:mcp:application-tools", serverName: "Application Tools", name: "comic_list_projects", description: "List comic projects" }),
+    createTool({ serverId: "builtin:mcp:application-tools", serverName: "Application Tools", name: "comic_read_project", description: "Read comic project" }),
+    createTool({ serverId: "builtin:mcp:application-tools", serverName: "Application Tools", name: "comic_create_project", description: "Create comic project" }),
+    createTool({ serverId: "builtin:mcp:application-tools", serverName: "Application Tools", name: "comic_create_chapter", description: "Create comic chapter" }),
+    createTool({ serverId: "builtin:mcp:application-tools", serverName: "Application Tools", name: "comic_import_chapters", description: "Import comic chapters" }),
+    createTool({ serverId: "builtin:mcp:application-tools", serverName: "Application Tools", name: "comic_update_chapter", description: "Update comic chapter" }),
+    createTool({ serverId: "builtin:mcp:application-tools", serverName: "Application Tools", name: "comic_update_project_fields", description: "Update comic project fields" }),
+    createTool({ serverId: "builtin:mcp:application-tools", serverName: "Application Tools", name: "comic_update_chapter_images", description: "Update comic chapter images" }),
+    createTool({ serverId: "builtin:mcp:application-tools", serverName: "Application Tools", name: "comic_update_assets", description: "Update comic assets" })
+  ];
+  const routing = buildCapabilityRoutingContext(
+    createContextPacket({
+      goal: {
+        latestUserRequest: failedInput,
+        objective: "生成 5 秒小猫跳舞视频",
+        taskPhase: "planning"
+      },
+      resources: buildAgentResourceContext({
+        userInput: failedInput,
+        conversationMessages: [],
+        taskLedger,
+        mcpCalls: []
+      })
+    }),
+    candidateTools
+  );
+  const visibleToolNames = buildPlannerVisibleTools(candidateTools, routing.groups).map((tool) => tool.name);
+
+  assert.ok(routing.needs.some((need) => need.capability === "generation"));
+  assert.ok(visibleToolNames.length <= 18);
+  assert.ok(visibleToolNames.includes("video_gen"));
+});
+
 test("buildPlannerVisibleTools exposes video_gen for async video result polling", () => {
   const candidateTools = [
     createTool({

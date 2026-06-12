@@ -73,6 +73,7 @@ const MAX_CONSECUTIVE_AUTO_MCP_FAILURES = 2;
 const MAX_MCP_TOOL_ATTEMPTS = 3;
 const AGENT_FINAL_MAX_OUTPUT_TOKENS = 4096;
 const MCP_RETRY_BASE_DELAY_MS = 400;
+const DEFAULT_MCP_PLANNER_TIMEOUT_MS = 12_000;
 const MAX_MCP_ARGUMENT_REPAIRS = 1;
 const MAX_MCP_DISPLAY_ARGUMENT_STRING_LENGTH = 320;
 const MAX_MCP_DISPLAY_ARGUMENT_ARRAY_ITEMS = 12;
@@ -139,6 +140,17 @@ interface McpVerificationPlan {
   reason: string;
   expectedOutcome?: string;
   verificationMethod?: string;
+}
+
+interface DirectGenerationIntent {
+  toolName: "image_gen" | "video_gen" | "music_gen";
+  mediaLabel: string;
+  prompt: string;
+  arguments: Record<string, unknown>;
+  reason: string;
+  expectedOutcome: string;
+  verificationMethod: string;
+  ledgerPatch: AgentTaskLedgerPatch;
 }
 
 interface ExecuteMcpToolCallOptions {
@@ -229,6 +241,139 @@ function throwIfAgentAborted(signal?: AbortSignal): void {
   if (signal?.aborted) {
     throw createAgentAbortError();
   }
+}
+
+function createPlannerTimeoutError(timeoutMs: number): Error {
+  const error = new Error(`工具前置规划超时（>${timeoutMs}ms）`);
+  error.name = "PlannerTimeoutError";
+  return error;
+}
+
+function isPlannerTimeoutError(error: unknown): boolean {
+  return error instanceof Error && error.name === "PlannerTimeoutError";
+}
+
+function getErrorName(error: unknown): string {
+  return error instanceof Error ? error.name : "";
+}
+
+function isAbortError(error: unknown): boolean {
+  return getErrorName(error) === "AbortError";
+}
+
+function getMcpPlannerTimeoutMs(): number {
+  const configured = Number(process.env.GORDON_MCP_PLANNER_TIMEOUT_MS);
+
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.max(50, Math.round(configured));
+  }
+
+  return DEFAULT_MCP_PLANNER_TIMEOUT_MS;
+}
+
+function formatPlannerTimeoutDuration(timeoutMs: number): string {
+  if (timeoutMs >= 1000 && timeoutMs % 1000 === 0) {
+    return `${timeoutMs / 1000} 秒`;
+  }
+
+  return `${timeoutMs}ms`;
+}
+
+function withTimeoutSignal(parentSignal: AbortSignal | undefined, timeoutMs: number): { signal: AbortSignal; cleanup: () => void } {
+  const controller = new AbortController();
+  let timedOut = false;
+
+  const abortFromParent = () => {
+    controller.abort(parentSignal?.reason);
+  };
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort(createPlannerTimeoutError(timeoutMs));
+  }, timeoutMs);
+
+  if (parentSignal?.aborted) {
+    abortFromParent();
+  } else {
+    parentSignal?.addEventListener("abort", abortFromParent, { once: true });
+  }
+
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      clearTimeout(timer);
+      parentSignal?.removeEventListener("abort", abortFromParent);
+
+      if (timedOut && !controller.signal.aborted) {
+        controller.abort(createPlannerTimeoutError(timeoutMs));
+      }
+    }
+  };
+}
+
+async function runWithPlannerTimeout<T>(work: (signal: AbortSignal) => Promise<T>, parentSignal?: AbortSignal): Promise<T> {
+  throwIfAgentAborted(parentSignal);
+
+  const timeoutMs = getMcpPlannerTimeoutMs();
+  const timeout = withTimeoutSignal(parentSignal, timeoutMs);
+  const abortListenerCleanup: { current?: () => void } = {};
+  const abortPromise = new Promise<never>((_resolve, reject) => {
+    const rejectFromAbort = () => {
+      if (parentSignal?.aborted) {
+        reject(createAgentAbortError());
+        return;
+      }
+
+      reject(timeout.signal.reason instanceof Error ? timeout.signal.reason : createPlannerTimeoutError(timeoutMs));
+    };
+
+    if (timeout.signal.aborted) {
+      rejectFromAbort();
+      return;
+    }
+
+    timeout.signal.addEventListener("abort", rejectFromAbort, { once: true });
+    abortListenerCleanup.current = () => timeout.signal.removeEventListener("abort", rejectFromAbort);
+  });
+
+  try {
+    return await Promise.race([work(timeout.signal), abortPromise]);
+  } catch (error) {
+    if (timeout.signal.aborted && !parentSignal?.aborted) {
+      throw timeout.signal.reason instanceof Error ? timeout.signal.reason : createPlannerTimeoutError(timeoutMs);
+    }
+
+    throw error;
+  } finally {
+    abortListenerCleanup.current?.();
+    timeout.cleanup();
+  }
+}
+
+function isGenerationToolCallComplete(callRecord: AgentMcpCallRecord): boolean {
+  if (callRecord.isError || !["image_gen", "video_gen", "music_gen"].includes(callRecord.toolName)) {
+    return false;
+  }
+
+  if (Array.isArray(callRecord.artifacts) && callRecord.artifacts.length > 0) {
+    return true;
+  }
+
+  const structuredContent = callRecord.structuredContent;
+
+  if (structuredContent && typeof structuredContent === "object" && !Array.isArray(structuredContent)) {
+    const content = structuredContent as Record<string, unknown>;
+    const status = typeof content.status === "string" ? content.status.toLowerCase() : "";
+
+    if (typeof content.taskId === "string" && content.taskId.trim()) {
+      return true;
+    }
+
+    if (status === "completed" || status === "pending" || Boolean(content.pending)) {
+      return true;
+    }
+  }
+
+  return /taskId\s*=|status\s*=\s*(?:completed|pending)|artifacts\s*=/iu.test(callRecord.resultText ?? "");
 }
 
 function createRunStep(type: AgentRunStep["type"], title: string, detail: string): AgentRunStep {
@@ -348,7 +493,7 @@ function buildToolScopeText(authorizedServers: McpServerConfig[]): string {
 
   if (localTools.length) {
     sections.push(
-      `本地工具：${localTools.map((server) => server.name).join("、")}。这是 Gordon 内置能力通道，不代表用户已连接外部 MCP。Workspace Tools 用于文件读写、路径检查、工作区搜索、网页读取、文件对比、JSON 文件解析验证和受限命令诊断，也可以在 Application Tools 不可用或未覆盖目标能力时直接维护 ~/.gord/data/workbench 下的应用数据；Search Tools 用于高质量联网搜索、自动读取来源、GitHub 仓库搜索和证据包研究，遇到最新事实、资料调研、产品/技术对比或需要引用来源的问题应优先使用 Search Tools 的 web_research，遇到开源项目查找应优先使用 github_search_repositories；Application Tools 用于按应用语义读取、检索、预览和写回应用广场资产；Gordon Tools 会按能力拓展 TOOL 配置暴露 image_gen 等内置生成工具；Computer Use 会在首次读取或控制桌面前申请本轮授权。`
+      `本地工具：${localTools.map((server) => server.name).join("、")}。这是 Gordon 内置能力通道，不代表用户已连接外部 MCP。Workspace Tools 用于文件读写、路径检查、工作区搜索、网页读取、文件对比、JSON 文件解析验证和受限命令诊断，也可以在 Application Tools 不可用或未覆盖目标能力时直接维护 ~/.gord/data/workbench 下的应用数据；Search Tools 用于高质量联网搜索、自动读取来源、GitHub 仓库搜索和证据包研究，遇到最新事实、资料调研、产品/技术对比或需要引用来源的问题应优先使用 Search Tools 的 web_research，遇到开源项目查找应优先使用 github_search_repositories；Application Tools 用于按应用语义读取、检索、预览和写回应用广场资产；Gordon Tools 会按能力拓展 TOOL 配置暴露 image_gen、video_gen、music_gen 等内置生成工具；Computer Use 会在首次读取或控制桌面前申请本轮授权。`
     );
   }
 
@@ -450,6 +595,244 @@ ${contextText}
 
 当前用户最新请求：
 ${userInput}`;
+}
+
+function extractPrimaryUserRequest(userInput: string): string {
+  const markers = [
+    "\n\n当前应用广场上下文：",
+    "\n当前应用广场上下文：",
+    "\n\n以下是本轮上传附件",
+    "\n以下是本轮上传附件"
+  ];
+  let primary = String(userInput ?? "").trim();
+
+  for (const marker of markers) {
+    const index = primary.indexOf(marker);
+
+    if (index >= 0) {
+      primary = primary.slice(0, index).trim();
+    }
+  }
+
+  return primary || String(userInput ?? "").trim();
+}
+
+function getRequestedDurationSeconds(text: string): number | undefined {
+  const match = String(text ?? "").match(/(\d+(?:\.\d+)?)\s*(?:秒|s|secs?|seconds?)(?:\b|$)/iu);
+
+  if (!match) {
+    return undefined;
+  }
+
+  const duration = Number(match[1]);
+
+  if (!Number.isFinite(duration) || duration <= 0) {
+    return undefined;
+  }
+
+  return Math.max(1, Math.min(60, Math.round(duration)));
+}
+
+function cleanGenerationPrompt(text: string): string {
+  return String(text ?? "")
+    .trim()
+    .replace(/^请?帮我/u, "")
+    .replace(/^帮我/u, "")
+    .replace(/^(生成|制作|做|创建|产出|调用)\s*/u, "")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function hasDirectGenerationVerb(text: string): boolean {
+  return /生成|制作|创建|产出|做一个|做一段|来一张|画一张|出一张|调用\s*(?:image_gen|video_gen|music_gen)|使用\s*(?:image_gen|video_gen|music_gen)/iu.test(text);
+}
+
+function buildDirectGenerationLedgerPatch(intent: {
+  toolName: DirectGenerationIntent["toolName"];
+  mediaLabel: string;
+  prompt: string;
+  expectedOutcome: string;
+  verificationMethod: string;
+}): AgentTaskLedgerPatch {
+  return {
+    objective: `生成${intent.mediaLabel}：${truncateLedgerText(intent.prompt, 120)}`,
+    taskPhase: "executing",
+    constraints: ["明确媒体生成请求直接使用对应生成工具，避免通用规划等待"],
+    pendingSubtasks: [`调用 ${intent.toolName} 生成${intent.mediaLabel}`, "根据工具结果确认是否获得可展示产物或可查询 taskId"],
+    activePlan: [
+      {
+        step: `提交${intent.mediaLabel}生成任务`,
+        toolHint: `Gordon Tools / ${intent.toolName}`,
+        successCriteria: intent.expectedOutcome,
+        status: "in_progress"
+      }
+    ],
+    decisionTrace: [
+      {
+        step: `识别为${intent.mediaLabel}生成任务`,
+        intent: "减少明确媒体生成请求的通用工具规划等待",
+        chosenAction: `builtin:mcp:gordon-tools / ${intent.toolName}`,
+        rejectedAlternatives: ["等待模型通用规划", "仅回复文字建议"],
+        why: `最新请求明确要求生成${intent.mediaLabel}，对应工具可直接执行`,
+        expectedOutcome: intent.expectedOutcome
+      }
+    ],
+    successCriteria: [intent.expectedOutcome],
+    structuredSuccessCriteria: [
+      {
+        type: "artifact_exists",
+        target: intent.toolName,
+        expected: "返回可展示媒体 artifact、可播放 URL 或可继续查询的 taskId",
+        verificationMethod: intent.verificationMethod,
+        status: "pending"
+      }
+    ],
+    nextActionHint: `直接调用 ${intent.toolName}`
+  };
+}
+
+function detectDirectGenerationIntent(userInput: string): DirectGenerationIntent | null {
+  const primaryRequest = extractPrimaryUserRequest(userInput);
+  const normalized = primaryRequest.toLowerCase();
+  const directToolMatch = normalized.match(/\b(image_gen|video_gen|music_gen)\b/u);
+  const wantsGeneration = hasDirectGenerationVerb(primaryRequest) || Boolean(directToolMatch);
+
+  if (!wantsGeneration) {
+    return null;
+  }
+
+  const prompt = cleanGenerationPrompt(primaryRequest) || primaryRequest;
+  const wantsVideo =
+    directToolMatch?.[1] === "video_gen" ||
+    /视频|短剧|短视频|动画|video\b|影片|片段/iu.test(primaryRequest);
+  const wantsMusic =
+    directToolMatch?.[1] === "music_gen" ||
+    /音乐|歌曲|曲子|乐曲|配乐|纯音乐|钢琴曲|笛子|音频|bgm|伴奏|music\b|audio\b|song\b/iu.test(primaryRequest);
+  const wantsImage =
+    directToolMatch?.[1] === "image_gen" ||
+    /图片|图像|插图|海报|封面|漫画图|素材图|照片|画一张|来一张|image\b|picture\b|poster\b/iu.test(primaryRequest);
+
+  if (wantsVideo) {
+    const durationSeconds = getRequestedDurationSeconds(primaryRequest);
+    const expectedOutcome = "返回视频生成任务结果、可播放视频 URL，或 pending taskId 供后续查询";
+    const verificationMethod = "检查 video_gen structuredContent 中的 artifacts、video URL、taskId、status 或 pending 字段";
+
+    return {
+      toolName: "video_gen",
+      mediaLabel: "视频",
+      prompt,
+      arguments: {
+        operation: "submit",
+        provider: "seedance",
+        mode: "text_to_video",
+        prompt,
+        ...(durationSeconds ? { durationSeconds } : {}),
+        ratio: "16:9",
+        resolution: "720p",
+        watermark: false
+      },
+      reason: `检测到明确视频生成请求，直接使用 video_gen，跳过通用工具规划等待。请求：${truncateLedgerText(primaryRequest, 160)}`,
+      expectedOutcome,
+      verificationMethod,
+      ledgerPatch: buildDirectGenerationLedgerPatch({
+        toolName: "video_gen",
+        mediaLabel: "视频",
+        prompt,
+        expectedOutcome,
+        verificationMethod
+      })
+    };
+  }
+
+  if (wantsMusic) {
+    const durationSeconds = getRequestedDurationSeconds(primaryRequest);
+    const isSong = /歌曲|唱|人声|歌词|song\b|vocal/iu.test(primaryRequest);
+    const operation = isSong ? "generate_song" : "generate_instrumental";
+    const expectedOutcome = "返回音乐生成任务结果、可播放音频 URL，或 pending taskId 供后续查询";
+    const verificationMethod = "检查 music_gen structuredContent 中的 artifacts、audio URL、taskId、status 或 pending 字段";
+
+    return {
+      toolName: "music_gen",
+      mediaLabel: "音乐",
+      prompt,
+      arguments: {
+        operation,
+        prompt,
+        ...(durationSeconds ? { durationSeconds } : {})
+      },
+      reason: `检测到明确音乐生成请求，直接使用 music_gen，跳过通用工具规划等待。请求：${truncateLedgerText(primaryRequest, 160)}`,
+      expectedOutcome,
+      verificationMethod,
+      ledgerPatch: buildDirectGenerationLedgerPatch({
+        toolName: "music_gen",
+        mediaLabel: "音乐",
+        prompt,
+        expectedOutcome,
+        verificationMethod
+      })
+    };
+  }
+
+  if (wantsImage) {
+    const expectedOutcome = "返回可展示图片 artifact 或图片 URL";
+    const verificationMethod = "检查 image_gen structuredContent 中的 artifacts 或图片数据";
+
+    return {
+      toolName: "image_gen",
+      mediaLabel: "图片",
+      prompt,
+      arguments: {
+        prompt,
+        size: /9\s*:\s*16|竖版|竖屏/iu.test(primaryRequest)
+          ? "1024x1792"
+          : /1\s*:\s*1|方图|头像|正方形/iu.test(primaryRequest)
+            ? "1024x1024"
+            : "1792x1024"
+      },
+      reason: `检测到明确图片生成请求，直接使用 image_gen，跳过通用工具规划等待。请求：${truncateLedgerText(primaryRequest, 160)}`,
+      expectedOutcome,
+      verificationMethod,
+      ledgerPatch: buildDirectGenerationLedgerPatch({
+        toolName: "image_gen",
+        mediaLabel: "图片",
+        prompt,
+        expectedOutcome,
+        verificationMethod
+      })
+    };
+  }
+
+  return null;
+}
+
+function buildDirectGenerationToolPlan(
+  candidateTools: McpToolDefinition[],
+  userInput: string
+): McpToolSelectionPlan | null {
+  const intent = detectDirectGenerationIntent(userInput);
+
+  if (!intent) {
+    return null;
+  }
+
+  const matchedTool =
+    candidateTools.find((tool) => tool.serverId === BUILTIN_GORDON_TOOLS_MCP_ID && tool.name === intent.toolName) ??
+    candidateTools.find((tool) => tool.name === intent.toolName && inferToolCapabilities(tool).includes("generate"));
+
+  if (!matchedTool) {
+    return null;
+  }
+
+  return {
+    shouldCall: true,
+    serverId: matchedTool.serverId,
+    toolName: matchedTool.name,
+    arguments: intent.arguments,
+    reason: intent.reason,
+    expectedOutcome: intent.expectedOutcome,
+    verificationMethod: intent.verificationMethod,
+    ledgerPatch: intent.ledgerPatch
+  };
 }
 
 async function updateTaskLedgerAfterToolCall(
@@ -2692,33 +3075,82 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
     let consecutiveCriticRevisions = 0;
 
     for (let round = 1; round <= MAX_AUTO_MCP_ROUNDS && candidateTools.length; round += 1) {
-      pushStep(
-        "mcp_auto_planning",
-        `正在规划工具（第 ${round} 轮）`,
-        `从 ${candidateServers.length} 个工具服务的可用工具中自动选择`
-      );
-
       let plannedSelection;
+      const directGenerationPlan = round === 1 ? buildDirectGenerationToolPlan(candidateTools, userInput) : null;
+
+      if (directGenerationPlan) {
+        const directLabel =
+          directGenerationPlan.toolName === "video_gen"
+            ? "视频生成任务"
+            : directGenerationPlan.toolName === "music_gen"
+              ? "音乐生成任务"
+              : "图片生成任务";
+
+        plannedSelection = directGenerationPlan;
+        pushStep(
+          "mcp_auto_planning",
+          `已识别为${directLabel}`,
+          `${directGenerationPlan.reason}；将直接调用 ${directGenerationPlan.toolName}。`
+        );
+      } else {
+        pushStep(
+          "mcp_auto_planning",
+          `正在规划工具（第 ${round} 轮）`,
+          `从 ${candidateServers.length} 个工具服务的可用工具中自动选择`
+        );
+      }
 
       try {
-        const currentContextPacket = buildCurrentContextPacket();
-        plannedSelection = await planMcpToolSelection(
-          modelProfile,
-          agent,
-          currentContextPacket,
-          buildAgentContextPacketText(currentContextPacket),
-          candidateTools,
-          round,
-          options.signal
-        );
+        if (!plannedSelection) {
+          const currentContextPacket = buildCurrentContextPacket();
+          plannedSelection = await runWithPlannerTimeout(
+            (plannerSignal) =>
+              planMcpToolSelection(
+                modelProfile,
+                agent,
+                currentContextPacket,
+                buildAgentContextPacketText(currentContextPacket),
+                candidateTools,
+                round,
+                plannerSignal
+              ),
+            options.signal
+          );
+        }
       } catch (error) {
         throwIfAgentAborted(options.signal);
-        stopReason = `工具规划失败：${error instanceof Error ? error.message : "未知错误"}`;
-        pushStep("mcp_auto_stopped", `工具编排停止（第 ${round} 轮）`, stopReason);
+        if (isPlannerTimeoutError(error) || isAbortError(error)) {
+          const timeoutText = formatPlannerTimeoutDuration(getMcpPlannerTimeoutMs());
+          stopReason = `前置工具规划超过 ${timeoutText}，已停止本轮工具规划并进入回复整理。`;
+          pushStep("mcp_auto_stopped", `工具规划超时（第 ${round} 轮）`, stopReason);
+          taskLedger = mergeAgentTaskLedgerPatch(
+            taskLedger,
+            {
+              taskPhase: "finalizing",
+              failedAttempts: [
+                ...taskLedger.failedAttempts,
+                {
+                  action: `第 ${round} 轮工具规划`,
+                  reason: stopReason,
+                  category: "planner_timeout",
+                  recoveryHint: "可精简请求或直接指定工具；明确生成类请求会走快速路由"
+                }
+              ],
+              nextActionHint: "不要继续等待工具规划，基于当前上下文整理回复"
+            },
+            contextualUserInput
+          );
+          emitProgress({ taskLedger });
+        } else {
+          stopReason = `工具规划失败：${error instanceof Error ? error.message : "未知错误"}`;
+          pushStep("mcp_auto_stopped", `工具编排停止（第 ${round} 轮）`, stopReason);
+        }
         break;
       }
 
-      pushStep("mcp_auto_planning", `工具规划结果（第 ${round} 轮）`, plannedSelection.reason);
+      if (!directGenerationPlan) {
+        pushStep("mcp_auto_planning", `工具规划结果（第 ${round} 轮）`, plannedSelection.reason);
+      }
       taskLedger = mergeAgentTaskLedgerPatch(taskLedger, plannedSelection.ledgerPatch, contextualUserInput);
       emitProgress({ taskLedger });
 
@@ -2855,6 +3287,26 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
       actualMcpArguments = callRecord.arguments;
       await updateLedgerFromToolCall(callRecord);
       emitProgress();
+
+      if (directGenerationPlan && isGenerationToolCallComplete(callRecord)) {
+        taskLedger = normalizeAgentTaskLedger(
+          {
+            ...taskLedger,
+            taskPhase: "verifying",
+            completedSubtasks: [...taskLedger.completedSubtasks, `${callRecord.toolName} 已返回生成结果或可继续查询的任务状态`],
+            pendingSubtasks: taskLedger.pendingSubtasks.filter((item) => !item.includes(callRecord.toolName)),
+            nextActionHint: "生成任务已有工具结果，直接进入成功条件验证和最终回复"
+          },
+          contextualUserInput
+        );
+        pushStep(
+          "mcp_auto_stopped",
+          `生成任务已提交（第 ${round} 轮）`,
+          `${callRecord.toolName} 已返回结果，本轮不再进入通用工具规划。`
+        );
+        emitProgress({ taskLedger });
+        break;
+      }
 
       if (callRecord.isError) {
         const fallbackCandidateTools = buildFallbackCandidateTools(candidateTools, callRecord, mcpCalls);
@@ -3016,18 +3468,31 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
 
       try {
         const verificationContextPacket = buildCurrentContextPacket();
-        verificationPlan = await planActiveMcpVerification(
-          modelProfile,
-          agent,
-          verificationContextPacket,
-          buildAgentContextPacketText(verificationContextPacket),
-          activeVerificationTools,
-          taskLedger,
-          verificationRound,
+        verificationPlan = await runWithPlannerTimeout(
+          (plannerSignal) =>
+            planActiveMcpVerification(
+              modelProfile,
+              agent,
+              verificationContextPacket,
+              buildAgentContextPacketText(verificationContextPacket),
+              activeVerificationTools,
+              taskLedger,
+              verificationRound,
+              plannerSignal
+            ),
           options.signal
         );
       } catch (error) {
         throwIfAgentAborted(options.signal);
+        if (isPlannerTimeoutError(error) || isAbortError(error)) {
+          const timeoutText = formatPlannerTimeoutDuration(getMcpPlannerTimeoutMs());
+          pushStep(
+            "mcp_auto_stopped",
+            `主动验证规划超时（第 ${verificationRound} 轮）`,
+            `主动验证规划超过 ${timeoutText}，已停止继续等待并进入回复整理。`
+          );
+          break;
+        }
         pushStep(
           "mcp_auto_stopped",
           `主动验证规划失败（第 ${verificationRound} 轮）`,

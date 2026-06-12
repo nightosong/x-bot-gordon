@@ -19,6 +19,18 @@ test("classifyMcpMessage keeps transient errors retryable", () => {
   });
 });
 
+test("classifyMcpMessage sanitizes upstream HTML 503 pages", () => {
+  const classified = classifyMcpMessage(
+    "HTTP 503：<html> <head><title>503 Service Temporarily Unavailable</title></head> <body bgcolor=\"white\"> <center><h1>503 Service Temporarily Unavailable</h1></center> <hr><center>alb</center> </body> </html>"
+  );
+
+  assert.equal(classified.category, "retryable");
+  assert.equal(classified.failureKind, "unknown");
+  assert.match(classified.message, /上游服务暂时不可用（HTTP 503）/u);
+  assert.match(classified.message, /Service Temporarily Unavailable/u);
+  assert.doesNotMatch(classified.message, /<html|<body|<center/iu);
+});
+
 test("classifyMcpMessage identifies network timeouts", () => {
   assert.deepEqual(
     classifyMcpMessage(

@@ -1400,7 +1400,7 @@
                               </div>
                             </div>
 
-                            <label class="field comic-asset-reference-editor">
+                            <div class="field comic-asset-reference-editor">
                               <span class="comic-asset-reference-header">
                                 <span class="field-label">视图提示词</span>
                                 <span
@@ -1418,35 +1418,47 @@
                                   </span>
                                 </span>
                               </span>
-                              <textarea
+
+                              <FieldAiOptimizer
+                                :actions="fieldAiActions"
+                                :state="ui.marketplace.fieldAi"
+                                :field-id="`video-asset-view-prompt-${activeVideoAsset.id}-${view.id}`"
+                                :app-name="VIDEO_APP_NAME"
+                                label="视图提示词"
                                 :value="view.prompt"
-                                class="field-textarea writing-editor-textarea comic-asset-view-prompt"
-                                @focus="updateVideoAssetReferencePickerFromInput(view.id, $event)"
-                                @click="updateVideoAssetReferencePickerFromInput(view.id, $event)"
-                                @keyup="updateVideoAssetReferencePickerFromInput(view.id, $event)"
-                                @blur="closeVideoAssetReferencePickerSoon(view.id)"
-                                @input="setVideoAssetViewPromptFromInput(activeVideoAsset.id, view.id, $event)"
-                              ></textarea>
-                              <div
-                                v-if="activeVideoAssetReferencePickerViewId === view.id && getVideoAssetViewReferencePickerOptions(view.id).length"
-                                class="comic-asset-reference-picker"
+                                :context="buildVideoAssetViewFieldAiContext(activeVideoAsset, view, '视图提示词')"
+                                :set-value="(value) => setVideoAssetViewField(activeVideoAsset.id, view.id, 'prompt', value)"
                               >
-                                <button
-                                  v-for="option in getVideoAssetViewReferencePickerOptions(view.id)"
-                                  :key="option.id"
-                                  type="button"
-                                  class="comic-asset-reference-option"
-                                  :class="{ 'is-current': option.isCurrentAsset }"
-                                  @mousedown.prevent="insertVideoAssetViewReference(activeVideoAsset.id, view, option, $event)"
+                                <textarea
+                                  :value="view.prompt"
+                                  class="field-textarea writing-editor-textarea comic-asset-view-prompt"
+                                  @focus="updateVideoAssetReferencePickerFromInput(view.id, $event)"
+                                  @click="updateVideoAssetReferencePickerFromInput(view.id, $event)"
+                                  @keyup="updateVideoAssetReferencePickerFromInput(view.id, $event)"
+                                  @blur="closeVideoAssetReferencePickerSoon(view.id)"
+                                  @input="setVideoAssetViewPromptFromInput(activeVideoAsset.id, view.id, $event)"
+                                ></textarea>
+                                <div
+                                  v-if="activeVideoAssetReferencePickerViewId === view.id && getVideoAssetViewReferencePickerOptions(view.id).length"
+                                  class="comic-asset-reference-picker"
                                 >
-                                  <img :src="option.src" :alt="option.label" />
-                                  <span>
-                                    <strong>{{ option.assetName }}</strong>
-                                    <small>{{ option.viewLabel }}</small>
-                                  </span>
-                                </button>
-                              </div>
-                            </label>
+                                  <button
+                                    v-for="option in getVideoAssetViewReferencePickerOptions(view.id)"
+                                    :key="option.id"
+                                    type="button"
+                                    class="comic-asset-reference-option"
+                                    :class="{ 'is-current': option.isCurrentAsset }"
+                                    @mousedown.prevent="insertVideoAssetViewReference(activeVideoAsset.id, view, option, $event)"
+                                  >
+                                    <img :src="option.src" :alt="option.label" />
+                                    <span>
+                                      <strong>{{ option.assetName }}</strong>
+                                      <small>{{ option.viewLabel }}</small>
+                                    </span>
+                                  </button>
+                                </div>
+                              </FieldAiOptimizer>
+                            </div>
                           </div>
                         </article>
                       </div>
@@ -2299,7 +2311,7 @@
                               </div>
                             </div>
 
-                            <label class="field comic-asset-reference-editor">
+                            <div class="field comic-asset-reference-editor">
                               <span class="comic-asset-reference-header">
                                 <span class="field-label">视图提示词</span>
                                 <span
@@ -2317,35 +2329,47 @@
                                   </span>
                                 </span>
                               </span>
-                              <textarea
+
+                              <FieldAiOptimizer
+                                :actions="fieldAiActions"
+                                :state="ui.marketplace.fieldAi"
+                                :field-id="`comic-asset-view-prompt-${activeComicAsset.id}-${view.id}`"
+                                :app-name="COMIC_APP_NAME"
+                                label="视图提示词"
                                 :value="view.prompt"
-                                class="field-textarea writing-editor-textarea comic-asset-view-prompt"
-                                @focus="updateComicAssetReferencePickerFromInput(view.id, $event)"
-                                @click="updateComicAssetReferencePickerFromInput(view.id, $event)"
-                                @keyup="updateComicAssetReferencePickerFromInput(view.id, $event)"
-                                @blur="closeComicAssetReferencePickerSoon(view.id)"
-                                @input="setComicAssetViewPromptFromInput(activeComicAsset.id, view.id, $event)"
-                              ></textarea>
-                              <div
-                                v-if="activeComicAssetReferencePickerViewId === view.id && getComicAssetViewReferencePickerOptions(view.id).length"
-                                class="comic-asset-reference-picker"
+                                :context="buildComicAssetViewFieldAiContext(activeComicAsset, view, '视图提示词')"
+                                :set-value="(value) => setComicAssetViewField(activeComicAsset.id, view.id, 'prompt', value)"
                               >
-                                <button
-                                  v-for="option in getComicAssetViewReferencePickerOptions(view.id)"
-                                  :key="option.id"
-                                  type="button"
-                                  class="comic-asset-reference-option"
-                                  :class="{ 'is-current': option.isCurrentAsset }"
-                                  @mousedown.prevent="insertComicAssetViewReference(activeComicAsset.id, view, option, $event)"
+                                <textarea
+                                  :value="view.prompt"
+                                  class="field-textarea writing-editor-textarea comic-asset-view-prompt"
+                                  @focus="updateComicAssetReferencePickerFromInput(view.id, $event)"
+                                  @click="updateComicAssetReferencePickerFromInput(view.id, $event)"
+                                  @keyup="updateComicAssetReferencePickerFromInput(view.id, $event)"
+                                  @blur="closeComicAssetReferencePickerSoon(view.id)"
+                                  @input="setComicAssetViewPromptFromInput(activeComicAsset.id, view.id, $event)"
+                                ></textarea>
+                                <div
+                                  v-if="activeComicAssetReferencePickerViewId === view.id && getComicAssetViewReferencePickerOptions(view.id).length"
+                                  class="comic-asset-reference-picker"
                                 >
-                                  <img :src="option.src" :alt="option.label" />
-                                  <span>
-                                    <strong>{{ option.assetName }}</strong>
-                                    <small>{{ option.viewLabel }}</small>
-                                  </span>
-                                </button>
-                              </div>
-                            </label>
+                                  <button
+                                    v-for="option in getComicAssetViewReferencePickerOptions(view.id)"
+                                    :key="option.id"
+                                    type="button"
+                                    class="comic-asset-reference-option"
+                                    :class="{ 'is-current': option.isCurrentAsset }"
+                                    @mousedown.prevent="insertComicAssetViewReference(activeComicAsset.id, view, option, $event)"
+                                  >
+                                    <img :src="option.src" :alt="option.label" />
+                                    <span>
+                                      <strong>{{ option.assetName }}</strong>
+                                      <small>{{ option.viewLabel }}</small>
+                                    </span>
+                                  </button>
+                                </div>
+                              </FieldAiOptimizer>
+                            </div>
                           </div>
                         </article>
                       </div>
@@ -2678,6 +2702,26 @@
                         >
                           <div class="comic-chapter-image-frame">
                             <img :src="image.src" :alt="image.alt || `分镜图片 ${index + 1}`" />
+                            <div class="comic-chapter-image-tools" aria-label="章节图片操作">
+                              <button
+                                type="button"
+                                class="model-icon-button comic-asset-view-tool comic-chapter-image-tool"
+                                aria-label="放大章节图片"
+                                title="放大章节图片"
+                                @click.stop="previewComicChapterImage(activeComicChapter, image.id)"
+                              >
+                                <GIcon name="maximize" :size="13" />
+                              </button>
+                              <button
+                                type="button"
+                                class="model-icon-button comic-asset-view-tool comic-chapter-image-tool"
+                                aria-label="下载章节图片"
+                                title="下载章节图片"
+                                @click.stop="downloadComicChapterImage(activeComicChapter, image.id)"
+                              >
+                                <GIcon name="download" :size="13" />
+                              </button>
+                            </div>
                           </div>
                         </figure>
                       </div>
@@ -3993,6 +4037,7 @@ const {
   createComicStoryboard,
   deleteComicAsset,
   downloadComicAssetViewImage,
+  downloadComicChapterImage,
   deleteComicProjectFromShelf,
   deleteComicStoryboard,
   exportActiveComicProject,
@@ -4018,6 +4063,7 @@ const {
   openComicExportDialog,
   openComicProject,
   previewComicAssetView,
+  previewComicChapterImage,
   rememberComicAssetNameBaseline,
   rememberComicProjectTitleBaseline,
   removeComicAssetView,
@@ -4761,6 +4807,24 @@ function buildVideoShotFieldAiContext(shot, fieldLabel) {
   ]);
 }
 
+function buildVideoAssetViewFieldAiContext(asset, view, fieldLabel) {
+  const references = getVideoAssetViewResolvedReferences(view)
+    .map((reference) => reference.label)
+    .join("、");
+
+  return compactFieldAiContext([
+    buildVideoProjectFieldAiContext(fieldLabel),
+    `素材：${asset?.name ?? ""}`,
+    `素材类型：${getVideoAssetTypeLabel(asset?.type)}`,
+    `素材描述：${asset?.description ?? ""}`,
+    `素材总提示词：${asset?.prompt ?? ""}`,
+    `视图：${view?.label || getVideoAssetViewKindLabel(view?.kind)}`,
+    `视图类型：${getVideoAssetViewKindLabel(view?.kind)}`,
+    `已引用素材：${references || "暂无"}`,
+    fieldLabel === "视图提示词" ? "" : `视图提示词：${view?.prompt ?? ""}`
+  ]);
+}
+
 function buildComicProjectFieldAiContext(fieldLabel) {
   return compactFieldAiContext([
     `项目：${activeComicProject.value?.title ?? ""}`,
@@ -4771,6 +4835,24 @@ function buildComicProjectFieldAiContext(fieldLabel) {
     fieldLabel === "故事与画面目标" ? "" : `故事与画面目标：${activeComicProject.value?.summary ?? ""}`,
     fieldLabel === "画风与镜头" ? "" : `画风与镜头：${activeComicProject.value?.visualStyle ?? ""}`,
     fieldLabel.includes("规划") ? "" : `规划：${activeComicProject.value?.episodePlan ?? ""}`
+  ]);
+}
+
+function buildComicAssetViewFieldAiContext(asset, view, fieldLabel) {
+  const references = getComicAssetViewResolvedReferences(view)
+    .map((reference) => reference.label)
+    .join("、");
+
+  return compactFieldAiContext([
+    buildComicProjectFieldAiContext(fieldLabel),
+    `素材：${asset?.name ?? ""}`,
+    `素材类型：${getComicAssetTypeLabel(asset?.type)}`,
+    `素材描述：${asset?.description ?? ""}`,
+    `素材总提示词：${asset?.prompt ?? ""}`,
+    `视图：${view?.label || getComicAssetViewKindLabel(view?.kind)}`,
+    `视图类型：${getComicAssetViewKindLabel(view?.kind)}`,
+    `已引用素材：${references || "暂无"}`,
+    fieldLabel === "视图提示词" ? "" : `视图提示词：${view?.prompt ?? ""}`
   ]);
 }
 

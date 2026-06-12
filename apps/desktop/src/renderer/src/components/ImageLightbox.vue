@@ -35,7 +35,16 @@
         </button>
       </div>
 
-      <div class="image-lightbox-stage" @click.stop>
+      <div
+        class="image-lightbox-stage"
+        :class="{ 'is-dragging': dragState.isDragging, 'is-draggable': isImageDraggable }"
+        @click.stop
+        @pointerdown="handlePointerDown"
+        @pointermove="handlePointerMove"
+        @pointerup="handlePointerUp"
+        @pointercancel="handlePointerUp"
+        @pointerleave="handlePointerLeave"
+      >
         <img
           class="image-lightbox-image"
           :src="image.src"
@@ -87,8 +96,26 @@ const imageMeta = reactive({
   fittedWidth: 0,
   fittedHeight: 0
 });
+const dragState = reactive({
+  isDragging: false,
+  pointerId: null,
+  startX: 0,
+  startY: 0,
+  originX: 0,
+  originY: 0,
+  offsetX: 0,
+  offsetY: 0
+});
 
 const zoomPercent = computed(() => Math.round((Number(props.zoom) || 1) * 100));
+const isImageDraggable = computed(() => {
+  const zoomValue = Number(props.zoom) || 1;
+  const renderedWidth = Math.max(1, Math.round((imageMeta.fittedWidth || imageMeta.naturalWidth || 960) * zoomValue));
+  const renderedHeight = Math.max(1, Math.round((imageMeta.fittedHeight || imageMeta.naturalHeight || 540) * zoomValue));
+  const bounds = getViewportFitBounds();
+
+  return renderedWidth > bounds.width || renderedHeight > bounds.height || zoomValue > 1;
+});
 const imageStyle = computed(() => {
   const zoomValue = Number(props.zoom) || 1;
   const width = Math.max(1, Math.round((imageMeta.fittedWidth || imageMeta.naturalWidth || 960) * zoomValue));
@@ -96,7 +123,8 @@ const imageStyle = computed(() => {
 
   return {
     width: `${width}px`,
-    height: `${height}px`
+    height: `${height}px`,
+    transform: `translate3d(${Math.round(dragState.offsetX)}px, ${Math.round(dragState.offsetY)}px, 0)`
   };
 });
 
@@ -118,6 +146,60 @@ function emitZoomOut() {
 
 function handleWheel(event) {
   emit("zoom-wheel", event.deltaY < 0 ? "in" : "out");
+}
+
+function resetDragOffset() {
+  dragState.isDragging = false;
+  dragState.pointerId = null;
+  dragState.startX = 0;
+  dragState.startY = 0;
+  dragState.originX = 0;
+  dragState.originY = 0;
+  dragState.offsetX = 0;
+  dragState.offsetY = 0;
+}
+
+function handlePointerDown(event) {
+  if (!isImageDraggable.value || event.button !== 0) {
+    return;
+  }
+
+  dragState.isDragging = true;
+  dragState.pointerId = event.pointerId;
+  dragState.startX = event.clientX;
+  dragState.startY = event.clientY;
+  dragState.originX = dragState.offsetX;
+  dragState.originY = dragState.offsetY;
+  event.currentTarget?.setPointerCapture?.(event.pointerId);
+  event.preventDefault();
+}
+
+function handlePointerMove(event) {
+  if (!dragState.isDragging || dragState.pointerId !== event.pointerId) {
+    return;
+  }
+
+  dragState.offsetX = dragState.originX + event.clientX - dragState.startX;
+  dragState.offsetY = dragState.originY + event.clientY - dragState.startY;
+  event.preventDefault();
+}
+
+function handlePointerUp(event) {
+  if (!dragState.isDragging || dragState.pointerId !== event.pointerId) {
+    return;
+  }
+
+  dragState.isDragging = false;
+  dragState.pointerId = null;
+  event.currentTarget?.releasePointerCapture?.(event.pointerId);
+}
+
+function handlePointerLeave(event) {
+  if (!dragState.isDragging || dragState.pointerId !== event.pointerId || event.currentTarget?.hasPointerCapture?.(event.pointerId)) {
+    return;
+  }
+
+  handlePointerUp(event);
 }
 
 function handleBackdropClick(event) {
@@ -175,18 +257,30 @@ function updateImageFit(naturalWidth, naturalHeight) {
 
 function handleImageLoad(event) {
   updateImageFit(event.target?.naturalWidth, event.target?.naturalHeight);
+  resetDragOffset();
 }
 
 watch(
   () => props.image?.src,
   async (src) => {
     if (!src) {
+      resetDragOffset();
       return;
     }
 
+    resetDragOffset();
     updateImageFit(0, 0);
     await nextTick();
     document.querySelector(".image-lightbox-overlay")?.focus?.();
+  }
+);
+
+watch(
+  () => props.zoom,
+  () => {
+    if (!isImageDraggable.value) {
+      resetDragOffset();
+    }
   }
 );
 </script>

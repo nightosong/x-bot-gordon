@@ -93,11 +93,14 @@ const COMMAND_LIVE_ACTIVITY_STEP_TYPES = new Set([
   "tool_discovery_started",
   "tool_discovery_completed",
   "mcp_auto_planning",
+  "mcp_auto_stopped",
   "model_response_started",
   "model_invoked",
   "completed"
 ]);
-const COMMAND_HISTORY_HIDDEN_STEP_TYPES = new Set(COMMAND_LIVE_ACTIVITY_STEP_TYPES);
+const COMMAND_HISTORY_HIDDEN_STEP_TYPES = new Set(
+  [...COMMAND_LIVE_ACTIVITY_STEP_TYPES].filter((type) => type !== "mcp_auto_stopped")
+);
 const COMMAND_VISIBLE_AUXILIARY_STEP_TYPES = new Set([
   "skill_handler_completed",
   "skill_handler_failed",
@@ -1941,6 +1944,10 @@ export function createCommandWorkshopActions({
       return "判断动作";
     }
 
+    if (type === "mcp_auto_stopped") {
+      return "判断结束";
+    }
+
     if (type === "model_response_started" || type === "model_invoked" || type === "completed") {
       return "整理回复";
     }
@@ -1954,6 +1961,16 @@ export function createCommandWorkshopActions({
     }
 
     if (step?.type === "tool_discovery_completed" || step?.type === "runtime_config_loaded") {
+      return "steady";
+    }
+
+    if (step?.type === "mcp_auto_stopped") {
+      const text = `${step?.title ?? ""} ${step?.detail ?? ""}`;
+
+      if (/超时|失败|停止|重复|最大/u.test(text)) {
+        return "error";
+      }
+
       return "steady";
     }
 
@@ -2035,8 +2052,16 @@ export function createCommandWorkshopActions({
       title = "已准备可用工具";
       detail = "接下来会选择最合适的动作执行";
     } else if (latestActivityStep?.type === "mcp_auto_planning") {
-      title = "正在判断下一步动作";
-      detail = "Gordon 正在选择最合适的执行方式";
+      const isDirectGenerationStep = /已识别为.*(?:图片|视频|音乐|媒体).*生成任务/u.test(
+        `${latestActivityStep?.title ?? ""} ${latestActivityStep?.detail ?? ""}`
+      );
+      title = isDirectGenerationStep ? normalizeCommandArtifactInlineText(latestActivityStep?.title) : "正在判断下一步动作";
+      detail = isDirectGenerationStep ? "Gordon 已匹配生成工具，正在准备提交任务" : "Gordon 正在判断是否需要调用工具";
+    } else if (latestActivityStep?.type === "mcp_auto_stopped") {
+      const text = `${latestActivityStep?.title ?? ""} ${latestActivityStep?.detail ?? ""}`;
+      const isTimeout = /超时/u.test(text);
+      title = isTimeout ? "前置判断已超时" : normalizeCommandArtifactInlineText(latestActivityStep?.title) || "工具判断已结束";
+      detail = isTimeout ? "Gordon 会先基于当前上下文整理回复，不再继续等待工具规划" : detail;
     } else if (latestActivityStep?.type === "mcp_authorized") {
       title = "已载入工具能力";
       detail = "Gordon 会按任务需要选择工具";
@@ -2110,7 +2135,7 @@ export function createCommandWorkshopActions({
 
   function isCommandOperationalProcessStep(step) {
     if (step?.type === "mcp_auto_stopped") {
-      return /失败|停止|重复|最大/u.test(`${step.title ?? ""} ${step.detail ?? ""}`);
+      return /超时|失败|停止|重复|最大/u.test(`${step.title ?? ""} ${step.detail ?? ""}`);
     }
 
     return [

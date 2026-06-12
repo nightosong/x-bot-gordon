@@ -123,6 +123,10 @@ export function inferToolExecutionDomain(tool: McpToolDefinition): string {
 export function inferToolRiskLevel(tool: McpToolDefinition): "low" | "medium" | "high" {
   const source = `${tool.name} ${tool.description ?? ""}`.toLowerCase();
 
+  if (["image_gen", "video_gen", "music_gen"].includes(tool.name)) {
+    return "high";
+  }
+
   if (/^(read|get|list|inspect|search|query|validate|diff|status)_|_(read|get|list|inspect|search|query|validate|diff|status)$/u.test(tool.name)) {
     return "low";
   }
@@ -197,6 +201,10 @@ export function inferToolCost(tool: McpToolDefinition): "low" | "medium" | "high
 
 export function inferToolSideEffects(tool: McpToolDefinition): "none" | "read_only" | "stateful" | "destructive" {
   const source = `${tool.name} ${tool.description ?? ""}`.toLowerCase();
+
+  if (["image_gen", "video_gen", "music_gen"].includes(tool.name)) {
+    return "stateful";
+  }
 
   if (/^(read|get|list|inspect|search|query|validate|diff|status)_|_(read|get|list|inspect|search|query|validate|diff|status)$/u.test(tool.name)) {
     return "read_only";

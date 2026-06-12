@@ -1885,7 +1885,7 @@ const TOOL_PROVIDER_RUNTIME_CONFIG: Partial<
     seedance: {
       operations: {
         submit: {
-          endpoint: "api/v3/contents/generations/tasks",
+          endpoint: "gpt-proxy/volengine/video/submit",
           parameters: [
             "mode",
             "prompt",
@@ -1906,7 +1906,7 @@ const TOOL_PROVIDER_RUNTIME_CONFIG: Partial<
           ]
         },
         query: {
-          endpoint: "api/v3/contents/generations/tasks/{task_id}",
+          endpoint: "gpt-proxy/volengine/video/task/{task_id}",
           parameters: ["taskId"]
         }
       }
@@ -1962,6 +1962,32 @@ const TOOL_PROVIDER_DEFAULT_BASE_URLS: Partial<Record<ToolConfigName, Partial<Re
   }
 };
 
+const TOOL_PROVIDER_DEFAULT_REQUEST_PROTOCOLS: Partial<
+  Record<
+    ToolConfigName,
+    Partial<
+      Record<
+        ToolConfigProvider,
+        {
+          submitUrl?: string;
+          queryUrl?: string;
+          taskIdPath?: string;
+          resultUrlPath?: string;
+        }
+      >
+    >
+  >
+> = {
+  video_gen: {
+    seedance: {
+      submitUrl: "https://api-maas-test.singularity-ai.com/gpt-proxy/volengine/video/submit",
+      queryUrl: "https://api-maas-test.singularity-ai.com/gpt-proxy/volengine/video/task/{task_id}",
+      taskIdPath: "$.data.task_id",
+      resultUrlPath: "$.data.video_url"
+    }
+  }
+};
+
 function cloneToolProviderRuntimeConfig(config: ToolProviderRuntimeConfig | undefined): ToolProviderRuntimeConfig | undefined {
   if (!config) {
     return undefined;
@@ -2007,17 +2033,73 @@ function normalizeToolProviderBaseUrl(toolName: ToolConfigName, provider: ToolCo
   return normalizedBaseUrl;
 }
 
+function normalizeToolProviderUrl(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .replace(/^["']+/u, "")
+    .replace(/["']+$/u, "");
+}
+
+function joinToolProviderUrl(baseUrl: string, endpoint: string): string {
+  const normalizedBaseUrl = normalizeToolProviderUrl(baseUrl).replace(/\/+$/u, "");
+  const normalizedEndpoint = String(endpoint ?? "").trim().replace(/^\/+/u, "");
+
+  if (!normalizedBaseUrl || !normalizedEndpoint) {
+    return "";
+  }
+
+  return `${normalizedBaseUrl}/${normalizedEndpoint}`;
+}
+
+function deriveToolProviderOperationUrl(
+  toolName: ToolConfigName,
+  providerName: ToolConfigProvider,
+  provider: Partial<ToolProviderConfig> | null | undefined,
+  operationName: string
+): string {
+  const operation = provider?.runtime?.operations?.[operationName] ?? TOOL_PROVIDER_RUNTIME_CONFIG[toolName]?.[providerName]?.operations?.[operationName];
+  const rawEndpoint = String(operation?.endpoint ?? "").trim();
+
+  if (!rawEndpoint) {
+    return "";
+  }
+
+  if (/^https?:\/\//iu.test(rawEndpoint)) {
+    return normalizeToolProviderUrl(rawEndpoint);
+  }
+
+  const rawBaseUrl = normalizeToolProviderUrl(provider?.baseUrl);
+  const normalizedBaseUrl = normalizeToolProviderBaseUrl(toolName, providerName, rawBaseUrl);
+
+  return joinToolProviderUrl(normalizedBaseUrl || rawBaseUrl, rawEndpoint);
+}
+
+function normalizeToolProviderModel(toolName: ToolConfigName, provider: ToolConfigProvider, value: unknown): string {
+  const model = String(value ?? "").trim();
+
+  if (toolName === "video_gen" && provider === "seedance" && model === "doubao-seedance-2-0-260128-video") {
+    return "doubao-seedance-2-0-260128";
+  }
+
+  return model;
+}
+
 function createDefaultToolProviderConfig(toolName: ToolConfigName, provider: ToolConfigProvider, label: string): ToolProviderConfig {
   const runtime = getDefaultToolProviderRuntimeConfig(toolName, provider);
   const baseUrl = TOOL_PROVIDER_DEFAULT_BASE_URLS[toolName]?.[provider] ?? "";
+  const requestProtocol = TOOL_PROVIDER_DEFAULT_REQUEST_PROTOCOLS[toolName]?.[provider] ?? {};
 
   return {
     id: `tool_provider_${toolName}_${provider}`,
     provider,
     label,
-    model: "",
+    model: toolName === "video_gen" && provider === "seedance" ? "doubao-seedance-2-0-260128" : "",
     apiKey: "",
     baseUrl,
+    ...(requestProtocol.submitUrl ? { submitUrl: requestProtocol.submitUrl } : {}),
+    ...(requestProtocol.queryUrl ? { queryUrl: requestProtocol.queryUrl } : {}),
+    ...(requestProtocol.taskIdPath ? { taskIdPath: requestProtocol.taskIdPath } : {}),
+    ...(requestProtocol.resultUrlPath ? { resultUrlPath: requestProtocol.resultUrlPath } : {}),
     enabled: false,
     notes: "",
     ...(runtime ? { runtime } : {}),
@@ -2066,14 +2148,41 @@ function normalizeToolProviderConfig(
   const updatedAt = String(provider?.updatedAt ?? "").trim() || defaultProvider.updatedAt;
   const runtime = cloneToolProviderRuntimeConfig(defaultProvider.runtime);
   const inputBaseUrl = String(provider?.baseUrl ?? "").trim();
+  const defaultRequestProtocol = TOOL_PROVIDER_DEFAULT_REQUEST_PROTOCOLS[toolName]?.[normalizedProvider] ?? {};
+  const submitUrl =
+    normalizeToolProviderUrl(provider?.submitUrl) ||
+    deriveToolProviderOperationUrl(toolName, normalizedProvider, provider, "submit") ||
+    defaultRequestProtocol.submitUrl ||
+    defaultProvider.submitUrl ||
+    "";
+  const queryUrl =
+    normalizeToolProviderUrl(provider?.queryUrl) ||
+    deriveToolProviderOperationUrl(toolName, normalizedProvider, provider, "query") ||
+    defaultRequestProtocol.queryUrl ||
+    defaultProvider.queryUrl ||
+    "";
+  const taskIdPath =
+    String(provider?.taskIdPath ?? "").trim() ||
+    defaultRequestProtocol.taskIdPath ||
+    defaultProvider.taskIdPath ||
+    "";
+  const resultUrlPath =
+    String(provider?.resultUrlPath ?? "").trim() ||
+    defaultRequestProtocol.resultUrlPath ||
+    defaultProvider.resultUrlPath ||
+    "";
 
   return {
     id: String(provider?.id ?? "").trim() || defaultProvider.id,
     provider: normalizedProvider,
     label: String(provider?.label ?? "").trim() || defaultProvider.label,
-    model: String(provider?.model ?? ""),
+    model: normalizeToolProviderModel(toolName, normalizedProvider, provider?.model),
     apiKey: String(provider?.apiKey ?? ""),
     baseUrl: normalizeToolProviderBaseUrl(toolName, normalizedProvider, inputBaseUrl || defaultProvider.baseUrl || ""),
+    ...(submitUrl ? { submitUrl } : {}),
+    ...(queryUrl ? { queryUrl } : {}),
+    ...(taskIdPath ? { taskIdPath } : {}),
+    ...(resultUrlPath ? { resultUrlPath } : {}),
     enabled: Boolean(provider?.enabled),
     notes: String(provider?.notes ?? ""),
     ...(runtime ? { runtime } : {}),
