@@ -3,6 +3,9 @@ import { computed } from "vue";
 import { BUILTIN_GORDON_TOOLS_MCP_ID } from "../../lib/presenter.js";
 import { WRITING_AUTOSAVE_DELAY } from "../writing/writingConfig.js";
 import {
+  COMIC_ASSET_FILTER_OPTIONS,
+  COMIC_ASSET_TYPE_META,
+  COMIC_ASSET_VIEW_KIND_META,
   VIDEO_APP_NAME,
   VIDEO_APP_TABS,
   VIDEO_PROJECT_ASPECT_RATIO_META,
@@ -29,6 +32,39 @@ function normalizeVideoText(value) {
   return String(value ?? "").trim();
 }
 
+function getImageArtifactSource(artifact) {
+  return (
+    normalizeVideoText(artifact?.src) ||
+    normalizeVideoText(artifact?.url) ||
+    normalizeVideoText(artifact?.dataUrl) ||
+    normalizeVideoText(artifact?.base64) ||
+    normalizeVideoText(artifact?.imageUrl)
+  );
+}
+
+function extractFirstImageArtifact(toolResult) {
+  const artifacts = Array.isArray(toolResult?.structuredContent?.artifacts) ? toolResult.structuredContent.artifacts : [];
+
+  for (const artifact of artifacts) {
+    if (normalizeVideoText(artifact?.kind) !== "image") {
+      continue;
+    }
+
+    const src = getImageArtifactSource(artifact);
+
+    if (src) {
+      return {
+        src,
+        prompt: normalizeVideoText(artifact?.prompt),
+        provider: normalizeVideoText(artifact?.provider),
+        model: normalizeVideoText(artifact?.model)
+      };
+    }
+  }
+
+  return null;
+}
+
 export function createVideoActions({
   activeFeature,
   createLocalId,
@@ -49,6 +85,32 @@ export function createVideoActions({
   const activeVideoProject = computed(
     () => videoProjects.value.find((project) => project.id === ui.marketplace.video.activeProjectId) ?? videoProjects.value[0] ?? null
   );
+  const activeVideoAssets = computed(() => getVideoAssets(activeVideoProject.value));
+  const filteredVideoAssets = computed(() => {
+    const filter = normalizeVideoAssetFilterForUi(ui.marketplace.video.assetTypeFilter);
+
+    if (filter === "all") {
+      return activeVideoAssets.value;
+    }
+
+    return activeVideoAssets.value.filter((asset) => normalizeVideoAssetTypeForUi(asset.type) === filter);
+  });
+  const activeVideoAsset = computed(
+    () =>
+      activeVideoAssets.value.find((asset) => asset.id === ui.marketplace.video.activeAssetId) ??
+      activeVideoAssets.value[0] ??
+      null
+  );
+  const activeVideoAssetMatchesTypeFilter = computed(() => {
+    const asset = activeVideoAsset.value;
+    const filter = normalizeVideoAssetFilterForUi(ui.marketplace.video.assetTypeFilter);
+
+    return Boolean(asset) && (filter === "all" || normalizeVideoAssetTypeForUi(asset.type) === filter);
+  });
+  const activeVideoAssetPreviewView = computed(() => {
+    const views = Array.isArray(activeVideoAsset.value?.views) ? activeVideoAsset.value.views : [];
+    return views.find((view) => view.id === ui.marketplace.video.previewAssetViewId && normalizeVideoText(view.src)) ?? null;
+  });
   const activeVideoTabMeta = computed(
     () => VIDEO_APP_TABS.find((tab) => tab.id === ui.marketplace.video.activeTab) ?? VIDEO_APP_TABS[0]
   );
@@ -104,6 +166,111 @@ export function createVideoActions({
 
   function normalizeVideoShotStatusForUi(value) {
     return VIDEO_SHOT_STATUS_META[value] ? value : "todo";
+  }
+
+  function normalizeVideoAssetTypeForUi(value) {
+    const type = String(value ?? "").trim();
+    return COMIC_ASSET_TYPE_META[type] ? type : "character";
+  }
+
+  function normalizeVideoAssetFilterForUi(value) {
+    const filter = String(value ?? "").trim();
+    return COMIC_ASSET_FILTER_OPTIONS.some((option) => option.value === filter) ? filter : "all";
+  }
+
+  function normalizeVideoAssetViewKindForUi(value) {
+    const kind = String(value ?? "").trim();
+    return COMIC_ASSET_VIEW_KIND_META[kind] ? kind : "angle";
+  }
+
+  function getVideoAssetTypeLabel(type) {
+    return COMIC_ASSET_TYPE_META[normalizeVideoAssetTypeForUi(type)]?.label ?? "人物";
+  }
+
+  function getVideoAssetViewKindLabel(kind) {
+    return COMIC_ASSET_VIEW_KIND_META[normalizeVideoAssetViewKindForUi(kind)]?.label ?? "视角";
+  }
+
+  function getVideoAssetNameKey(value) {
+    return String(value ?? "").trim().toLowerCase();
+  }
+
+  function ensureUniqueVideoAssetName(name, usedNames, fallback) {
+    const baseName = String(name ?? "").trim() || fallback;
+    let candidate = baseName;
+    let suffix = 2;
+
+    while (usedNames.has(getVideoAssetNameKey(candidate))) {
+      candidate = `${baseName} ${suffix}`;
+      suffix += 1;
+    }
+
+    usedNames.add(getVideoAssetNameKey(candidate));
+    return candidate;
+  }
+
+  function getDefaultVideoAssetViews(type) {
+    const normalizedType = normalizeVideoAssetTypeForUi(type);
+    const defaultViews = COMIC_ASSET_TYPE_META[normalizedType]?.defaultViews ?? COMIC_ASSET_TYPE_META.character.defaultViews;
+
+    return defaultViews.map((view, index) =>
+      normalizeVideoAssetViewForUi(
+        {
+          kind: view.kind,
+          label: view.label
+        },
+        index
+      )
+    );
+  }
+
+  function normalizeVideoAssetViewForUi(view, index = 0) {
+    const kind = normalizeVideoAssetViewKindForUi(view?.kind);
+
+    return {
+      id: String(view?.id ?? "").trim() || createLocalId("video_asset_view"),
+      kind,
+      label: String(view?.label ?? "").trim() || getVideoAssetViewKindLabel(kind),
+      src: String(view?.src ?? "").trim(),
+      prompt: String(view?.prompt ?? "")
+    };
+  }
+
+  function normalizeVideoAssetForUi(asset, index = 0, usedNames = new Set()) {
+    const now = new Date().toISOString();
+    const type = normalizeVideoAssetTypeForUi(asset?.type);
+    const typeMeta = COMIC_ASSET_TYPE_META[type] ?? COMIC_ASSET_TYPE_META.character;
+    const createdAt = String(asset?.createdAt ?? "").trim() || now;
+    const views = Array.isArray(asset?.views)
+      ? asset.views.map((view, viewIndex) => normalizeVideoAssetViewForUi(view, viewIndex))
+      : [];
+
+    return {
+      id: String(asset?.id ?? "").trim() || createLocalId("video_asset"),
+      name: ensureUniqueVideoAssetName(asset?.name, usedNames, `${typeMeta.defaultName} ${index + 1}`),
+      type,
+      description: String(asset?.description ?? ""),
+      prompt: String(asset?.prompt ?? ""),
+      views: views.length ? views : getDefaultVideoAssetViews(type),
+      createdAt,
+      updatedAt: String(asset?.updatedAt ?? "").trim() || createdAt
+    };
+  }
+
+  function normalizeVideoAssetsForUi(assets = []) {
+    const usedNames = new Set();
+    const usedIds = new Set();
+
+    return (Array.isArray(assets) ? assets : []).map((asset, index) => {
+      const normalizedAsset = normalizeVideoAssetForUi(asset, index, usedNames);
+
+      if (usedIds.has(normalizedAsset.id)) {
+        normalizedAsset.id = createLocalId("video_asset");
+      }
+
+      usedIds.add(normalizedAsset.id);
+      return normalizedAsset;
+    });
   }
 
   function normalizeVideoShotForUi(shot, index = 0) {
@@ -184,6 +351,7 @@ export function createVideoActions({
         String(project?.coverTone ?? "").trim() ||
         VIDEO_PROJECT_COVER_TONES[index % VIDEO_PROJECT_COVER_TONES.length] ||
         "lumen",
+      assets: normalizeVideoAssetsForUi(project?.assets),
       shots: normalizeVideoShotsForUi(project?.shots),
       createdAt,
       updatedAt
@@ -228,6 +396,10 @@ export function createVideoActions({
       coverUrl: String(project.coverUrl ?? "").trim(),
       coverPrompt: String(project.coverPrompt ?? ""),
       coverShouldShowTitle: project.coverShouldShowTitle !== false,
+      assets: getVideoAssets(project).map((asset, index) => ({
+        ...normalizeVideoAssetForUi(asset, index),
+        updatedAt: asset.updatedAt
+      })),
       shots: getVideoShots(project).map((shot, index) => ({
         ...normalizeVideoShotForUi(shot, index),
         updatedAt: shot.updatedAt
@@ -325,6 +497,14 @@ export function createVideoActions({
     return Array.isArray(project?.shots) ? project.shots : [];
   }
 
+  function getVideoAssets(project) {
+    return Array.isArray(project?.assets) ? project.assets : [];
+  }
+
+  function getVideoAssetFilledViewCount(asset) {
+    return (Array.isArray(asset?.views) ? asset.views : []).filter((view) => normalizeVideoText(view?.src)).length;
+  }
+
   function getVideoShotDisplayTitle(shot, index = 0) {
     const order = Number(shot?.index ?? index + 1);
     const title = String(shot?.title ?? "").trim();
@@ -407,6 +587,32 @@ export function createVideoActions({
 
     if (storyboardPlan) {
       lines.push("## 分镜规划", "", storyboardPlan, "");
+    }
+
+    lines.push("## 素材库", "");
+
+    const assets = getVideoAssets(project);
+
+    if (assets.length) {
+      assets.forEach((asset) => {
+        lines.push(`### ${getVideoAssetTypeLabel(asset.type)}：${asset.name}`, "");
+
+        if (trimVideoExportTextBlock(asset.description)) {
+          lines.push(trimVideoExportTextBlock(asset.description), "");
+        }
+
+        (Array.isArray(asset.views) ? asset.views : []).forEach((view) => {
+          const src = normalizeVideoText(view.src);
+
+          if (src) {
+            lines.push(`- ${view.label || getVideoAssetViewKindLabel(view.kind)}：${src}`);
+          }
+        });
+
+        lines.push("");
+      });
+    } else {
+      lines.push("暂无素材", "");
     }
 
     lines.push("## 镜头列表", "");
@@ -535,6 +741,7 @@ export function createVideoActions({
       coverUrl: "",
       coverPrompt: "",
       coverShouldShowTitle: true,
+      assets: [],
       shots: [
         {
           id: createLocalId("video_shot"),
@@ -624,12 +831,230 @@ export function createVideoActions({
     setVideoProjectField("durationSeconds", value);
   }
 
+  function setVideoIntroMode(mode) {
+    ui.marketplace.video.activeTab = "concept";
+    ui.marketplace.video.introMode = mode === "assets" ? "assets" : "settings";
+  }
+
   function toggleVideoProfileRail() {
     ui.marketplace.video.isProfileCollapsed = !ui.marketplace.video.isProfileCollapsed;
   }
 
+  function toggleVideoAssetRail() {
+    ui.marketplace.video.isAssetRailCollapsed = !ui.marketplace.video.isAssetRailCollapsed;
+  }
+
   function setVideoTab(tabId) {
     ui.marketplace.video.activeTab = VIDEO_APP_TABS.some((tab) => tab.id === tabId) ? tabId : "concept";
+  }
+
+  function selectVideoAsset(assetId) {
+    ui.marketplace.video.activeAssetId = String(assetId ?? "").trim();
+    ui.marketplace.video.previewAssetViewId = "";
+    setVideoIntroMode("assets");
+  }
+
+  function setVideoAssetTypeFilter(filter) {
+    const nextFilter = normalizeVideoAssetFilterForUi(filter);
+    ui.marketplace.video.assetTypeFilter = nextFilter;
+
+    if (nextFilter === "all") {
+      if (!activeVideoAsset.value && activeVideoAssets.value[0]) {
+        ui.marketplace.video.activeAssetId = activeVideoAssets.value[0].id;
+      }
+      return;
+    }
+
+    const asset = activeVideoAsset.value;
+    const shouldKeepAsset = asset && normalizeVideoAssetTypeForUi(asset.type) === nextFilter;
+
+    if (!shouldKeepAsset) {
+      ui.marketplace.video.activeAssetId = activeVideoAssets.value.find((entry) => normalizeVideoAssetTypeForUi(entry.type) === nextFilter)?.id ?? "";
+    }
+  }
+
+  function getUniqueVideoAssetName(project, name, assetId = "") {
+    const usedNames = new Set(
+      getVideoAssets(project)
+        .filter((asset) => asset.id !== assetId)
+        .map((asset) => getVideoAssetNameKey(asset.name))
+        .filter(Boolean)
+    );
+    const fallback = `${COMIC_ASSET_TYPE_META.character.defaultName} ${getVideoAssets(project).length + 1}`;
+    return ensureUniqueVideoAssetName(name, usedNames, fallback);
+  }
+
+  function createVideoAsset(type = "character") {
+    const project = activeVideoProject.value;
+
+    if (!project) {
+      return;
+    }
+
+    const requestedType = normalizeVideoAssetFilterForUi(type);
+    const normalizedType = requestedType === "all" ? "character" : normalizeVideoAssetTypeForUi(requestedType);
+    const typeMeta = COMIC_ASSET_TYPE_META[normalizedType] ?? COMIC_ASSET_TYPE_META.character;
+    const now = new Date().toISOString();
+    const asset = {
+      id: createLocalId("video_asset"),
+      name: getUniqueVideoAssetName(project, `${typeMeta.defaultName} ${getVideoAssets(project).length + 1}`),
+      type: normalizedType,
+      description: typeMeta.defaultDescription,
+      prompt: typeMeta.defaultPrompt,
+      views: getDefaultVideoAssetViews(normalizedType),
+      createdAt: now,
+      updatedAt: now
+    };
+
+    project.assets = [...getVideoAssets(project), asset];
+    ui.marketplace.video.activeAssetId = asset.id;
+    ui.marketplace.video.assetTypeFilter = normalizedType;
+    ui.marketplace.video.isAssetRailCollapsed = false;
+    setVideoIntroMode("assets");
+    touchVideoProject(project);
+  }
+
+  async function deleteVideoAsset(assetId) {
+    const project = activeVideoProject.value;
+    const normalizedAssetId = String(assetId ?? "").trim();
+    const asset = getVideoAssets(project).find((entry) => entry.id === normalizedAssetId);
+
+    if (!project || !asset) {
+      return;
+    }
+
+    const confirmed = await showConfirmDialog({
+      tone: "danger",
+      title: "删除素材",
+      message: `确认删除素材「${asset.name}」吗？`,
+      detail: "删除后不会改写已生成的视频记录，但后续镜头不能再选择它作为参考素材。",
+      confirmText: "删除",
+      cancelText: "取消"
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
+    project.assets = getVideoAssets(project).filter((entry) => entry.id !== normalizedAssetId);
+    ui.marketplace.video.activeAssetId = project.assets[0]?.id ?? "";
+    ui.marketplace.video.previewAssetViewId = "";
+    touchVideoProject(project);
+    setStatus("视频素材已删除。", "success");
+  }
+
+  function touchVideoAsset(asset) {
+    const project = activeVideoProject.value;
+
+    if (!project || !asset) {
+      return;
+    }
+
+    asset.updatedAt = new Date().toISOString();
+    touchVideoProject(project);
+  }
+
+  function setVideoAssetName(assetId, value) {
+    const project = activeVideoProject.value;
+    const asset = getVideoAssets(project).find((entry) => entry.id === assetId);
+
+    if (!project || !asset) {
+      return;
+    }
+
+    const nextName = String(value ?? "");
+    asset.name = nextName.trim() ? getUniqueVideoAssetName(project, nextName, asset.id) : nextName;
+    touchVideoAsset(asset);
+  }
+
+  function setVideoAssetType(assetId, value) {
+    const asset = getVideoAssets(activeVideoProject.value).find((entry) => entry.id === assetId);
+
+    if (!asset) {
+      return;
+    }
+
+    asset.type = normalizeVideoAssetTypeForUi(value);
+    ui.marketplace.video.assetTypeFilter = asset.type;
+
+    if (!Array.isArray(asset.views) || !asset.views.length) {
+      asset.views = getDefaultVideoAssetViews(asset.type);
+    }
+
+    touchVideoAsset(asset);
+  }
+
+  function setVideoAssetDescription(assetId, value) {
+    const asset = getVideoAssets(activeVideoProject.value).find((entry) => entry.id === assetId);
+
+    if (!asset) {
+      return;
+    }
+
+    asset.description = String(value ?? "");
+    touchVideoAsset(asset);
+  }
+
+  function addVideoAssetView(assetId) {
+    const asset = getVideoAssets(activeVideoProject.value).find((entry) => entry.id === assetId);
+
+    if (!asset) {
+      return;
+    }
+
+    const views = Array.isArray(asset.views) ? asset.views : [];
+    const kind = asset.type === "scene" ? "angle" : "detail";
+    const view = normalizeVideoAssetViewForUi(
+      {
+        kind,
+        label: `${getVideoAssetViewKindLabel(kind)} ${views.length + 1}`
+      },
+      views.length
+    );
+
+    asset.views = [...views, view];
+    touchVideoAsset(asset);
+  }
+
+  function removeVideoAssetView(assetId, viewId) {
+    const asset = getVideoAssets(activeVideoProject.value).find((entry) => entry.id === assetId);
+
+    if (!asset) {
+      return;
+    }
+
+    asset.views = (Array.isArray(asset.views) ? asset.views : []).filter((view) => view.id !== viewId);
+    if (ui.marketplace.video.previewAssetViewId === viewId) {
+      ui.marketplace.video.previewAssetViewId = "";
+    }
+    touchVideoAsset(asset);
+  }
+
+  function setVideoAssetViewField(assetId, viewId, field, value) {
+    const asset = getVideoAssets(activeVideoProject.value).find((entry) => entry.id === assetId);
+    const view = (Array.isArray(asset?.views) ? asset.views : []).find((entry) => entry.id === viewId);
+
+    if (!asset || !view) {
+      return;
+    }
+
+    if (field === "kind") {
+      view.kind = normalizeVideoAssetViewKindForUi(value);
+      if (!String(view.label ?? "").trim()) {
+        view.label = getVideoAssetViewKindLabel(view.kind);
+      }
+    } else if (field === "label") {
+      view.label = String(value ?? "");
+    } else if (field === "src") {
+      view.src = String(value ?? "").trim();
+      if (!normalizeVideoText(view.src) && ui.marketplace.video.previewAssetViewId === view.id) {
+        ui.marketplace.video.previewAssetViewId = "";
+      }
+    } else if (field === "prompt") {
+      view.prompt = String(value ?? "");
+    }
+
+    touchVideoAsset(asset);
   }
 
   function selectVideoShot(shotId) {
@@ -767,6 +1192,332 @@ export function createVideoActions({
     touchVideoShot(shot);
   }
 
+  function normalizeVideoAssetReferenceKey(value) {
+    return String(value ?? "")
+      .trim()
+      .replace(/^@+/u, "")
+      .replace(/\s+/g, "")
+      .replace(/[「」《》【】[\]（）()]/g, "")
+      .toLowerCase();
+  }
+
+  function extractVideoAssetReferenceTokens(text) {
+    const tokens = [];
+    const seen = new Set();
+    const pattern = /@([^\s@，,。；;：:\n\r]+)/gu;
+    let match = pattern.exec(String(text ?? ""));
+
+    while (match) {
+      const token = normalizeVideoText(match[1]);
+      const key = normalizeVideoAssetReferenceKey(token);
+
+      if (token && key && !seen.has(key)) {
+        seen.add(key);
+        tokens.push(token);
+      }
+
+      match = pattern.exec(String(text ?? ""));
+    }
+
+    return tokens;
+  }
+
+  function getVideoAssetReferenceOptions(assetId = "") {
+    const options = [];
+
+    activeVideoAssets.value.forEach((asset) => {
+      const views = Array.isArray(asset?.views) ? asset.views : [];
+
+      views.forEach((view) => {
+        const src = normalizeVideoText(view?.src);
+
+        if (!src) {
+          return;
+        }
+
+        const assetName = normalizeVideoText(asset?.name) || "未命名素材";
+        const viewLabel = normalizeVideoText(view?.label) || getVideoAssetViewKindLabel(view?.kind);
+        const label = `${assetName} / ${viewLabel}`;
+        const insertText = `@${assetName}/${viewLabel}`.replace(/\s+/g, "");
+        const aliases = [
+          assetName,
+          viewLabel,
+          label,
+          insertText,
+          `${assetName}/${viewLabel}`,
+          `${assetName}-${viewLabel}`,
+          `${assetName}_${viewLabel}`
+        ].map((value) => normalizeVideoAssetReferenceKey(value));
+
+        options.push({
+          id: `${asset?.id || "asset"}:${view?.id || "view"}`,
+          assetId: asset?.id ?? "",
+          viewId: view?.id ?? "",
+          assetName,
+          viewLabel,
+          label,
+          insertText,
+          src,
+          kind: normalizeVideoAssetViewKindForUi(view?.kind),
+          type: normalizeVideoAssetTypeForUi(asset?.type),
+          isCurrentAsset: Boolean(assetId && asset?.id === assetId),
+          aliases
+        });
+      });
+    });
+
+    return options;
+  }
+
+  function resolveVideoAssetReferenceOptions(tokens = [], assetId = "") {
+    if (!tokens.length) {
+      return [];
+    }
+
+    const options = getVideoAssetReferenceOptions(assetId);
+    const resolved = [];
+    const seen = new Set();
+
+    tokens.forEach((token) => {
+      const key = normalizeVideoAssetReferenceKey(token);
+      const option = options.find((entry) => entry.aliases.includes(key));
+
+      if (option && !seen.has(option.id)) {
+        seen.add(option.id);
+        resolved.push(option);
+      }
+    });
+
+    return resolved;
+  }
+
+  function getVideoAssetViewReferenceOptions(assetId, view) {
+    return resolveVideoAssetReferenceOptions(extractVideoAssetReferenceTokens(view?.prompt), assetId);
+  }
+
+  function getVideoShotReferenceOptions(shot) {
+    return resolveVideoAssetReferenceOptions([
+      ...extractVideoAssetReferenceTokens(shot?.reference),
+      ...extractVideoAssetReferenceTokens(shot?.prompt),
+      ...extractVideoAssetReferenceTokens(shot?.summary)
+    ]);
+  }
+
+  function getVideoAssetViewReferenceImages(assetId, view) {
+    const seen = new Set();
+
+    return getVideoAssetViewReferenceOptions(assetId, view)
+      .map((option) => option.src)
+      .filter((src) => {
+        if (!src || seen.has(src)) {
+          return false;
+        }
+
+        seen.add(src);
+        return true;
+      });
+  }
+
+  function getVideoShotReferenceImage(shot) {
+    const resolvedReference = getVideoShotReferenceOptions(shot).find((option) => normalizeVideoText(option.src));
+
+    if (resolvedReference?.src) {
+      return resolvedReference.src;
+    }
+
+    const manualReference = normalizeVideoText(shot?.reference);
+    return /^https?:\/\//iu.test(manualReference) || /^data:image\//iu.test(manualReference) ? manualReference : "";
+  }
+
+  function getVideoAssetViewGenerationSize(asset, view) {
+    const kind = normalizeVideoAssetViewKindForUi(view?.kind);
+    const type = normalizeVideoAssetTypeForUi(asset?.type);
+
+    if (kind === "turnaround" || type === "scene") {
+      return "1536x1024";
+    }
+
+    if (type === "character" && ["front", "side", "back", "angle"].includes(kind)) {
+      return "1024x1536";
+    }
+
+    return "1024x1024";
+  }
+
+  function buildVideoAssetViewGenerationPrompt(asset, view) {
+    const typeLabel = getVideoAssetTypeLabel(asset?.type);
+    const viewLabel = normalizeVideoText(view?.label) || getVideoAssetViewKindLabel(view?.kind);
+    const type = normalizeVideoAssetTypeForUi(asset?.type);
+    const kind = normalizeVideoAssetViewKindForUi(view?.kind);
+    const promptLines = [view?.prompt, asset?.description, asset?.prompt]
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean);
+    const directives = [
+      "请生成一张可长期复用的短剧/短视频视觉素材设定图。",
+      "画面必须便于后续作为图生视频首帧或角色/场景一致性参考。",
+      type === "character" && kind === "turnaround"
+        ? "角色三视图使用 16:9 横图，同一角色正面、侧面、背面完整全身并排，不能裁切头顶、脚部、衣摆或武器。"
+        : "",
+      type === "character" && kind !== "turnaround"
+        ? "角色素材优先完整全身或清晰半身，五官、发型、服饰、体态和标志细节稳定。"
+        : "",
+      type === "scene" ? "场景素材要明确空间关系、光线方向、时代质感、可复用布景和镜头运动起点。" : "",
+      type === "prop" ? "物品素材要完整展示轮廓、材质、比例、纹样和使用方式，避免裁切主体。" : "",
+      "禁止文字标签、UI 标注、水印、过度拼贴和随机新增无关主体。"
+    ].filter(Boolean);
+
+    return [
+      `素材类型：${typeLabel}`,
+      `素材名称：${normalizeVideoText(asset?.name) || "未命名素材"}`,
+      `目标视图：${viewLabel}`,
+      `画幅规格：${getVideoAssetViewGenerationSize(asset, view)}`,
+      promptLines.length ? `创作简报：\n${promptLines.map((line) => `- ${line}`).join("\n")}` : "",
+      ...directives
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  async function generateVideoAssetViewImage(assetId, viewId) {
+    const asset = getVideoAssets(activeVideoProject.value).find((entry) => entry.id === assetId);
+    const view = (Array.isArray(asset?.views) ? asset.views : []).find((entry) => entry.id === viewId);
+
+    if (!asset || !view) {
+      return;
+    }
+
+    if (!desktopApi?.callMcpServerTool) {
+      setStatus("Gordon Tools 桥接未就绪，暂时无法生成素材图。", "danger");
+      return;
+    }
+
+    const prompt = buildVideoAssetViewGenerationPrompt(asset, view);
+    const referenceImages = getVideoAssetViewReferenceImages(asset.id, view);
+
+    if (!normalizeVideoText(prompt)) {
+      setStatus("请先填写视图提示词或素材描述。", "warning");
+      return;
+    }
+
+    ui.marketplace.video.generatingAssetViewId = view.id;
+    setStatus(
+      referenceImages.length
+        ? `正在参考 ${referenceImages.length} 张素材图生成：${asset.name} / ${view.label || getVideoAssetViewKindLabel(view.kind)}`
+        : `正在生成视频素材视图：${asset.name} / ${view.label || getVideoAssetViewKindLabel(view.kind)}`,
+      "neutral"
+    );
+
+    try {
+      const toolArguments = {
+        prompt,
+        size: getVideoAssetViewGenerationSize(asset, view),
+        n: 1,
+        quality: "high"
+      };
+
+      if (referenceImages.length) {
+        toolArguments.images = referenceImages;
+      }
+
+      const toolResult = await desktopApi.callMcpServerTool({
+        serverId: BUILTIN_GORDON_TOOLS_MCP_ID,
+        toolName: "image_gen",
+        arguments: toolArguments
+      });
+
+      if (toolResult?.isError) {
+        throw new Error(normalizeVideoText(toolResult.contentText) || "image_gen 调用失败");
+      }
+
+      const image = extractFirstImageArtifact(toolResult);
+
+      if (!image?.src) {
+        setStatus("素材图生成完成，但工具没有返回可展示图片。", "warning");
+        return;
+      }
+
+      view.src = image.src;
+      view.prompt = normalizeVideoText(view.prompt) || image.prompt || "";
+      touchVideoAsset(asset);
+      setStatus(
+        [
+          referenceImages.length ? `已参考 ${referenceImages.length} 张素材图` : "",
+          image.provider || image.model ? `视频素材图已生成并写入视图：${[image.provider, image.model].filter(Boolean).join(" / ")}` : "视频素材图已生成并写入当前视图。"
+        ]
+          .filter(Boolean)
+          .join("；"),
+        "success"
+      );
+    } catch (error) {
+      console.error("Failed to generate video asset view image", error);
+      setStatus(`视频素材图生成失败：${getErrorMessage(error)}`, "danger");
+    } finally {
+      if (ui.marketplace.video.generatingAssetViewId === view.id) {
+        ui.marketplace.video.generatingAssetViewId = "";
+      }
+    }
+  }
+
+  function previewVideoAssetView(viewId) {
+    const views = Array.isArray(activeVideoAsset.value?.views) ? activeVideoAsset.value.views : [];
+    const view = views.find((entry) => entry.id === viewId);
+    const asset = activeVideoAsset.value;
+    const project = activeVideoProject.value;
+
+    if (!normalizeVideoText(view?.src)) {
+      setStatus("当前视图还没有可放大的素材图。", "warning");
+      return;
+    }
+
+    ui.marketplace.video.previewAssetViewId = view.id;
+    window.dispatchEvent(
+      new CustomEvent("gordon:image-preview:open", {
+        detail: {
+          src: normalizeVideoText(view.src),
+          alt: view.label || getVideoAssetViewKindLabel(view.kind),
+          title: view.label || asset?.name || "视频素材图",
+          downloadTitle: [project?.title, asset?.name, view.label || getVideoAssetViewKindLabel(view.kind)].filter(Boolean).join("-")
+        }
+      })
+    );
+  }
+
+  async function downloadVideoAssetViewImage(assetId, viewId) {
+    const project = activeVideoProject.value;
+    const asset = getVideoAssets(project).find((entry) => entry.id === assetId);
+    const view = (Array.isArray(asset?.views) ? asset.views : []).find((entry) => entry.id === viewId);
+    const imageUrl = normalizeVideoText(view?.src);
+    const saveImage = desktopApi?.saveApplicationCoverImage ?? desktopApi?.saveWritingBookCoverImage;
+
+    if (!asset || !view) {
+      return;
+    }
+
+    if (!imageUrl) {
+      setStatus("当前视图没有可下载的素材图。", "warning");
+      return;
+    }
+
+    if (!saveImage) {
+      setStatus("图片下载桥接未就绪。", "danger");
+      return;
+    }
+
+    try {
+      const result = await saveImage({
+        title: [project?.title, asset.name, view.label || getVideoAssetViewKindLabel(view.kind)].filter(Boolean).join("-"),
+        imageUrl
+      });
+
+      if (result?.fileName) {
+        setStatus(`视频素材图已下载：${result.fileName}`, "success");
+      }
+    } catch (error) {
+      console.error("Failed to download video asset view image", error);
+      setStatus(`下载视频素材图失败：${getErrorMessage(error)}`, "danger");
+    }
+  }
+
   function extractVideoStructuredContent(toolResult) {
     if (toolResult?.structuredContent && typeof toolResult.structuredContent === "object") {
       return toolResult.structuredContent;
@@ -815,8 +1566,8 @@ export function createVideoActions({
 
   function buildVideoToolArguments(project, shot) {
     const prompt = getVideoGenerationPrompt(project, shot);
-    const reference = normalizeVideoText(shot?.reference);
-    const isImageToVideo = normalizeVideoProjectModeForUi(project?.mode) === "imageToVideo" && /^https?:\/\//iu.test(reference);
+    const referenceImage = getVideoShotReferenceImage(shot);
+    const isImageToVideo = Boolean(referenceImage);
 
     return {
       operation: "submit",
@@ -826,7 +1577,7 @@ export function createVideoActions({
       negativePrompt: shot?.negativePrompt ?? "",
       ratio: normalizeVideoProjectAspectRatioForUi(project?.aspectRatio),
       durationSeconds: normalizeVideoDurationSeconds(shot?.durationSeconds, project?.durationSeconds || 5),
-      ...(isImageToVideo ? { image: reference } : {})
+      ...(referenceImage ? { image: referenceImage, referenceImages: [referenceImage] } : {})
     };
   }
 
@@ -963,6 +1714,9 @@ export function createVideoActions({
   function buildVideoQuickPrompt() {
     const project = activeVideoProject.value;
     const shot = activeVideoShot.value;
+    const referencedAssets = getVideoShotReferenceOptions(shot)
+      .map((option) => `${option.assetName}/${option.viewLabel}`)
+      .join("、");
 
     return [
       `项目：${project?.title ?? "未命名视频"}`,
@@ -977,6 +1731,7 @@ export function createVideoActions({
       `当前镜头：${shot ? getVideoShotDisplayTitle(shot, activeVideoShotIndex.value) : "未选择"}`,
       `镜头说明：${shot?.summary || "未填写"}`,
       `参考素材 / 首帧说明：${shot?.reference || "未填写"}`,
+      `已解析引用素材：${referencedAssets || "暂无"}`,
       `已有正向提示词：${shot?.prompt || "未填写"}`,
       `已有反向提示词：${shot?.negativePrompt || "未填写"}`,
       "",
@@ -1124,6 +1879,10 @@ export function createVideoActions({
   }
 
   return {
+    activeVideoAsset,
+    activeVideoAssetMatchesTypeFilter,
+    activeVideoAssetPreviewView,
+    activeVideoAssets,
     activeVideoExportFileName,
     activeVideoProject,
     activeVideoShot,
@@ -1134,14 +1893,25 @@ export function createVideoActions({
     backVideoMarketplace,
     backVideoShelf,
     canExportActiveVideoProject,
+    addVideoAssetView,
     clearVideoAutosaveTimer,
     closeVideoExportDialog,
+    createVideoAsset,
     createVideoProject,
     createVideoShot,
+    deleteVideoAsset,
     deleteVideoProjectFromShelf,
+    downloadVideoAssetViewImage,
     exportActiveVideoProject,
+    filteredVideoAssets,
     filteredVideoShotEntries,
+    generateVideoAssetViewImage,
     generateVideoQuickMode,
+    getVideoAssetFilledViewCount,
+    getVideoAssetReferenceOptions,
+    getVideoAssetTypeLabel,
+    getVideoAssetViewKindLabel,
+    getVideoAssetViewReferenceOptions,
     getVideoFeedbackClass,
     getVideoProjectAspectRatioLabel,
     getVideoProjectModeLabel,
@@ -1154,9 +1924,18 @@ export function createVideoActions({
     openVideoExportDialog,
     openVideoProject,
     persistVideoProjectById,
+    previewVideoAssetView,
+    removeVideoAssetView,
+    selectVideoAsset,
     selectVideoExportDirectory,
     selectVideoShot,
     selectVideoShotFromPicker,
+    setVideoAssetDescription,
+    setVideoAssetName,
+    setVideoAssetType,
+    setVideoAssetTypeFilter,
+    setVideoAssetViewField,
+    setVideoIntroMode,
     setVideoProjectAspectRatio,
     setVideoProjectDurationSeconds,
     setVideoProjectGenre,
@@ -1175,6 +1954,7 @@ export function createVideoActions({
     setVideoShotTitle,
     setVideoTab,
     submitVideoShot,
+    toggleVideoAssetRail,
     toggleVideoProfileRail,
     toggleVideoShotPicker,
     videoProjects,

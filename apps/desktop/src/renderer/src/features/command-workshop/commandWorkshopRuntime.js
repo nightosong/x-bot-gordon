@@ -125,6 +125,7 @@ export function buildCommandApplicationContext(ui, workbench) {
     const projects = Array.isArray(videoState.projects) && videoState.projects.length ? videoState.projects : workbench?.videoProjects ?? [];
     const project = findMarketplaceResource(projects, videoState.activeProjectId) ?? projects[0] ?? null;
     const shot = findMarketplaceResource(project?.shots ?? [], videoState.activeShotId);
+    const assets = Array.isArray(project?.assets) ? project.assets : [];
 
     return [
       "当前应用广场上下文：",
@@ -132,6 +133,7 @@ export function buildCommandApplicationContext(ui, workbench) {
       `视图：${marketplace.view}`,
       project ? `当前项目：${project.title}（id=${project.id}）` : "当前项目：未选中",
       `当前 tab：${videoState.activeTab || "concept"}`,
+      `素材库：${assets.length} 个素材`,
       shot ? `当前镜头：${shot.index}. ${shot.title}（id=${shot.id}）` : "当前镜头：未选中",
       "当前 Application Tools 首版优先支持墨笔生花；其它应用可先基于上下文给出方案。"
     ].join("\n");

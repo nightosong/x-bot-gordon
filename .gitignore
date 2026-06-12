@@ -7,3 +7,5 @@ data/*/*.json
 data/workbench/comic-images/
 docs/*.md
 writing-books
+openspec
+.codex

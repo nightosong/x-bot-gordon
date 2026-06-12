@@ -63,6 +63,7 @@ export function createMarketplaceAgentContextProviders({
   function buildVideoAgentContext() {
     const project = videoActions.activeVideoProject.value;
     const shot = videoActions.activeVideoShot.value;
+    const assets = videoActions.activeVideoAssets?.value ?? [];
 
     if (!project) {
       return null;
@@ -85,6 +86,8 @@ export function createMarketplaceAgentContextProviders({
         `视觉与运动风格：${project.visualStyle || "暂无"}`,
         `分镜总规划：${project.storyboardPlan || "暂无"}`,
         `镜头数量：${videoActions.activeVideoShots.value.length}`,
+        `素材库：${assets.length} 个素材`,
+        ...assets.map((asset, index) => `${index + 1}. ${asset.name} / ${videoActions.getVideoAssetTypeLabel(asset.type)} / ${asset.description || asset.prompt || "暂无描述"}`),
         shot ? `当前镜头：${videoActions.getVideoShotDisplayTitle(shot, videoActions.activeVideoShotIndex.value)}` : "",
         shot ? `镜头说明：${shot.summary || "暂无"}` : "",
         shot ? `参考素材 / 首帧说明：${shot.reference || "暂无"}` : "",

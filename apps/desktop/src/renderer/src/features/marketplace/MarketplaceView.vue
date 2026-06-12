@@ -999,6 +999,35 @@
               <GIcon :name="ui.marketplace.video.isProfileCollapsed ? 'chevronRight' : 'chevronLeft'" />
             </button>
 
+            <div
+              class="comic-rail-mode-tabs"
+              role="tablist"
+              aria-label="视频项目设定与素材库"
+            >
+              <button
+                type="button"
+                class="comic-rail-mode-tab"
+                :class="{ 'is-active': ui.marketplace.video.introMode !== 'assets' }"
+                :aria-selected="ui.marketplace.video.introMode !== 'assets' ? 'true' : 'false'"
+                aria-label="项目设定"
+                title="项目设定"
+                @click.stop.prevent="setVideoIntroMode('settings')"
+              >
+                <GIcon name="home" :size="14" />
+              </button>
+              <button
+                type="button"
+                class="comic-rail-mode-tab"
+                :class="{ 'is-active': ui.marketplace.video.introMode === 'assets' }"
+                :aria-selected="ui.marketplace.video.introMode === 'assets' ? 'true' : 'false'"
+                aria-label="素材库"
+                title="素材库"
+                @click.stop.prevent="setVideoIntroMode('assets')"
+              >
+                <GIcon name="image" :size="14" />
+              </button>
+            </div>
+
             <div v-if="!ui.marketplace.video.isProfileCollapsed" class="writing-rail-content video-rail-content">
               <div class="video-project-profile">
                 <div class="writing-cover-control">
@@ -1096,7 +1125,12 @@
           <main class="writing-main-stage video-main-stage">
             <section class="writing-editor-grid video-editor-grid">
               <div class="video-editor-surface">
-                <div v-if="ui.marketplace.video.activeTab === 'concept'" class="writing-intro-stack">
+                <div
+                  v-if="ui.marketplace.video.activeTab === 'concept'"
+                  class="writing-intro-stack"
+                  :class="{ 'comic-asset-stack': ui.marketplace.video.introMode === 'assets' }"
+                >
+                  <template v-if="ui.marketplace.video.introMode !== 'assets'">
                   <div class="field writing-intro-field">
                     <span class="field-label">主题与用途</span>
                     <FieldAiOptimizer
@@ -1159,9 +1193,276 @@
                       ></textarea>
                     </FieldAiOptimizer>
                   </div>
+                  </template>
+
+                  <div v-else class="comic-asset-library video-asset-library" :class="{ 'is-list-collapsed': ui.marketplace.video.isAssetRailCollapsed }">
+                    <section class="comic-asset-list-panel" :class="{ 'is-collapsed': ui.marketplace.video.isAssetRailCollapsed }">
+                      <div class="comic-asset-panel-head">
+                        <div v-if="!ui.marketplace.video.isAssetRailCollapsed">
+                          <p class="feature-kicker">Asset Library</p>
+                          <p class="writing-panel-title">{{ activeVideoAssets.length }} 个素材</p>
+                        </div>
+                        <button
+                          type="button"
+                          class="model-icon-button comic-asset-rail-toggle"
+                          :aria-label="ui.marketplace.video.isAssetRailCollapsed ? '展开素材列表' : '折叠素材列表'"
+                          :title="ui.marketplace.video.isAssetRailCollapsed ? '展开素材列表' : '折叠素材列表'"
+                          @click="toggleVideoAssetRail"
+                        >
+                          <GIcon :name="ui.marketplace.video.isAssetRailCollapsed ? 'chevronRight' : 'chevronLeft'" :size="14" />
+                        </button>
+                      </div>
+
+                      <div v-if="!ui.marketplace.video.isAssetRailCollapsed" class="comic-asset-toolbar">
+                        <div class="comic-asset-filter-tabs" role="tablist" aria-label="素材分类筛选">
+                          <button
+                            v-for="option in comicAssetFilterOptions"
+                            :key="option.value"
+                            type="button"
+                            class="comic-asset-filter-tab"
+                            :class="{ 'is-active': ui.marketplace.video.assetTypeFilter === option.value }"
+                            :aria-selected="ui.marketplace.video.assetTypeFilter === option.value ? 'true' : 'false'"
+                            @click="setVideoAssetTypeFilter(option.value)"
+                          >
+                            {{ option.label }}
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          class="comic-asset-create-button comic-asset-create-icon"
+                          aria-label="添加素材"
+                          title="添加素材"
+                          @click="createVideoAsset(ui.marketplace.video.assetTypeFilter)"
+                        >
+                          <GIcon name="add" :size="14" />
+                        </button>
+                      </div>
+
+                      <div v-if="!ui.marketplace.video.isAssetRailCollapsed" class="comic-asset-list" :class="{ 'is-empty': !filteredVideoAssets.length }">
+                        <button
+                          v-for="asset in filteredVideoAssets"
+                          :key="asset.id"
+                          type="button"
+                          class="comic-asset-list-item"
+                          :class="{ 'is-active': activeVideoAsset?.id === asset.id }"
+                          @click="selectVideoAsset(asset.id)"
+                        >
+                          <span class="comic-asset-list-main">
+                            <strong>{{ asset.name }}</strong>
+                            <small>{{ getVideoAssetTypeLabel(asset.type) }} / {{ getVideoAssetViewCountLabel(asset) }}</small>
+                          </span>
+                          <span v-if="getVideoAssetPreviewViews(asset).length" class="comic-asset-list-thumbs" aria-hidden="true">
+                            <img
+                              v-for="view in getVideoAssetPreviewViews(asset)"
+                              :key="view.id"
+                              :src="view.src"
+                              :alt="view.label"
+                            />
+                          </span>
+                        </button>
+                        <p v-if="!filteredVideoAssets.length" class="comic-asset-empty-text">
+                          {{ activeVideoAssets.length ? "当前分类暂无素材" : "暂无素材" }}
+                        </p>
+                      </div>
+                      <div v-else class="comic-asset-collapsed-count" aria-hidden="true">
+                        {{ activeVideoAssets.length }}
+                      </div>
+                    </section>
+
+                    <section v-if="activeVideoAsset && activeVideoAssetMatchesTypeFilter" class="comic-asset-detail-panel">
+                      <div class="comic-asset-detail-head">
+                        <div>
+                          <p class="feature-kicker">{{ getVideoAssetTypeLabel(activeVideoAsset.type) }}</p>
+                          <p class="writing-panel-title">{{ activeVideoAsset.name }}</p>
+                        </div>
+                        <button
+                          type="button"
+                          class="model-icon-button comic-asset-delete-button"
+                          aria-label="删除素材"
+                          title="删除素材"
+                          @click="deleteVideoAsset(activeVideoAsset.id)"
+                        >
+                          <GIcon name="delete" :size="14" />
+                        </button>
+                      </div>
+
+                      <div class="comic-asset-form-grid">
+                        <label class="field">
+                          <span class="field-label">唯一命名</span>
+                          <input
+                            :value="activeVideoAsset.name"
+                            class="field-input"
+                            @input="setVideoAssetName(activeVideoAsset.id, $event.target.value)"
+                          />
+                        </label>
+
+                        <label class="field">
+                          <span class="field-label">类型</span>
+                          <GCompactSelect
+                            :model-value="activeVideoAsset.type"
+                            class="writing-mini-select"
+                            aria-label="素材类型"
+                            :options="comicAssetTypeOptions"
+                            @update:model-value="(value) => setVideoAssetType(activeVideoAsset.id, value)"
+                          />
+                        </label>
+
+                        <label class="field field-full">
+                          <span class="field-label">描述</span>
+                          <textarea
+                            :value="activeVideoAsset.description"
+                            class="field-textarea writing-editor-textarea comic-asset-description-textarea"
+                            @input="setVideoAssetDescription(activeVideoAsset.id, $event.target.value)"
+                          ></textarea>
+                        </label>
+                      </div>
+
+                      <div class="comic-asset-views-head">
+                        <span class="field-label">视图图片</span>
+                        <button type="button" class="comic-asset-create-button" @click="addVideoAssetView(activeVideoAsset.id)">
+                          <GIcon name="add" :size="12" />
+                          添加视图
+                        </button>
+                      </div>
+
+                      <div class="comic-asset-view-list">
+                        <article
+                          v-for="view in activeVideoAsset.views"
+                          :key="view.id"
+                          class="comic-asset-view-card"
+                        >
+                          <div class="comic-asset-view-head">
+                            <GCompactSelect
+                              :model-value="view.kind"
+                              class="writing-mini-select"
+                              aria-label="素材视图类型"
+                              :options="comicAssetViewKindOptions"
+                              @update:model-value="(value) => setVideoAssetViewField(activeVideoAsset.id, view.id, 'kind', value)"
+                            />
+                            <input
+                              :value="view.label"
+                              class="field-input"
+                              :placeholder="getVideoAssetViewKindLabel(view.kind)"
+                              @input="setVideoAssetViewField(activeVideoAsset.id, view.id, 'label', $event.target.value)"
+                            />
+                            <button
+                              type="button"
+                              class="comic-asset-view-generate"
+                              :class="{ 'is-running': ui.marketplace.video.generatingAssetViewId === view.id }"
+                              :disabled="Boolean(ui.marketplace.video.generatingAssetViewId)"
+                              :aria-label="ui.marketplace.video.generatingAssetViewId === view.id ? '正在生成素材图' : '根据提示词生成素材图'"
+                              :title="ui.marketplace.video.generatingAssetViewId === view.id ? '正在生成素材图' : '根据提示词生成素材图'"
+                              @click="generateVideoAssetViewImage(activeVideoAsset.id, view.id)"
+                            >
+                              <GIcon
+                                :name="ui.marketplace.video.generatingAssetViewId === view.id ? 'loading' : 'sparkles'"
+                                :size="13"
+                                :spin="ui.marketplace.video.generatingAssetViewId === view.id"
+                              />
+                              <span>生成素材</span>
+                            </button>
+                            <button
+                              type="button"
+                              class="model-icon-button comic-asset-view-delete"
+                              aria-label="删除视图"
+                              title="删除视图"
+                              @click="removeVideoAssetView(activeVideoAsset.id, view.id)"
+                            >
+                              <GIcon name="delete" :size="13" />
+                            </button>
+                          </div>
+
+                          <label class="field">
+                            <span class="field-label">图片源</span>
+                            <input
+                              :value="view.src"
+                              class="field-input"
+                              placeholder="URL / data URL / base64"
+                              @input="setVideoAssetViewField(activeVideoAsset.id, view.id, 'src', $event.target.value)"
+                            />
+                          </label>
+
+                          <div v-if="view.src" class="comic-asset-view-preview">
+                            <img :src="view.src" :alt="view.label || getVideoAssetViewKindLabel(view.kind)" />
+                            <div class="comic-asset-view-tools" aria-label="素材图操作">
+                              <button
+                                type="button"
+                                class="model-icon-button comic-asset-view-tool"
+                                aria-label="放大素材图"
+                                title="放大素材图"
+                                @click.stop="previewVideoAssetView(view.id)"
+                              >
+                                <GIcon name="maximize" :size="13" />
+                              </button>
+                              <button
+                                type="button"
+                                class="model-icon-button comic-asset-view-tool"
+                                aria-label="下载素材图"
+                                title="下载素材图"
+                                @click.stop="downloadVideoAssetViewImage(activeVideoAsset.id, view.id)"
+                              >
+                                <GIcon name="download" :size="13" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <label class="field comic-asset-reference-editor">
+                            <span class="field-label">视图提示词</span>
+                            <div
+                              v-if="getVideoAssetViewResolvedReferences(view).length"
+                              class="comic-asset-reference-chips"
+                              aria-label="已引用素材"
+                            >
+                              <span
+                                v-for="reference in getVideoAssetViewResolvedReferences(view)"
+                                :key="reference.id"
+                                class="comic-asset-reference-chip"
+                              >
+                                <img :src="reference.src" :alt="reference.label" />
+                                <span>{{ reference.label }}</span>
+                              </span>
+                            </div>
+                            <textarea
+                              :value="view.prompt"
+                              class="field-textarea writing-editor-textarea comic-asset-view-prompt"
+                              @focus="updateVideoAssetReferencePickerFromInput(view.id, $event)"
+                              @click="updateVideoAssetReferencePickerFromInput(view.id, $event)"
+                              @keyup="updateVideoAssetReferencePickerFromInput(view.id, $event)"
+                              @blur="closeVideoAssetReferencePickerSoon(view.id)"
+                              @input="setVideoAssetViewPromptFromInput(activeVideoAsset.id, view.id, $event)"
+                            ></textarea>
+                            <div
+                              v-if="activeVideoAssetReferencePickerViewId === view.id && getVideoAssetViewReferencePickerOptions(view.id).length"
+                              class="comic-asset-reference-picker"
+                            >
+                              <button
+                                v-for="option in getVideoAssetViewReferencePickerOptions(view.id)"
+                                :key="option.id"
+                                type="button"
+                                class="comic-asset-reference-option"
+                                :class="{ 'is-current': option.isCurrentAsset }"
+                                @mousedown.prevent="insertVideoAssetViewReference(activeVideoAsset.id, view, option, $event)"
+                              >
+                                <img :src="option.src" :alt="option.label" />
+                                <span>
+                                  <strong>{{ option.assetName }}</strong>
+                                  <small>{{ option.viewLabel }}</small>
+                                </span>
+                              </button>
+                            </div>
+                          </label>
+                        </article>
+                      </div>
+                    </section>
+
+                    <section v-else class="comic-asset-detail-empty">
+                      <GIcon name="image" :size="22" />
+                      <strong>创建素材后管理引用</strong>
+                    </section>
+                  </div>
                 </div>
 
-                <div v-else-if="ui.marketplace.video.activeTab === 'storyboard'" class="writing-outline-board">
+                <div v-else-if="ui.marketplace.video.activeTab === 'storyboard'" class="writing-outline-board video-storyboard-board">
                   <div class="writing-chapter-list-panel">
                     <div class="writing-chapter-panel-head">
                       <div>
@@ -1199,37 +1500,39 @@
                     </div>
                   </div>
 
-                  <div v-if="activeVideoShot" class="writing-chapter-summary-panel">
+                  <div v-if="activeVideoShot" class="writing-chapter-summary-panel video-shot-brief-panel">
                     <div class="writing-chapter-summary-head">
                       <div>
                         <p class="feature-kicker">Shot Brief</p>
-                        <p class="writing-panel-title">镜头说明</p>
+                        <p class="writing-panel-title">{{ getVideoShotDisplayTitle(activeVideoShot, activeVideoShotIndex) }}</p>
                       </div>
                       <span class="status-pill" :class="getVideoShotStatusClass(activeVideoShot.status)">
                         {{ getVideoShotStatusLabel(activeVideoShot.status) }}
                       </span>
                     </div>
 
-                    <label class="field">
-                      <span class="field-label">镜头标题</span>
-                      <input
-                        :value="activeVideoShot.title"
-                        class="field-input"
-                        @input="setVideoShotTitle(activeVideoShot, $event.target.value)"
-                      />
-                    </label>
+                    <div class="video-shot-brief-grid">
+                      <label class="field">
+                        <span class="field-label">镜头标题</span>
+                        <input
+                          :value="activeVideoShot.title"
+                          class="field-input"
+                          @input="setVideoShotTitle(activeVideoShot, $event.target.value)"
+                        />
+                      </label>
 
-                    <label class="field">
-                      <span class="field-label">时长</span>
-                      <input
-                        :value="activeVideoShot.durationSeconds"
-                        class="field-input"
-                        type="number"
-                        min="1"
-                        max="600"
-                        @input="setVideoShotDurationSeconds(activeVideoShot, $event.target.value)"
-                      />
-                    </label>
+                      <label class="field">
+                        <span class="field-label">时长</span>
+                        <input
+                          :value="activeVideoShot.durationSeconds"
+                          class="field-input"
+                          type="number"
+                          min="1"
+                          max="600"
+                          @input="setVideoShotDurationSeconds(activeVideoShot, $event.target.value)"
+                        />
+                      </label>
+                    </div>
 
                     <FieldAiOptimizer
                       :actions="fieldAiActions"
@@ -1249,6 +1552,17 @@
                       ></textarea>
                     </FieldAiOptimizer>
 
+                    <div class="video-shot-brief-notes">
+                      <article>
+                        <span>首帧 / 引用</span>
+                        <p>{{ activeVideoShot.reference || "暂无引用素材" }}</p>
+                      </article>
+                      <article>
+                        <span>生成提示词</span>
+                        <p>{{ activeVideoShot.prompt || "暂无正向提示词" }}</p>
+                      </article>
+                    </div>
+
                     <div class="model-section-actions writing-chapter-summary-actions">
                       <button type="button" class="model-action-secondary" @click="goVideoShot(activeVideoShot.id)">
                         进入生成
@@ -1257,7 +1571,7 @@
                   </div>
                 </div>
 
-                <div v-else class="writing-chapter-workbench">
+                <div v-else class="writing-chapter-workbench video-generation-workbench">
                   <div v-if="activeVideoShot" class="writing-chapter-commandbar">
                     <div class="writing-chapter-picker-row">
                       <div class="writing-chapter-picker">
@@ -1330,131 +1644,196 @@
                     </button>
                   </div>
 
-                  <div v-if="activeVideoShot" class="writing-chapter-brief-strip">
-                    <strong>{{ getVideoShotDisplayTitle(activeVideoShot, activeVideoShotIndex) }}</strong>
-                    <p>{{ activeVideoShot.summary || "这个镜头还没有说明。" }}</p>
+                  <div v-if="activeVideoShot" class="video-generation-layout">
+                    <section class="video-generation-stage">
+                      <div class="video-generation-stage-head">
+                        <div>
+                          <p class="feature-kicker">Preview</p>
+                          <h3>{{ getVideoShotDisplayTitle(activeVideoShot, activeVideoShotIndex) }}</h3>
+                        </div>
+                        <span class="status-pill" :class="getVideoShotStatusClass(activeVideoShot.status)">
+                          {{ getVideoShotStatusLabel(activeVideoShot.status) }}
+                        </span>
+                      </div>
+
+                      <div v-if="activeVideoShot.videoUrl" class="video-shot-result-preview">
+                        <video :src="activeVideoShot.videoUrl" controls playsinline></video>
+                        <a :href="activeVideoShot.videoUrl" target="_blank" rel="noreferrer">打开视频</a>
+                      </div>
+                      <div v-else class="video-shot-empty-preview">
+                        <GIcon name="video" :size="26" />
+                        <strong>{{ activeVideoShot.summary || "这个镜头还没有生成视频" }}</strong>
+                      </div>
+
+                      <AiAssistantActionBar
+                        label="生成模式"
+                        bar-class="video-agent-mode-strip"
+                        :status-class="getVideoFeedbackClass()"
+                        :status-message="videoAiOutputStatusMessage"
+                        :quick-disabled="ui.marketplace.video.isGenerating"
+                        :quick-icon="ui.marketplace.video.isGenerating ? 'loading' : 'sparkles'"
+                        :quick-spin="ui.marketplace.video.isGenerating"
+                        :quick-label="ui.marketplace.video.isGenerating ? '生成中' : '快速模式'"
+                        :agent-disabled="ui.marketplace.video.isGenerating"
+                        :on-quick-run="generateVideoQuickMode"
+                        :on-agent-run="() => runMarketplaceAgentTask('video')"
+                      />
+
+                      <GordonAgentProgress
+                        class="marketplace-agent-progress-inline"
+                        :progress="getMarketplaceAgentProgress('video')"
+                        :items="getMarketplaceAgentProgressItems(getMarketplaceAgentProgress('video'))"
+                        :progress-class="getMarketplaceAgentProgressClass('video')"
+                        :progress-time="getMarketplaceAgentProgressTime('video')"
+                        fallback-status="正在处理视频任务"
+                        :cancel-handler="cancelMarketplaceAgentRun"
+                      />
+
+                      <p
+                        v-if="ui.marketplace.video.feedback"
+                        class="writing-export-feedback video-feedback"
+                        :class="getVideoFeedbackClass()"
+                        role="status"
+                      >
+                        {{ ui.marketplace.video.feedback }}
+                      </p>
+                    </section>
+
+                    <aside class="video-generation-inspector">
+                      <div class="video-generation-inspector-head">
+                        <div>
+                          <p class="feature-kicker">Shot Editor</p>
+                          <h3>镜头参数</h3>
+                        </div>
+                        <span class="pill pill-neutral">{{ activeVideoShot.durationSeconds }} 秒</span>
+                      </div>
+
+                      <div class="field writing-intro-field comic-asset-reference-editor">
+                        <span class="field-label">参考素材 / 首帧说明</span>
+                        <FieldAiOptimizer
+                          :actions="fieldAiActions"
+                          :state="ui.marketplace.fieldAi"
+                          :field-id="`video-shot-reference-${activeVideoShot.id}`"
+                          :app-name="VIDEO_APP_NAME"
+                          label="参考素材 / 首帧说明"
+                          :value="activeVideoShot.reference"
+                          :context="buildVideoShotFieldAiContext(activeVideoShot, '参考素材 / 首帧说明')"
+                          :set-value="(value) => setVideoShotReference(activeVideoShot, value)"
+                        >
+                          <textarea
+                            class="field-textarea writing-editor-textarea video-reference-textarea"
+                            :value="activeVideoShot.reference"
+                            placeholder="输入 @ 可选择素材，或填写首帧图 URL / 连续性约束。"
+                            @focus="updateVideoShotReferencePickerFromInput(activeVideoShot.id, $event)"
+                            @click="updateVideoShotReferencePickerFromInput(activeVideoShot.id, $event)"
+                            @keyup="updateVideoShotReferencePickerFromInput(activeVideoShot.id, $event)"
+                            @blur="closeVideoAssetReferencePickerSoon(activeVideoShot.id)"
+                            @input="setVideoShotReferenceFromInput(activeVideoShot, $event)"
+                          ></textarea>
+                          <div
+                            v-if="activeVideoAssetReferencePickerViewId === activeVideoShot.id && getVideoShotReferencePickerOptions().length"
+                            class="comic-asset-reference-picker"
+                          >
+                            <button
+                              v-for="option in getVideoShotReferencePickerOptions()"
+                              :key="option.id"
+                              type="button"
+                              class="comic-asset-reference-option"
+                              @mousedown.prevent="insertVideoShotReference(activeVideoShot, option, $event)"
+                            >
+                              <img :src="option.src" :alt="option.label" />
+                              <span>
+                                <strong>{{ option.assetName }}</strong>
+                                <small>{{ option.viewLabel }}</small>
+                              </span>
+                            </button>
+                          </div>
+                        </FieldAiOptimizer>
+                      </div>
+
+                      <div class="field writing-intro-field comic-asset-reference-editor">
+                        <span class="field-label">正向提示词</span>
+                        <FieldAiOptimizer
+                          :actions="fieldAiActions"
+                          :state="ui.marketplace.fieldAi"
+                          :field-id="`video-shot-prompt-${activeVideoShot.id}`"
+                          :app-name="VIDEO_APP_NAME"
+                          label="正向提示词"
+                          :value="activeVideoShot.prompt"
+                          :context="buildVideoShotFieldAiContext(activeVideoShot, '正向提示词')"
+                          :set-value="(value) => setVideoShotPrompt(activeVideoShot, value)"
+                        >
+                          <textarea
+                            class="field-textarea writing-editor-textarea video-prompt-textarea"
+                            :value="activeVideoShot.prompt"
+                            placeholder="主体、动作、镜头运动、光线、风格、画幅、时长和稳定性要求。"
+                            @focus="updateVideoShotReferencePickerFromInput(`${activeVideoShot.id}:prompt`, $event)"
+                            @click="updateVideoShotReferencePickerFromInput(`${activeVideoShot.id}:prompt`, $event)"
+                            @keyup="updateVideoShotReferencePickerFromInput(`${activeVideoShot.id}:prompt`, $event)"
+                            @blur="closeVideoAssetReferencePickerSoon(`${activeVideoShot.id}:prompt`)"
+                            @input="setVideoShotPromptFromInput(activeVideoShot, $event)"
+                          ></textarea>
+                          <div
+                            v-if="activeVideoAssetReferencePickerViewId === `${activeVideoShot.id}:prompt` && getVideoShotReferencePickerOptions().length"
+                            class="comic-asset-reference-picker"
+                          >
+                            <button
+                              v-for="option in getVideoShotReferencePickerOptions()"
+                              :key="option.id"
+                              type="button"
+                              class="comic-asset-reference-option"
+                              @mousedown.prevent="insertVideoShotPromptReference(activeVideoShot, option, $event)"
+                            >
+                              <img :src="option.src" :alt="option.label" />
+                              <span>
+                                <strong>{{ option.assetName }}</strong>
+                                <small>{{ option.viewLabel }}</small>
+                              </span>
+                            </button>
+                          </div>
+                        </FieldAiOptimizer>
+                      </div>
+
+                      <div class="field writing-intro-field">
+                        <span class="field-label">反向提示词</span>
+                        <FieldAiOptimizer
+                          :actions="fieldAiActions"
+                          :state="ui.marketplace.fieldAi"
+                          :field-id="`video-shot-negative-${activeVideoShot.id}`"
+                          :app-name="VIDEO_APP_NAME"
+                          label="反向提示词"
+                          :value="activeVideoShot.negativePrompt"
+                          :context="buildVideoShotFieldAiContext(activeVideoShot, '反向提示词')"
+                          :set-value="(value) => setVideoShotNegativePrompt(activeVideoShot, value)"
+                        >
+                          <textarea
+                            class="field-textarea writing-editor-textarea video-negative-textarea"
+                            :value="activeVideoShot.negativePrompt"
+                            placeholder="低清晰度、畸形、闪烁、水印、字幕、画面断裂、镜头失控等。"
+                            @input="setVideoShotNegativePrompt(activeVideoShot, $event.target.value)"
+                          ></textarea>
+                        </FieldAiOptimizer>
+                      </div>
+
+                      <FieldAiOptimizer
+                        :actions="fieldAiActions"
+                        :state="ui.marketplace.fieldAi"
+                        :field-id="`video-shot-output-${activeVideoShot.id}`"
+                        :app-name="VIDEO_APP_NAME"
+                        label="生成结果"
+                        :value="activeVideoShot.output"
+                        :context="buildVideoShotFieldAiContext(activeVideoShot, '生成结果')"
+                        :set-value="(value) => setVideoShotOutput(activeVideoShot, value)"
+                      >
+                        <textarea
+                          class="field-textarea writing-editor-textarea writing-chapter-draft-textarea video-output-textarea"
+                          :value="activeVideoShot.output"
+                          placeholder="这里沉淀生成结果、视频链接、参数记录或复跑笔记。"
+                          @input="setVideoShotOutput(activeVideoShot, $event.target.value)"
+                        ></textarea>
+                      </FieldAiOptimizer>
+                    </aside>
                   </div>
-
-                  <AiAssistantActionBar
-                    v-if="activeVideoShot"
-                    label="生成模式"
-                    bar-class="video-agent-mode-strip"
-                    :status-class="getVideoFeedbackClass()"
-                    :status-message="videoAiOutputStatusMessage"
-                    :quick-disabled="ui.marketplace.video.isGenerating"
-                    :quick-icon="ui.marketplace.video.isGenerating ? 'loading' : 'sparkles'"
-                    :quick-spin="ui.marketplace.video.isGenerating"
-                    :quick-label="ui.marketplace.video.isGenerating ? '生成中' : '快速模式'"
-                    :agent-disabled="ui.marketplace.video.isGenerating"
-                    :on-quick-run="generateVideoQuickMode"
-                    :on-agent-run="() => runMarketplaceAgentTask('video')"
-                  />
-
-                  <GordonAgentProgress
-                    class="marketplace-agent-progress-inline"
-                    :progress="getMarketplaceAgentProgress('video')"
-                    :items="getMarketplaceAgentProgressItems(getMarketplaceAgentProgress('video'))"
-                    :progress-class="getMarketplaceAgentProgressClass('video')"
-                    :progress-time="getMarketplaceAgentProgressTime('video')"
-                    fallback-status="正在处理视频任务"
-                    :cancel-handler="cancelMarketplaceAgentRun"
-                  />
-
-                  <p
-                    v-if="ui.marketplace.video.feedback"
-                    class="writing-export-feedback video-feedback"
-                    :class="getVideoFeedbackClass()"
-                    role="status"
-                  >
-                    {{ ui.marketplace.video.feedback }}
-                  </p>
-
-                  <div v-if="activeVideoShot?.videoUrl" class="video-shot-result-preview">
-                    <video :src="activeVideoShot.videoUrl" controls playsinline></video>
-                    <a :href="activeVideoShot.videoUrl" target="_blank" rel="noreferrer">打开视频</a>
-                  </div>
-
-                  <div v-if="activeVideoShot" class="field writing-intro-field">
-                    <span class="field-label">参考素材 / 首帧说明</span>
-                    <FieldAiOptimizer
-                      :actions="fieldAiActions"
-                      :state="ui.marketplace.fieldAi"
-                      :field-id="`video-shot-reference-${activeVideoShot.id}`"
-                      :app-name="VIDEO_APP_NAME"
-                      label="参考素材 / 首帧说明"
-                      :value="activeVideoShot.reference"
-                      :context="buildVideoShotFieldAiContext(activeVideoShot, '参考素材 / 首帧说明')"
-                      :set-value="(value) => setVideoShotReference(activeVideoShot, value)"
-                    >
-                      <textarea
-                        class="field-textarea writing-editor-textarea video-reference-textarea"
-                        :value="activeVideoShot.reference"
-                        placeholder="可写素材路径、首帧图描述、参考图说明或连续性约束。"
-                        @input="setVideoShotReference(activeVideoShot, $event.target.value)"
-                      ></textarea>
-                    </FieldAiOptimizer>
-                  </div>
-
-                  <div v-if="activeVideoShot" class="field writing-intro-field">
-                    <span class="field-label">正向提示词</span>
-                    <FieldAiOptimizer
-                      :actions="fieldAiActions"
-                      :state="ui.marketplace.fieldAi"
-                      :field-id="`video-shot-prompt-${activeVideoShot.id}`"
-                      :app-name="VIDEO_APP_NAME"
-                      label="正向提示词"
-                      :value="activeVideoShot.prompt"
-                      :context="buildVideoShotFieldAiContext(activeVideoShot, '正向提示词')"
-                      :set-value="(value) => setVideoShotPrompt(activeVideoShot, value)"
-                    >
-                      <textarea
-                        class="field-textarea writing-editor-textarea video-prompt-textarea"
-                        :value="activeVideoShot.prompt"
-                        placeholder="主体、动作、镜头运动、光线、风格、画幅、时长和稳定性要求。"
-                        @input="setVideoShotPrompt(activeVideoShot, $event.target.value)"
-                      ></textarea>
-                    </FieldAiOptimizer>
-                  </div>
-
-                  <div v-if="activeVideoShot" class="field writing-intro-field">
-                    <span class="field-label">反向提示词</span>
-                    <FieldAiOptimizer
-                      :actions="fieldAiActions"
-                      :state="ui.marketplace.fieldAi"
-                      :field-id="`video-shot-negative-${activeVideoShot.id}`"
-                      :app-name="VIDEO_APP_NAME"
-                      label="反向提示词"
-                      :value="activeVideoShot.negativePrompt"
-                      :context="buildVideoShotFieldAiContext(activeVideoShot, '反向提示词')"
-                      :set-value="(value) => setVideoShotNegativePrompt(activeVideoShot, value)"
-                    >
-                      <textarea
-                        class="field-textarea writing-editor-textarea video-negative-textarea"
-                        :value="activeVideoShot.negativePrompt"
-                        placeholder="低清晰度、畸形、闪烁、水印、字幕、画面断裂、镜头失控等。"
-                        @input="setVideoShotNegativePrompt(activeVideoShot, $event.target.value)"
-                      ></textarea>
-                    </FieldAiOptimizer>
-                  </div>
-
-                  <FieldAiOptimizer
-                    v-if="activeVideoShot"
-                    :actions="fieldAiActions"
-                    :state="ui.marketplace.fieldAi"
-                    :field-id="`video-shot-output-${activeVideoShot.id}`"
-                    :app-name="VIDEO_APP_NAME"
-                    label="生成结果"
-                    :value="activeVideoShot.output"
-                    :context="buildVideoShotFieldAiContext(activeVideoShot, '生成结果')"
-                    :set-value="(value) => setVideoShotOutput(activeVideoShot, value)"
-                  >
-                    <textarea
-                      class="field-textarea writing-editor-textarea writing-chapter-draft-textarea"
-                      :value="activeVideoShot.output"
-                      placeholder="这里沉淀生成结果、视频链接、参数记录或复跑笔记。"
-                      @input="setVideoShotOutput(activeVideoShot, $event.target.value)"
-                    ></textarea>
-                  </FieldAiOptimizer>
                 </div>
               </div>
             </section>
@@ -3587,6 +3966,7 @@ const editingComicChapterTitleId = ref("");
 const comicChapterTitleEditBaseline = ref("");
 const comicAssetDetailPanelRef = ref(null);
 const activeComicAssetReferencePickerViewId = ref("");
+const activeVideoAssetReferencePickerViewId = ref("");
 
 const {
   activeComicAsset,
@@ -3858,6 +4238,151 @@ function closeComicAssetReferencePickerSoon(viewId) {
   }, 120);
 }
 
+function setVideoAssetViewPromptFromInput(assetId, viewId, event) {
+  const value = event?.target?.value ?? "";
+
+  setVideoAssetViewField(assetId, viewId, "prompt", value);
+  updateVideoAssetReferencePickerFromInput(viewId, event);
+}
+
+function updateVideoAssetReferencePickerFromInput(viewId, event) {
+  const textarea = event?.target ?? null;
+  const value = textarea?.value ?? "";
+  const cursorPosition = typeof textarea?.selectionStart === "number" ? textarea.selectionStart : String(value).length;
+
+  activeVideoAssetReferencePickerViewId.value = shouldShowComicAssetReferencePicker(value, cursorPosition) ? viewId : "";
+}
+
+function getVideoAssetViewReferencePickerOptions(viewId) {
+  return getVideoAssetReferenceOptions(activeVideoAsset.value?.id).filter((option) => option.viewId !== viewId);
+}
+
+function getVideoAssetViewResolvedReferences(view) {
+  return getVideoAssetViewReferenceOptions(activeVideoAsset.value?.id, view);
+}
+
+function insertVideoAssetViewReference(assetId, view, option, event) {
+  const textarea = event?.currentTarget?.closest?.(".comic-asset-reference-editor")?.querySelector?.("textarea");
+  const marker = option?.insertText || (option?.label ? `@${option.label}` : "");
+
+  if (!view || !marker) {
+    return;
+  }
+
+  const currentPrompt = String(view.prompt ?? "");
+  const selectionStart = typeof textarea?.selectionStart === "number" ? textarea.selectionStart : currentPrompt.length;
+  const selectionEnd = typeof textarea?.selectionEnd === "number" ? textarea.selectionEnd : selectionStart;
+  const beforeCursor = currentPrompt.slice(0, selectionStart);
+  const afterCursor = currentPrompt.slice(selectionEnd);
+  const activeMentionMatch = /@([^\s@，,。；;：:\n\r]*)$/u.exec(beforeCursor);
+  const insertValue = `${marker} `;
+  const nextPrompt = activeMentionMatch
+    ? `${beforeCursor.slice(0, activeMentionMatch.index)}${insertValue}${afterCursor}`
+    : `${currentPrompt}${currentPrompt && !/\s$/u.test(currentPrompt) ? " " : ""}${insertValue}`;
+
+  setVideoAssetViewField(assetId, view.id, "prompt", nextPrompt);
+  activeVideoAssetReferencePickerViewId.value = view.id;
+
+  void nextTick(() => {
+    if (!textarea) {
+      return;
+    }
+
+    const nextCursor = activeMentionMatch ? activeMentionMatch.index + insertValue.length : nextPrompt.length;
+    textarea.focus?.();
+    textarea.setSelectionRange?.(nextCursor, nextCursor);
+  });
+}
+
+function closeVideoAssetReferencePickerSoon(viewId) {
+  window.setTimeout(() => {
+    if (activeVideoAssetReferencePickerViewId.value === viewId) {
+      activeVideoAssetReferencePickerViewId.value = "";
+    }
+  }, 120);
+}
+
+function getVideoShotReferencePickerOptions() {
+  return getVideoAssetReferenceOptions();
+}
+
+function setVideoShotReferenceFromInput(shot, event) {
+  const value = event?.target?.value ?? "";
+
+  setVideoShotReference(shot, value);
+  updateVideoShotReferencePickerFromInput(shot?.id, event);
+}
+
+function setVideoShotPromptFromInput(shot, event) {
+  const value = event?.target?.value ?? "";
+
+  setVideoShotPrompt(shot, value);
+  updateVideoShotReferencePickerFromInput(`${shot?.id}:prompt`, event);
+}
+
+function updateVideoShotReferencePickerFromInput(pickerId, event) {
+  const textarea = event?.target ?? null;
+  const value = textarea?.value ?? "";
+  const cursorPosition = typeof textarea?.selectionStart === "number" ? textarea.selectionStart : String(value).length;
+
+  activeVideoAssetReferencePickerViewId.value = shouldShowComicAssetReferencePicker(value, cursorPosition) ? pickerId : "";
+}
+
+function insertReferenceMarkerIntoTextarea(currentValue, marker, event) {
+  const textarea = event?.currentTarget?.closest?.(".comic-asset-reference-editor")?.querySelector?.("textarea");
+  const selectionStart = typeof textarea?.selectionStart === "number" ? textarea.selectionStart : String(currentValue ?? "").length;
+  const selectionEnd = typeof textarea?.selectionEnd === "number" ? textarea.selectionEnd : selectionStart;
+  const beforeCursor = String(currentValue ?? "").slice(0, selectionStart);
+  const afterCursor = String(currentValue ?? "").slice(selectionEnd);
+  const activeMentionMatch = /@([^\s@，,。；;：:\n\r]*)$/u.exec(beforeCursor);
+  const insertValue = `${marker} `;
+  const nextValue = activeMentionMatch
+    ? `${beforeCursor.slice(0, activeMentionMatch.index)}${insertValue}${afterCursor}`
+    : `${currentValue}${currentValue && !/\s$/u.test(String(currentValue)) ? " " : ""}${insertValue}`;
+
+  return { activeMentionMatch, insertValue, nextValue, textarea };
+}
+
+function focusAfterReferenceInsert(textarea, activeMentionMatch, insertValue, nextValue) {
+  void nextTick(() => {
+    if (!textarea) {
+      return;
+    }
+
+    const nextCursor = activeMentionMatch ? activeMentionMatch.index + insertValue.length : nextValue.length;
+    textarea.focus?.();
+    textarea.setSelectionRange?.(nextCursor, nextCursor);
+  });
+}
+
+function insertVideoShotReference(shot, option, event) {
+  const marker = option?.insertText || (option?.label ? `@${option.label}` : "");
+
+  if (!shot || !marker) {
+    return;
+  }
+
+  const result = insertReferenceMarkerIntoTextarea(String(shot.reference ?? ""), marker, event);
+
+  setVideoShotReference(shot, result.nextValue);
+  activeVideoAssetReferencePickerViewId.value = shot.id;
+  focusAfterReferenceInsert(result.textarea, result.activeMentionMatch, result.insertValue, result.nextValue);
+}
+
+function insertVideoShotPromptReference(shot, option, event) {
+  const marker = option?.insertText || (option?.label ? `@${option.label}` : "");
+
+  if (!shot || !marker) {
+    return;
+  }
+
+  const result = insertReferenceMarkerIntoTextarea(String(shot.prompt ?? ""), marker, event);
+
+  setVideoShotPrompt(shot, result.nextValue);
+  activeVideoAssetReferencePickerViewId.value = `${shot.id}:prompt`;
+  focusAfterReferenceInsert(result.textarea, result.activeMentionMatch, result.insertValue, result.nextValue);
+}
+
 const {
   cancelMarketplaceAgentRun,
   getMarketplaceAgentProgress,
@@ -3866,6 +4391,9 @@ const {
 } = marketplaceAgentActions;
 
 const {
+  activeVideoAsset,
+  activeVideoAssetMatchesTypeFilter,
+  activeVideoAssets,
   activeVideoExportFileName,
   activeVideoTabMeta,
   activeVideoProject,
@@ -3876,12 +4404,23 @@ const {
   backVideoShelf,
   canExportActiveVideoProject,
   closeVideoExportDialog,
+  addVideoAssetView,
+  createVideoAsset,
   createVideoProject,
   createVideoShot,
+  deleteVideoAsset,
+  downloadVideoAssetViewImage,
   deleteVideoProjectFromShelf,
   exportActiveVideoProject,
+  filteredVideoAssets,
   filteredVideoShotEntries,
+  generateVideoAssetViewImage,
   generateVideoQuickMode,
+  getVideoAssetFilledViewCount,
+  getVideoAssetReferenceOptions,
+  getVideoAssetTypeLabel,
+  getVideoAssetViewKindLabel,
+  getVideoAssetViewReferenceOptions,
   getVideoFeedbackClass,
   getVideoProjectAspectRatioLabel,
   getVideoProjectModeLabel,
@@ -3893,9 +4432,18 @@ const {
   openVideoAppShelf,
   openVideoExportDialog,
   openVideoProject,
+  previewVideoAssetView,
+  removeVideoAssetView,
+  selectVideoAsset,
   selectVideoExportDirectory,
   selectVideoShot,
   selectVideoShotFromPicker,
+  setVideoAssetDescription,
+  setVideoAssetName,
+  setVideoAssetType,
+  setVideoAssetTypeFilter,
+  setVideoAssetViewField,
+  setVideoIntroMode,
   setVideoProjectAspectRatio,
   setVideoProjectDurationSeconds,
   setVideoProjectGenre,
@@ -3914,6 +4462,7 @@ const {
   setVideoShotTitle,
   setVideoTab,
   submitVideoShot,
+  toggleVideoAssetRail,
   toggleVideoProfileRail,
   toggleVideoShotPicker,
   videoProjects
@@ -4132,6 +4681,16 @@ function getComicAssetPreviewViews(asset, limit = 3) {
 
 function getComicAssetViewCountLabel(asset) {
   const filledCount = getComicAssetFilledViewCount(asset);
+  const totalCount = Array.isArray(asset?.views) ? asset.views.length : 0;
+  return `${filledCount}/${totalCount} 图`;
+}
+
+function getVideoAssetPreviewViews(asset, limit = 3) {
+  return (Array.isArray(asset?.views) ? asset.views : []).filter((view) => String(view?.src ?? "").trim()).slice(0, limit);
+}
+
+function getVideoAssetViewCountLabel(asset) {
+  const filledCount = getVideoAssetFilledViewCount(asset);
   const totalCount = Array.isArray(asset?.views) ? asset.views.length : 0;
   return `${filledCount}/${totalCount} 图`;
 }

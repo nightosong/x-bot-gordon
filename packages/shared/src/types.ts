@@ -1195,6 +1195,7 @@ export interface VideoProject {
   coverUrl?: string;
   coverPrompt?: string;
   coverShouldShowTitle?: boolean;
+  assets?: ComicAsset[];
   shots: VideoShot[];
   createdAt: string;
   updatedAt: string;

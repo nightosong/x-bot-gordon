@@ -4046,6 +4046,7 @@ function normalizeVideoProject(input: Partial<VideoProject> | null | undefined, 
     coverUrl: String(input?.coverUrl ?? "").trim(),
     coverPrompt: String(input?.coverPrompt ?? ""),
     coverShouldShowTitle: input?.coverShouldShowTitle !== false,
+    assets: normalizeComicAssets(input?.assets),
     shots: normalizeVideoShots(input?.shots),
     createdAt,
     updatedAt

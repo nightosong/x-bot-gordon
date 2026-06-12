@@ -49,6 +49,7 @@ import {
   Square,
   Trash2,
   Upload,
+  Video,
   X
 } from "lucide-vue-next";
 
@@ -112,6 +113,7 @@ const ICONS = {
   stats: BarChart3,
   trash: Trash2,
   upload: Upload,
+  video: Video,
   stop: Square
 };
 
