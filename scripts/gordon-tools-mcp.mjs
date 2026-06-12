@@ -57,7 +57,7 @@ const TOOL_RUNTIME = {
     seedance: {
       operations: {
         submit: {
-          endpoint: "gpt-proxy/volengine/video/submit",
+          endpoint: "api/v3/contents/generations/tasks",
           parameters: [
             "mode",
             "prompt",
@@ -68,11 +68,17 @@ const TOOL_RUNTIME = {
             "image",
             "firstFrameImage",
             "lastFrameImage",
-            "referenceImages"
+            "referenceImages",
+            "referenceVideos",
+            "referenceAudios",
+            "returnLastFrame",
+            "generateAudio",
+            "frames",
+            "priority"
           ]
         },
         query: {
-          endpoint: "gpt-proxy/volengine/video/task/{task_id}",
+          endpoint: "api/v3/contents/generations/tasks/{task_id}",
           parameters: ["taskId"]
         }
       }
@@ -210,7 +216,10 @@ function normalizeBaseUrl(value, toolName, provider) {
   }
 
   if (toolName === "video_gen" && provider === "seedance") {
-    return baseUrl.replace(/\/gpt-proxy\/volengine\/video(?:\/(?:submit|task(?:\/[^/]+)?))?$/u, "");
+    return baseUrl
+      .replace(/\/gpt-proxy\/volengine\/video(?:\/(?:submit|task(?:\/[^/]+)?))?\/?$/u, "")
+      .replace(/\/api\/v3\/contents\/generations\/tasks(?:\/[^/]+)?\/?$/u, "")
+      .replace(/\/api\/v3\/?$/u, "");
   }
 
   if (toolName === "music_gen" && provider === "suno") {
@@ -234,6 +243,10 @@ function joinUrl(baseUrl, endpoint) {
 function toStringArray(value) {
   if (Array.isArray(value)) {
     return value.map((item) => String(item ?? "").trim()).filter(Boolean);
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    return [value.trim()];
   }
 
   return [];
@@ -503,7 +516,7 @@ function getVideoGenToolDefinition() {
   return {
     name: "video_gen",
     description:
-      "使用能力拓展 TOOL 配置中的 Seedance 视频生成能力，支持文生视频、首帧生视频、首尾帧生视频、参考图生视频，并通过任务 ID 查询结果。生成是异步任务：submit 和 query 默认都会在工具层短轮询，尽量一次调用返回视频 URL；未完成时返回 taskId、状态、pending、pollExhausted 和 pollHistory。",
+      "使用能力拓展 TOOL 配置中的 Seedance 视频生成能力，按火山方舟视频生成 API 提交 / 查询任务。支持 text_to_video 文生视频、first_frame_to_video 图生视频、first_last_frame_to_video 首尾帧生视频、reference_to_video 参考图 / 视频 / 音频生视频。生成是异步任务：submit 和 query 默认都会在工具层短轮询，尽量一次调用返回视频 URL；未完成时返回 taskId、状态、pending、pollExhausted 和 pollHistory。",
     inputSchema: {
       type: "object",
       required: ["operation"],
@@ -520,16 +533,20 @@ function getVideoGenToolDefinition() {
         },
         mode: {
           type: "string",
-          enum: ["text_to_video", "first_frame_to_video", "first_last_frame_to_video", "reference_to_video"],
-          description: "submit 时可选。text_to_video 文生视频；first_frame_to_video 首帧生视频；first_last_frame_to_video 首尾帧生视频；reference_to_video 参考图生视频"
+          enum: ["text_to_video", "image_to_video", "first_frame_to_video", "first_last_frame_to_video", "reference_to_video"],
+          description: "submit 时可选。text_to_video 文生视频；image_to_video / first_frame_to_video 图生视频；first_last_frame_to_video 首尾帧生视频；reference_to_video 参考图 / 视频 / 音频生视频"
         },
         prompt: {
           type: "string",
-          description: "submit 必填，视频生成提示词"
+          description: "视频生成提示词。文生视频必填；图生视频、首尾帧和参考生成可选但建议填写"
         },
         negativePrompt: {
           type: "string",
           description: "可选，负向限制词；会作为 negative_prompt 传给上游"
+        },
+        negative_prompt: {
+          type: "string",
+          description: "可选，negativePrompt 的官方字段别名"
         },
         model: {
           type: "string",
@@ -569,42 +586,119 @@ function getVideoGenToolDefinition() {
           type: "string",
           description: "首帧图片 URL / data URL / base64"
         },
+        first_frame_image: {
+          type: "string",
+          description: "首帧图片 URL / data URL / base64；firstFrameImage 的官方字段别名"
+        },
         lastFrameImage: {
           type: "string",
           description: "尾帧图片 URL / data URL / base64，首尾帧模式必填"
         },
+        last_frame_image: {
+          type: "string",
+          description: "尾帧图片 URL / data URL / base64；lastFrameImage 的官方字段别名"
+        },
         referenceImages: {
-          type: "array",
-          items: {
-            type: "string"
-          },
-          description: "参考图生视频的参考图片数组，Seedance 2.0 通常支持 1-9 张"
+          anyOf: [
+            {
+              type: "array",
+              items: {
+                type: "string"
+              }
+            },
+            {
+              type: "string"
+            }
+          ],
+          description: "参考生视频的参考图片，支持单个字符串或数组。Seedance 2.0 支持 1-9 张；会以 role=reference_image 传入"
+        },
+        reference_images: {
+          anyOf: [
+            {
+              type: "array",
+              items: {
+                type: "string"
+              }
+            },
+            {
+              type: "string"
+            }
+          ],
+          description: "referenceImages 的官方字段别名"
         },
         referenceVideos: {
-          type: "array",
-          items: {
-            type: "string"
-          },
-          description: "可选，参考视频 URL 数组，作为 reference_video 传入"
+          anyOf: [
+            {
+              type: "array",
+              items: {
+                type: "string"
+              }
+            },
+            {
+              type: "string"
+            }
+          ],
+          description: "可选，参考视频 URL / asset ID，支持单个字符串或数组，最多 3 个；会以 role=reference_video 传入"
+        },
+        reference_videos: {
+          anyOf: [
+            {
+              type: "array",
+              items: {
+                type: "string"
+              }
+            },
+            {
+              type: "string"
+            }
+          ],
+          description: "referenceVideos 的官方字段别名"
         },
         referenceAudios: {
-          type: "array",
-          items: {
-            type: "string"
-          },
-          description: "可选，参考音频 URL 数组，作为 reference_audio 传入"
+          anyOf: [
+            {
+              type: "array",
+              items: {
+                type: "string"
+              }
+            },
+            {
+              type: "string"
+            }
+          ],
+          description: "可选，参考音频 URL / asset ID，支持单个字符串或数组，最多 3 个；不能单独输入音频，至少同时有参考图或参考视频"
+        },
+        reference_audios: {
+          anyOf: [
+            {
+              type: "array",
+              items: {
+                type: "string"
+              }
+            },
+            {
+              type: "string"
+            }
+          ],
+          description: "referenceAudios 的官方字段别名"
         },
         durationSeconds: {
           type: "integer",
-          minimum: 1,
+          minimum: -1,
           maximum: 60,
-          description: "可选，视频时长，默认 5 秒"
+          description: "可选，视频时长，默认 5 秒；Seedance 2.0 / 1.5 可传 -1 表示智能选择"
         },
         duration: {
           type: "integer",
-          minimum: 1,
+          minimum: -1,
           maximum: 60,
           description: "可选，durationSeconds 的别名"
+        },
+        duration_seconds: {
+          type: "integer",
+          minimum: -1,
+          maximum: 60,
+          description: "可选，durationSeconds 的官方字段别名"
         },
         ratio: {
           type: "string",
@@ -616,7 +710,8 @@ function getVideoGenToolDefinition() {
         },
         seed: {
           type: "integer",
-          description: "可选，随机种子"
+          minimum: -1,
+          description: "可选，随机种子，范围 -1 到 2^32-1"
         },
         watermark: {
           type: "boolean",
@@ -626,13 +721,78 @@ function getVideoGenToolDefinition() {
           type: "boolean",
           description: "可选，是否在查询结果中返回最后一帧图片"
         },
+        return_last_frame: {
+          type: "boolean",
+          description: "可选，returnLastFrame 的官方字段别名"
+        },
         callbackUrl: {
           type: "string",
           description: "可选，任务状态变更回调地址"
         },
+        callback_url: {
+          type: "string",
+          description: "可选，callbackUrl 的官方字段别名"
+        },
         generateAudio: {
           type: "boolean",
           description: "可选，是否生成音频"
+        },
+        generate_audio: {
+          type: "boolean",
+          description: "可选，generateAudio 的官方字段别名"
+        },
+        frames: {
+          type: "integer",
+          minimum: 29,
+          maximum: 289,
+          description: "可选，按帧数控制视频长度；frames 与 duration 二选一，传入 frames 时上游优先使用 frames"
+        },
+        cameraFixed: {
+          type: "boolean",
+          description: "可选，是否固定摄像头；Seedance 2.0 和参考图场景不支持时上游可能忽略或报错"
+        },
+        camera_fixed: {
+          type: "boolean",
+          description: "可选，cameraFixed 的官方字段别名"
+        },
+        draft: {
+          type: "boolean",
+          description: "可选，Seedance 1.5 pro 样片模式"
+        },
+        serviceTier: {
+          type: "string",
+          enum: ["default", "flex"],
+          description: "可选，服务等级；Seedance 2.0 系列仅支持 default"
+        },
+        service_tier: {
+          type: "string",
+          enum: ["default", "flex"],
+          description: "可选，serviceTier 的官方字段别名"
+        },
+        executionExpiresAfter: {
+          type: "integer",
+          minimum: 3600,
+          maximum: 259200,
+          description: "可选，任务超时阈值，单位秒"
+        },
+        execution_expires_after: {
+          type: "integer",
+          minimum: 3600,
+          maximum: 259200,
+          description: "可选，executionExpiresAfter 的官方字段别名"
+        },
+        tools: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              type: {
+                type: "string"
+              }
+            },
+            additionalProperties: true
+          },
+          description: "可选，Seedance 2.0 工具配置，例如 [{\"type\":\"web_search\"}]"
         },
         priority: {
           type: "integer",
@@ -1885,27 +2045,43 @@ function normalizeVideoOperation(value) {
 
 function normalizeVideoMode(value, argumentsObject = {}) {
   const explicitMode = String(value ?? "").trim();
+  const modeAliasMap = {
+    text: "text_to_video",
+    text_to_video: "text_to_video",
+    t2v: "text_to_video",
+    image: "first_frame_to_video",
+    image_to_video: "first_frame_to_video",
+    img2video: "first_frame_to_video",
+    i2v: "first_frame_to_video",
+    first_frame: "first_frame_to_video",
+    first_frame_to_video: "first_frame_to_video",
+    first_last_frame: "first_last_frame_to_video",
+    first_last_frame_to_video: "first_last_frame_to_video",
+    start_end_frame_to_video: "first_last_frame_to_video",
+    keyframe_to_video: "first_last_frame_to_video",
+    reference: "reference_to_video",
+    reference_to_video: "reference_to_video",
+    reference_image_to_video: "reference_to_video",
+    reference_images_to_video: "reference_to_video"
+  };
 
-  if (
-    [
-      "text_to_video",
-      "first_frame_to_video",
-      "first_last_frame_to_video",
-      "reference_to_video"
-    ].includes(explicitMode)
-  ) {
-    return explicitMode;
+  if (modeAliasMap[explicitMode]) {
+    return modeAliasMap[explicitMode];
   }
 
-  if (toStringArray(argumentsObject?.referenceImages).length) {
+  const referenceImages = [...toStringArray(argumentsObject?.referenceImages), ...toStringArray(argumentsObject?.reference_images)];
+  const referenceVideos = [...toStringArray(argumentsObject?.referenceVideos), ...toStringArray(argumentsObject?.reference_videos)];
+  const referenceAudios = [...toStringArray(argumentsObject?.referenceAudios), ...toStringArray(argumentsObject?.reference_audios)];
+
+  if (referenceImages.length || referenceVideos.length || referenceAudios.length) {
     return "reference_to_video";
   }
 
-  if (String(argumentsObject?.lastFrameImage ?? "").trim()) {
+  if (String(argumentsObject?.lastFrameImage ?? argumentsObject?.last_frame_image ?? "").trim()) {
     return "first_last_frame_to_video";
   }
 
-  if (String(argumentsObject?.firstFrameImage ?? argumentsObject?.image ?? "").trim()) {
+  if (String(argumentsObject?.firstFrameImage ?? argumentsObject?.first_frame_image ?? argumentsObject?.image ?? "").trim()) {
     return "first_frame_to_video";
   }
 
@@ -1913,11 +2089,11 @@ function normalizeVideoMode(value, argumentsObject = {}) {
 }
 
 function getVideoDurationSeconds(argumentsObject) {
-  const rawValue = argumentsObject?.durationSeconds ?? argumentsObject?.duration ?? DEFAULT_VIDEO_DURATION_SECONDS;
+  const rawValue = argumentsObject?.durationSeconds ?? argumentsObject?.duration_seconds ?? argumentsObject?.duration ?? DEFAULT_VIDEO_DURATION_SECONDS;
   const duration = Number(rawValue);
 
-  if (!Number.isFinite(duration) || duration < 1 || duration > 60) {
-    throw new Error("video_gen 的 durationSeconds 需要是 1-60 之间的数字");
+  if (!Number.isFinite(duration) || duration < -1 || duration === 0 || duration > 60) {
+    throw new Error("video_gen 的 durationSeconds 需要是 -1 或 1-60 之间的数字");
   }
 
   return Math.round(duration);
@@ -1939,6 +2115,22 @@ function getVideoPriority(argumentsObject) {
   return priority;
 }
 
+function getOptionalIntegerArgument(argumentsObject, camelName, snakeName, { minimum = Number.MIN_SAFE_INTEGER, maximum = Number.MAX_SAFE_INTEGER, label }) {
+  const rawValue = argumentsObject?.[camelName] ?? argumentsObject?.[snakeName];
+
+  if (rawValue === undefined || rawValue === null || rawValue === "") {
+    return undefined;
+  }
+
+  const value = Number(rawValue);
+
+  if (!Number.isInteger(value) || value < minimum || value > maximum) {
+    throw new Error(`video_gen 的 ${label || camelName} 需要是 ${minimum}-${maximum} 之间的整数`);
+  }
+
+  return value;
+}
+
 function createVideoContentItem(kind, url, role) {
   const normalizedUrl = String(url ?? "").trim();
 
@@ -1952,7 +2144,7 @@ function createVideoContentItem(kind, url, role) {
       video_url: {
         url: normalizedUrl
       },
-      role
+      ...(role ? { role } : {})
     };
   }
 
@@ -1962,7 +2154,7 @@ function createVideoContentItem(kind, url, role) {
       audio_url: {
         url: normalizedUrl
       },
-      role
+      ...(role ? { role } : {})
     };
   }
 
@@ -1971,8 +2163,82 @@ function createVideoContentItem(kind, url, role) {
     image_url: {
       url: normalizedUrl
     },
-    role
+    ...(role ? { role } : {})
   };
+}
+
+function normalizeVideoReferenceInputs(argumentsObject) {
+  return {
+    firstFrameImage: String(argumentsObject?.firstFrameImage ?? argumentsObject?.first_frame_image ?? argumentsObject?.image ?? "").trim(),
+    lastFrameImage: String(argumentsObject?.lastFrameImage ?? argumentsObject?.last_frame_image ?? "").trim(),
+    referenceImages: uniqueStrings([...toStringArray(argumentsObject?.referenceImages), ...toStringArray(argumentsObject?.reference_images)]),
+    referenceVideos: uniqueStrings([...toStringArray(argumentsObject?.referenceVideos), ...toStringArray(argumentsObject?.reference_videos)]),
+    referenceAudios: uniqueStrings([...toStringArray(argumentsObject?.referenceAudios), ...toStringArray(argumentsObject?.reference_audios)])
+  };
+}
+
+function assertSeedanceModeInputs(mode, inputs) {
+  const hasFirstFrame = Boolean(inputs.firstFrameImage);
+  const hasLastFrame = Boolean(inputs.lastFrameImage);
+  const hasReferenceImage = inputs.referenceImages.length > 0;
+  const hasReferenceVideo = inputs.referenceVideos.length > 0;
+  const hasReferenceAudio = inputs.referenceAudios.length > 0;
+  const hasReferenceMedia = hasReferenceImage || hasReferenceVideo || hasReferenceAudio;
+
+  if (mode === "text_to_video") {
+    if (hasFirstFrame || hasLastFrame || hasReferenceMedia) {
+      throw new Error("text_to_video 只能传文本提示词；如需图片输入，请使用 first_frame_to_video、first_last_frame_to_video 或 reference_to_video");
+    }
+    return;
+  }
+
+  if (mode === "first_frame_to_video") {
+    if (!hasFirstFrame) {
+      throw new Error("first_frame_to_video 需要 image 或 firstFrameImage 参数");
+    }
+
+    if (hasLastFrame || hasReferenceMedia) {
+      throw new Error("first_frame_to_video 不能混用 lastFrameImage、referenceImages、referenceVideos 或 referenceAudios");
+    }
+    return;
+  }
+
+  if (mode === "first_last_frame_to_video") {
+    if (!hasFirstFrame || !hasLastFrame) {
+      throw new Error("first_last_frame_to_video 需要 firstFrameImage/image 和 lastFrameImage 参数");
+    }
+
+    if (hasReferenceMedia) {
+      throw new Error("first_last_frame_to_video 不能混用 referenceImages、referenceVideos 或 referenceAudios");
+    }
+    return;
+  }
+
+  if (mode === "reference_to_video") {
+    if (!hasReferenceMedia) {
+      throw new Error("reference_to_video 需要 referenceImages、referenceVideos 或 referenceAudios 参数");
+    }
+
+    if (hasFirstFrame || hasLastFrame) {
+      throw new Error("reference_to_video 不能混用 firstFrameImage/image 或 lastFrameImage；需要严格首尾帧时请使用 first_last_frame_to_video");
+    }
+
+    if (inputs.referenceImages.length > 9) {
+      throw new Error("reference_to_video 的 referenceImages 需要是 1-9 张");
+    }
+
+    if (inputs.referenceVideos.length > 3) {
+      throw new Error("reference_to_video 的 referenceVideos 需要是 0-3 个");
+    }
+
+    if (inputs.referenceAudios.length > 3) {
+      throw new Error("reference_to_video 的 referenceAudios 需要是 0-3 个");
+    }
+
+    if (hasReferenceAudio && !hasReferenceImage && !hasReferenceVideo) {
+      throw new Error("reference_to_video 不能单独输入音频，至少需要 1 张参考图或 1 个参考视频");
+    }
+  }
 }
 
 function buildSeedanceVideoRequestBody(operationName, argumentsObject, model) {
@@ -1981,74 +2247,85 @@ function buildSeedanceVideoRequestBody(operationName, argumentsObject, model) {
   }
 
   const prompt = String(argumentsObject?.prompt ?? "").trim();
+  const mode = normalizeVideoMode(argumentsObject?.mode, argumentsObject);
+  const inputs = normalizeVideoReferenceInputs(argumentsObject);
+  const content = [];
 
-  if (!prompt) {
-    throw new Error("video_gen 提交任务需要 prompt 参数");
+  assertSeedanceModeInputs(mode, inputs);
+
+  if (mode === "text_to_video" && !prompt) {
+    throw new Error("text_to_video 需要 prompt 参数");
   }
 
-  const mode = normalizeVideoMode(argumentsObject?.mode, argumentsObject);
-  const firstFrameImage = String(argumentsObject?.firstFrameImage ?? argumentsObject?.image ?? "").trim();
-  const lastFrameImage = String(argumentsObject?.lastFrameImage ?? "").trim();
-  const referenceImages = toStringArray(argumentsObject?.referenceImages);
-  const referenceVideos = toStringArray(argumentsObject?.referenceVideos);
-  const referenceAudios = toStringArray(argumentsObject?.referenceAudios);
-  const content = [
-    {
+  if (prompt) {
+    content.push({
       type: "text",
       text: prompt
-    }
-  ];
-
-  if (mode === "first_frame_to_video") {
-    if (!firstFrameImage) {
-      throw new Error("first_frame_to_video 需要 image 或 firstFrameImage 参数");
-    }
-
-    content.push(createVideoContentItem("image", firstFrameImage, "first_frame"));
-  } else if (mode === "first_last_frame_to_video") {
-    if (!firstFrameImage || !lastFrameImage) {
-      throw new Error("first_last_frame_to_video 需要 firstFrameImage/image 和 lastFrameImage 参数");
-    }
-
-    content.push(createVideoContentItem("image", firstFrameImage, "first_frame"));
-    content.push(createVideoContentItem("image", lastFrameImage, "last_frame"));
-  } else if (mode === "reference_to_video") {
-    if (!referenceImages.length && !referenceVideos.length && !referenceAudios.length) {
-      throw new Error("reference_to_video 需要 referenceImages、referenceVideos 或 referenceAudios 参数");
-    }
-
-    if (referenceImages.length > 9) {
-      throw new Error("reference_to_video 的 referenceImages 建议不超过 9 张");
-    }
-
-    referenceImages.forEach((url) => content.push(createVideoContentItem("image", url, "reference_image")));
+    });
   }
 
-  referenceVideos.forEach((url) => content.push(createVideoContentItem("video", url, "reference_video")));
-  referenceAudios.forEach((url) => content.push(createVideoContentItem("audio", url, "reference_audio")));
+  if (mode === "first_frame_to_video") {
+    content.push(createVideoContentItem("image", inputs.firstFrameImage, "first_frame"));
+  } else if (mode === "first_last_frame_to_video") {
+    content.push(createVideoContentItem("image", inputs.firstFrameImage, "first_frame"));
+    content.push(createVideoContentItem("image", inputs.lastFrameImage, "last_frame"));
+  } else if (mode === "reference_to_video") {
+    inputs.referenceImages.forEach((url) => content.push(createVideoContentItem("image", url, "reference_image")));
+    inputs.referenceVideos.forEach((url) => content.push(createVideoContentItem("video", url, "reference_video")));
+    inputs.referenceAudios.forEach((url) => content.push(createVideoContentItem("audio", url, "reference_audio")));
+  }
 
-  const negativePrompt = String(argumentsObject?.negativePrompt ?? "").trim();
-  const callbackUrl = String(argumentsObject?.callbackUrl ?? argumentsObject?.callBackUrl ?? "").trim();
+  const negativePrompt = String(argumentsObject?.negativePrompt ?? argumentsObject?.negative_prompt ?? "").trim();
+  const callbackUrl = String(argumentsObject?.callbackUrl ?? argumentsObject?.callBackUrl ?? argumentsObject?.callback_url ?? "").trim();
   const safetyIdentifier = String(argumentsObject?.safetyIdentifier ?? argumentsObject?.safety_identifier ?? "").trim();
   const seed = argumentsObject?.seed === undefined || argumentsObject?.seed === null || argumentsObject?.seed === "" ? undefined : Number(argumentsObject.seed);
   const priority = getVideoPriority(argumentsObject);
+  const frames = getOptionalIntegerArgument(argumentsObject, "frames", "frames", {
+    minimum: 29,
+    maximum: 289,
+    label: "frames"
+  });
+  const executionExpiresAfter = getOptionalIntegerArgument(argumentsObject, "executionExpiresAfter", "execution_expires_after", {
+    minimum: 3_600,
+    maximum: 259_200,
+    label: "execution_expires_after"
+  });
+  const serviceTier = String(argumentsObject?.serviceTier ?? argumentsObject?.service_tier ?? "").trim();
+  const tools = argumentsObject?.tools;
 
-  if (seed !== undefined && (!Number.isInteger(seed) || seed < 0)) {
-    throw new Error("video_gen 的 seed 需要是非负整数");
+  if (seed !== undefined && (!Number.isInteger(seed) || seed < -1 || seed > 2 ** 32 - 1)) {
+    throw new Error("video_gen 的 seed 需要是 -1 到 2^32-1 之间的整数");
+  }
+
+  if (serviceTier && !["default", "flex"].includes(serviceTier)) {
+    throw new Error("video_gen 的 serviceTier 需要是 default 或 flex");
+  }
+
+  if (tools !== undefined && !Array.isArray(tools)) {
+    throw new Error("video_gen 的 tools 需要是数组");
   }
 
   return {
     model,
     content: content.filter(Boolean),
     ratio: String(argumentsObject?.ratio ?? DEFAULT_VIDEO_RATIO).trim() || DEFAULT_VIDEO_RATIO,
-    duration: getVideoDurationSeconds(argumentsObject),
+    ...(frames === undefined ? { duration: getVideoDurationSeconds(argumentsObject) } : {}),
     resolution: String(argumentsObject?.resolution ?? DEFAULT_VIDEO_RESOLUTION).trim() || DEFAULT_VIDEO_RESOLUTION,
     watermark: typeof argumentsObject?.watermark === "boolean" ? argumentsObject.watermark : false,
     ...(negativePrompt ? { negative_prompt: negativePrompt } : {}),
     ...(seed !== undefined ? { seed } : {}),
     ...(typeof argumentsObject?.returnLastFrame === "boolean" ? { return_last_frame: argumentsObject.returnLastFrame } : {}),
+    ...(typeof argumentsObject?.return_last_frame === "boolean" ? { return_last_frame: argumentsObject.return_last_frame } : {}),
     ...(callbackUrl ? { callback_url: callbackUrl } : {}),
     ...(typeof argumentsObject?.generateAudio === "boolean" ? { generate_audio: argumentsObject.generateAudio } : {}),
+    ...(typeof argumentsObject?.generate_audio === "boolean" ? { generate_audio: argumentsObject.generate_audio } : {}),
+    ...(typeof argumentsObject?.cameraFixed === "boolean" ? { camera_fixed: argumentsObject.cameraFixed } : {}),
+    ...(typeof argumentsObject?.camera_fixed === "boolean" ? { camera_fixed: argumentsObject.camera_fixed } : {}),
+    ...(typeof argumentsObject?.draft === "boolean" ? { draft: argumentsObject.draft } : {}),
+    ...(frames !== undefined ? { frames } : {}),
+    ...(serviceTier ? { service_tier: serviceTier } : {}),
+    ...(executionExpiresAfter !== undefined ? { execution_expires_after: executionExpiresAfter } : {}),
+    ...(tools !== undefined ? { tools } : {}),
     ...(priority !== undefined ? { priority } : {}),
     ...(safetyIdentifier ? { safety_identifier: safetyIdentifier } : {})
   };
@@ -2056,6 +2333,10 @@ function buildSeedanceVideoRequestBody(operationName, argumentsObject, model) {
 
 function buildVideoQueryUrl(baseUrl, operation, taskId) {
   return joinUrl(baseUrl, operation.endpoint.replace("{task_id}", encodeURIComponent(taskId)));
+}
+
+function buildVideoSubmitUrl(baseUrl, operation) {
+  return joinUrl(baseUrl, operation.endpoint);
 }
 
 function getVideoPollAttempts(argumentsObject) {
@@ -2783,7 +3064,7 @@ async function callVideoGen(argumentsObject) {
   const mode = normalizeVideoMode(argumentsObject?.mode, argumentsObject);
   const taskId = String(argumentsObject?.taskId ?? argumentsObject?.task_id ?? "").trim();
   const requestStartedAt = Date.now();
-  let endpoint = joinUrl(baseUrl, operation.endpoint);
+  let endpoint = buildVideoSubmitUrl(baseUrl, operation);
   let requestBody = null;
   let response;
 

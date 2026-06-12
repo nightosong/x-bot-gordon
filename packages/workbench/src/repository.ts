@@ -1846,7 +1846,7 @@ const TOOL_CONFIG_CATALOG: Record<
   },
   video_gen: {
     title: "视频生成",
-    description: "内置视频生成工具能力，面向文生视频、图生视频和分镜生成台。",
+    description: "内置视频生成工具能力，面向文生视频、图生视频、首尾帧生视频、参考图生视频和分镜生成台。",
     providers: [
       { provider: "seedance", label: "Seedance" },
       { provider: "pixverse", label: "PixVerse" },
@@ -1885,7 +1885,7 @@ const TOOL_PROVIDER_RUNTIME_CONFIG: Partial<
     seedance: {
       operations: {
         submit: {
-          endpoint: "gpt-proxy/volengine/video/submit",
+          endpoint: "api/v3/contents/generations/tasks",
           parameters: [
             "mode",
             "prompt",
@@ -1896,11 +1896,17 @@ const TOOL_PROVIDER_RUNTIME_CONFIG: Partial<
             "image",
             "firstFrameImage",
             "lastFrameImage",
-            "referenceImages"
+            "referenceImages",
+            "referenceVideos",
+            "referenceAudios",
+            "returnLastFrame",
+            "generateAudio",
+            "frames",
+            "priority"
           ]
         },
         query: {
-          endpoint: "gpt-proxy/volengine/video/task/{task_id}",
+          endpoint: "api/v3/contents/generations/tasks/{task_id}",
           parameters: ["taskId"]
         }
       }
@@ -1988,7 +1994,10 @@ function normalizeToolProviderBaseUrl(toolName: ToolConfigName, provider: ToolCo
   }
 
   if (toolName === "video_gen" && provider === "seedance") {
-    return normalizedBaseUrl.replace(/\/gpt-proxy\/volengine\/video(?:\/(?:submit|task(?:\/[^/]+)?))?\/?$/u, "");
+    return normalizedBaseUrl
+      .replace(/\/gpt-proxy\/volengine\/video(?:\/(?:submit|task(?:\/[^/]+)?))?\/?$/u, "")
+      .replace(/\/api\/v3\/contents\/generations\/tasks(?:\/[^/]+)?\/?$/u, "")
+      .replace(/\/api\/v3\/?$/u, "");
   }
 
   if (toolName === "music_gen" && provider === "suno") {
