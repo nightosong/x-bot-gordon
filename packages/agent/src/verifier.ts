@@ -203,6 +203,58 @@ export function getActiveVerificationCriteria(
   return getPendingSuccessCriteria(criteria).filter((criterion) => isActiveVerificationCriterionType(criterion.type));
 }
 
+function hasCriterionTargetOrExpected(criterion: AgentTaskLedgerSuccessCriterion): boolean {
+  return Boolean(criterion.target?.trim() || criterion.expected.trim());
+}
+
+function hasSuccessfulToolCalls(mcpCalls: AgentMcpCallRecord[]): boolean {
+  return mcpCalls.some((call) => !call.isError);
+}
+
+function hasToolArtifacts(mcpCalls: AgentMcpCallRecord[]): boolean {
+  return mcpCalls.some((call) => !call.isError && Boolean(call.artifacts?.length));
+}
+
+function isActionableActiveVerificationCriterion(
+  criterion: AgentTaskLedgerSuccessCriterion,
+  mcpCalls: AgentMcpCallRecord[]
+): boolean {
+  if (!hasCriterionTargetOrExpected(criterion)) {
+    return false;
+  }
+
+  if (criterion.type === "tool_result") {
+    return false;
+  }
+
+  if ((criterion.type === "artifact_created" || criterion.type === "artifact_exists") && hasToolArtifacts(mcpCalls)) {
+    return false;
+  }
+
+  return [
+    "file_contains",
+    "file_exists",
+    "url_matches",
+    "command_passed",
+    "command_exit_zero",
+    "ui_contains",
+    "json_path_equals"
+  ].includes(criterion.type);
+}
+
+export function shouldPlanActiveVerification(
+  criteria: AgentTaskLedgerSuccessCriterion[],
+  mcpCalls: AgentMcpCallRecord[]
+): boolean {
+  const activeCriteria = getActiveVerificationCriteria(criteria);
+
+  if (!activeCriteria.length || !hasSuccessfulToolCalls(mcpCalls)) {
+    return false;
+  }
+
+  return activeCriteria.some((criterion) => isActionableActiveVerificationCriterion(criterion, mcpCalls));
+}
+
 function buildCriterionArgumentHints(criterion: AgentTaskLedgerSuccessCriterion): string[] {
   const hints: string[] = [];
 

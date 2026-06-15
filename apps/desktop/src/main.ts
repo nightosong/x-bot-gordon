@@ -58,6 +58,7 @@ import {
   upsertToolConfig
 } from "../../../packages/workbench/src/index.js";
 import type {
+  AgentRuntimeGuidance,
   AgentRunProgressEvent,
   ApplicationCoverImageSaveRequest,
   CommandWorkshopMessageExportFormat,
@@ -98,6 +99,7 @@ const appIconFileName = process.platform === "win32" ? "gordon.ico" : "gordon.ic
 const appIconPath = path.join(desktopAssetDir, appIconFileName);
 const modelTextAbortControllers = new Map<string, AbortController>();
 const agentRunAbortControllers = new Map<string, AbortController>();
+const agentRunGuidanceQueues = new Map<string, AgentRuntimeGuidance[]>();
 const MAIN_WINDOW_MIN_WIDTH = 1180;
 const MAIN_WINDOW_MIN_HEIGHT = 760;
 const MODEL_BALANCE_POLL_INTERVAL_MS = 60 * 60 * 1000;
@@ -3181,6 +3183,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("gordon:agent:run", async (event, request) => {
     const grantedWorkspaceRoots = new Set<string>();
     let computerUseGranted = false;
+    const autoGrantPermissions = request?.permissionMode === "auto";
     const progressEventId = typeof request?.progressEventId === "string" && request.progressEventId.trim()
       ? request.progressEventId.trim()
       : "";
@@ -3188,11 +3191,28 @@ app.whenReady().then(async () => {
 
     if (progressEventId) {
       agentRunAbortControllers.set(progressEventId, abortController);
+      agentRunGuidanceQueues.set(progressEventId, []);
     }
 
     try {
       const result = await runAgent(toCloneableIpcValue(request), {
         signal: abortController.signal,
+        consumeRuntimeGuidance: async (lastGuidanceId) => {
+          if (!progressEventId) {
+            return [];
+          }
+
+          const queue = agentRunGuidanceQueues.get(progressEventId) ?? [];
+
+          if (!lastGuidanceId) {
+            return queue.map((item) => toCloneableIpcValue(item) as AgentRuntimeGuidance);
+          }
+
+          const lastIndex = queue.findIndex((item) => item.id === lastGuidanceId);
+          const nextItems = lastIndex >= 0 ? queue.slice(lastIndex + 1) : queue;
+
+          return nextItems.map((item) => toCloneableIpcValue(item) as AgentRuntimeGuidance);
+        },
         onProgress: (payload: AgentRunProgressEvent) => {
           if (!event.sender.isDestroyed()) {
             try {
@@ -3203,6 +3223,11 @@ app.whenReady().then(async () => {
           }
         },
         onWorkspacePermissionRequest: async (permissionRequest) => {
+          if (autoGrantPermissions) {
+            grantedWorkspaceRoots.add(permissionRequest.suggestedRoot);
+            return true;
+          }
+
           if (grantedWorkspaceRoots.has(permissionRequest.suggestedRoot)) {
             return true;
           }
@@ -3229,6 +3254,11 @@ app.whenReady().then(async () => {
           return granted;
         },
         onComputerUsePermissionRequest: async (permissionRequest) => {
+          if (autoGrantPermissions) {
+            computerUseGranted = true;
+            return true;
+          }
+
           if (computerUseGranted) {
             return true;
           }
@@ -3255,6 +3285,10 @@ app.whenReady().then(async () => {
           return granted;
         },
         onToolPermissionRequest: async (permissionRequest) => {
+          if (autoGrantPermissions) {
+            return true;
+          }
+
           const ownerWindow = BrowserWindow.fromWebContents(event.sender);
           return showGordonConfirmWindow(ownerWindow, {
             tone: permissionRequest.sideEffects === "destructive" ? "danger" : "warning",
@@ -3279,8 +3313,27 @@ app.whenReady().then(async () => {
     } finally {
       if (progressEventId) {
         agentRunAbortControllers.delete(progressEventId);
+        agentRunGuidanceQueues.delete(progressEventId);
       }
     }
+  });
+  ipcMain.handle("gordon:agent:add-guidance", async (_event, progressEventId, guidance) => {
+    const normalizedProgressEventId = typeof progressEventId === "string" ? progressEventId.trim() : "";
+    const content = typeof guidance === "string" ? guidance.trim() : "";
+
+    if (!normalizedProgressEventId || !content || !agentRunAbortControllers.has(normalizedProgressEventId)) {
+      return false;
+    }
+
+    const item: AgentRuntimeGuidance = {
+      id: `agent_guidance_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      content,
+      createdAt: new Date().toISOString()
+    };
+    const queue = agentRunGuidanceQueues.get(normalizedProgressEventId) ?? [];
+    agentRunGuidanceQueues.set(normalizedProgressEventId, [...queue, item]);
+
+    return true;
   });
   ipcMain.handle("gordon:agent:cancel-run", async (_event, progressEventId) => {
     const normalizedProgressEventId = typeof progressEventId === "string" ? progressEventId.trim() : "";

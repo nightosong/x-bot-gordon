@@ -6,12 +6,14 @@ import {
   isExternalEvidenceTool
 } from "./external-evidence.js";
 import { stringifyArguments } from "./runtime-utils.js";
+import type { AgentToolRequirementDecision } from "./tool-requirement.js";
 
 export type AgentPlanCriticDecision = "allow" | "revise" | "stop";
 
 export interface AgentPlanCriticInput {
   contextPacket: AgentContextPacket;
   candidateTools: McpToolDefinition[];
+  toolRequirement?: AgentToolRequirementDecision;
   serverId: string | null;
   toolName: string | null;
   arguments: Record<string, unknown>;
@@ -86,6 +88,15 @@ export function critiqueMcpToolPlan(input: AgentPlanCriticInput): AgentPlanCriti
   const issues: string[] = [];
 
   if (!input.shouldCall) {
+    if (input.toolRequirement?.mode === "required" && input.candidateTools.length) {
+      return {
+        decision: "revise",
+        reason: "Runtime 判定当前请求必须调用工具，不能接受无需工具的规划",
+        issues: ["missing_required_tool"],
+        revisionHint: `请选择可见工具完成 ${input.toolRequirement.capability} 需求；原因：${input.toolRequirement.reasons.join("；") || "当前任务依赖外部或本地真实状态"}`
+      };
+    }
+
     const evidenceRequirement = assessExternalEvidenceRequirement(input.contextPacket);
     const hasExternalEvidenceTool = input.candidateTools.some(isExternalEvidenceTool);
 

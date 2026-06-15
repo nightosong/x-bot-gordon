@@ -260,7 +260,7 @@ function shouldAutoEnableCommandTools(input, attachments = [], messages = [], la
   return (
     /(https?:\/\/[^\s)\]}>"'，。；、]+)|\bwww\.[^\s)\]}>"'，。；、]+/iu.test(text) ||
     /(?:有哪些|有什么|列出|查看|显示).*(?:工具|tool|MCP|能力)|(?:工具|tool|MCP|能力).*(?:清单|列表|可用|启用|有哪些|有什么)/iu.test(text) ||
-    /搜索|上网|联网|查一下|查找|调研|资料|来源|引用|官方文档|最新|现在|今天|新闻|价格|版本|GitHub|开源|仓库|repo|repository/iu.test(text) ||
+    /搜索|上网|联网|查(?:一?下|一查|查)?|查找|调研|资料|来源|引用|官方文档|最新|现在|今天|新闻|价格|版本|GitHub|开源|仓库|repo|repository/iu.test(text) ||
     /文件|目录|仓库|代码|README|package\.json|tsconfig|\.ts\b|\.js\b|\.vue\b|\.json\b|检查|读取|打开|搜索|替换|修改|更新|新增|创建|删除|移动|重命名|diff|对比|运行|测试|build|lint|打包/iu.test(text) ||
     /(?:music_gen|video_gen|image_gen)|(?:生成|创作|制作|产出|调用|使用).*(?:图片|图像|海报|图标|logo|生成图|生图|文生图|图生图|视频|音乐|音频|歌曲|曲子|乐曲|配乐|伴奏|BGM|bgm|钢琴曲|笛子音乐|纯音乐)|(?:图片|图像|海报|图标|logo|生成图|生图|文生图|图生图|视频|音乐|音频|歌曲|曲子|乐曲|配乐|伴奏|BGM|bgm|钢琴|笛子|古筝|吉他|小提琴|纯音乐).*(?:生成|创作|制作|产出|调用|使用)/iu.test(text) ||
     /点击|输入|截图|窗口|浏览器|桌面|打开应用|菜单|按钮|复制|粘贴|飞书|Chrome|Safari|Electron/iu.test(text)
@@ -927,7 +927,7 @@ export function createCommandWorkshopActions({
     ui.command.requestQueue = (Array.isArray(ui.command.requestQueue) ? ui.command.requestQueue : []).filter((entry) => entry?.id !== itemId);
   }
 
-  function handleCommandQueueItemGuide(itemId) {
+  async function handleCommandQueueItemGuide(itemId) {
     const queue = Array.isArray(ui.command.requestQueue) ? ui.command.requestQueue : [];
     const item = queue.find((entry) => entry?.id === itemId);
 
@@ -935,8 +935,21 @@ export function createCommandWorkshopActions({
       return;
     }
 
-    const pendingGuidance = createPendingGuidanceFromQueueItem(item);
+    if (ui.command.isRunning) {
+      try {
+        const accepted = await appendCommandGuidanceToActiveRun(item);
 
+        if (accepted) {
+          ui.command.requestQueue = queue.filter((entry) => entry?.id !== itemId);
+          return;
+        }
+      } catch (error) {
+        console.error("Failed to inject command guidance into active run", error);
+        setStatus(`引导注入失败，将在下一轮继续：${getErrorMessage(error)}`, "warning");
+      }
+    }
+
+    const pendingGuidance = createPendingGuidanceFromQueueItem(item);
     ui.command.requestQueue = queue.filter((entry) => entry?.id !== itemId);
     ui.command.pendingGuidanceQueue = [
       ...(Array.isArray(ui.command.pendingGuidanceQueue) ? ui.command.pendingGuidanceQueue : []),
@@ -1021,6 +1034,58 @@ export function createCommandWorkshopActions({
     ui.command.activeSessionId = session.id;
   }
 
+  async function persistCommandWorkshopSessionState(session) {
+    upsertCommandWorkshopSessionState(session);
+
+    if (!desktopApi?.upsertCommandWorkshopSession) {
+      return normalizeCommandWorkshopSessions(workbench.commandSessions);
+    }
+
+    const sessions = await desktopApi.upsertCommandWorkshopSession(toPlainIpcData(normalizeCommandWorkshopSession(session)));
+    workbench.commandSessions = normalizeCommandWorkshopSessions(sessions);
+    ui.command.activeSessionId = session.id;
+    return workbench.commandSessions;
+  }
+
+  async function appendCommandGuidanceToActiveRun(item) {
+    const content = String(item?.content ?? "").trim();
+    const attachments = toPlainIpcData(item?.attachments ?? [], []);
+    const progressEventId = ui.command.activeProgressEventId;
+
+    if (!ui.command.isRunning || !progressEventId || !desktopApi?.addAgentRunGuidance || (!content && !attachments.length)) {
+      return false;
+    }
+
+    const activeSession = toPlainIpcData(activeCommandSession.value, null);
+
+    if (!activeSession?.id) {
+      return false;
+    }
+
+    const createdAt = new Date().toISOString();
+    const guidanceMessage = {
+      id: `command_message_${Date.now()}_guidance`,
+      role: "user",
+      content: content || "请阅读并处理我上传的附件。",
+      createdAt,
+      attachments
+    };
+
+    const accepted = await desktopApi.addAgentRunGuidance(progressEventId, buildCommandUserInputForAgent(content, attachments));
+
+    if (!accepted) {
+      return false;
+    }
+
+    await persistCommandWorkshopSessionState({
+      ...activeSession,
+      messages: [...toPlainIpcData(activeSession.messages ?? [], []), guidanceMessage],
+      updatedAt: createdAt
+    });
+    scrollCommandToBottom();
+    return true;
+  }
+
   function createCommandLocalProcessStep(type, title, detail, createdAt = new Date().toISOString()) {
     return {
       id: `command_local_step_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -1099,6 +1164,7 @@ export function createCommandWorkshopActions({
     const allowAutoTools = ui.command.form.autoSelectMcp;
     const forceApplicationTools = shouldForceCommandApplicationTools(userInput, applicationContext);
     const autoEnableTools = shouldAutoEnableCommandTools(userInput, attachments, baseMessages, latestTaskLedger);
+    const permissionMode = ui.command.form.permissionMode === "auto" ? "auto" : "on_demand";
     const effectiveAutoSelectMcp = shouldUseCommandAutoToolPlanner(
       userInput,
       attachments,
@@ -1178,6 +1244,7 @@ export function createCommandWorkshopActions({
       summary: summarizeCommandWorkshopContent(titleSource),
       agentProfileId: ui.command.form.agentProfileId,
       skillId: ui.command.form.skillId || null,
+      permissionMode,
       autoSelectMcp: allowAutoTools,
       mcpServerId: effectiveMcpServerId || null,
       mcpToolName: effectiveMcpToolName || null,
@@ -1270,6 +1337,7 @@ export function createCommandWorkshopActions({
         userInput: agentUserInput,
         conversationMessages: buildConversationMessagesForAgentRun(conversationBaseMessages),
         ...(latestTaskLedger ? { taskLedger: latestTaskLedger } : {}),
+        permissionMode,
         progressEventId,
         ...(ui.command.form.skillId ? { skillId: ui.command.form.skillId } : {}),
         ...(effectiveAutoSelectMcp ? { autoSelectMcp: true } : {}),
@@ -1296,10 +1364,13 @@ export function createCommandWorkshopActions({
         createdAt: result.createdAt,
         artifact: buildCommandWorkshopArtifact(normalizedResult)
       };
+      const latestSessionState = toPlainIpcData(activeCommandSession.value, pendingSession);
+      const latestMessages = toPlainIpcData(latestSessionState?.messages ?? pendingSession.messages, []);
       const completedSession = {
         ...pendingSession,
+        ...latestSessionState,
         summary: summarizeCommandWorkshopContent(assistantContent),
-        messages: [...pendingSession.messages, assistantMessage],
+        messages: [...latestMessages, assistantMessage],
         updatedAt: result.updatedAt
       };
       const sessions = await desktopApi.upsertCommandWorkshopSession(toPlainIpcData(completedSession));
@@ -1334,10 +1405,13 @@ export function createCommandWorkshopActions({
         createdAt: failedAt,
         ...(ui.command.liveProgress?.artifact ? { artifact: ui.command.liveProgress.artifact } : {})
       };
+      const latestSessionState = toPlainIpcData(activeCommandSession.value, pendingSession);
+      const latestMessages = toPlainIpcData(latestSessionState?.messages ?? pendingSession.messages, []);
       const failedSession = {
         ...pendingSession,
+        ...latestSessionState,
         summary: summarizeCommandWorkshopContent(assistantMessage.content),
-        messages: [...pendingSession.messages, assistantMessage],
+        messages: [...latestMessages, assistantMessage],
         updatedAt: failedAt
       };
 
@@ -1596,7 +1670,8 @@ export function createCommandWorkshopActions({
 
     return {
       label: normalizedToolName || normalizedServerName,
-      detail: [normalizedServerName, normalizedToolName].filter(Boolean).join(" / ")
+      detail: [normalizedServerName, normalizedToolName].filter(Boolean).join(" / "),
+      className: "is-technical"
     };
   }
 
@@ -1941,7 +2016,7 @@ export function createCommandWorkshopActions({
       return null;
     }
 
-    const output = truncateCommandProcessOutput(call.resultText);
+    const output = call.isError ? truncateCommandProcessOutput(call.resultText || call.failureReason) : "";
     const selectedStep = options.selectedStep ?? null;
     const terminalStep = options.terminalStep ?? null;
     const technicalTag = getCommandToolProcessTag(call.serverName, call.toolName);
@@ -1958,7 +2033,7 @@ export function createCommandWorkshopActions({
       detail: getCommandProcessCallDetail(call),
       tags,
       output,
-      outputLabel: call.isError ? "错误输出" : "中间输出",
+      outputLabel: "错误输出",
       createdAt: terminalStep?.createdAt ?? call.createdAt ?? selectedStep?.createdAt ?? "",
       sortIndex: options.sortIndex >= 0 ? options.sortIndex : index
     };
@@ -1996,11 +2071,19 @@ export function createCommandWorkshopActions({
       title: getCommandToolActionTitle(toolName, serverName),
       detail: argumentSummary || (argumentText ? `参数：${truncateCommandProcessText(argumentText, 180)}` : "参数已确定，正在等待工具返回。"),
       tags,
-      output: hasDeniedPermission ? "授权被拒绝，Gordon 会尝试调整路线或停止当前工具调用。" : "工具正在运行，返回后会把中间输出接在这里。",
-      outputLabel: hasDeniedPermission ? "授权状态" : "中间输出",
+      output: hasDeniedPermission ? "授权被拒绝，Gordon 会尝试调整路线或停止当前工具调用。" : "",
+      outputLabel: "授权状态",
       createdAt: selectedStep?.createdAt ?? "",
       sortIndex: steps.indexOf(selectedStep)
     };
+  }
+
+  function isBenignActiveVerificationStop(step) {
+    if (step?.type !== "mcp_auto_stopped") {
+      return false;
+    }
+
+    return /主动验证规划(?:超时|失败)|主动验证规划超过/u.test(`${step.title ?? ""} ${step.detail ?? ""}`);
   }
 
   function normalizeCommandResponseProcessStep(step, index = 0, options = {}) {
@@ -2017,6 +2100,10 @@ export function createCommandWorkshopActions({
     }
 
     if (step.type === "mcp_auto_stopped") {
+      if (isBenignActiveVerificationStop(step)) {
+        return null;
+      }
+
       const hasFailure = /失败|停止|重复|最大/u.test(`${step.title ?? ""} ${step.detail ?? ""}`);
 
       if (!hasFailure && !options.hasToolCalls) {
@@ -2331,13 +2418,17 @@ export function createCommandWorkshopActions({
       return {
         ...item,
         marker: `${toolStepIndex}`,
-        label: `${item.label} · 步骤 ${toolStepIndex}`
+        label: item.label
       };
     });
   }
 
   function isCommandOperationalProcessStep(step) {
     if (step?.type === "mcp_auto_stopped") {
+      if (isBenignActiveVerificationStop(step)) {
+        return false;
+      }
+
       return /超时|失败|停止|重复|最大/u.test(`${step.title ?? ""} ${step.detail ?? ""}`);
     }
 

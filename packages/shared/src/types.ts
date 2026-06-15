@@ -670,17 +670,26 @@ export interface AgentProfile {
   updatedAt: string;
 }
 
+export type AgentPermissionMode = "on_demand" | "auto";
+
 export interface AgentRunRequest {
   agentProfileId: string;
   userInput: string;
   conversationMessages?: ModelMessage[];
   taskLedger?: AgentTaskLedger | null;
+  permissionMode?: AgentPermissionMode;
   skillId?: string;
   autoSelectMcp?: boolean;
   mcpServerId?: string;
   mcpToolName?: string;
   mcpArguments?: Record<string, unknown>;
   progressEventId?: string;
+}
+
+export interface AgentRuntimeGuidance {
+  id: string;
+  content: string;
+  createdAt: string;
 }
 
 export interface AgentRunStep {

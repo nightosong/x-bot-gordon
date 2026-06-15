@@ -30,6 +30,20 @@ const DOCUMENTATION_HINTS = [
   "models",
   "sdk"
 ];
+const OFFICIAL_FAST_PATHS = [
+  {
+    pattern:
+      /(?:anthropic|claude)[^。！？\n]{0,120}(?:model|models|pricing|price|cost|模型|价格|定价|费用|fable|mythos|opus|sonnet|haiku|release|发布)|(?:model|models|pricing|price|cost|模型|价格|定价|费用|fable|mythos|opus|sonnet|haiku|release|发布)[^。！？\n]{0,120}(?:anthropic|claude)/iu,
+    urls: [
+      "https://platform.claude.com/docs/en/about-claude/models/overview",
+      "https://platform.claude.com/docs/en/about-claude/pricing",
+      "https://support.claude.com/en/articles/12138966-release-notes",
+      "https://www.anthropic.com/news/claude-fable-5-mythos-5",
+      "https://www.anthropic.com/news/fable-mythos-access",
+      "https://www.anthropic.com/news/claude-opus-4-8"
+    ]
+  }
+];
 
 function send(payload) {
   process.stdout.write(`${JSON.stringify(payload)}\n`);
@@ -985,6 +999,21 @@ function buildDomainQueryVariants(query, options = {}) {
   return uniqueStrings(variants);
 }
 
+function extractSiteDomainsFromQuery(query) {
+  const domains = [];
+  const pattern = /\bsite:([^\s]+)/giu;
+  let match;
+
+  while ((match = pattern.exec(String(query || "")))) {
+    const domain = normalizeDomainFilters([match[1]])[0];
+    if (domain) {
+      domains.push(domain);
+    }
+  }
+
+  return uniqueStrings(domains);
+}
+
 function countPreferredDomainResults(results, options = {}) {
   const preferredDomains = uniqueStrings([
     ...normalizeDomainFilters(options.includeDomains),
@@ -1044,7 +1073,10 @@ function scoreSearchResult(result, options = {}) {
 }
 
 function dedupeAndRankResults(results, options = {}) {
-  const includeDomains = normalizeDomainFilters(options.includeDomains);
+  const includeDomains = uniqueStrings([
+    ...normalizeDomainFilters(options.includeDomains),
+    ...extractSiteDomainsFromQuery(options.query)
+  ]);
   const excludeDomains = normalizeDomainFilters(options.excludeDomains);
   const seenUrls = new Set();
   const output = [];
@@ -1079,7 +1111,10 @@ async function searchSingleQueryAcrossProviders(argumentsObject, defaultLimit = 
   }
 
   const options = {
-    includeDomains: normalizeDomainFilters(argumentsObject?.includeDomains),
+    includeDomains: uniqueStrings([
+      ...normalizeDomainFilters(argumentsObject?.includeDomains),
+      ...extractSiteDomainsFromQuery(query)
+    ]),
     excludeDomains: normalizeDomainFilters(argumentsObject?.excludeDomains),
     preferredDomains: normalizeDomainFilters(argumentsObject?.preferredDomains),
     timeRange: getString(argumentsObject?.timeRange),
@@ -1160,7 +1195,10 @@ async function searchAcrossProviders(argumentsObject, defaultLimit = SEARCH_LIMI
   }
 
   const rankedResults = dedupeAndRankResults(combinedResults, {
-    includeDomains: argumentsObject?.includeDomains,
+    includeDomains: uniqueStrings([
+      ...normalizeDomainFilters(argumentsObject?.includeDomains),
+      ...extractSiteDomainsFromQuery(query)
+    ]),
     excludeDomains: argumentsObject?.excludeDomains,
     preferredDomains: argumentsObject?.preferredDomains,
     query
@@ -1337,6 +1375,84 @@ function buildResearchQueries(argumentsObject) {
   return uniqueStrings([baseQuery, ...userQueries]).slice(0, 6);
 }
 
+function buildOfficialFastPathUrls(argumentsObject = {}) {
+  const text = [
+    getString(argumentsObject?.query),
+    ...toStringArray(argumentsObject?.queries),
+    ...normalizeDomainFilters(argumentsObject?.includeDomains),
+    ...normalizeDomainFilters(argumentsObject?.preferredDomains)
+  ].join(" ");
+  const includeDomains = normalizeDomainFilters(argumentsObject?.includeDomains);
+  const excludeDomains = normalizeDomainFilters(argumentsObject?.excludeDomains);
+  const urls = [...toStringArray(argumentsObject?.officialUrls)];
+
+  for (const entry of OFFICIAL_FAST_PATHS) {
+    if (!entry.pattern.test(text)) {
+      continue;
+    }
+
+    urls.push(...entry.urls);
+  }
+
+  return uniqueStrings(urls).filter((url) => resultMatchesDomainFilters(url, includeDomains, excludeDomains));
+}
+
+async function readOfficialFastPathPages(argumentsObject = {}, pageMaxChars = PAGE_TEXT_MAX_CHARS, pageLimit = RESEARCH_PAGE_LIMIT) {
+  const urls = buildOfficialFastPathUrls(argumentsObject).slice(0, pageLimit);
+  const results = await Promise.allSettled(
+    urls.map(async (url) => {
+      const page = await readPageForResearch(url, pageMaxChars);
+      return {
+        ...page,
+        sourceTitle: page.title,
+        sourceSnippet: "Pinned official source selected before broad search",
+        searchProvider: "official-fast-path",
+        searchScore: 99
+      };
+    })
+  );
+  const pages = [];
+  const errors = [];
+
+  for (const [index, result] of results.entries()) {
+    const url = urls[index];
+    if (result.status === "fulfilled") {
+      pages.push(result.value);
+      continue;
+    }
+
+    const reason = result.reason;
+    errors.push(`${url}: ${reason instanceof Error ? reason.message : String(reason)}`);
+  }
+
+  return {
+    pages,
+    errors,
+    urls
+  };
+}
+
+function buildFastPathRankedResults(pages, query) {
+  return pages
+    .map((page) =>
+      normalizeSearchResult(
+        {
+          title: page.title || page.url,
+          url: page.url,
+          snippet: page.description || page.sourceSnippet || "Pinned official source",
+          publishedAt: ""
+        },
+        "official-fast-path",
+        query
+      )
+    )
+    .filter(Boolean)
+    .map((result) => ({
+      ...result,
+      score: 99
+    }));
+}
+
 function scoreDiscoveredLink(link, argumentsObject = {}) {
   const url = String(link?.url || "").toLowerCase();
   const text = String(link?.text || "").toLowerCase();
@@ -1404,35 +1520,51 @@ async function webResearch(argumentsObject) {
   const combinedResults = [];
   const searchedProviders = new Set();
   const executedQueries = new Set();
+  const fastPath = pageLimit > 0
+    ? await readOfficialFastPathPages(argumentsObject, pageMaxChars, pageLimit)
+    : { pages: [], errors: [], urls: [] };
+  const pinnedUrls = new Set(fastPath.pages.map((page) => canonicalizeUrl(page.url).replace(/\/$/u, "")));
+  const shouldRunBroadSearch = fastPath.pages.length < Math.min(2, pageLimit || 2);
 
-  for (const currentQuery of queries) {
-    const searchResult = await searchAcrossProviders(
-      {
-        ...argumentsObject,
-        query: currentQuery,
-        queries: [],
-        provider,
-        limit: searchLimit
-      },
-      searchLimit
-    );
-    searchErrors.push(...searchResult.errors);
-    searchResult.attemptedProviders.forEach((item) => searchedProviders.add(item));
-    searchResult.queries?.forEach((item) => executedQueries.add(item));
-    combinedResults.push(...searchResult.results);
+  if (shouldRunBroadSearch) {
+    for (const currentQuery of queries) {
+      const searchResult = await searchAcrossProviders(
+        {
+          ...argumentsObject,
+          query: currentQuery,
+          queries: [],
+          provider,
+          limit: searchLimit
+        },
+        searchLimit
+      );
+      searchErrors.push(...searchResult.errors);
+      searchResult.attemptedProviders.forEach((item) => searchedProviders.add(item));
+      searchResult.queries?.forEach((item) => executedQueries.add(item));
+      combinedResults.push(...searchResult.results);
+    }
+  } else {
+    executedQueries.add(query);
+    searchedProviders.add("official-fast-path");
   }
 
-  const rankedResults = dedupeAndRankResults(combinedResults, {
-    includeDomains: argumentsObject?.includeDomains,
-    excludeDomains: argumentsObject?.excludeDomains,
-    preferredDomains: argumentsObject?.preferredDomains,
-    query
-  }).slice(0, searchLimit);
-  const pages = [];
-  const pageErrors = [];
-  const sourceQueue = [...rankedResults];
+  const rankedResults = [
+    ...buildFastPathRankedResults(fastPath.pages, query),
+    ...dedupeAndRankResults(combinedResults, {
+      includeDomains: uniqueStrings([
+        ...normalizeDomainFilters(argumentsObject?.includeDomains),
+        ...extractSiteDomainsFromQuery(query)
+      ]),
+      excludeDomains: argumentsObject?.excludeDomains,
+      preferredDomains: argumentsObject?.preferredDomains,
+      query
+    }).filter((result) => !pinnedUrls.has(canonicalizeUrl(result.url).replace(/\/$/u, "")))
+  ].slice(0, searchLimit);
+  const pages = [...fastPath.pages];
+  const pageErrors = [...fastPath.errors];
+  const sourceQueue = rankedResults.filter((result) => !pinnedUrls.has(canonicalizeUrl(result.url).replace(/\/$/u, "")));
   const queuedUrls = new Set(sourceQueue.map((result) => result.url));
-  const visitedUrls = new Set();
+  const visitedUrls = new Set(pinnedUrls);
 
   for (let sourceIndex = 0; sourceIndex < sourceQueue.length && pages.length < pageLimit; sourceIndex += 1) {
     const result = sourceQueue[sourceIndex];
@@ -1468,6 +1600,18 @@ async function webResearch(argumentsObject) {
     "",
     "ranked sources:",
     formatSearchResultList(rankedResults),
+    fastPath.pages.length ? "" : "",
+    fastPath.pages.length ? "pinned official sources:" : "",
+    ...fastPath.pages.map((page, index) =>
+      [
+        `${index + 1}. ${page.title || page.url}`,
+        page.url,
+        page.description ? `description: ${page.description}` : "",
+        `source=official-fast-path / domain=${page.domain}`
+      ]
+        .filter(Boolean)
+        .join("\n")
+    ),
     pages.length ? "" : "",
     pages.length ? "page excerpts:" : "",
     ...pages.map((page, index) =>
@@ -1495,6 +1639,13 @@ async function webResearch(argumentsObject) {
     provider,
     attemptedProviders: Array.from(searchedProviders),
     rankedSources: rankedResults,
+    pinnedSources: fastPath.pages.map((page) => ({
+      title: page.title,
+      url: page.url,
+      domain: page.domain,
+      description: page.description,
+      provider: "official-fast-path"
+    })),
     pages,
     errors: {
       search: uniqueSearchErrors,
@@ -1652,6 +1803,7 @@ function getTools() {
           includeDomains: { type: "array", items: { type: "string" }, description: "只保留这些域名下的结果" },
           excludeDomains: { type: "array", items: { type: "string" }, description: "排除这些域名" },
           preferredDomains: { type: "array", items: { type: "string" }, description: "提高这些域名的排序权重，如官方域名" },
+          officialUrls: { type: "array", items: { type: "string" }, description: "优先直接读取的官方来源 URL，会在泛搜索前作为 pinned sources 返回" },
           language: { type: "string", description: "语言偏好，例如 zh-CN 或 en" },
           country: { type: "string", description: "国家/地区偏好，例如 CN 或 US" }
         }

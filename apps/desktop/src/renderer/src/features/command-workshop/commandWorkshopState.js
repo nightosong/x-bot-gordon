@@ -2,6 +2,7 @@ export function createCommandDraft(agentProfileId = "") {
   return {
     agentProfileId,
     skillId: "",
+    permissionMode: "auto",
     autoSelectMcp: true,
     mcpServerId: "",
     mcpToolName: "",
