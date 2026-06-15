@@ -81,6 +81,7 @@ const MAX_COMMAND_ARGUMENT_ARRAY_ITEMS = 12;
 const MAX_COMMAND_ARGUMENT_OBJECT_KEYS = 24;
 const MAX_COMMAND_PROCESS_OUTPUT_LENGTH = 900;
 const MAX_COMMAND_PROCESS_DETAIL_LENGTH = 260;
+const MAX_COMMAND_QUEUE_ITEM_SUMMARY_LENGTH = 34;
 const COMMAND_LIVE_ACTIVITY_STEP_TYPES = new Set([
   "run_received",
   "context_prepared",
@@ -488,6 +489,13 @@ export function createCommandWorkshopActions({
   });
 
   const commandChatTitle = computed(() => truncateText(activeCommandSession.value?.title ?? "开始一轮协作", 10) || "开始一轮协作");
+  const pendingCommandGuidanceMessages = computed(() => {
+    const messageIds = new Set((activeCommandSession.value?.messages ?? []).map((message) => message?.id).filter(Boolean));
+
+    return (Array.isArray(ui.command.pendingGuidanceQueue) ? ui.command.pendingGuidanceQueue : [])
+      .map((item) => item?.message)
+      .filter((message) => message?.id && !messageIds.has(message.id));
+  });
 
   const commandSettingsSummary = computed(() => {
     const selectedAgent = getAgentById(ui.command.form.agentProfileId);
@@ -532,8 +540,9 @@ export function createCommandWorkshopActions({
     ui.command.form = normalizeCommandWorkshopConfig(ui.command.form);
     ui.command.draftInput = "";
     ui.command.attachments = [];
-    ui.command.queuedInput = "";
-    ui.command.queuedAttachments = [];
+    ui.command.requestQueue = [];
+    ui.command.pendingGuidanceQueue = [];
+    ui.command.queuedRunDraft = null;
     ui.command.availableMcpTools = [];
     ui.command.liveProgress = null;
     focusCommandInput();
@@ -560,8 +569,9 @@ export function createCommandWorkshopActions({
     ui.command.availableMcpTools = [];
     ui.command.draftInput = "";
     ui.command.attachments = [];
-    ui.command.queuedInput = "";
-    ui.command.queuedAttachments = [];
+    ui.command.requestQueue = [];
+    ui.command.pendingGuidanceQueue = [];
+    ui.command.queuedRunDraft = null;
     ui.command.liveProgress = null;
     scrollCommandToBottom();
   }
@@ -724,7 +734,7 @@ export function createCommandWorkshopActions({
       return;
     }
 
-    if (!commandSelectedAgent.value || ui.command.isRunning) {
+    if (!commandSelectedAgent.value) {
       return;
     }
 
@@ -755,7 +765,7 @@ export function createCommandWorkshopActions({
     const progressEventId = ui.command.activeProgressEventId;
 
     if (!desktopApi?.cancelAgentRun || !progressEventId || !ui.command.isRunning) {
-      return;
+      return false;
     }
 
     ui.command.cancelRequested = true;
@@ -767,35 +777,198 @@ export function createCommandWorkshopActions({
       if (!cancelled) {
         setStatus("当前运行已进入收尾阶段，正在等待结束。", "warning");
       }
+
+      return Boolean(cancelled);
     } catch (error) {
       console.error("Failed to cancel command workshop run", error);
       setStatus(`停止失败：${getErrorMessage(error)}`, "danger");
+      return false;
     }
+  }
+
+  function createCommandQueueItem(input, attachments = []) {
+    const content = String(input ?? "").trim();
+    const queuedAttachments = toPlainIpcData(attachments ?? [], []);
+
+    return {
+      id: `command_queue_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      content,
+      attachments: queuedAttachments,
+      createdAt: new Date().toISOString()
+    };
+  }
+
+  function getCommandQueueItemTitle(item) {
+    const content = String(item?.content ?? "").trim();
+
+    if (content) {
+      return content;
+    }
+
+    const attachments = Array.isArray(item?.attachments) ? item.attachments : [];
+
+    if (attachments.length) {
+      return attachments.map((attachment) => attachment?.name).filter(Boolean).join("、") || "附件请求";
+    }
+
+    return "空请求";
+  }
+
+  function getCommandQueueItemSummary(item) {
+    const title = getCommandQueueItemTitle(item).replace(/\s+/gu, " ").trim();
+
+    if (title.length <= MAX_COMMAND_QUEUE_ITEM_SUMMARY_LENGTH) {
+      return title;
+    }
+
+    return `${title.slice(0, MAX_COMMAND_QUEUE_ITEM_SUMMARY_LENGTH)}...`;
+  }
+
+  function hasCommandDraftContent() {
+    return Boolean(String(ui.command.draftInput ?? "").trim() || toPlainIpcData(ui.command.attachments ?? [], []).length);
   }
 
   function queueCommandGuidance(input, attachments = []) {
-    ui.command.queuedInput = String(input ?? "").trim();
-    ui.command.queuedAttachments = toPlainIpcData(attachments ?? [], []);
+    const item = createCommandQueueItem(input, attachments);
+    ui.command.requestQueue = [...(Array.isArray(ui.command.requestQueue) ? ui.command.requestQueue : []), item];
     ui.command.draftInput = "";
     ui.command.attachments = [];
+    return item;
   }
 
-  function runQueuedCommandGuidanceIfNeeded() {
-    const queuedInput = String(ui.command.queuedInput ?? "").trim();
-    const queuedAttachments = toPlainIpcData(ui.command.queuedAttachments ?? [], []);
+  function createPendingGuidanceFromQueueItem(item) {
+    const content = String(item?.content ?? "").trim();
+    const attachments = toPlainIpcData(item?.attachments ?? [], []);
+    const createdAt = new Date().toISOString();
+    const messageId = `command_message_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-    if (!queuedInput && !queuedAttachments.length) {
+    return {
+      id: `command_guidance_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      content,
+      attachments,
+      createdAt,
+      message: {
+        id: messageId,
+        role: "user",
+        content: content || "请阅读并处理我上传的附件。",
+        createdAt,
+        attachments
+      }
+    };
+  }
+
+  function normalizeQueuedRunDraft(item, source = "queue") {
+    return {
+      id: item?.id ?? `command_queued_run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      source,
+      content: String(item?.content ?? "").trim(),
+      attachments: toPlainIpcData(item?.attachments ?? [], []),
+      createdAt: item?.message?.createdAt ?? item?.createdAt ?? new Date().toISOString(),
+      messageId: item?.message?.id ?? null,
+      pendingGuidanceId: source === "guidance" ? item?.id ?? null : null
+    };
+  }
+
+  function activateQueuedCommandGuidance(item, source = "queue") {
+    if (!item) {
       return false;
     }
 
-    ui.command.queuedInput = "";
-    ui.command.queuedAttachments = [];
-    ui.command.draftInput = queuedInput;
-    ui.command.attachments = queuedAttachments;
+    ui.command.queuedRunDraft = normalizeQueuedRunDraft(item, source);
     runOnNextTick(() => {
       void handleCommandSubmit();
     });
-    return true;
+    return source;
+  }
+
+  function runQueuedCommandGuidanceIfNeeded() {
+    if (ui.command.queuedRunDraft) {
+      return false;
+    }
+
+    const pendingGuidanceQueue = Array.isArray(ui.command.pendingGuidanceQueue) ? ui.command.pendingGuidanceQueue : [];
+    const nextGuidance = pendingGuidanceQueue.find(
+      (item) => String(item?.content ?? "").trim() || toPlainIpcData(item?.attachments ?? [], []).length
+    );
+
+    if (nextGuidance) {
+      return activateQueuedCommandGuidance(nextGuidance, "guidance");
+    }
+
+    ui.command.pendingGuidanceQueue = [];
+
+    const queue = Array.isArray(ui.command.requestQueue) ? ui.command.requestQueue : [];
+    const nextItem = queue.find((item) => String(item?.content ?? "").trim() || toPlainIpcData(item?.attachments ?? [], []).length);
+
+    if (!nextItem) {
+      ui.command.requestQueue = [];
+      return false;
+    }
+
+    ui.command.requestQueue = queue.filter((item) => item?.id !== nextItem.id);
+    return activateQueuedCommandGuidance(nextItem, "queue");
+  }
+
+  function handleCommandQueueItemEdit(itemId) {
+    const queue = Array.isArray(ui.command.requestQueue) ? ui.command.requestQueue : [];
+    const item = queue.find((entry) => entry?.id === itemId);
+
+    if (!item) {
+      return;
+    }
+
+    ui.command.requestQueue = queue.filter((entry) => entry?.id !== itemId);
+    ui.command.draftInput = String(item.content ?? "").trim();
+    ui.command.attachments = toPlainIpcData(item.attachments ?? [], []);
+    focusCommandInput();
+  }
+
+  function handleCommandQueueItemDelete(itemId) {
+    ui.command.requestQueue = (Array.isArray(ui.command.requestQueue) ? ui.command.requestQueue : []).filter((entry) => entry?.id !== itemId);
+  }
+
+  function handleCommandQueueItemGuide(itemId) {
+    const queue = Array.isArray(ui.command.requestQueue) ? ui.command.requestQueue : [];
+    const item = queue.find((entry) => entry?.id === itemId);
+
+    if (!item) {
+      return;
+    }
+
+    const pendingGuidance = createPendingGuidanceFromQueueItem(item);
+
+    ui.command.requestQueue = queue.filter((entry) => entry?.id !== itemId);
+    ui.command.pendingGuidanceQueue = [
+      ...(Array.isArray(ui.command.pendingGuidanceQueue) ? ui.command.pendingGuidanceQueue : []),
+      pendingGuidance
+    ];
+    scrollCommandToBottom();
+
+    if (!ui.command.isRunning) {
+      runQueuedCommandGuidanceIfNeeded();
+    }
+  }
+
+  function recoverQueuedRunDraft() {
+    const draft = ui.command.queuedRunDraft;
+
+    if (!draft) {
+      return;
+    }
+
+    if (draft.source === "queue" && (String(draft.content ?? "").trim() || toPlainIpcData(draft.attachments ?? [], []).length)) {
+      ui.command.requestQueue = [
+        {
+          id: draft.id,
+          content: draft.content,
+          attachments: toPlainIpcData(draft.attachments ?? [], []),
+          createdAt: draft.createdAt ?? new Date().toISOString()
+        },
+        ...(Array.isArray(ui.command.requestQueue) ? ui.command.requestQueue : [])
+      ];
+    }
+
+    ui.command.queuedRunDraft = null;
   }
 
   function handleAgentRunProgress(payload) {
@@ -895,22 +1068,26 @@ export function createCommandWorkshopActions({
   async function handleCommandSubmit() {
     if (!desktopApi) {
       setStatus("桌面桥接未就绪，暂无法执行命令工坊会话。", "danger");
+      recoverQueuedRunDraft();
       return;
     }
 
+    const queuedRunDraft = ui.command.queuedRunDraft;
+    const isQueuedRun = Boolean(queuedRunDraft);
     const agent = getAgentById(ui.command.form.agentProfileId);
-    const userInput = ui.command.draftInput.trim();
-    const attachments = toPlainIpcData(ui.command.attachments ?? [], []);
+    const userInput = isQueuedRun ? String(queuedRunDraft?.content ?? "").trim() : ui.command.draftInput.trim();
+    const attachments = isQueuedRun
+      ? toPlainIpcData(queuedRunDraft?.attachments ?? [], [])
+      : toPlainIpcData(ui.command.attachments ?? [], []);
 
-    if (ui.command.isRunning) {
+    if (ui.command.isRunning && !isQueuedRun) {
       if (!userInput && !attachments.length) {
-        setStatus("当前任务仍在运行；输入新的引导后可中断并接着执行。", "warning");
+        setStatus("当前任务仍在运行；输入内容后可加入请求队列。", "warning");
         return;
       }
 
-      queueCommandGuidance(userInput, attachments);
-      setStatus("已收到新的引导，正在停止当前运行并准备接着执行。", "warning");
-      await handleCommandRunCancel();
+      const queuedItem = queueCommandGuidance(userInput, attachments);
+      setStatus(`已加入请求队列：${getCommandQueueItemSummary(queuedItem)}`, "success");
       return;
     }
 
@@ -936,21 +1113,25 @@ export function createCommandWorkshopActions({
 
     if (!agent) {
       setStatus("请先选择一个可用 Agent。", "warning");
+      recoverQueuedRunDraft();
       return;
     }
 
     if (!userInput && !attachments.length) {
       setStatus("先输入一条任务，或上传一个附件，再让 Gordon 开始工作。", "warning");
+      recoverQueuedRunDraft();
       return;
     }
 
     if (effectiveMcpToolName && !effectiveMcpServerId) {
       setStatus("如果要指定工具，请先选择工具服务。", "warning");
+      recoverQueuedRunDraft();
       return;
     }
 
     if (effectiveMcpServerId && !effectiveMcpToolName && !effectiveAutoSelectMcp) {
       setStatus("已选择工具服务，请再选择具体工具，或开启自动工具。", "warning");
+      recoverQueuedRunDraft();
       return;
     }
 
@@ -959,11 +1140,13 @@ export function createCommandWorkshopActions({
         mcpArguments = JSON.parse(ui.command.form.mcpArgumentsText);
       } catch (error) {
         setStatus(`工具参数 JSON 解析失败：${getErrorMessage(error)}`, "danger");
+        recoverQueuedRunDraft();
         return;
       }
 
       if (!mcpArguments || typeof mcpArguments !== "object" || Array.isArray(mcpArguments)) {
         setStatus("工具参数必须是一个 JSON 对象。", "danger");
+        recoverQueuedRunDraft();
         return;
       }
     }
@@ -971,13 +1154,23 @@ export function createCommandWorkshopActions({
     const sessionId = activeSession?.id ?? `command_session_${Date.now()}`;
     const startedAt = new Date().toISOString();
     const progressEventId = `command_progress_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const existingQueuedRunMessage = queuedRunDraft?.messageId
+      ? (Array.isArray(ui.command.pendingGuidanceQueue) ? ui.command.pendingGuidanceQueue : [])
+          .map((item) => item?.message)
+          .find((message) => message?.id === queuedRunDraft.messageId)
+      : null;
     const userMessage = {
-      id: `command_message_${Date.now()}`,
+      id: existingQueuedRunMessage?.id ?? `command_message_${Date.now()}`,
       role: "user",
-      content: userInput || "请阅读并处理我上传的附件。",
-      createdAt: startedAt,
-      attachments
+      content: (existingQueuedRunMessage?.content ?? userInput) || "请阅读并处理我上传的附件。",
+      createdAt: existingQueuedRunMessage?.createdAt ?? startedAt,
+      attachments: existingQueuedRunMessage?.attachments ?? attachments
     };
+    const existingUserMessageId = userMessage.id;
+    const normalizedBaseMessages = baseMessages.filter((message) => message?.id !== existingUserMessageId);
+    const conversationBaseMessages = queuedRunDraft?.messageId
+      ? normalizedBaseMessages
+      : baseMessages;
     const titleSource = userInput || attachments.map((attachment) => attachment.name).join("、");
     const pendingSession = {
       id: sessionId,
@@ -989,12 +1182,18 @@ export function createCommandWorkshopActions({
       mcpServerId: effectiveMcpServerId || null,
       mcpToolName: effectiveMcpToolName || null,
       mcpArgumentsText: ui.command.form.mcpArgumentsText,
-      messages: [...baseMessages, userMessage],
+      messages: [...normalizedBaseMessages, userMessage],
       createdAt: activeSession?.createdAt ?? startedAt,
       updatedAt: startedAt
     };
 
     upsertCommandWorkshopSessionState(pendingSession);
+    if (queuedRunDraft?.pendingGuidanceId) {
+      ui.command.pendingGuidanceQueue = (Array.isArray(ui.command.pendingGuidanceQueue) ? ui.command.pendingGuidanceQueue : []).filter(
+        (item) => item?.id !== queuedRunDraft.pendingGuidanceId
+      );
+    }
+    ui.command.queuedRunDraft = null;
     ui.command.isRunning = true;
     ui.command.cancelRequested = false;
     ui.command.isInputComposing = false;
@@ -1045,8 +1244,10 @@ export function createCommandWorkshopActions({
       })
     };
     ui.command.view = "chat";
-    ui.command.draftInput = "";
-    ui.command.attachments = [];
+    if (!isQueuedRun) {
+      ui.command.draftInput = "";
+      ui.command.attachments = [];
+    }
     scrollCommandToBottom();
 
     try {
@@ -1067,7 +1268,7 @@ export function createCommandWorkshopActions({
       const runRequest = toPlainIpcData({
         agentProfileId: agent.id,
         userInput: agentUserInput,
-        conversationMessages: buildConversationMessagesForAgentRun(baseMessages),
+        conversationMessages: buildConversationMessagesForAgentRun(conversationBaseMessages),
         ...(latestTaskLedger ? { taskLedger: latestTaskLedger } : {}),
         progressEventId,
         ...(ui.command.form.skillId ? { skillId: ui.command.form.skillId } : {}),
@@ -1109,13 +1310,14 @@ export function createCommandWorkshopActions({
       ui.command.isRunning = false;
       ui.command.cancelRequested = false;
       ui.command.activeProgressEventId = null;
+      ui.command.queuedRunDraft = null;
       ui.command.liveProgress = null;
       if (typeof refreshWorkbenchSnapshot === "function" && didAgentMutateWorkbenchResources(result)) {
         await refreshWorkbenchSnapshot();
       }
       setStatus(`命令工坊已完成本轮响应（${result.profileLabel}）。`, "success");
-      if (runQueuedCommandGuidanceIfNeeded()) {
-        setStatus("正在按新的引导继续执行。", "neutral");
+      if (runQueuedCommandGuidanceIfNeeded() === "queue") {
+        setStatus("正在按队列继续执行。", "neutral");
       }
       scrollCommandToBottom();
     } catch (error) {
@@ -1151,10 +1353,11 @@ export function createCommandWorkshopActions({
       ui.command.isRunning = false;
       ui.command.cancelRequested = false;
       ui.command.activeProgressEventId = null;
+      ui.command.queuedRunDraft = null;
       ui.command.liveProgress = null;
       setStatus(wasCancelled ? "命令工坊已停止，本轮部分输出已保留。" : `命令工坊运行失败：${getErrorMessage(error)}`, wasCancelled ? "warning" : "danger");
-      if (runQueuedCommandGuidanceIfNeeded()) {
-        setStatus("正在按新的引导继续执行。", "neutral");
+      if (runQueuedCommandGuidanceIfNeeded() === "queue") {
+        setStatus("正在按队列继续执行。", "neutral");
       }
 
       if (!wasCancelled) {
@@ -2374,6 +2577,7 @@ export function createCommandWorkshopActions({
     getCommandLiveActivityItem,
     getCommandResponseProcessItems,
     getCommandLiveStatusText,
+    getCommandQueueItemSummary,
     getCommandWorkshopModeLabel,
     getCommandWorkshopToolModeLabel,
     handleAgentRunProgress,
@@ -2385,6 +2589,9 @@ export function createCommandWorkshopActions({
     handleCommandLoadMcpTools,
     handleCommandMessageCopy,
     handleCommandMessageExport,
+    handleCommandQueueItemDelete,
+    handleCommandQueueItemEdit,
+    handleCommandQueueItemGuide,
     handleCommandRunCancel,
     handleCommandServerChange,
     handleCommandSessionDelete,
@@ -2394,6 +2601,8 @@ export function createCommandWorkshopActions({
     normalizeCommandWorkshopSessions,
     openCommandSession,
     openCommandWorkspace,
+    hasCommandDraftContent,
+    pendingCommandGuidanceMessages,
     removeCommandAttachment,
     scrollCommandToBottom,
     upsertCommandWorkshopSessionState

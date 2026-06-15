@@ -17723,6 +17723,89 @@ canvas {
   position: relative;
 }
 
+.command-request-queue {
+  position: absolute;
+  right: 12px;
+  bottom: calc(100% + 8px);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  width: min(520px, calc(100% - 24px));
+  max-height: 132px;
+  overflow: auto;
+  pointer-events: none;
+}
+
+.command-request-queue-item {
+  display: grid;
+  grid-template-columns: minmax(86px, 1fr) auto auto auto auto;
+  align-items: center;
+  gap: 6px;
+  width: min(100%, 520px);
+  min-height: 32px;
+  padding: 4px 5px 4px 10px;
+  border: 1px solid rgba(92, 225, 194, 0.22);
+  border-radius: 999px;
+  background: rgba(12, 22, 34, 0.96);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.22);
+  color: rgba(247, 243, 235, 0.84);
+  pointer-events: auto;
+}
+
+.command-request-queue-copy {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.command-request-queue-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(245, 200, 107, 0.14);
+  color: var(--accent-warm);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.command-request-queue-guide {
+  min-height: 24px;
+  padding: 0 9px;
+  border: 1px solid rgba(92, 225, 194, 0.28);
+  border-radius: 999px;
+  background: rgba(92, 225, 194, 0.12);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.command-request-queue-guide:disabled,
+.command-request-queue-icon:disabled {
+  cursor: progress;
+  opacity: 0.72;
+}
+
+.command-request-queue-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border-color: rgba(151, 182, 216, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.command-request-queue-icon.is-danger {
+  color: var(--accent-hot);
+  border-color: rgba(236, 111, 92, 0.22);
+  background: rgba(236, 111, 92, 0.08);
+}
+
 .command-attachment-tray {
   position: absolute;
   left: 12px;
@@ -17823,9 +17906,72 @@ canvas {
 }
 
 .command-input-submit.is-running {
-  border-color: rgba(236, 111, 92, 0.38);
-  background: rgba(236, 111, 92, 0.14);
-  color: var(--danger);
+  overflow: visible;
+  border-color: rgba(255, 210, 134, 0.72);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 50% 50%, #fff7df 0 39%, rgba(236, 111, 92, 0.42) 41% 60%, rgba(236, 111, 92, 0.16) 61% 100%),
+    linear-gradient(135deg, rgba(245, 200, 107, 0.38), rgba(236, 111, 92, 0.22)),
+    rgba(236, 111, 92, 0.18);
+  color: #05080d;
+  box-shadow:
+    0 0 0 1px rgba(5, 8, 13, 0.32) inset,
+    0 0 0 5px rgba(245, 200, 107, 0.1),
+    0 0 0 10px rgba(236, 111, 92, 0.08),
+    0 0 34px rgba(236, 111, 92, 0.5),
+    0 0 20px rgba(245, 200, 107, 0.28);
+  animation: command-stop-button-breathe 1.08s ease-in-out infinite;
+}
+
+.command-input-submit.is-running::before,
+.command-input-submit.is-running::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.command-input-submit.is-running::before {
+  inset: -9px;
+  border: 1px solid rgba(245, 200, 107, 0.58);
+  box-shadow: 0 0 28px rgba(236, 111, 92, 0.34);
+  animation: command-stop-button-ring 1.08s ease-out infinite;
+}
+
+.command-input-submit.is-running::after {
+  inset: -5px;
+  background: conic-gradient(from 0deg, transparent 0 58%, rgba(255, 243, 196, 0.92) 64%, rgba(236, 111, 92, 0.76) 72%, transparent 84% 100%);
+  opacity: 0.86;
+  -webkit-mask: radial-gradient(circle, transparent 0 55%, #000 58% 73%, transparent 76%);
+  mask: radial-gradient(circle, transparent 0 55%, #000 58% 73%, transparent 76%);
+  animation: command-stop-button-sweep 1.22s linear infinite;
+}
+
+.command-input-submit.is-running .action-icon {
+  position: relative;
+  z-index: 1;
+  width: 15px;
+  height: 15px;
+  color: #05080d;
+  fill: currentColor;
+  stroke: currentColor;
+  filter: drop-shadow(0 1px 2px rgba(5, 8, 13, 0.28));
+}
+
+.command-input-submit.is-running:hover:not(:disabled),
+.command-input-submit.is-running:focus-visible:not(:disabled) {
+  border-color: rgba(255, 231, 169, 0.92);
+  background:
+    radial-gradient(circle at 50% 50%, #fffbe9 0 40%, rgba(236, 111, 92, 0.5) 42% 62%, rgba(245, 200, 107, 0.2) 63% 100%),
+    linear-gradient(135deg, rgba(245, 200, 107, 0.5), rgba(236, 111, 92, 0.3)),
+    rgba(236, 111, 92, 0.2);
+  box-shadow:
+    0 0 0 1px rgba(5, 8, 13, 0.36) inset,
+    0 0 0 6px rgba(245, 200, 107, 0.14),
+    0 0 0 12px rgba(236, 111, 92, 0.1),
+    0 0 44px rgba(236, 111, 92, 0.62),
+    0 0 30px rgba(245, 200, 107, 0.34);
 }
 
 .command-input-submit.is-cancelling {
@@ -17834,6 +17980,50 @@ canvas {
 
 .command-input-submit.is-running:disabled {
   opacity: 0.86;
+}
+
+.command-input-submit.is-running.is-cancelling {
+  animation-duration: 0.82s;
+}
+
+@keyframes command-stop-button-breathe {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(236, 111, 92, 0.22) inset,
+      0 0 0 5px rgba(245, 200, 107, 0.08),
+      0 0 0 9px rgba(236, 111, 92, 0.07),
+      0 0 24px rgba(236, 111, 92, 0.32);
+    transform: translateY(0) scale(1);
+  }
+
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(236, 111, 92, 0.34) inset,
+      0 0 0 8px rgba(245, 200, 107, 0.14),
+      0 0 0 14px rgba(236, 111, 92, 0.12),
+      0 0 42px rgba(236, 111, 92, 0.58),
+      0 0 28px rgba(245, 200, 107, 0.28);
+    transform: translateY(-1px) scale(1.055);
+  }
+}
+
+@keyframes command-stop-button-ring {
+  0% {
+    opacity: 0.88;
+    transform: scale(0.82);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.42);
+  }
+}
+
+@keyframes command-stop-button-sweep {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes model-balance-spin {

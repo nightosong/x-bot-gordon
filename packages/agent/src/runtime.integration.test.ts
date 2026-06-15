@@ -416,6 +416,108 @@ function createFakeDirectGenerationModelServer(capturedRequests: CapturedRequest
   });
 }
 
+function createFakeExternalEvidenceModelServer(capturedRequests: CapturedRequest[]): Server {
+  let plannerCalls = 0;
+
+  return createServer(async (request, response) => {
+    if (request.method !== "POST") {
+      response.writeHead(404);
+      response.end();
+      return;
+    }
+
+    const body = await readRequestBody(request);
+    capturedRequests.push({
+      url: request.url ?? "",
+      body
+    });
+
+    const systemMessage = getSystemMessage(body);
+    let content = "已基于 Search Tools 返回的官网来源整理 Claude 价格。";
+
+    if (systemMessage.includes("资源任务规划器")) {
+      plannerCalls += 1;
+      content =
+        plannerCalls === 1
+          ? JSON.stringify({
+              shouldCall: false,
+              serverId: null,
+              toolName: null,
+              arguments: {},
+              reason: "我可以基于已有知识回答 Anthropic Claude 价格。",
+              expectedOutcome: "",
+              verificationMethod: "",
+              ledgerPatch: {
+                objective: "确认 Anthropic Claude 最新官方价格",
+                taskPhase: "planning",
+                decisionTrace: [
+                  {
+                    step: "尝试直接回答价格",
+                    intent: "快速响应用户价格问题",
+                    chosenAction: "text_response",
+                    rejectedAlternatives: ["Search Tools / web_research"],
+                    why: "模型已有相关记忆",
+                    expectedOutcome: "生成价格概览"
+                  }
+                ],
+                nextActionHint: "直接整理回复"
+              }
+            })
+          : JSON.stringify({
+              shouldCall: true,
+              serverId: "test:mcp:search-tools",
+              toolName: "web_research",
+              arguments: {
+                query: "Anthropic Claude latest official API pricing",
+                preferredDomains: ["anthropic.com", "docs.anthropic.com"],
+                provider: "auto",
+                maxSearchResults: 10,
+                maxPagesToRead: 4
+              },
+              reason: "用户询问最新官方价格，需要调用 Search Tools 获取官网证据。",
+              expectedOutcome: "返回 Anthropic 官方价格页面或文档来源",
+              verificationMethod: "检查工具结果包含 Anthropic 官方链接和 pricing 相关正文",
+              ledgerPatch: {
+                objective: "确认 Anthropic Claude 最新官方价格",
+                taskPhase: "executing",
+                pendingSubtasks: ["检索 Anthropic 官方 pricing 来源"],
+                activePlan: [
+                  {
+                    step: "联网检索 Anthropic 官方价格",
+                    toolHint: "Search Tools / web_research",
+                    successCriteria: "返回官方来源证据",
+                    status: "in_progress"
+                  }
+                ],
+                structuredSuccessCriteria: [
+                  {
+                    type: "tool_result",
+                    target: "web_research",
+                    expected: "外部来源证据",
+                    verificationMethod: "检查工具结果包含官方链接或正文",
+                    status: "pending"
+                  }
+                ]
+              }
+            });
+    }
+
+    sendJson(response, {
+      id: 1,
+      object: "chat.completion",
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content
+          }
+        }
+      ],
+      model: "fake-external-evidence"
+    });
+  });
+}
+
 function createSlowPlannerModelServer(capturedRequests: CapturedRequest[]): Server {
   return createServer(async (request, response) => {
     if (request.method !== "POST") {
@@ -465,6 +567,41 @@ function createSlowPlannerModelServer(capturedRequests: CapturedRequest[]): Serv
 }
 
 function buildToolDefinitions(pathname: string): unknown[] {
+  if (pathname.includes("search")) {
+    return [
+      {
+        name: "web_research",
+        description: "复合联网研究，执行搜索、读取落地页正文并返回证据包，适合最新事实、官方文档和带来源结论。",
+        inputSchema: {
+          type: "object",
+          required: ["query"],
+          properties: {
+            query: { type: "string" },
+            queries: { type: "array", items: { type: "string" } },
+            provider: { type: "string" },
+            maxSearchResults: { type: "integer" },
+            maxPagesToRead: { type: "integer" },
+            preferredDomains: { type: "array", items: { type: "string" } }
+          }
+        }
+      },
+      {
+        name: "web_search_v2",
+        description: "高质量联网搜索，返回去重、评分后的标题、链接、摘要和结构化来源。",
+        inputSchema: {
+          type: "object",
+          required: ["query"],
+          properties: {
+            query: { type: "string" },
+            provider: { type: "string" },
+            limit: { type: "integer" },
+            preferredDomains: { type: "array", items: { type: "string" } }
+          }
+        }
+      }
+    ];
+  }
+
   if (pathname.includes("computer")) {
     return [
       {
@@ -651,6 +788,8 @@ function createFakeMcpServer(capturedRequests: CapturedRequest[]): Server {
               type: "text",
               text: pathname.includes("computer")
                 ? "activeApp=Google Chrome\nvisibleText=Chrome Ready"
+                : pathname.includes("search") && toolName === "web_research"
+                  ? "source=https://docs.anthropic.com/en/docs/about-claude/pricing\nsummary=Anthropic official pricing page returned Claude API price evidence"
                 : pathname.includes("application") && toolName === "comic_update_project_fields"
                   ? "applied=true\nproject=寂寞青梅\nsummary includes 刀梦 小梅\nvisualStyle=古风武侠彩绘分镜\nepisodePlan=24 页首章规划"
                   : pathname.includes("generation") && toolName === "video_gen"
@@ -663,6 +802,18 @@ function createFakeMcpServer(capturedRequests: CapturedRequest[]): Server {
                 activeApp: "Google Chrome",
                 visibleText: ["Chrome Ready"]
               }
+            : pathname.includes("search") && toolName === "web_research"
+              ? {
+                  query: "Anthropic Claude latest official API pricing",
+                  sources: [
+                    {
+                      title: "Anthropic Claude pricing",
+                      url: "https://docs.anthropic.com/en/docs/about-claude/pricing",
+                      domain: "docs.anthropic.com",
+                      snippet: "Official Claude API pricing evidence"
+                    }
+                  ]
+                }
             : pathname.includes("application") && toolName === "comic_update_project_fields"
               ? {
                   applied: true,
@@ -908,6 +1059,91 @@ test("runAgent directly routes explicit generation requests without planner late
       watermark: false
     });
     assert.equal(log.mcpCalls?.[0]?.artifacts?.[0]?.url, "https://example.test/cat-dance.mp4");
+  } finally {
+    process.env.GORDON_HOME = previousHome;
+    process.env.GORDON_DATA_ROOT = previousDataRoot;
+    await Promise.allSettled([closeServer(modelServer), closeServer(mcpServer)]);
+    await rm(tempHome, { recursive: true, force: true });
+  }
+});
+
+test("runAgent forces external evidence tools for latest official pricing questions", async () => {
+  const previousHome = process.env.GORDON_HOME;
+  const previousDataRoot = process.env.GORDON_DATA_ROOT;
+  const tempHome = await mkdtemp(path.join(tmpdir(), "gordon-agent-runtime-external-evidence-"));
+  const modelRequests: CapturedRequest[] = [];
+  const mcpRequests: CapturedRequest[] = [];
+  const modelServer = createFakeExternalEvidenceModelServer(modelRequests);
+  const mcpServer = createFakeMcpServer(mcpRequests);
+
+  try {
+    const [modelBaseUrl, mcpBaseUrl] = await Promise.all([listen(modelServer), listen(mcpServer)]);
+    process.env.GORDON_HOME = tempHome;
+    process.env.GORDON_DATA_ROOT = path.join(tempHome, "data");
+
+    const timestamp = "2026-06-01T00:00:00.000Z";
+    const modelProfile: ModelProfile = {
+      id: "test:model:fake-external-evidence",
+      provider: "openai_like",
+      displayName: "Fake External Evidence Model",
+      model: "fake-external-evidence",
+      apiKey: "test-key",
+      baseUrl: modelBaseUrl,
+      apiFormat: "chat_completions",
+      supportsStreaming: false,
+      updatedAt: timestamp
+    };
+    const searchToolsServer: McpServerConfig = {
+      id: "test:mcp:search-tools",
+      name: "Search Tools",
+      description: "Search and research the public web",
+      transport: "http",
+      url: `${mcpBaseUrl}/search`,
+      env: {},
+      toolAllowlist: [],
+      enabled: true,
+      updatedAt: timestamp
+    };
+    const agentProfile: AgentProfile = {
+      id: "test:agent:external-evidence",
+      name: "External Evidence Test Agent",
+      description: "Integration test agent",
+      mode: "chat",
+      modelProfileId: modelProfile.id,
+      systemPrompt: "Use tools for current official pricing and cite evidence.",
+      allowedSkillIds: [],
+      allowedMcpServerIds: [searchToolsServer.id],
+      enabled: true,
+      updatedAt: timestamp
+    };
+
+    await saveModelSettings({
+      profiles: [modelProfile],
+      activeProfileId: modelProfile.id
+    });
+    await upsertMcpServer(searchToolsServer);
+    await upsertAgentProfile(agentProfile);
+
+    const log = await runAgent({
+      agentProfileId: agentProfile.id,
+      userInput: "帮我联网查一下 Anthropic Claude 最新官方 API 价格，带上来源",
+      autoSelectMcp: true
+    });
+    const plannerRequests = modelRequests.filter((request) => getSystemMessage(request.body).includes("资源任务规划器"));
+    const searchToolCallRequest = mcpRequests.find((request) => request.url.includes("/search") && request.body.method === "tools/call");
+    const searchToolParams = searchToolCallRequest?.body.params as { arguments?: Record<string, unknown>; name?: string } | undefined;
+
+    assert.equal(plannerRequests.length, 1);
+    assert.ok(log.steps.some((step) => step.title.includes("已补充外部证据工具")));
+    assert.equal(log.autoSelectedMcp, true);
+    assert.equal(log.mcpCalls?.[0]?.serverId, "test:mcp:search-tools");
+    assert.equal(log.mcpCalls?.[0]?.toolName, "web_research");
+    assert.equal(log.mcpCalls?.[0]?.isError, false);
+    assert.equal(searchToolParams?.name, "web_research");
+    assert.match(String(searchToolParams?.arguments?.query ?? ""), /Anthropic Claude/u);
+    assert.deepEqual(searchToolParams?.arguments?.preferredDomains, ["anthropic.com", "docs.anthropic.com"]);
+    assert.match(log.mcpResultText ?? "", /docs\.anthropic\.com/u);
+    assert.match(log.text, /Search Tools|官网|来源|pricing|价格/u);
   } finally {
     process.env.GORDON_HOME = previousHome;
     process.env.GORDON_DATA_ROOT = previousDataRoot;

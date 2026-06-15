@@ -187,6 +187,7 @@
               :workbench="workbench"
               :active-command-session="activeCommandSession"
               :active-command-messages="activeCommandMessages"
+              :pending-command-guidance-messages="pendingCommandGuidanceMessages"
               :command-chat-title="commandChatTitle"
               :command-settings-summary="commandSettingsSummary"
               :enabled-agent-profiles="enabledAgentProfiles"
@@ -200,6 +201,7 @@
               :get-command-live-activity-item="getCommandLiveActivityItem"
               :get-command-response-process-items="getCommandResponseProcessItems"
               :get-command-live-status-text="getCommandLiveStatusText"
+              :get-command-queue-item-summary="getCommandQueueItemSummary"
               :get-skill-option-label="getSkillOptionLabel"
               :handle-command-agent-change="handleCommandAgentChange"
               :handle-command-attachment-select="handleCommandAttachmentSelect"
@@ -209,10 +211,14 @@
               :handle-command-load-mcp-tools="handleCommandLoadMcpTools"
               :handle-command-message-copy="handleCommandMessageCopy"
               :handle-command-message-export="handleCommandMessageExport"
+              :handle-command-queue-item-delete="handleCommandQueueItemDelete"
+              :handle-command-queue-item-edit="handleCommandQueueItemEdit"
+              :handle-command-queue-item-guide="handleCommandQueueItemGuide"
               :handle-command-run-cancel="handleCommandRunCancel"
               :handle-command-server-change="handleCommandServerChange"
               :handle-command-session-delete="handleCommandSessionDelete"
               :handle-command-submit="handleCommandSubmit"
+              :has-command-draft-content="hasCommandDraftContent"
               :handle-rich-text-click="handleRichTextClick"
               :open-command-session="openCommandSession"
               :remove-command-attachment="removeCommandAttachment"
@@ -968,6 +974,7 @@ const {
   getCommandLiveActivityItem,
   getCommandResponseProcessItems,
   getCommandLiveStatusText,
+  getCommandQueueItemSummary,
   handleAgentRunProgress,
   handleCommandAgentChange,
   handleCommandAttachmentSelect,
@@ -977,13 +984,18 @@ const {
   handleCommandLoadMcpTools,
   handleCommandMessageCopy,
   handleCommandMessageExport,
+  handleCommandQueueItemDelete,
+  handleCommandQueueItemEdit,
+  handleCommandQueueItemGuide,
   handleCommandRunCancel,
   handleCommandServerChange,
   handleCommandSessionDelete,
   handleCommandSubmit,
+  hasCommandDraftContent,
   normalizeCommandWorkshopConfig,
   normalizeCommandWorkshopSessions,
   openCommandSession,
+  pendingCommandGuidanceMessages,
   removeCommandAttachment,
   scrollCommandToBottom
 } = createCommandWorkshopActions({

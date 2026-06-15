@@ -279,6 +279,35 @@ test("critiqueMcpToolPlan allows high-risk recovery tools so executor can reques
   assert.deepEqual(result.issues, []);
 });
 
+test("critiqueMcpToolPlan requires external evidence for current official pricing questions", () => {
+  const result = critiqueMcpToolPlan({
+    contextPacket: createContextPacket({
+      goal: {
+        latestUserRequest: "帮我联网查一下 Anthropic Claude 最新官方 API 价格",
+        objective: "确认 Anthropic Claude 最新官网价格",
+        taskPhase: "planning"
+      }
+    }),
+    candidateTools: [
+      createTool({
+        serverId: "builtin:mcp:search-tools",
+        serverName: "Search Tools",
+        name: "web_research",
+        description: "复合联网研究，适合最新事实、官方文档和带来源结论。"
+      })
+    ],
+    serverId: null,
+    toolName: null,
+    arguments: {},
+    reason: "可以基于已有知识回答",
+    shouldCall: false
+  });
+
+  assert.equal(result.decision, "revise");
+  assert.ok(result.issues.includes("missing_required_external_evidence"));
+  assert.match(result.revisionHint ?? "", /web_research/u);
+});
+
 test("critiqueMcpToolPlan stops invalid tool selections", () => {
   const result = critiqueMcpToolPlan({
     contextPacket: createContextPacket(),

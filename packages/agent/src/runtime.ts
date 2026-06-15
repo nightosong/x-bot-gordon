@@ -34,6 +34,10 @@ import type { AgentContextPacket } from "./context-packet.js";
 import { buildCapabilityRoutingContext, buildPlannerVisibleTools } from "./capability-router.js";
 import { classifyMcpError, classifyMcpMessage } from "./failure-classifier.js";
 import { critiqueMcpToolPlan } from "./plan-critic.js";
+import {
+  buildMissingExternalEvidenceFinalInstruction,
+  selectExternalEvidenceTool
+} from "./external-evidence.js";
 import { createEvidenceNodeFromVerificationEvaluation } from "./evidence-graph.js";
 import {
   appendEvidenceGraph,
@@ -3076,6 +3080,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
 
     for (let round = 1; round <= MAX_AUTO_MCP_ROUNDS && candidateTools.length; round += 1) {
       let plannedSelection;
+      let usedExternalEvidenceFallback = false;
       const directGenerationPlan = round === 1 ? buildDirectGenerationToolPlan(candidateTools, userInput) : null;
 
       if (directGenerationPlan) {
@@ -3154,13 +3159,14 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
       taskLedger = mergeAgentTaskLedgerPatch(taskLedger, plannedSelection.ledgerPatch, contextualUserInput);
       emitProgress({ taskLedger });
 
-      const critiqueResult = critiqueMcpToolPlan({
-        contextPacket: buildAgentContextPacket({
-          userInput,
-          conversationMessages,
-          taskLedger,
-          mcpCalls
-        }),
+      const critiqueContextPacket = buildAgentContextPacket({
+        userInput,
+        conversationMessages,
+        taskLedger,
+        mcpCalls
+      });
+      let critiqueResult = critiqueMcpToolPlan({
+        contextPacket: critiqueContextPacket,
         candidateTools,
         serverId: plannedSelection.serverId,
         toolName: plannedSelection.toolName,
@@ -3170,6 +3176,92 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
         reason: plannedSelection.reason,
         shouldCall: plannedSelection.shouldCall
       });
+
+      if (
+        critiqueResult.decision === "revise" &&
+        critiqueResult.issues.includes("missing_required_external_evidence") &&
+        (!plannedSelection.shouldCall || !plannedSelection.serverId || !plannedSelection.toolName)
+      ) {
+        const evidenceRouting = buildCapabilityRoutingContext(critiqueContextPacket, candidateTools);
+        const visibleEvidenceTools = buildPlannerVisibleTools(candidateTools, evidenceRouting.groups);
+        const externalEvidencePlan = selectExternalEvidenceTool(critiqueContextPacket, visibleEvidenceTools);
+
+        if (externalEvidencePlan) {
+          const externalEvidenceLedgerPatch: AgentTaskLedgerPatch = {
+            taskPhase: "executing",
+            constraints: [
+              ...taskLedger.constraints,
+              "涉及最新事实、官网价格、官方资料或来源引用时，必须先获得成功的外部证据工具结果"
+            ],
+            pendingSubtasks: [...taskLedger.pendingSubtasks, "获取外部来源证据后再回答"],
+            activePlan: [
+              ...taskLedger.activePlan,
+              {
+                step: "检索并读取外部来源证据",
+                toolHint: `${externalEvidencePlan.tool.serverName} / ${externalEvidencePlan.tool.name}`,
+                successCriteria: "工具返回来源、链接、搜索结果或页面正文",
+                status: "in_progress"
+              }
+            ],
+            decisionTrace: [
+              ...taskLedger.decisionTrace,
+              {
+                step: `Runtime 外部证据兜底第 ${round} 轮`,
+                intent: "阻止需要联网查证的问题在无证据时直接回答",
+                chosenAction: `${externalEvidencePlan.tool.serverId} / ${externalEvidencePlan.tool.name}`,
+                rejectedAlternatives: ["text_response"],
+                why: critiqueResult.reason,
+                expectedOutcome: externalEvidencePlan.expectedOutcome
+              }
+            ],
+            structuredSuccessCriteria: [
+              ...taskLedger.structuredSuccessCriteria,
+              {
+                type: "tool_result",
+                target: externalEvidencePlan.tool.name,
+                expected: "外部来源证据",
+                verificationMethod: externalEvidencePlan.verificationMethod,
+                status: "pending"
+              }
+            ],
+            nextActionHint: "先执行外部证据工具，再基于真实工具结果回答"
+          };
+          plannedSelection = {
+            shouldCall: true,
+            serverId: externalEvidencePlan.tool.serverId,
+            toolName: externalEvidencePlan.tool.name,
+            arguments: externalEvidencePlan.arguments,
+            reason: externalEvidencePlan.reason,
+            expectedOutcome: externalEvidencePlan.expectedOutcome,
+            verificationMethod: externalEvidencePlan.verificationMethod,
+            ledgerPatch: externalEvidenceLedgerPatch
+          };
+          usedExternalEvidenceFallback = true;
+          pushStep(
+            "mcp_auto_planning",
+            `已补充外部证据工具（第 ${round} 轮）`,
+            `${critiqueResult.reason}；${externalEvidencePlan.reason}`
+          );
+          taskLedger = mergeAgentTaskLedgerPatch(taskLedger, plannedSelection.ledgerPatch, contextualUserInput);
+          emitProgress({ taskLedger });
+          critiqueResult = critiqueMcpToolPlan({
+            contextPacket: buildAgentContextPacket({
+              userInput,
+              conversationMessages,
+              taskLedger,
+              mcpCalls
+            }),
+            candidateTools,
+            serverId: plannedSelection.serverId,
+            toolName: plannedSelection.toolName,
+            arguments: plannedSelection.arguments,
+            expectedOutcome: plannedSelection.expectedOutcome,
+            verificationMethod: plannedSelection.verificationMethod,
+            reason: plannedSelection.reason,
+            shouldCall: plannedSelection.shouldCall
+          });
+        }
+      }
 
       if (critiqueResult.decision !== "allow") {
         consecutiveCriticRevisions += 1;
@@ -3287,6 +3379,26 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
       actualMcpArguments = callRecord.arguments;
       await updateLedgerFromToolCall(callRecord);
       emitProgress();
+
+      if (usedExternalEvidenceFallback && !callRecord.isError) {
+        taskLedger = normalizeAgentTaskLedger(
+          {
+            ...taskLedger,
+            taskPhase: "verifying",
+            completedSubtasks: [...taskLedger.completedSubtasks, `${callRecord.toolName} 已返回外部来源证据`],
+            pendingSubtasks: taskLedger.pendingSubtasks.filter((item) => !item.includes("外部来源证据")),
+            nextActionHint: "已有外部证据工具结果，直接进入成功条件验证和最终回复"
+          },
+          contextualUserInput
+        );
+        pushStep(
+          "mcp_auto_stopped",
+          `外部证据已返回（第 ${round} 轮）`,
+          `${callRecord.toolName} 已返回搜索/来源结果，本轮不再继续通用工具规划。`
+        );
+        emitProgress({ taskLedger });
+        break;
+      }
 
       if (directGenerationPlan && isGenerationToolCallComplete(callRecord)) {
         taskLedger = normalizeAgentTaskLedger(
@@ -3618,6 +3730,12 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
     );
   }
 
+  const finalContextPacket = buildCurrentContextPacket();
+  const missingExternalEvidenceInstruction = buildMissingExternalEvidenceFinalInstruction(finalContextPacket, mcpCalls);
+  const finalContextPacketText = `${buildAgentContextPacketText(finalContextPacket)}${
+    missingExternalEvidenceInstruction ? `\n\n${missingExternalEvidenceInstruction}` : ""
+  }`;
+
   const response = skillFinalOutput
     ? {
         text: skillResultText ?? "",
@@ -3640,7 +3758,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
             },
             ...buildUserMessages(
               buildFinalContextResultText(
-                buildCurrentContextPacketText(),
+                finalContextPacketText,
                 mcpResultText ?? "",
                 mcpCalls.length > 0,
                 plannerToolViewSummary

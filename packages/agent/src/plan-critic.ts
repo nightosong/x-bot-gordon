@@ -1,5 +1,10 @@
 import type { McpToolDefinition } from "../../shared/src/index.js";
 import type { AgentContextPacket } from "./context-packet.js";
+import {
+  assessExternalEvidenceRequirement,
+  hasSuccessfulExternalEvidenceInContext,
+  isExternalEvidenceTool
+} from "./external-evidence.js";
 import { stringifyArguments } from "./runtime-utils.js";
 
 export type AgentPlanCriticDecision = "allow" | "revise" | "stop";
@@ -81,6 +86,19 @@ export function critiqueMcpToolPlan(input: AgentPlanCriticInput): AgentPlanCriti
   const issues: string[] = [];
 
   if (!input.shouldCall) {
+    const evidenceRequirement = assessExternalEvidenceRequirement(input.contextPacket);
+    const hasExternalEvidenceTool = input.candidateTools.some(isExternalEvidenceTool);
+
+    if (evidenceRequirement.required && hasExternalEvidenceTool && !hasSuccessfulExternalEvidenceInContext(input.contextPacket)) {
+      return {
+        decision: "revise",
+        reason: "当前请求需要外部证据，不能接受无需工具的规划",
+        issues: ["missing_required_external_evidence"],
+        revisionHint:
+          "请选择 web_research、web_search_v2、read_web_page 或 github_search_repositories 等搜索/来源读取工具，先获取来源证据；没有成功工具结果前不要基于记忆回答最新事实、官网价格或官方结论"
+      };
+    }
+
     return {
       decision: "allow",
       reason: "Planner 判断无需调用工具",

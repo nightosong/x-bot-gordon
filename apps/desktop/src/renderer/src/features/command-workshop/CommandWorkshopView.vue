@@ -348,6 +348,35 @@
                   <span class="command-message-time">{{ ui.command.liveProgress?.updatedAt ? formatLocalDateTime(ui.command.liveProgress.updatedAt) : "处理中" }}</span>
                 </div>
               </article>
+
+              <article
+                v-for="message in pendingCommandGuidanceMessages"
+                :key="message.id"
+                class="command-message is-user"
+              >
+                <div
+                  v-if="message.content"
+                  class="command-message-body command-rich-text"
+                  v-html="renderRichText(message.content)"
+                  @click="handleRichTextClick"
+                ></div>
+
+                <div v-if="message.attachments?.length" class="command-message-attachments">
+                  <span
+                    v-for="attachment in message.attachments"
+                    :key="attachment.id"
+                    class="command-message-attachment"
+                    :class="{ 'is-error': attachment.readStatus === 'error' }"
+                    :title="getCommandAttachmentTitle(attachment)"
+                  >
+                    {{ attachment.name }}
+                  </span>
+                </div>
+
+                <div class="command-message-foot">
+                  <span class="command-message-time">{{ formatLocalDateTime(message.createdAt) }}</span>
+                </div>
+              </article>
             </div>
           </div>
 
@@ -435,6 +464,44 @@
 
             <div v-else class="command-input-shell command-input-shell-plain">
               <div class="command-input-frame">
+                <div v-if="ui.command.requestQueue?.length" class="command-request-queue" aria-label="请求队列">
+                  <article
+                    v-for="item in ui.command.requestQueue"
+                    :key="item.id"
+                    class="command-request-queue-item"
+                    :title="item.content || item.attachments?.map((attachment) => attachment.name).join('、') || '附件请求'"
+                  >
+                    <span class="command-request-queue-copy">{{ getCommandQueueItemSummary(item) }}</span>
+                    <span v-if="item.attachments?.length" class="command-request-queue-count">+{{ item.attachments.length }}</span>
+                    <button
+                      type="button"
+                      class="command-request-queue-guide"
+                      title="发送为下一轮引导"
+                      @click="handleCommandQueueItemGuide(item.id)"
+                    >
+                      引导
+                    </button>
+                    <button
+                      type="button"
+                      class="model-icon-button command-request-queue-icon"
+                      aria-label="编辑队列请求"
+                      title="编辑"
+                      @click="handleCommandQueueItemEdit(item.id)"
+                    >
+                      <GIcon name="edit" :size="13" />
+                    </button>
+                    <button
+                      type="button"
+                      class="model-icon-button command-request-queue-icon is-danger"
+                      aria-label="删除队列请求"
+                      title="删除"
+                      @click="handleCommandQueueItemDelete(item.id)"
+                    >
+                      <GIcon name="delete" :size="13" />
+                    </button>
+                  </article>
+                </div>
+
                 <div v-if="ui.command.attachments.length" class="command-attachment-tray">
                   <span
                     v-for="attachment in ui.command.attachments"
@@ -460,7 +527,7 @@
                   ref="commandInputRef"
                   v-model="ui.command.draftInput"
                   class="field-textarea command-input"
-                  :placeholder="commandSelectedAgent ? (ui.command.isRunning ? '输入新的引导，Enter 会停止当前轮并继续执行。' : '直接告诉 Gordon 你要完成什么工作，Enter 发送，Shift + Enter 换行。') : '先在能力拓展里启用一个 Agent，Gordon 才能开始工作。'"
+                  :placeholder="commandSelectedAgent ? (ui.command.isRunning ? '继续输入请求，Enter 加入队列。' : '直接告诉 Gordon 你要完成什么工作，Enter 发送，Shift + Enter 换行。') : '先在能力拓展里启用一个 Agent，Gordon 才能开始工作。'"
                   :disabled="!commandSelectedAgent"
                   autofocus
                   @compositionstart="handleCommandInputCompositionStart"
@@ -481,7 +548,7 @@
                 <button
                   type="button"
                   class="model-icon-button command-input-attach"
-                  :disabled="!commandSelectedAgent || ui.command.isRunning"
+                  :disabled="!commandSelectedAgent"
                   aria-label="上传附件"
                   title="上传附件"
                   @click="handleCommandAttachmentSelect"
@@ -490,7 +557,7 @@
                 </button>
 
                 <button
-                  v-if="ui.command.isRunning"
+                  v-if="ui.command.isRunning && !hasCommandDraftContent()"
                   type="button"
                   class="model-icon-button command-input-submit is-running"
                   :class="{ 'is-cancelling': ui.command.cancelRequested }"
@@ -586,6 +653,7 @@ const props = defineProps({
   workbench: { type: Object, required: true },
   activeCommandSession: { type: Object, default: null },
   activeCommandMessages: { type: Array, default: () => [] },
+  pendingCommandGuidanceMessages: { type: Array, default: () => [] },
   commandChatTitle: { type: String, default: "开始一轮协作" },
   commandSettingsSummary: { type: String, default: "" },
   enabledAgentProfiles: { type: Array, default: () => [] },
@@ -599,7 +667,9 @@ const props = defineProps({
   getCommandLiveActivityItem: { type: Function, required: true },
   getCommandResponseProcessItems: { type: Function, required: true },
   getCommandLiveStatusText: { type: Function, required: true },
+  getCommandQueueItemSummary: { type: Function, required: true },
   getSkillOptionLabel: { type: Function, required: true },
+  hasCommandDraftContent: { type: Function, required: true },
   handleCommandAgentChange: { type: Function, required: true },
   handleCommandAttachmentSelect: { type: Function, required: true },
   handleCommandInputCompositionEnd: { type: Function, required: true },
@@ -608,6 +678,9 @@ const props = defineProps({
   handleCommandLoadMcpTools: { type: Function, required: true },
   handleCommandMessageCopy: { type: Function, required: true },
   handleCommandMessageExport: { type: Function, required: true },
+  handleCommandQueueItemDelete: { type: Function, required: true },
+  handleCommandQueueItemEdit: { type: Function, required: true },
+  handleCommandQueueItemGuide: { type: Function, required: true },
   handleCommandRunCancel: { type: Function, required: true },
   handleCommandServerChange: { type: Function, required: true },
   handleCommandSessionDelete: { type: Function, required: true },

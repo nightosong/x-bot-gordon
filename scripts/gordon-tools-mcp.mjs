@@ -16,11 +16,17 @@ const OPENAI_IMAGE_QUALITY_VALUES = new Set(["low", "medium", "high"]);
 const DEFAULT_FETCH_TIMEOUT_MS = 120_000;
 const DEFAULT_IMAGE_GEN_TIMEOUT_MS = 300_000;
 const DEFAULT_MEDIA_SUBMIT_TIMEOUT_MS = 30_000;
+const MAX_VIDEO_POLL_TIMEOUT_MS = 1_800_000;
+const MAX_VIDEO_POLL_ATTEMPTS = 360;
 const FETCH_TIMEOUT_MS = readTimeoutMsFromEnv("GORDON_TOOLS_FETCH_TIMEOUT_MS", DEFAULT_FETCH_TIMEOUT_MS);
 const IMAGE_GEN_TIMEOUT_MS = readTimeoutMsFromEnv("GORDON_IMAGE_GEN_TIMEOUT_MS", DEFAULT_IMAGE_GEN_TIMEOUT_MS);
 const VIDEO_GEN_TIMEOUT_MS = readTimeoutMsFromEnv("GORDON_VIDEO_GEN_TIMEOUT_MS", DEFAULT_MEDIA_SUBMIT_TIMEOUT_MS);
 const VIDEO_QUERY_TIMEOUT_MS = readTimeoutMsFromEnv("GORDON_VIDEO_GEN_QUERY_TIMEOUT_MS", 12_000);
-const DEFAULT_VIDEO_POLL_TIMEOUT_MS = readTimeoutMsFromEnv("GORDON_VIDEO_GEN_POLL_TIMEOUT_MS", 70_000);
+const DEFAULT_VIDEO_POLL_TIMEOUT_MS = readTimeoutMsFromEnv(
+  "GORDON_VIDEO_GEN_POLL_TIMEOUT_MS",
+  MAX_VIDEO_POLL_TIMEOUT_MS,
+  MAX_VIDEO_POLL_TIMEOUT_MS
+);
 const MUSIC_GEN_TIMEOUT_MS = readTimeoutMsFromEnv("GORDON_MUSIC_GEN_TIMEOUT_MS", DEFAULT_MEDIA_SUBMIT_TIMEOUT_MS);
 const MUSIC_QUERY_TIMEOUT_MS = readTimeoutMsFromEnv("GORDON_MUSIC_GEN_QUERY_TIMEOUT_MS", 12_000);
 const DEFAULT_MUSIC_POLL_TIMEOUT_MS = readTimeoutMsFromEnv("GORDON_MUSIC_GEN_POLL_TIMEOUT_MS", 90_000);
@@ -37,7 +43,11 @@ const DEFAULT_SEEDANCE_QUERY_URL = "https://api-maas-test.singularity-ai.com/gpt
 const DEFAULT_SEEDANCE_TASK_ID_PATH = "$.data.task_id";
 const DEFAULT_SEEDANCE_RESULT_URL_PATH = "$.data.video_url";
 const DEFAULT_VIDEO_POLL_INTERVAL_MS = readTimeoutMsFromEnv("GORDON_VIDEO_GEN_POLL_INTERVAL_MS", 5_000);
-const DEFAULT_VIDEO_POLL_ATTEMPTS = readIntegerFromEnv("GORDON_VIDEO_GEN_POLL_ATTEMPTS", 12);
+const DEFAULT_VIDEO_POLL_ATTEMPTS = readIntegerFromEnv(
+  "GORDON_VIDEO_GEN_POLL_ATTEMPTS",
+  MAX_VIDEO_POLL_ATTEMPTS,
+  MAX_VIDEO_POLL_ATTEMPTS
+);
 const VIDEO_QUERY_NETWORK_RETRY_ATTEMPTS = readIntegerFromEnv("GORDON_VIDEO_GEN_QUERY_NETWORK_RETRY_ATTEMPTS", 2);
 const VIDEO_QUERY_NETWORK_RETRY_DELAY_MS = readTimeoutMsFromEnv("GORDON_VIDEO_GEN_QUERY_NETWORK_RETRY_DELAY_MS", 1_500);
 const VIDEO_POLL_MAX_NETWORK_ERRORS = readIntegerFromEnv("GORDON_VIDEO_GEN_POLL_MAX_NETWORK_ERRORS", 3);
@@ -189,24 +199,24 @@ function truncateText(value, maxChars = MAX_RESULT_TEXT_CHARS) {
   return `${text.slice(0, maxChars)}\n...（已截断 ${text.length - maxChars} 字符）`;
 }
 
-function readTimeoutMsFromEnv(name, fallback) {
+function readTimeoutMsFromEnv(name, fallback, maximum = 900_000) {
   const value = Number(process.env[name]);
 
   if (!Number.isFinite(value) || value < 1_000) {
     return fallback;
   }
 
-  return Math.min(Math.floor(value), 900_000);
+  return Math.min(Math.floor(value), maximum);
 }
 
-function readIntegerFromEnv(name, fallback) {
+function readIntegerFromEnv(name, fallback, maximum = 60) {
   const value = Number(process.env[name]);
 
   if (!Number.isFinite(value)) {
     return fallback;
   }
 
-  return Math.max(0, Math.min(Math.floor(value), 60));
+  return Math.max(0, Math.min(Math.floor(value), maximum));
 }
 
 function normalizeBaseUrl(value, toolName, provider) {
@@ -575,14 +585,14 @@ function getVideoGenToolDefinition() {
         pollAttempts: {
           type: "integer",
           minimum: 0,
-          maximum: 60,
-          description: "自动轮询次数，默认 12；设为 0 表示不轮询"
+          maximum: MAX_VIDEO_POLL_ATTEMPTS,
+          description: "自动轮询次数，默认 360；设为 0 表示不轮询"
         },
         pollTimeoutMs: {
           type: "integer",
           minimum: 1000,
-          maximum: 900000,
-          description: "自动轮询总预算，默认 90000ms；达到预算会返回 pending=true 供后续继续查询"
+          maximum: MAX_VIDEO_POLL_TIMEOUT_MS,
+          description: "自动轮询总预算，默认 1800000ms；达到预算会返回 pending=true 供后续继续查询"
         },
         image: {
           type: "string",
@@ -2709,7 +2719,7 @@ function getVideoPollAttempts(argumentsObject) {
     return DEFAULT_VIDEO_POLL_ATTEMPTS;
   }
 
-  return Math.max(0, Math.min(Math.floor(value), 60));
+  return Math.max(0, Math.min(Math.floor(value), MAX_VIDEO_POLL_ATTEMPTS));
 }
 
 function getVideoPollIntervalMs(argumentsObject) {
@@ -2741,7 +2751,7 @@ function getVideoPollTimeoutMs(argumentsObject) {
     return DEFAULT_VIDEO_POLL_TIMEOUT_MS;
   }
 
-  return Math.max(1_000, Math.min(Math.floor(value), 900_000));
+  return Math.max(1_000, Math.min(Math.floor(value), MAX_VIDEO_POLL_TIMEOUT_MS));
 }
 
 function shouldPollVideoTool(argumentsObject) {
