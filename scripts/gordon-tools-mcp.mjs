@@ -2,6 +2,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const workspaceRoot = path.resolve(process.env.GORDON_WORKSPACE_ROOT || process.cwd());
 const gordonHome = path.resolve(process.env.GORDON_HOME || path.join(os.homedir(), ".gord"));
@@ -11,9 +13,46 @@ const DEFAULT_IMAGE_SIZE = "1024x1024";
 const DEFAULT_OPENAI_IMAGE_N = 1;
 const DEFAULT_OPENAI_IMAGE_QUALITY = "medium";
 const OPENAI_IMAGE_QUALITY_VALUES = new Set(["low", "medium", "high"]);
-const FETCH_TIMEOUT_MS = 120_000;
+const DEFAULT_FETCH_TIMEOUT_MS = 120_000;
+const DEFAULT_IMAGE_GEN_TIMEOUT_MS = 300_000;
+const DEFAULT_MEDIA_SUBMIT_TIMEOUT_MS = 30_000;
+const MAX_VIDEO_POLL_TIMEOUT_MS = 1_800_000;
+const MAX_VIDEO_POLL_ATTEMPTS = 360;
+const FETCH_TIMEOUT_MS = readTimeoutMsFromEnv("GORDON_TOOLS_FETCH_TIMEOUT_MS", DEFAULT_FETCH_TIMEOUT_MS);
+const IMAGE_GEN_TIMEOUT_MS = readTimeoutMsFromEnv("GORDON_IMAGE_GEN_TIMEOUT_MS", DEFAULT_IMAGE_GEN_TIMEOUT_MS);
+const VIDEO_GEN_TIMEOUT_MS = readTimeoutMsFromEnv("GORDON_VIDEO_GEN_TIMEOUT_MS", DEFAULT_MEDIA_SUBMIT_TIMEOUT_MS);
+const VIDEO_QUERY_TIMEOUT_MS = readTimeoutMsFromEnv("GORDON_VIDEO_GEN_QUERY_TIMEOUT_MS", 12_000);
+const DEFAULT_VIDEO_POLL_TIMEOUT_MS = readTimeoutMsFromEnv(
+  "GORDON_VIDEO_GEN_POLL_TIMEOUT_MS",
+  MAX_VIDEO_POLL_TIMEOUT_MS,
+  MAX_VIDEO_POLL_TIMEOUT_MS
+);
+const MUSIC_GEN_TIMEOUT_MS = readTimeoutMsFromEnv("GORDON_MUSIC_GEN_TIMEOUT_MS", DEFAULT_MEDIA_SUBMIT_TIMEOUT_MS);
+const MUSIC_QUERY_TIMEOUT_MS = readTimeoutMsFromEnv("GORDON_MUSIC_GEN_QUERY_TIMEOUT_MS", 12_000);
+const DEFAULT_MUSIC_POLL_TIMEOUT_MS = readTimeoutMsFromEnv("GORDON_MUSIC_GEN_POLL_TIMEOUT_MS", 90_000);
+const CURL_FALLBACK_TIMEOUT_MS = readTimeoutMsFromEnv("GORDON_TOOLS_CURL_FALLBACK_TIMEOUT_MS", 20_000);
 const MAX_RESULT_TEXT_CHARS = 12_000;
 const MUSIC_PROVIDER_VALUES = new Set(["mureka", "suno"]);
+const VIDEO_PROVIDER_VALUES = new Set(["seedance"]);
+const DEFAULT_VIDEO_DURATION_SECONDS = 5;
+const DEFAULT_VIDEO_RATIO = "adaptive";
+const DEFAULT_VIDEO_RESOLUTION = "720p";
+const DEFAULT_SEEDANCE_MODEL = "doubao-seedance-2-0-260128";
+const DEFAULT_SEEDANCE_SUBMIT_URL = "https://api-maas-test.singularity-ai.com/gpt-proxy/volengine/video/submit";
+const DEFAULT_SEEDANCE_QUERY_URL = "https://api-maas-test.singularity-ai.com/gpt-proxy/volengine/video/task/{task_id}";
+const DEFAULT_SEEDANCE_TASK_ID_PATH = "$.data.task_id";
+const DEFAULT_SEEDANCE_RESULT_URL_PATH = "$.data.video_url";
+const DEFAULT_VIDEO_POLL_INTERVAL_MS = readTimeoutMsFromEnv("GORDON_VIDEO_GEN_POLL_INTERVAL_MS", 5_000);
+const DEFAULT_VIDEO_POLL_ATTEMPTS = readIntegerFromEnv(
+  "GORDON_VIDEO_GEN_POLL_ATTEMPTS",
+  MAX_VIDEO_POLL_ATTEMPTS,
+  MAX_VIDEO_POLL_ATTEMPTS
+);
+const VIDEO_QUERY_NETWORK_RETRY_ATTEMPTS = readIntegerFromEnv("GORDON_VIDEO_GEN_QUERY_NETWORK_RETRY_ATTEMPTS", 2);
+const VIDEO_QUERY_NETWORK_RETRY_DELAY_MS = readTimeoutMsFromEnv("GORDON_VIDEO_GEN_QUERY_NETWORK_RETRY_DELAY_MS", 1_500);
+const VIDEO_POLL_MAX_NETWORK_ERRORS = readIntegerFromEnv("GORDON_VIDEO_GEN_POLL_MAX_NETWORK_ERRORS", 3);
+const DEFAULT_MUSIC_POLL_INTERVAL_MS = readTimeoutMsFromEnv("GORDON_MUSIC_GEN_POLL_INTERVAL_MS", 5_000);
+const DEFAULT_MUSIC_POLL_ATTEMPTS = readIntegerFromEnv("GORDON_MUSIC_GEN_POLL_ATTEMPTS", 18);
 
 const TOOL_RUNTIME = {
   image_gen: {
@@ -26,6 +65,37 @@ const TOOL_RUNTIME = {
         image_to_image: {
           endpoint: "imagen/edit",
           parameters: ["prompt", "model", "size", "n", "quality", "image", "images"]
+        }
+      }
+    }
+  },
+  video_gen: {
+    seedance: {
+      operations: {
+        submit: {
+          endpoint: "gpt-proxy/volengine/video/submit",
+          parameters: [
+            "mode",
+            "prompt",
+            "model",
+            "durationSeconds",
+            "ratio",
+            "resolution",
+            "image",
+            "firstFrameImage",
+            "lastFrameImage",
+            "referenceImages",
+            "referenceVideos",
+            "referenceAudios",
+            "returnLastFrame",
+            "generateAudio",
+            "frames",
+            "priority"
+          ]
+        },
+        query: {
+          endpoint: "gpt-proxy/volengine/video/task/{task_id}",
+          parameters: ["taskId"]
         }
       }
     }
@@ -54,15 +124,15 @@ const TOOL_RUNTIME = {
     suno: {
       operations: {
         generate_song: {
-          endpoint: "api/v1/generate",
-          parameters: ["prompt", "style", "title", "model", "instrumental", "callbackUrl"]
+          endpoint: "gpt-proxy/suno/generate",
+          parameters: ["prompt", "model", "instrumental"]
         },
         generate_instrumental: {
-          endpoint: "api/v1/generate",
-          parameters: ["prompt", "style", "title", "model", "instrumental", "callbackUrl"]
+          endpoint: "gpt-proxy/suno/generate",
+          parameters: ["prompt", "model", "instrumental"]
         },
         query: {
-          endpoint: "api/v1/generate/record-info",
+          endpoint: "gpt-proxy/suno/detail",
           parameters: ["taskId"]
         }
       }
@@ -71,6 +141,9 @@ const TOOL_RUNTIME = {
 };
 
 const TOOL_PROVIDER_DEFAULT_BASE_URLS = {
+  video_gen: {
+    seedance: ""
+  },
   music_gen: {
     mureka: "https://api.mureka.ai",
     suno: "https://api.sunoapi.org"
@@ -126,13 +199,47 @@ function truncateText(value, maxChars = MAX_RESULT_TEXT_CHARS) {
   return `${text.slice(0, maxChars)}\n...（已截断 ${text.length - maxChars} 字符）`;
 }
 
+function readTimeoutMsFromEnv(name, fallback, maximum = 900_000) {
+  const value = Number(process.env[name]);
+
+  if (!Number.isFinite(value) || value < 1_000) {
+    return fallback;
+  }
+
+  return Math.min(Math.floor(value), maximum);
+}
+
+function readIntegerFromEnv(name, fallback, maximum = 60) {
+  const value = Number(process.env[name]);
+
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.max(0, Math.min(Math.floor(value), maximum));
+}
+
 function normalizeBaseUrl(value, toolName, provider) {
-  const configuredBaseUrl = String(value ?? "").trim();
+  const configuredBaseUrl = String(value ?? "")
+    .trim()
+    .replace(/^["']+/u, "")
+    .replace(/["']+$/u, "");
   const fallbackBaseUrl = TOOL_PROVIDER_DEFAULT_BASE_URLS[toolName]?.[provider] ?? "";
   const baseUrl = (configuredBaseUrl || fallbackBaseUrl).replace(/\/+$/u, "");
 
   if (toolName === "image_gen" && provider === "openai") {
     return baseUrl.replace(/\/imagen(?:\/edit(?:\/base64)?)?$/u, "");
+  }
+
+  if (toolName === "video_gen" && provider === "seedance") {
+    return baseUrl
+      .replace(/\/gpt-proxy\/volengine\/video(?:\/(?:submit|task(?:\/[^/]+)?))?\/?$/u, "")
+      .replace(/\/api\/v3\/contents\/generations\/tasks(?:\/[^/]+)?\/?$/u, "")
+      .replace(/\/api\/v3\/?$/u, "");
+  }
+
+  if (toolName === "music_gen" && provider === "suno") {
+    return baseUrl.replace(/\/(?:api\/v1\/generate(?:\/record-info)?|gpt-proxy\/suno\/(?:generate|detail))$/u, "");
   }
 
   return baseUrl;
@@ -154,7 +261,15 @@ function toStringArray(value) {
     return value.map((item) => String(item ?? "").trim()).filter(Boolean);
   }
 
+  if (typeof value === "string" && value.trim()) {
+    return [value.trim()];
+  }
+
   return [];
+}
+
+function uniqueStrings(values) {
+  return [...new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean))];
 }
 
 function getImageQuality(argumentsObject, provider) {
@@ -324,7 +439,7 @@ function getMusicGenToolDefinition() {
   return {
     name: "music_gen",
     description:
-      "使用能力拓展 TOOL 配置中的 Mureka / Suno 音乐生成能力，支持发起歌曲或纯音乐生成任务，并通过任务 ID 查询生成结果。凭证、Base URL 和默认供应商由本地 TOOL 配置提供。",
+      "使用能力拓展 TOOL 配置中的 Mureka / Suno 音乐生成能力，支持发起歌曲或纯音乐生成任务，并通过任务 ID 查询生成结果。生成和查询默认会在工具层短轮询，尽量一次调用返回音频 URL；凭证、Base URL 和默认供应商由本地 TOOL 配置提供。",
     inputSchema: {
       type: "object",
       required: ["operation"],
@@ -367,6 +482,28 @@ function getMusicGenToolDefinition() {
           type: "string",
           description: "查询任务时必填，由生成接口返回"
         },
+        pollUntilComplete: {
+          type: "boolean",
+          description: "生成或 query 可选，是否自动轮询直到拿到音频或达到预算；默认 true"
+        },
+        pollIntervalMs: {
+          type: "integer",
+          minimum: 1000,
+          maximum: 120000,
+          description: "自动轮询间隔，默认 5000ms"
+        },
+        pollAttempts: {
+          type: "integer",
+          minimum: 0,
+          maximum: 120,
+          description: "自动轮询次数，默认 18；设为 0 表示不轮询"
+        },
+        pollTimeoutMs: {
+          type: "integer",
+          minimum: 1000,
+          maximum: 900000,
+          description: "自动轮询总预算，默认 90000ms；达到预算会返回 pending=true 供后续继续查询"
+        },
         callbackUrl: {
           type: "string",
           description: "可选，Suno 回调地址；不传时可后续用 query 主动查询"
@@ -391,12 +528,314 @@ function getMusicGenToolDefinition() {
   };
 }
 
+function getVideoGenToolDefinition() {
+  return {
+    name: "video_gen",
+    description:
+      "使用能力拓展 TOOL 配置中的 Seedance 视频生成能力，按火山方舟视频生成 API 提交 / 查询任务。支持 text_to_video 文生视频、first_frame_to_video 图生视频、first_last_frame_to_video 首尾帧生视频、reference_to_video 参考图 / 视频 / 音频生视频。生成是异步任务：submit 和 query 默认都会在工具层短轮询，尽量一次调用返回视频 URL；未完成时返回 taskId、状态、pending、pollExhausted 和 pollHistory。",
+    inputSchema: {
+      type: "object",
+      required: ["operation"],
+      properties: {
+        operation: {
+          type: "string",
+          enum: ["submit", "query"],
+          description: "submit 提交视频生成任务，query 查询任务结果"
+        },
+        provider: {
+          type: "string",
+          enum: ["seedance"],
+          description: "可选，当前仅支持 seedance；不传则使用 TOOL 默认供应商"
+        },
+        mode: {
+          type: "string",
+          enum: ["text_to_video", "image_to_video", "first_frame_to_video", "first_last_frame_to_video", "reference_to_video"],
+          description: "submit 时可选。text_to_video 文生视频；image_to_video / first_frame_to_video 图生视频；first_last_frame_to_video 首尾帧生视频；reference_to_video 参考图 / 视频 / 音频生视频"
+        },
+        prompt: {
+          type: "string",
+          description: "视频生成提示词。文生视频必填；图生视频、首尾帧和参考生成可选但建议填写"
+        },
+        negativePrompt: {
+          type: "string",
+          description: "可选，负向限制词；会作为 negative_prompt 传给上游"
+        },
+        negative_prompt: {
+          type: "string",
+          description: "可选，negativePrompt 的官方字段别名"
+        },
+        model: {
+          type: "string",
+          description: "可选，默认使用 TOOL 供应商配置中的模型 / 能力 ID"
+        },
+        taskId: {
+          type: "string",
+          description: "query 必填，由 submit 返回"
+        },
+        pollUntilComplete: {
+          type: "boolean",
+          description: "submit 或 query 可选，是否自动轮询直到拿到视频或达到预算；默认 true"
+        },
+        pollIntervalMs: {
+          type: "integer",
+          minimum: 1000,
+          maximum: 120000,
+          description: "自动轮询间隔，默认 5000ms"
+        },
+        pollAttempts: {
+          type: "integer",
+          minimum: 0,
+          maximum: MAX_VIDEO_POLL_ATTEMPTS,
+          description: "自动轮询次数，默认 360；设为 0 表示不轮询"
+        },
+        pollTimeoutMs: {
+          type: "integer",
+          minimum: 1000,
+          maximum: MAX_VIDEO_POLL_TIMEOUT_MS,
+          description: "自动轮询总预算，默认 1800000ms；达到预算会返回 pending=true 供后续继续查询"
+        },
+        image: {
+          type: "string",
+          description: "首帧生视频的单张图片 URL / data URL / base64；等价于 firstFrameImage"
+        },
+        firstFrameImage: {
+          type: "string",
+          description: "首帧图片 URL / data URL / base64"
+        },
+        first_frame_image: {
+          type: "string",
+          description: "首帧图片 URL / data URL / base64；firstFrameImage 的官方字段别名"
+        },
+        lastFrameImage: {
+          type: "string",
+          description: "尾帧图片 URL / data URL / base64，首尾帧模式必填"
+        },
+        last_frame_image: {
+          type: "string",
+          description: "尾帧图片 URL / data URL / base64；lastFrameImage 的官方字段别名"
+        },
+        referenceImages: {
+          anyOf: [
+            {
+              type: "array",
+              items: {
+                type: "string"
+              }
+            },
+            {
+              type: "string"
+            }
+          ],
+          description: "参考生视频的参考图片，支持单个字符串或数组。Seedance 2.0 支持 1-9 张；会以 role=reference_image 传入"
+        },
+        reference_images: {
+          anyOf: [
+            {
+              type: "array",
+              items: {
+                type: "string"
+              }
+            },
+            {
+              type: "string"
+            }
+          ],
+          description: "referenceImages 的官方字段别名"
+        },
+        referenceVideos: {
+          anyOf: [
+            {
+              type: "array",
+              items: {
+                type: "string"
+              }
+            },
+            {
+              type: "string"
+            }
+          ],
+          description: "可选，参考视频 URL / asset ID，支持单个字符串或数组，最多 3 个；会以 role=reference_video 传入"
+        },
+        reference_videos: {
+          anyOf: [
+            {
+              type: "array",
+              items: {
+                type: "string"
+              }
+            },
+            {
+              type: "string"
+            }
+          ],
+          description: "referenceVideos 的官方字段别名"
+        },
+        referenceAudios: {
+          anyOf: [
+            {
+              type: "array",
+              items: {
+                type: "string"
+              }
+            },
+            {
+              type: "string"
+            }
+          ],
+          description: "可选，参考音频 URL / asset ID，支持单个字符串或数组，最多 3 个；不能单独输入音频，至少同时有参考图或参考视频"
+        },
+        reference_audios: {
+          anyOf: [
+            {
+              type: "array",
+              items: {
+                type: "string"
+              }
+            },
+            {
+              type: "string"
+            }
+          ],
+          description: "referenceAudios 的官方字段别名"
+        },
+        durationSeconds: {
+          type: "integer",
+          minimum: -1,
+          maximum: 60,
+          description: "可选，视频时长，默认 5 秒；Seedance 2.0 / 1.5 可传 -1 表示智能选择"
+        },
+        duration: {
+          type: "integer",
+          minimum: -1,
+          maximum: 60,
+          description: "可选，durationSeconds 的别名"
+        },
+        duration_seconds: {
+          type: "integer",
+          minimum: -1,
+          maximum: 60,
+          description: "可选，durationSeconds 的官方字段别名"
+        },
+        ratio: {
+          type: "string",
+          description: "可选，画幅比例，例如 16:9、9:16、1:1、adaptive，默认 16:9"
+        },
+        resolution: {
+          type: "string",
+          description: "可选，分辨率，例如 480p、720p、1080p，默认 720p"
+        },
+        seed: {
+          type: "integer",
+          minimum: -1,
+          description: "可选，随机种子，范围 -1 到 2^32-1"
+        },
+        watermark: {
+          type: "boolean",
+          description: "可选，是否带水印，默认 false"
+        },
+        returnLastFrame: {
+          type: "boolean",
+          description: "可选，是否在查询结果中返回最后一帧图片"
+        },
+        return_last_frame: {
+          type: "boolean",
+          description: "可选，returnLastFrame 的官方字段别名"
+        },
+        callbackUrl: {
+          type: "string",
+          description: "可选，任务状态变更回调地址"
+        },
+        callback_url: {
+          type: "string",
+          description: "可选，callbackUrl 的官方字段别名"
+        },
+        generateAudio: {
+          type: "boolean",
+          description: "可选，是否生成音频"
+        },
+        generate_audio: {
+          type: "boolean",
+          description: "可选，generateAudio 的官方字段别名"
+        },
+        frames: {
+          type: "integer",
+          minimum: 29,
+          maximum: 289,
+          description: "可选，按帧数控制视频长度；frames 与 duration 二选一，传入 frames 时上游优先使用 frames"
+        },
+        cameraFixed: {
+          type: "boolean",
+          description: "可选，是否固定摄像头；Seedance 2.0 和参考图场景不支持时上游可能忽略或报错"
+        },
+        camera_fixed: {
+          type: "boolean",
+          description: "可选，cameraFixed 的官方字段别名"
+        },
+        draft: {
+          type: "boolean",
+          description: "可选，Seedance 1.5 pro 样片模式"
+        },
+        serviceTier: {
+          type: "string",
+          enum: ["default", "flex"],
+          description: "可选，服务等级；Seedance 2.0 系列仅支持 default"
+        },
+        service_tier: {
+          type: "string",
+          enum: ["default", "flex"],
+          description: "可选，serviceTier 的官方字段别名"
+        },
+        executionExpiresAfter: {
+          type: "integer",
+          minimum: 3600,
+          maximum: 259200,
+          description: "可选，任务超时阈值，单位秒"
+        },
+        execution_expires_after: {
+          type: "integer",
+          minimum: 3600,
+          maximum: 259200,
+          description: "可选，executionExpiresAfter 的官方字段别名"
+        },
+        tools: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              type: {
+                type: "string"
+              }
+            },
+            additionalProperties: true
+          },
+          description: "可选，Seedance 2.0 工具配置，例如 [{\"type\":\"web_search\"}]"
+        },
+        priority: {
+          type: "integer",
+          minimum: 0,
+          maximum: 9,
+          description: "可选，Seedance 2.0 队列优先级，0-9"
+        },
+        safetyIdentifier: {
+          type: "string",
+          description: "可选，终端用户安全标识"
+        }
+      },
+      additionalProperties: false
+    }
+  };
+}
+
 async function getTools() {
   const configs = await readToolConfigs();
   const tools = [];
 
   if (resolveRunnableToolConfig(configs, "image_gen")) {
     tools.push(getImageGenToolDefinition());
+  }
+
+  if (resolveRunnableToolConfig(configs, "video_gen")) {
+    tools.push(getVideoGenToolDefinition());
   }
 
   if (resolveRunnableToolConfig(configs, "music_gen")) {
@@ -407,6 +846,19 @@ async function getTools() {
 }
 
 function sanitizeImageDataItem(item, index) {
+  if (typeof item === "string") {
+    const value = item.trim();
+    const isUrl = /^https?:\/\//iu.test(value);
+    const isDataUrl = /^data:image\//iu.test(value);
+
+    return {
+      index,
+      ...(isUrl ? { url: value } : {}),
+      ...(isDataUrl ? { dataUrlBytes: Buffer.byteLength(value, "utf8") } : {}),
+      ...(!isUrl && !isDataUrl ? { valueBytes: Buffer.byteLength(value, "utf8") } : {})
+    };
+  }
+
   if (!item || typeof item !== "object") {
     return {
       index,
@@ -414,16 +866,120 @@ function sanitizeImageDataItem(item, index) {
     };
   }
 
-  const url = typeof item.url === "string" && item.url.trim() ? item.url.trim() : undefined;
+  const url = normalizeImageArtifactUrl(item) || undefined;
+  const dataUrl = normalizeImageArtifactDataUrl(item);
   const revisedPrompt = typeof item.revised_prompt === "string" && item.revised_prompt.trim() ? item.revised_prompt.trim() : undefined;
-  const b64Json = typeof item.b64_json === "string" ? item.b64_json : "";
 
   return {
     index,
     ...(url ? { url } : {}),
     ...(revisedPrompt ? { revisedPrompt } : {}),
-    ...(b64Json ? { b64JsonBytes: Buffer.byteLength(b64Json, "utf8") } : {})
+    ...(dataUrl ? { dataUrlBytes: Buffer.byteLength(dataUrl, "utf8") } : {}),
+    responseKeys: Object.keys(item)
   };
+}
+
+function getImagePayloadCandidates(responseJson) {
+  const candidates = [];
+  const seen = new WeakSet();
+
+  function addCandidate(value) {
+    if (!value || typeof value !== "object") {
+      return;
+    }
+
+    if (seen.has(value)) {
+      return;
+    }
+
+    seen.add(value);
+    candidates.push(value);
+
+    if (Array.isArray(value)) {
+      return;
+    }
+
+    for (const key of ["resp_data", "respData", "result", "data", "output", "outputs", "response"]) {
+      addCandidate(value[key]);
+    }
+  }
+
+  addCandidate(responseJson);
+  return candidates;
+}
+
+function addUniqueImageItem(items, seenObjectItems, seenPrimitiveItems, item) {
+  if (!item) {
+    return;
+  }
+
+  if (typeof item === "object") {
+    if (seenObjectItems.has(item)) {
+      return;
+    }
+
+    seenObjectItems.add(item);
+    items.push(item);
+    return;
+  }
+
+  const value = String(item).trim();
+
+  if (!value || seenPrimitiveItems.has(value)) {
+    return;
+  }
+
+  seenPrimitiveItems.add(value);
+  items.push(value);
+}
+
+function getImageDataItems(responseJson) {
+  const items = [];
+  const seenObjectItems = new WeakSet();
+  const seenPrimitiveItems = new Set();
+
+  for (const candidate of getImagePayloadCandidates(responseJson)) {
+    if (Array.isArray(candidate)) {
+      for (const item of candidate) {
+        addUniqueImageItem(items, seenObjectItems, seenPrimitiveItems, item);
+      }
+      continue;
+    }
+
+    if (!candidate || typeof candidate !== "object") {
+      continue;
+    }
+
+    for (const key of ["data", "images", "image_urls", "imageUrls", "output_urls", "outputUrls", "artifacts"]) {
+      if (Array.isArray(candidate[key])) {
+        for (const item of candidate[key]) {
+          addUniqueImageItem(items, seenObjectItems, seenPrimitiveItems, item);
+        }
+      }
+    }
+
+    for (const key of [
+      "image",
+      "image_url",
+      "imageUrl",
+      "url",
+      "dataUrl",
+      "data_url",
+      "outputUrl",
+      "output_url",
+      "b64_json",
+      "base64",
+      "image_base64",
+      "imageBase64"
+    ]) {
+      if (candidate[key]) {
+        addUniqueImageItem(items, seenObjectItems, seenPrimitiveItems, candidate);
+        break;
+      }
+    }
+  }
+
+  return items;
 }
 
 function sanitizeImageResponse(responseJson) {
@@ -433,16 +989,24 @@ function sanitizeImageResponse(responseJson) {
     };
   }
 
+  const respData = responseJson.resp_data && typeof responseJson.resp_data === "object" ? responseJson.resp_data : null;
+  const imageItems = getImageDataItems(responseJson);
+
   return {
     ...(responseJson.id ? { id: responseJson.id } : {}),
+    ...(responseJson.code !== undefined ? { code: responseJson.code } : {}),
+    ...(responseJson.code_msg ? { codeMsg: responseJson.code_msg } : {}),
+    ...(responseJson.trace_id ? { traceId: responseJson.trace_id } : {}),
     ...(responseJson.created ? { created: responseJson.created } : {}),
     ...(responseJson.usage ? { usage: responseJson.usage } : {}),
     ...(responseJson.cost ? { cost: responseJson.cost } : {}),
+    ...(respData ? { respDataKeys: Object.keys(respData) } : {}),
     ...(Array.isArray(responseJson.data)
       ? {
           data: responseJson.data.map((item, index) => sanitizeImageDataItem(item, index))
         }
       : {}),
+    ...(imageItems.length ? { imageItems: imageItems.map((item, index) => sanitizeImageDataItem(item, index)) } : {}),
     responseKeys: Object.keys(responseJson)
   };
 }
@@ -452,67 +1016,149 @@ function getImageResponseError(responseJson) {
     return "";
   }
 
-  if (responseJson.error) {
-    const error = responseJson.error;
-
-    if (typeof error === "string") {
-      return error.trim();
+  for (const candidate of getImagePayloadCandidates(responseJson)) {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+      continue;
     }
 
-    if (typeof error === "object") {
-      const code = typeof error.code === "string" && error.code.trim() ? error.code.trim() : "";
-      const message = typeof error.message === "string" && error.message.trim() ? error.message.trim() : "";
-      return [code, message].filter(Boolean).join(": ");
+    const responseCode = candidate.code;
+    const responseCodeText = String(responseCode ?? "").trim().toLowerCase();
+    const isSuccessCode =
+      responseCode === undefined ||
+      responseCodeText === "" ||
+      responseCodeText === "0" ||
+      responseCodeText === "success" ||
+      responseCodeText === "ok" ||
+      responseCodeText === "succeeded";
+    const codeMessage = typeof candidate.code_msg === "string" && candidate.code_msg.trim() ? candidate.code_msg.trim() : "";
+
+    if (!isSuccessCode) {
+      return [String(candidate.code), codeMessage].filter(Boolean).join(": ");
     }
 
-    return String(error);
-  }
+    if (candidate.error) {
+      const error = candidate.error;
 
-  if (typeof responseJson.message === "string" && responseJson.message.trim()) {
-    return responseJson.message.trim();
+      if (typeof error === "string") {
+        return error.trim();
+      }
+
+      if (typeof error === "object") {
+        const code = typeof error.code === "string" && error.code.trim() ? error.code.trim() : "";
+        const message = typeof error.message === "string" && error.message.trim() ? error.message.trim() : "";
+        return [code, message].filter(Boolean).join(": ");
+      }
+
+      return String(error);
+    }
+
+    if (typeof candidate.message === "string" && candidate.message.trim()) {
+      const message = candidate.message.trim();
+
+      if (!/^(success|ok|succeeded)$/iu.test(message)) {
+        return message;
+      }
+    }
   }
 
   return "";
 }
 
 function normalizeImageArtifactUrl(item) {
+  if (typeof item === "string") {
+    const value = item.trim();
+    return /^https?:\/\//iu.test(value) ? value : "";
+  }
+
   if (!item || typeof item !== "object") {
     return "";
   }
 
-  const directUrl = typeof item.url === "string" && item.url.trim() ? item.url.trim() : "";
+  const directUrl = [
+    item.url,
+    item.imageUrl,
+    item.image_url,
+    item.outputUrl,
+    item.output_url
+  ]
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .find(Boolean);
 
-  if (directUrl) {
+  if (directUrl && !directUrl.startsWith("data:image/") && !isLikelyImageBase64(directUrl)) {
     return directUrl;
   }
 
   if (item.image_url && typeof item.image_url === "object" && typeof item.image_url.url === "string") {
-    return item.image_url.url.trim();
+    const nestedUrl = item.image_url.url.trim();
+    return nestedUrl && !nestedUrl.startsWith("data:image/") && !isLikelyImageBase64(nestedUrl) ? nestedUrl : "";
+  }
+
+  if (item.image && typeof item.image === "object") {
+    return normalizeImageArtifactUrl(item.image);
   }
 
   return "";
 }
 
+function isLikelyImageBase64(value) {
+  const text = String(value ?? "").trim();
+  return text.length > 80 && /^[A-Za-z0-9+/=\s]+$/u.test(text);
+}
+
 function normalizeImageArtifactDataUrl(item) {
-  if (!item || typeof item !== "object" || typeof item.b64_json !== "string" || !item.b64_json.trim()) {
+  if (typeof item === "string") {
+    const value = item.trim();
+
+    if (value.startsWith("data:image/")) {
+      return value;
+    }
+
+    return isLikelyImageBase64(value) ? `data:image/png;base64,${value}` : "";
+  }
+
+  if (!item || typeof item !== "object") {
     return "";
   }
 
-  const rawValue = item.b64_json.trim();
+  const rawValue = [
+    item.b64_json,
+    item.base64,
+    item.image_base64,
+    item.imageBase64,
+    item.dataUrl,
+    item.data_url,
+    item.url,
+    item.imageUrl,
+    item.image_url,
+    item.outputUrl,
+    item.output_url
+  ]
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .find(Boolean);
+
+  if (!rawValue && item.image && typeof item.image === "object") {
+    return normalizeImageArtifactDataUrl(item.image);
+  }
+
+  if (!rawValue) {
+    return "";
+  }
 
   if (rawValue.startsWith("data:image/")) {
     return rawValue;
   }
 
-  return `data:image/png;base64,${rawValue}`;
+  return isLikelyImageBase64(rawValue) ? `data:image/png;base64,${rawValue}` : "";
 }
 
 function extractImageArtifacts(responseJson, context) {
-  if (!responseJson || typeof responseJson !== "object" || !Array.isArray(responseJson.data)) {
+  const imageItems = getImageDataItems(responseJson);
+
+  if (!imageItems.length) {
     return [];
   }
 
-  return responseJson.data
+  return imageItems
     .map((item, index) => {
       const url = normalizeImageArtifactUrl(item);
       const dataUrl = normalizeImageArtifactDataUrl(item);
@@ -541,9 +1187,202 @@ function extractImageArtifacts(responseJson, context) {
     .filter(Boolean);
 }
 
-async function postJson(url, apiKey, body) {
+function getNetworkErrorDetail(error) {
+  const cause = error?.cause;
+  const parts = [
+    error?.name,
+    error?.message,
+    cause?.code,
+    cause?.syscall,
+    cause?.hostname,
+    cause?.message
+  ]
+    .map((item) => String(item ?? "").trim())
+    .filter(Boolean);
+
+  return [...new Set(parts)].join(" / ");
+}
+
+function isFetchNetworkFailure(error) {
+  return (
+    error?.name === "TypeError" &&
+    /fetch failed/iu.test(String(error?.message ?? "")) &&
+    /ENOTFOUND|EAI_AGAIN|ECONNRESET|ECONNREFUSED|ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT|fetch failed/iu.test(
+      getNetworkErrorDetail(error)
+    )
+  );
+}
+
+function normalizeNetworkErrorMessage(message) {
+  const text = String(message ?? "").trim();
+
+  if (!text) {
+    return "网络连接失败：未返回错误详情";
+  }
+
+  const httpErrorMatch = text.match(/HTTP\s+(\d{3})[：:]\s*([\s\S]*)/iu);
+
+  if (httpErrorMatch) {
+    return formatHttpErrorMessage(httpErrorMatch[1], httpErrorMatch[2]);
+  }
+
+  if (/curl:\s*\(28\)|exit\s*28|timed out|timeout was reached|ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT/iu.test(text)) {
+    return `网络连接超时：${truncateText(text, 1000)}`;
+  }
+
+  if (/ENOTFOUND|EAI_AGAIN|Could not resolve host|无法解析/iu.test(text)) {
+    return `网络解析失败：${truncateText(text, 1000)}`;
+  }
+
+  if (/ECONNRESET|ECONNREFUSED|socket hang up|fetch failed/iu.test(text)) {
+    return `网络连接失败：${truncateText(text, 1000)}`;
+  }
+
+  return text;
+}
+
+function isHtmlResponseText(text) {
+  return /<!doctype\s+html|<html[\s>]|<body[\s>]|<head[\s>]|<center[\s>]|<title[\s>]/iu.test(String(text ?? ""));
+}
+
+function stripHtmlResponseText(text) {
+  return String(text ?? "")
+    .replace(/<script[\s\S]*?<\/script>/giu, " ")
+    .replace(/<style[\s\S]*?<\/style>/giu, " ")
+    .replace(/<[^>]+>/gu, " ")
+    .replace(/&nbsp;/giu, " ")
+    .replace(/&lt;/giu, "<")
+    .replace(/&gt;/giu, ">")
+    .replace(/&amp;/giu, "&")
+    .replace(/&quot;/giu, "\"")
+    .replace(/&#39;/giu, "'")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function formatHttpErrorMessage(statusValue, payload) {
+  const status = Number(statusValue);
+  const rawPayload = typeof payload === "string" ? payload.trim() : JSON.stringify(payload ?? "");
+  const readableDetail = isHtmlResponseText(rawPayload) ? stripHtmlResponseText(rawPayload) : rawPayload;
+  const detail = truncateText(readableDetail, 500);
+  const suffix = detail ? `。上游摘要：${detail}` : "";
+
+  if (status === 429) {
+    return `上游服务请求过于频繁（HTTP 429）：当前生成服务触发限流，请稍后重试${suffix}`;
+  }
+
+  if (status === 502) {
+    return `上游服务网关异常（HTTP 502）：生成服务网关暂时不可用，请稍后重试${suffix}`;
+  }
+
+  if (status === 503) {
+    return `上游服务暂时不可用（HTTP 503）：生成服务网关或上游接口临时过载，请稍后重试${suffix}`;
+  }
+
+  if (status === 504) {
+    return `上游服务响应超时（HTTP 504）：生成服务处理时间过长，请稍后查询或重试${suffix}`;
+  }
+
+  if (status >= 500) {
+    return `上游服务内部错误（HTTP ${status || "unknown"}）：生成服务暂时异常，请稍后重试${suffix}`;
+  }
+
+  if (status === 401 || status === 403) {
+    return `上游服务鉴权失败（HTTP ${status}）：请检查 API Key、Base URL 或账号权限${suffix}`;
+  }
+
+  return `HTTP ${status || "unknown"}：${detail || "上游未返回错误详情"}`;
+}
+
+function isNetworkErrorMessage(message) {
+  return /网络|超时|timeout|timed out|fetch failed|curl:\s*\(28\)|exit\s*28|ENOTFOUND|EAI_AGAIN|ECONNRESET|ECONNREFUSED|ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT|socket hang up|Could not resolve host/iu.test(
+    String(message ?? "")
+  );
+}
+
+function isVideoSubmitUnknownNetworkMessage(message) {
+  return /video_gen 提交状态未知/u.test(String(message ?? ""));
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
+function curlJsonRequest(url, apiKey, options = {}) {
+  const method = String(options.method ?? "GET").toUpperCase();
+  const body = options.body;
+  const timeoutMs = Math.min(readRequestTimeoutMs(options.timeoutMs), CURL_FALLBACK_TIMEOUT_MS);
+  const timeoutSeconds = Math.max(1, Math.ceil(timeoutMs / 1000));
+  const args = [
+    "-sS",
+    "-L",
+    "--max-time",
+    String(timeoutSeconds),
+    "-X",
+    method,
+    "-H",
+    `Authorization: Bearer ${apiKey}`,
+    "-H",
+    "Content-Type: application/json",
+    "-w",
+    "\n%{http_code}",
+    url
+  ];
+
+  if (body !== undefined) {
+    args.splice(args.length - 3, 0, "-d", JSON.stringify(body));
+  }
+
+  return new Promise((resolve, reject) => {
+    const child = spawn("curl", args, {
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", (error) => {
+      reject(new Error(`curl 兜底启动失败：${error.message}`));
+    });
+    child.on("close", (code) => {
+      if (code !== 0) {
+        const rawMessage = `curl 兜底请求失败（exit ${code}）：${truncateText(stderr || stdout, 1200)}`;
+        reject(new Error(normalizeNetworkErrorMessage(rawMessage)));
+        return;
+      }
+
+      const separatorIndex = stdout.lastIndexOf("\n");
+      const bodyText = separatorIndex >= 0 ? stdout.slice(0, separatorIndex) : stdout;
+      const statusText = separatorIndex >= 0 ? stdout.slice(separatorIndex + 1).trim() : "";
+      const status = Number(statusText);
+      let json = null;
+
+      try {
+        json = bodyText ? JSON.parse(bodyText) : null;
+      } catch {
+        json = null;
+      }
+
+      if (!Number.isFinite(status) || status < 200 || status >= 300) {
+        reject(new Error(formatHttpErrorMessage(statusText || "unknown", json ? JSON.stringify(json) : bodyText || stderr)));
+        return;
+      }
+
+      resolve(json ?? bodyText);
+    });
+  });
+}
+
+async function postJson(url, apiKey, body, options = {}) {
+  const timeoutMs = readRequestTimeoutMs(options.timeoutMs);
+  const timeoutLabel = String(options.timeoutLabel ?? "请求").trim() || "请求";
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(url, {
@@ -565,24 +1404,39 @@ async function postJson(url, apiKey, body) {
     }
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}：${truncateText(json ? JSON.stringify(json) : text, 1200)}`);
+      throw new Error(formatHttpErrorMessage(response.status, json ? JSON.stringify(json) : text));
     }
 
     return json ?? text;
   } catch (error) {
     if (error?.name === "AbortError") {
-      throw new Error(`请求超时：超过 ${FETCH_TIMEOUT_MS}ms`);
+      throw new Error(`网络请求超时：${timeoutLabel}超过 ${timeoutMs}ms`);
     }
 
-    throw error;
+    if (isFetchNetworkFailure(error)) {
+      logToolCall("fetch fallback to curl", {
+        method: "POST",
+        url,
+        reason: getNetworkErrorDetail(error)
+      });
+      return await curlJsonRequest(url, apiKey, {
+        method: "POST",
+        body,
+        timeoutMs
+      });
+    }
+
+    throw new Error(normalizeNetworkErrorMessage(getNetworkErrorDetail(error) || String(error)));
   } finally {
     clearTimeout(timeout);
   }
 }
 
-async function getJson(url, apiKey) {
+async function getJson(url, apiKey, options = {}) {
+  const timeoutMs = readRequestTimeoutMs(options.timeoutMs);
+  const timeoutLabel = String(options.timeoutLabel ?? "请求").trim() || "请求";
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(url, {
@@ -602,19 +1456,71 @@ async function getJson(url, apiKey) {
     }
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}：${truncateText(json ? JSON.stringify(json) : text, 1200)}`);
+      throw new Error(formatHttpErrorMessage(response.status, json ? JSON.stringify(json) : text));
     }
 
     return json ?? text;
   } catch (error) {
     if (error?.name === "AbortError") {
-      throw new Error(`请求超时：超过 ${FETCH_TIMEOUT_MS}ms`);
+      throw new Error(`网络请求超时：${timeoutLabel}超过 ${timeoutMs}ms`);
     }
 
-    throw error;
+    if (isFetchNetworkFailure(error)) {
+      logToolCall("fetch fallback to curl", {
+        method: "GET",
+        url,
+        reason: getNetworkErrorDetail(error)
+      });
+      return await curlJsonRequest(url, apiKey, {
+        method: "GET",
+        timeoutMs
+      });
+    }
+
+    throw new Error(normalizeNetworkErrorMessage(getNetworkErrorDetail(error) || String(error)));
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function getJsonWithNetworkRetry(url, apiKey, options = {}) {
+  const attempts = Math.max(1, Number(options.attempts ?? VIDEO_QUERY_NETWORK_RETRY_ATTEMPTS + 1) || 1);
+  const retryDelayMs = Math.max(0, Number(options.retryDelayMs ?? VIDEO_QUERY_NETWORK_RETRY_DELAY_MS) || 0);
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await getJson(url, apiKey, options);
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+
+      if (!isNetworkErrorMessage(message) || attempt >= attempts) {
+        throw error;
+      }
+
+      logToolCall("video_gen query retry", {
+        url,
+        attempt,
+        maxAttempts: attempts,
+        retryDelayMs,
+        reason: normalizeNetworkErrorMessage(message)
+      });
+      await sleep(retryDelayMs * attempt);
+    }
+  }
+
+  throw lastError ?? new Error("video_gen 查询重试失败：未知错误");
+}
+
+function readRequestTimeoutMs(timeoutMs) {
+  const normalized = Number(timeoutMs);
+
+  if (!Number.isFinite(normalized) || normalized < 1_000) {
+    return FETCH_TIMEOUT_MS;
+  }
+
+  return Math.min(Math.floor(normalized), 900_000);
 }
 
 function inferAudioMimeType(filePath) {
@@ -639,19 +1545,183 @@ function inferAudioMimeType(filePath) {
   return "audio/mpeg";
 }
 
-async function postMultipartFile(url, apiKey, filePath, fieldName = "file") {
-  const normalizedFilePath = String(filePath ?? "").trim();
+function inferImageMimeType(source = "", fallback = "") {
+  const fallbackMime = String(fallback ?? "").split(";")[0].trim().toLowerCase();
 
-  if (!normalizedFilePath) {
-    throw new Error("vocal_clone 需要 filePath 参数");
+  if (fallbackMime.startsWith("image/")) {
+    return fallbackMime;
   }
 
-  const bytes = await fs.readFile(normalizedFilePath);
-  const form = new FormData();
-  const blob = new Blob([bytes], { type: inferAudioMimeType(normalizedFilePath) });
-  form.append(fieldName, blob, path.basename(normalizedFilePath));
+  const pathname = (() => {
+    try {
+      return new URL(String(source ?? "")).pathname;
+    } catch {
+      return String(source ?? "");
+    }
+  })();
+  const extension = path.extname(pathname).toLowerCase();
+
+  if (extension === ".jpg" || extension === ".jpeg") {
+    return "image/jpeg";
+  }
+
+  if (extension === ".webp") {
+    return "image/webp";
+  }
+
+  if (extension === ".gif") {
+    return "image/gif";
+  }
+
+  if (extension === ".bmp") {
+    return "image/bmp";
+  }
+
+  return "image/png";
+}
+
+function inferImageFilename(source = "", index = 0, mimeType = "") {
+  const fallbackExtension = (() => {
+    if (mimeType === "image/jpeg") {
+      return "jpg";
+    }
+
+    const subtype = String(mimeType ?? "").match(/^image\/([a-z0-9.+-]+)$/iu)?.[1];
+    return subtype ? subtype.replace(/[^a-z0-9]+/giu, "-").replace(/^-|-$/gu, "") || "png" : "png";
+  })();
+  const fallbackName = `image-${index + 1}.${fallbackExtension}`;
+  const pathname = (() => {
+    try {
+      return new URL(String(source ?? "")).pathname;
+    } catch {
+      return String(source ?? "");
+    }
+  })();
+  const basename = decodeURIComponent(path.basename(pathname || ""));
+
+  if (!basename || basename === "." || !path.extname(basename)) {
+    return fallbackName;
+  }
+
+  return basename.replace(/[\r\n"]/gu, "_");
+}
+
+function parseDataUrlImage(value) {
+  const match = String(value ?? "").match(/^data:([^,]*),(.*)$/isu);
+
+  if (!match) {
+    return null;
+  }
+
+  const metadata = match[1] || "image/png";
+  const mimeType = inferImageMimeType("", metadata.split(";")[0] || "image/png");
+  const payload = match[2] || "";
+  const isBase64 = metadata
+    .split(";")
+    .map((part) => part.trim().toLowerCase())
+    .includes("base64");
+  const bytes = isBase64
+    ? Buffer.from(payload.replace(/\s+/gu, ""), "base64")
+    : Buffer.from(decodeURIComponent(payload), "utf8");
+
+  return {
+    bytes,
+    mimeType
+  };
+}
+
+function looksLikeBase64Image(value) {
+  const text = String(value ?? "").replace(/\s+/gu, "");
+
+  if (text.length < 80 || text.length % 4 !== 0) {
+    return false;
+  }
+
+  return /^[a-z0-9+/]+={0,2}$/iu.test(text);
+}
+
+function toLocalImagePath(value) {
+  const text = String(value ?? "").trim();
+
+  if (/^file:/iu.test(text)) {
+    return fileURLToPath(text);
+  }
+
+  return text;
+}
+
+async function fetchImageInputBytes(url, index) {
+  const response = await fetch(url);
+  const arrayBuffer = await response.arrayBuffer().catch(() => null);
+
+  if (!response.ok) {
+    const bodyText = arrayBuffer ? Buffer.from(arrayBuffer).toString("utf8") : "";
+    throw new Error(`下载引用图片 ${index + 1} 失败：HTTP ${response.status}：${truncateText(bodyText, 800)}`);
+  }
+
+  const contentType = response.headers.get("content-type") || "";
+
+  if (contentType && !contentType.toLowerCase().startsWith("image/")) {
+    throw new Error(`下载引用图片 ${index + 1} 失败：响应类型不是图片（${contentType}）`);
+  }
+
+  const mimeType = inferImageMimeType(url, contentType);
+
+  return {
+    bytes: Buffer.from(arrayBuffer ?? new ArrayBuffer(0)),
+    mimeType,
+    filename: inferImageFilename(url, index, mimeType)
+  };
+}
+
+async function resolveImageInputToFilePart(input, index) {
+  const value = String(input ?? "").trim();
+
+  if (!value) {
+    throw new Error(`第 ${index + 1} 张引用图片为空`);
+  }
+
+  const dataUrl = parseDataUrlImage(value);
+
+  if (dataUrl) {
+    return {
+      ...dataUrl,
+      filename: inferImageFilename("", index, dataUrl.mimeType)
+    };
+  }
+
+  if (/^https?:\/\//iu.test(value)) {
+    return await fetchImageInputBytes(value, index);
+  }
+
+  if (looksLikeBase64Image(value)) {
+    const mimeType = inferImageMimeType("", "image/png");
+
+    return {
+      bytes: Buffer.from(value.replace(/\s+/gu, ""), "base64"),
+      mimeType,
+      filename: inferImageFilename("", index, mimeType)
+    };
+  }
+
+  const localPath = toLocalImagePath(value);
+  const bytes = await fs.readFile(localPath).catch((error) => {
+    throw new Error(`读取引用图片 ${index + 1} 失败：${error instanceof Error ? error.message : String(error)}`);
+  });
+  const mimeType = inferImageMimeType(localPath);
+
+  return {
+    bytes,
+    mimeType,
+    filename: inferImageFilename(localPath, index, mimeType)
+  };
+}
+
+async function postMultipartForm(url, apiKey, form, options = {}) {
+  const timeoutMs = readRequestTimeoutMs(options.timeoutMs);
+  const timeoutLabel = String(options.timeoutLabel ?? "请求").trim() || "请求";
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(url, {
@@ -678,13 +1748,49 @@ async function postMultipartFile(url, apiKey, filePath, fieldName = "file") {
     return json ?? text;
   } catch (error) {
     if (error?.name === "AbortError") {
-      throw new Error(`请求超时：超过 ${FETCH_TIMEOUT_MS}ms`);
+      throw new Error(`${timeoutLabel}超时：超过 ${timeoutMs}ms`);
     }
 
-    throw error;
+    throw new Error(getNetworkErrorDetail(error) || String(error));
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function postMultipartFile(url, apiKey, filePath, fieldName = "file", options = {}) {
+  const normalizedFilePath = String(filePath ?? "").trim();
+
+  if (!normalizedFilePath) {
+    throw new Error("vocal_clone 需要 filePath 参数");
+  }
+
+  const bytes = await fs.readFile(normalizedFilePath);
+  const form = new FormData();
+  const blob = new Blob([bytes], { type: inferAudioMimeType(normalizedFilePath) });
+  form.append(fieldName, blob, path.basename(normalizedFilePath));
+  return await postMultipartForm(url, apiKey, form, options);
+}
+
+async function postImageEditMultipart(url, apiKey, requestBody, imageInputs, options = {}) {
+  const form = new FormData();
+
+  ["prompt", "model", "size", "n", "quality"].forEach((fieldName) => {
+    const value = requestBody?.[fieldName];
+
+    if (value !== undefined && value !== null && value !== "") {
+      form.append(fieldName, String(value));
+    }
+  });
+
+  const imageParts = await Promise.all(imageInputs.map((input, index) => resolveImageInputToFilePart(input, index)));
+
+  imageParts.forEach((part, index) => {
+    const fieldName = imageParts.length === 1 ? "image" : `image[${index}]`;
+    const blob = new Blob([part.bytes], { type: part.mimeType });
+    form.append(fieldName, blob, part.filename);
+  });
+
+  return await postMultipartForm(url, apiKey, form, options);
 }
 
 function normalizeMusicOperation(value) {
@@ -749,11 +1855,8 @@ function buildMurekaMusicRequestBody(operationName, argumentsObject, model) {
 }
 
 function buildSunoMusicRequestBody(operationName, argumentsObject, model) {
-  const prompt = compactMusicPrompt(argumentsObject?.lyrics, argumentsObject?.prompt);
+  const prompt = compactMusicPrompt(argumentsObject?.prompt, argumentsObject?.lyrics, argumentsObject?.style);
   const style = String(argumentsObject?.style ?? "").trim();
-  const title = String(argumentsObject?.title ?? "").trim();
-  const callbackUrl = String(argumentsObject?.callbackUrl ?? argumentsObject?.callBackUrl ?? "").trim();
-  const negativePrompt = String(argumentsObject?.negativePrompt ?? "").trim();
   const instrumental =
     typeof argumentsObject?.instrumental === "boolean"
       ? argumentsObject.instrumental
@@ -765,13 +1868,9 @@ function buildSunoMusicRequestBody(operationName, argumentsObject, model) {
 
   return {
     prompt: prompt || style,
-    customMode: Boolean(style || title),
+    customMode: false,
     instrumental,
-    ...(model ? { model } : {}),
-    ...(style ? { style } : {}),
-    ...(title ? { title } : {}),
-    ...(negativePrompt ? { negativeTags: negativePrompt } : {}),
-    ...(callbackUrl ? { callBackUrl: callbackUrl } : {})
+    ...(model ? { model } : {})
   };
 }
 
@@ -792,9 +1891,7 @@ function buildMusicQueryUrl(baseUrl, operation, provider, taskId) {
     return joinUrl(baseUrl, operation.endpoint.replace("{task_id}", encodeURIComponent(taskId)));
   }
 
-  const url = new URL(joinUrl(baseUrl, operation.endpoint));
-  url.searchParams.set("taskId", taskId);
-  return url.toString();
+  return joinUrl(baseUrl, operation.endpoint);
 }
 
 function sanitizeMusicRequestBody(requestBody) {
@@ -835,9 +1932,10 @@ function getMusicResponseError(responseJson) {
   }
 
   const code = String(responseJson.code ?? "").trim().toLowerCase();
+  const codeMessage = pickNestedText(responseJson, ["code_msg", "codeMsg", "msg", "message"]);
 
-  if (typeof responseJson.msg === "string" && responseJson.msg.trim() && code && !["0", "200", "success"].includes(code)) {
-    return responseJson.msg.trim();
+  if (codeMessage && code && !["0", "200", "success"].includes(code)) {
+    return codeMessage;
   }
 
   if (typeof responseJson.message === "string" && responseJson.message.trim() && responseJson.status === "error") {
@@ -867,6 +1965,66 @@ function pickNestedText(value, keys) {
   return "";
 }
 
+function normalizeSimpleJsonPath(pathValue) {
+  const normalized = String(pathValue ?? "").trim();
+
+  if (!normalized) {
+    return "";
+  }
+
+  const dataPathMatch = normalized.match(/(?:^|\n)\s*data\s*:\s*([^\n]+)/iu);
+  return dataPathMatch?.[1]?.trim() ?? normalized;
+}
+
+function readSimpleJsonPath(input, pathValue) {
+  const pathText = normalizeSimpleJsonPath(pathValue);
+
+  if (!pathText) {
+    return undefined;
+  }
+
+  const normalizedPath = pathText
+    .replace(/\.\[(\d+)\]/gu, "[$1]")
+    .replace(/\[(\d+)\]/gu, ".$1")
+    .replace(/^\$?\.?/u, "");
+  const tokens = normalizedPath
+    .split(".")
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+  return tokens.reduce((current, token) => {
+    if (current === null || current === undefined) {
+      return undefined;
+    }
+
+    if (Array.isArray(current) && /^\d+$/u.test(token)) {
+      return current[Number(token)];
+    }
+
+    if (typeof current === "object") {
+      return current[token];
+    }
+
+    return undefined;
+  }, input);
+}
+
+function normalizeProtocolText(value) {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  return "";
+}
+
 function extractMusicTaskId(responseJson) {
   const seen = new WeakSet();
   const queue = [responseJson];
@@ -884,7 +2042,16 @@ function extractMusicTaskId(responseJson) {
 
     seen.add(item);
 
-    const taskId = pickNestedText(item, ["task_id", "taskId", "taskID", "id"]);
+    const taskId = pickNestedText(item, [
+      "task_id",
+      "taskId",
+      "taskID",
+      "id",
+      "record_id",
+      "recordId",
+      "request_id",
+      "requestId"
+    ]);
 
     if (taskId) {
       return taskId;
@@ -919,7 +2086,7 @@ function extractMusicStatus(responseJson) {
 
     seen.add(item);
 
-    const status = pickNestedText(item, ["status", "state", "task_status", "taskStatus"]);
+    const status = pickNestedText(item, ["status", "state", "task_status", "taskStatus", "status_code", "statusCode"]);
 
     if (status) {
       return status;
@@ -947,14 +2114,24 @@ function pickMusicAudioUrl(item) {
     "audioUrl",
     "stream_audio_url",
     "streamAudioUrl",
+    "source_audio_url",
     "sourceAudioUrl",
+    "source_stream_audio_url",
     "sourceStreamAudioUrl",
     "mp3_url",
     "mp3Url",
     "song_url",
     "songUrl",
     "wav_url",
-    "wavUrl"
+    "wavUrl",
+    "download_url",
+    "downloadUrl",
+    "audio",
+    "audioUrl",
+    "stream_url",
+    "streamUrl",
+    "cdn_url",
+    "cdnUrl"
   ]) {
     const value = item[key];
 
@@ -1076,6 +2253,1031 @@ function sanitizeMusicResponse(responseJson) {
   };
 }
 
+function getMusicPollAttempts(argumentsObject) {
+  const rawValue = argumentsObject?.pollAttempts;
+
+  if (rawValue === undefined || rawValue === null || rawValue === "") {
+    return DEFAULT_MUSIC_POLL_ATTEMPTS;
+  }
+
+  const value = Number(rawValue);
+
+  if (!Number.isFinite(value)) {
+    return DEFAULT_MUSIC_POLL_ATTEMPTS;
+  }
+
+  return Math.max(0, Math.min(Math.floor(value), 120));
+}
+
+function getMusicPollIntervalMs(argumentsObject) {
+  const rawValue = argumentsObject?.pollIntervalMs;
+
+  if (rawValue === undefined || rawValue === null || rawValue === "") {
+    return DEFAULT_MUSIC_POLL_INTERVAL_MS;
+  }
+
+  const value = Number(rawValue);
+
+  if (!Number.isFinite(value)) {
+    return DEFAULT_MUSIC_POLL_INTERVAL_MS;
+  }
+
+  return Math.max(1_000, Math.min(Math.floor(value), 120_000));
+}
+
+function getMusicPollTimeoutMs(argumentsObject) {
+  const rawValue = argumentsObject?.pollTimeoutMs;
+
+  if (rawValue === undefined || rawValue === null || rawValue === "") {
+    return DEFAULT_MUSIC_POLL_TIMEOUT_MS;
+  }
+
+  const value = Number(rawValue);
+
+  if (!Number.isFinite(value)) {
+    return DEFAULT_MUSIC_POLL_TIMEOUT_MS;
+  }
+
+  return Math.max(1_000, Math.min(Math.floor(value), 900_000));
+}
+
+function shouldPollMusicTool(argumentsObject) {
+  return argumentsObject?.pollUntilComplete !== false && getMusicPollAttempts(argumentsObject) > 0;
+}
+
+function isMusicPendingStatus(status) {
+  return /queued|queueing|pending|running|processing|generating|created|submitted|in_progress|progress|wait|waiting|排队|运行|处理中|生成中|等待/u.test(
+    String(status ?? "").trim().toLowerCase()
+  );
+}
+
+function isMusicCompletedStatus(status) {
+  return /success|succeeded|succeed|done|finished|complete|completed|finish|ready|generated|passed|成功|完成|已完成/u.test(
+    String(status ?? "").trim().toLowerCase()
+  );
+}
+
+function isMusicFailedStatus(status) {
+  return /fail|failed|error|cancel|canceled|cancelled|timeout|expired|失败|错误|取消|超时/u.test(
+    String(status ?? "").trim().toLowerCase()
+  );
+}
+
+function buildMusicQueryContext({ provider, operation, baseUrl, apiKey, model, prompt, taskId }) {
+  const endpoint = buildMusicQueryUrl(baseUrl, operation, provider.provider, taskId);
+  const requestBody = provider.provider === "suno" ? { taskId } : null;
+
+  return {
+    endpoint,
+    requestBody,
+    async query() {
+      const response =
+        provider.provider === "suno"
+          ? await postJson(endpoint, apiKey, requestBody, {
+              timeoutMs: MUSIC_QUERY_TIMEOUT_MS,
+              timeoutLabel: "music_gen 查询"
+            })
+          : await getJson(endpoint, apiKey, {
+              timeoutMs: MUSIC_QUERY_TIMEOUT_MS,
+              timeoutLabel: "music_gen 查询"
+            });
+      const status = extractMusicStatus(response);
+      const artifacts = extractMusicArtifacts(response, {
+        provider: provider.provider,
+        model,
+        prompt,
+        operation: "query",
+        endpoint: operation.endpoint,
+        taskId,
+        status
+      });
+
+      return {
+        response,
+        status,
+        artifacts,
+        sanitized: sanitizeMusicResponse(response)
+      };
+    }
+  };
+}
+
+function normalizeVideoOperation(value) {
+  const operation = String(value ?? "").trim();
+
+  if (operation === "generate" || operation === "create") {
+    return "submit";
+  }
+
+  if (operation === "status" || operation === "retrieve" || operation === "get") {
+    return "query";
+  }
+
+  return ["submit", "query"].includes(operation) ? operation : "";
+}
+
+function normalizeVideoMode(value, argumentsObject = {}) {
+  const explicitMode = String(value ?? "").trim();
+  const modeAliasMap = {
+    text: "text_to_video",
+    text_to_video: "text_to_video",
+    t2v: "text_to_video",
+    image: "first_frame_to_video",
+    image_to_video: "first_frame_to_video",
+    img2video: "first_frame_to_video",
+    i2v: "first_frame_to_video",
+    first_frame: "first_frame_to_video",
+    first_frame_to_video: "first_frame_to_video",
+    first_last_frame: "first_last_frame_to_video",
+    first_last_frame_to_video: "first_last_frame_to_video",
+    start_end_frame_to_video: "first_last_frame_to_video",
+    keyframe_to_video: "first_last_frame_to_video",
+    reference: "reference_to_video",
+    reference_to_video: "reference_to_video",
+    reference_image_to_video: "reference_to_video",
+    reference_images_to_video: "reference_to_video"
+  };
+
+  if (modeAliasMap[explicitMode]) {
+    return modeAliasMap[explicitMode];
+  }
+
+  const referenceImages = [...toStringArray(argumentsObject?.referenceImages), ...toStringArray(argumentsObject?.reference_images)];
+  const referenceVideos = [...toStringArray(argumentsObject?.referenceVideos), ...toStringArray(argumentsObject?.reference_videos)];
+  const referenceAudios = [...toStringArray(argumentsObject?.referenceAudios), ...toStringArray(argumentsObject?.reference_audios)];
+
+  if (referenceImages.length || referenceVideos.length || referenceAudios.length) {
+    return "reference_to_video";
+  }
+
+  if (String(argumentsObject?.lastFrameImage ?? argumentsObject?.last_frame_image ?? "").trim()) {
+    return "first_last_frame_to_video";
+  }
+
+  if (String(argumentsObject?.firstFrameImage ?? argumentsObject?.first_frame_image ?? argumentsObject?.image ?? "").trim()) {
+    return "first_frame_to_video";
+  }
+
+  return "text_to_video";
+}
+
+function getVideoDurationSeconds(argumentsObject) {
+  const rawValue = argumentsObject?.durationSeconds ?? argumentsObject?.duration_seconds ?? argumentsObject?.duration ?? DEFAULT_VIDEO_DURATION_SECONDS;
+  const duration = Number(rawValue);
+
+  if (!Number.isFinite(duration) || duration < -1 || duration === 0 || duration > 60) {
+    throw new Error("video_gen 的 durationSeconds 需要是 -1 或 1-60 之间的数字");
+  }
+
+  return Math.round(duration);
+}
+
+function getVideoPriority(argumentsObject) {
+  const rawValue = argumentsObject?.priority;
+
+  if (rawValue === undefined || rawValue === null || rawValue === "") {
+    return undefined;
+  }
+
+  const priority = Number(rawValue);
+
+  if (!Number.isInteger(priority) || priority < 0 || priority > 9) {
+    throw new Error("video_gen 的 priority 需要是 0-9 之间的整数");
+  }
+
+  return priority;
+}
+
+function getOptionalIntegerArgument(argumentsObject, camelName, snakeName, { minimum = Number.MIN_SAFE_INTEGER, maximum = Number.MAX_SAFE_INTEGER, label }) {
+  const rawValue = argumentsObject?.[camelName] ?? argumentsObject?.[snakeName];
+
+  if (rawValue === undefined || rawValue === null || rawValue === "") {
+    return undefined;
+  }
+
+  const value = Number(rawValue);
+
+  if (!Number.isInteger(value) || value < minimum || value > maximum) {
+    throw new Error(`video_gen 的 ${label || camelName} 需要是 ${minimum}-${maximum} 之间的整数`);
+  }
+
+  return value;
+}
+
+function createVideoContentItem(kind, url, role) {
+  const normalizedUrl = String(url ?? "").trim();
+
+  if (!normalizedUrl) {
+    return null;
+  }
+
+  if (kind === "video") {
+    return {
+      type: "video_url",
+      video_url: {
+        url: normalizedUrl
+      },
+      ...(role ? { role } : {})
+    };
+  }
+
+  if (kind === "audio") {
+    return {
+      type: "audio_url",
+      audio_url: {
+        url: normalizedUrl
+      },
+      ...(role ? { role } : {})
+    };
+  }
+
+  return {
+    type: "image_url",
+    image_url: {
+      url: normalizedUrl
+    },
+    ...(role ? { role } : {})
+  };
+}
+
+function normalizeVideoReferenceInputs(argumentsObject) {
+  return {
+    firstFrameImage: String(argumentsObject?.firstFrameImage ?? argumentsObject?.first_frame_image ?? argumentsObject?.image ?? "").trim(),
+    lastFrameImage: String(argumentsObject?.lastFrameImage ?? argumentsObject?.last_frame_image ?? "").trim(),
+    referenceImages: uniqueStrings([...toStringArray(argumentsObject?.referenceImages), ...toStringArray(argumentsObject?.reference_images)]),
+    referenceVideos: uniqueStrings([...toStringArray(argumentsObject?.referenceVideos), ...toStringArray(argumentsObject?.reference_videos)]),
+    referenceAudios: uniqueStrings([...toStringArray(argumentsObject?.referenceAudios), ...toStringArray(argumentsObject?.reference_audios)])
+  };
+}
+
+function assertSeedanceModeInputs(mode, inputs) {
+  const hasFirstFrame = Boolean(inputs.firstFrameImage);
+  const hasLastFrame = Boolean(inputs.lastFrameImage);
+  const hasReferenceImage = inputs.referenceImages.length > 0;
+  const hasReferenceVideo = inputs.referenceVideos.length > 0;
+  const hasReferenceAudio = inputs.referenceAudios.length > 0;
+  const hasReferenceMedia = hasReferenceImage || hasReferenceVideo || hasReferenceAudio;
+
+  if (mode === "text_to_video") {
+    if (hasFirstFrame || hasLastFrame || hasReferenceMedia) {
+      throw new Error("text_to_video 只能传文本提示词；如需图片输入，请使用 first_frame_to_video、first_last_frame_to_video 或 reference_to_video");
+    }
+    return;
+  }
+
+  if (mode === "first_frame_to_video") {
+    if (!hasFirstFrame) {
+      throw new Error("first_frame_to_video 需要 image 或 firstFrameImage 参数");
+    }
+
+    if (hasLastFrame || hasReferenceMedia) {
+      throw new Error("first_frame_to_video 不能混用 lastFrameImage、referenceImages、referenceVideos 或 referenceAudios");
+    }
+    return;
+  }
+
+  if (mode === "first_last_frame_to_video") {
+    if (!hasFirstFrame || !hasLastFrame) {
+      throw new Error("first_last_frame_to_video 需要 firstFrameImage/image 和 lastFrameImage 参数");
+    }
+
+    if (hasReferenceMedia) {
+      throw new Error("first_last_frame_to_video 不能混用 referenceImages、referenceVideos 或 referenceAudios");
+    }
+    return;
+  }
+
+  if (mode === "reference_to_video") {
+    if (!hasReferenceMedia) {
+      throw new Error("reference_to_video 需要 referenceImages、referenceVideos 或 referenceAudios 参数");
+    }
+
+    if (hasFirstFrame || hasLastFrame) {
+      throw new Error("reference_to_video 不能混用 firstFrameImage/image 或 lastFrameImage；需要严格首尾帧时请使用 first_last_frame_to_video");
+    }
+
+    if (inputs.referenceImages.length > 9) {
+      throw new Error("reference_to_video 的 referenceImages 需要是 1-9 张");
+    }
+
+    if (inputs.referenceVideos.length > 3) {
+      throw new Error("reference_to_video 的 referenceVideos 需要是 0-3 个");
+    }
+
+    if (inputs.referenceAudios.length > 3) {
+      throw new Error("reference_to_video 的 referenceAudios 需要是 0-3 个");
+    }
+
+    if (hasReferenceAudio && !hasReferenceImage && !hasReferenceVideo) {
+      throw new Error("reference_to_video 不能单独输入音频，至少需要 1 张参考图或 1 个参考视频");
+    }
+  }
+}
+
+function buildSeedanceVideoRequestBody(operationName, argumentsObject, model) {
+  if (operationName !== "submit") {
+    return null;
+  }
+
+  const prompt = String(argumentsObject?.prompt ?? "").trim();
+  const mode = normalizeVideoMode(argumentsObject?.mode, argumentsObject);
+  const inputs = normalizeVideoReferenceInputs(argumentsObject);
+  const content = [];
+
+  assertSeedanceModeInputs(mode, inputs);
+
+  if (mode === "text_to_video" && !prompt) {
+    throw new Error("text_to_video 需要 prompt 参数");
+  }
+
+  if (prompt) {
+    content.push({
+      type: "text",
+      text: prompt
+    });
+  }
+
+  if (mode === "first_frame_to_video") {
+    content.push(createVideoContentItem("image", inputs.firstFrameImage, "first_frame"));
+  } else if (mode === "first_last_frame_to_video") {
+    content.push(createVideoContentItem("image", inputs.firstFrameImage, "first_frame"));
+    content.push(createVideoContentItem("image", inputs.lastFrameImage, "last_frame"));
+  } else if (mode === "reference_to_video") {
+    inputs.referenceImages.forEach((url) => content.push(createVideoContentItem("image", url, "reference_image")));
+    inputs.referenceVideos.forEach((url) => content.push(createVideoContentItem("video", url, "reference_video")));
+    inputs.referenceAudios.forEach((url) => content.push(createVideoContentItem("audio", url, "reference_audio")));
+  }
+
+  const negativePrompt = String(argumentsObject?.negativePrompt ?? argumentsObject?.negative_prompt ?? "").trim();
+  const callbackUrl = String(argumentsObject?.callbackUrl ?? argumentsObject?.callBackUrl ?? argumentsObject?.callback_url ?? "").trim();
+  const safetyIdentifier = String(argumentsObject?.safetyIdentifier ?? argumentsObject?.safety_identifier ?? "").trim();
+  const seed = argumentsObject?.seed === undefined || argumentsObject?.seed === null || argumentsObject?.seed === "" ? undefined : Number(argumentsObject.seed);
+  const priority = getVideoPriority(argumentsObject);
+  const frames = getOptionalIntegerArgument(argumentsObject, "frames", "frames", {
+    minimum: 29,
+    maximum: 289,
+    label: "frames"
+  });
+  const executionExpiresAfter = getOptionalIntegerArgument(argumentsObject, "executionExpiresAfter", "execution_expires_after", {
+    minimum: 3_600,
+    maximum: 259_200,
+    label: "execution_expires_after"
+  });
+  const serviceTier = String(argumentsObject?.serviceTier ?? argumentsObject?.service_tier ?? "").trim();
+  const tools = argumentsObject?.tools;
+
+  if (seed !== undefined && (!Number.isInteger(seed) || seed < -1 || seed > 2 ** 32 - 1)) {
+    throw new Error("video_gen 的 seed 需要是 -1 到 2^32-1 之间的整数");
+  }
+
+  if (serviceTier && !["default", "flex"].includes(serviceTier)) {
+    throw new Error("video_gen 的 serviceTier 需要是 default 或 flex");
+  }
+
+  if (tools !== undefined && !Array.isArray(tools)) {
+    throw new Error("video_gen 的 tools 需要是数组");
+  }
+
+  return {
+    model,
+    content: content.filter(Boolean),
+    ratio: String(argumentsObject?.ratio ?? DEFAULT_VIDEO_RATIO).trim() || DEFAULT_VIDEO_RATIO,
+    ...(frames === undefined ? { duration: getVideoDurationSeconds(argumentsObject) } : {}),
+    resolution: String(argumentsObject?.resolution ?? DEFAULT_VIDEO_RESOLUTION).trim() || DEFAULT_VIDEO_RESOLUTION,
+    watermark: typeof argumentsObject?.watermark === "boolean" ? argumentsObject.watermark : false,
+    ...(negativePrompt ? { negative_prompt: negativePrompt } : {}),
+    ...(seed !== undefined ? { seed } : {}),
+    ...(typeof argumentsObject?.returnLastFrame === "boolean" ? { return_last_frame: argumentsObject.returnLastFrame } : {}),
+    ...(typeof argumentsObject?.return_last_frame === "boolean" ? { return_last_frame: argumentsObject.return_last_frame } : {}),
+    ...(callbackUrl ? { callback_url: callbackUrl } : {}),
+    generate_audio:
+      typeof argumentsObject?.generateAudio === "boolean"
+        ? argumentsObject.generateAudio
+        : typeof argumentsObject?.generate_audio === "boolean"
+          ? argumentsObject.generate_audio
+          : false,
+    ...(typeof argumentsObject?.cameraFixed === "boolean" ? { camera_fixed: argumentsObject.cameraFixed } : {}),
+    ...(typeof argumentsObject?.camera_fixed === "boolean" ? { camera_fixed: argumentsObject.camera_fixed } : {}),
+    ...(typeof argumentsObject?.draft === "boolean" ? { draft: argumentsObject.draft } : {}),
+    ...(frames !== undefined ? { frames } : {}),
+    ...(serviceTier ? { service_tier: serviceTier } : {}),
+    ...(executionExpiresAfter !== undefined ? { execution_expires_after: executionExpiresAfter } : {}),
+    ...(tools !== undefined ? { tools } : {}),
+    ...(priority !== undefined ? { priority } : {}),
+    ...(safetyIdentifier ? { safety_identifier: safetyIdentifier } : {})
+  };
+}
+
+function normalizeVideoProviderUrl(value) {
+  return String(value ?? "")
+    .trim()
+    .replace(/^["']+/u, "")
+    .replace(/["']+$/u, "");
+}
+
+function buildVideoOperationUrl(baseUrl, operation, configuredUrl = "") {
+  const normalizedConfiguredUrl = normalizeVideoProviderUrl(configuredUrl);
+
+  if (normalizedConfiguredUrl) {
+    return /^https?:\/\//iu.test(normalizedConfiguredUrl)
+      ? normalizedConfiguredUrl
+      : joinUrl(baseUrl, normalizedConfiguredUrl);
+  }
+
+  return joinUrl(baseUrl, operation.endpoint);
+}
+
+function buildVideoQueryUrl(baseUrl, operation, taskId, configuredUrl = "") {
+  const encodedTaskId = encodeURIComponent(taskId);
+  const endpoint = buildVideoOperationUrl(baseUrl, operation, configuredUrl);
+
+  if (endpoint.includes("{task_id}")) {
+    return endpoint.replaceAll("{task_id}", encodedTaskId);
+  }
+
+  if (endpoint.includes("{taskId}")) {
+    return endpoint.replaceAll("{taskId}", encodedTaskId);
+  }
+
+  return endpoint.replace(/\/+$/u, "") + `/${encodedTaskId}`;
+}
+
+function buildVideoSubmitUrl(baseUrl, operation, configuredUrl = "") {
+  return buildVideoOperationUrl(baseUrl, operation, configuredUrl);
+}
+
+function getVideoPollAttempts(argumentsObject) {
+  const rawValue = argumentsObject?.pollAttempts;
+
+  if (rawValue === undefined || rawValue === null || rawValue === "") {
+    return DEFAULT_VIDEO_POLL_ATTEMPTS;
+  }
+
+  const value = Number(rawValue);
+
+  if (!Number.isFinite(value)) {
+    return DEFAULT_VIDEO_POLL_ATTEMPTS;
+  }
+
+  return Math.max(0, Math.min(Math.floor(value), MAX_VIDEO_POLL_ATTEMPTS));
+}
+
+function getVideoPollIntervalMs(argumentsObject) {
+  const rawValue = argumentsObject?.pollIntervalMs;
+
+  if (rawValue === undefined || rawValue === null || rawValue === "") {
+    return DEFAULT_VIDEO_POLL_INTERVAL_MS;
+  }
+
+  const value = Number(rawValue);
+
+  if (!Number.isFinite(value)) {
+    return DEFAULT_VIDEO_POLL_INTERVAL_MS;
+  }
+
+  return Math.max(1_000, Math.min(Math.floor(value), 120_000));
+}
+
+function getVideoPollTimeoutMs(argumentsObject) {
+  const rawValue = argumentsObject?.pollTimeoutMs;
+
+  if (rawValue === undefined || rawValue === null || rawValue === "") {
+    return DEFAULT_VIDEO_POLL_TIMEOUT_MS;
+  }
+
+  const value = Number(rawValue);
+
+  if (!Number.isFinite(value)) {
+    return DEFAULT_VIDEO_POLL_TIMEOUT_MS;
+  }
+
+  return Math.max(1_000, Math.min(Math.floor(value), MAX_VIDEO_POLL_TIMEOUT_MS));
+}
+
+function shouldPollVideoTool(argumentsObject) {
+  return argumentsObject?.pollUntilComplete !== false && getVideoPollAttempts(argumentsObject) > 0;
+}
+
+function isVideoPendingStatus(status) {
+  return /queued|queueing|pending|running|processing|generating|created|submitted|in_progress|progress|排队|运行|处理中|生成中/u.test(
+    String(status ?? "").trim().toLowerCase()
+  );
+}
+
+function isVideoCompletedStatus(status) {
+  return /success|succeeded|succeed|done|finished|complete|completed|finish|ready|generated|passed|成功|完成|已完成/u.test(
+    String(status ?? "").trim().toLowerCase()
+  );
+}
+
+function isVideoFailedStatus(status) {
+  return /fail|failed|error|cancel|canceled|cancelled|timeout|expired|失败|错误|取消|超时/u.test(
+    String(status ?? "").trim().toLowerCase()
+  );
+}
+
+function buildVideoQueryContext({ provider, operation, baseUrl, apiKey, model, prompt, mode, taskId, queryUrl, protocol }) {
+  const endpoint = buildVideoQueryUrl(baseUrl, operation, taskId, queryUrl);
+
+  return {
+    endpoint,
+    async query() {
+      const response = await getJsonWithNetworkRetry(endpoint, apiKey, {
+        timeoutMs: VIDEO_QUERY_TIMEOUT_MS,
+        timeoutLabel: "video_gen 查询"
+      });
+      const status = extractVideoStatus(response);
+      const artifacts = extractVideoArtifacts(response, {
+        provider: provider.provider,
+        model,
+        prompt,
+        operation: "query",
+        mode,
+        endpoint,
+        taskId,
+        status,
+        resultUrlPath: protocol.resultUrlPath
+      });
+
+      return {
+        response,
+        status,
+        artifacts,
+        sanitized: sanitizeVideoResponse(response)
+      };
+    }
+  };
+}
+
+async function probeVideoProxyHealth({ baseUrl, apiKey, queryOperation, queryUrl, protocol }) {
+  if (!queryOperation) {
+    return {
+      ok: false,
+      status: "query_endpoint_missing",
+      message: "未配置视频查询端点，无法执行健康检查"
+    };
+  }
+
+  const probeTaskId = `gordon-healthcheck-${Date.now()}`;
+  const endpoint = buildVideoQueryUrl(baseUrl, queryOperation, probeTaskId, queryUrl);
+  const startedAt = Date.now();
+
+  try {
+    const response = await getJsonWithNetworkRetry(endpoint, apiKey, {
+      timeoutMs: Math.min(VIDEO_QUERY_TIMEOUT_MS, 8_000),
+      timeoutLabel: "video_gen 健康检查",
+      attempts: 2,
+      retryDelayMs: 800
+    });
+    const errorText = getVideoResponseError(response);
+    const errorClass = classifyVideoResponseError(errorText);
+    const sanitized = sanitizeVideoResponse(response, protocol);
+
+    if (errorClass.kind === "nonexistent_entity") {
+      return {
+        ok: true,
+        status: "reachable",
+        durationMs: Date.now() - startedAt,
+        message: "视频代理查询路由可达，认证有效；假任务返回不存在，属于预期结果",
+        response: sanitized
+      };
+    }
+
+    if (errorText) {
+      return {
+        ok: false,
+        status: errorClass.kind,
+        durationMs: Date.now() - startedAt,
+        message: `${errorClass.label}：${errorText}`,
+        response: sanitized
+      };
+    }
+
+    return {
+      ok: true,
+      status: "reachable",
+      durationMs: Date.now() - startedAt,
+      message: "视频代理查询路由可达",
+      response: sanitized
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+
+    return {
+      ok: false,
+      status: /超时|timeout|timed out|exit 28|curl:\s*\(28\)/iu.test(message) ? "network_timeout" : "network_error",
+      durationMs: Date.now() - startedAt,
+      message: normalizeNetworkErrorMessage(message)
+    };
+  }
+}
+
+function sanitizeVideoRequestBody(requestBody) {
+  if (!requestBody || typeof requestBody !== "object") {
+    return {};
+  }
+
+  return {
+    ...requestBody,
+    content: Array.isArray(requestBody.content)
+      ? requestBody.content.map((item) => {
+          if (!item || typeof item !== "object") {
+            return item;
+          }
+
+          if (item.type === "text") {
+            return {
+              ...item,
+              text: truncateText(item.text, 320)
+            };
+          }
+
+          const url =
+            typeof item.image_url?.url === "string"
+              ? item.image_url.url
+              : typeof item.video_url?.url === "string"
+                ? item.video_url.url
+                : typeof item.audio_url?.url === "string"
+                  ? item.audio_url.url
+                  : "";
+
+          return {
+            type: item.type,
+            role: item.role,
+            url: url ? `[媒体输入已省略，${url.length} 字符]` : ""
+          };
+        })
+      : requestBody.content,
+    ...(typeof requestBody.negative_prompt === "string" ? { negative_prompt: truncateText(requestBody.negative_prompt, 180) } : {})
+  };
+}
+
+function getVideoResponseError(responseJson) {
+  if (!responseJson || typeof responseJson !== "object") {
+    return "";
+  }
+
+  const nestedPayload =
+    responseJson.resp_data && typeof responseJson.resp_data === "object"
+      ? responseJson.resp_data
+      : responseJson.data && typeof responseJson.data === "object"
+        ? responseJson.data
+        : null;
+  const error = responseJson.error ?? responseJson.err ?? responseJson.errors ?? nestedPayload?.error ?? nestedPayload?.err ?? nestedPayload?.errors;
+
+  if (error) {
+    if (typeof error === "string") {
+      return error.trim();
+    }
+
+    if (typeof error === "object") {
+      const code = pickNestedText(error, ["code", "error_code", "errorCode"]);
+      const message = pickNestedText(error, ["message", "msg", "description"]);
+      return [code, message].filter(Boolean).join(": ") || JSON.stringify(error);
+    }
+
+    return String(error);
+  }
+
+  const code = String(responseJson.code ?? "").trim().toLowerCase();
+  const status = String(responseJson.status ?? "").trim().toLowerCase();
+  const message = pickNestedText(responseJson, ["message", "msg"]) || (nestedPayload ? pickNestedText(nestedPayload, ["message", "msg"]) : "");
+
+  if (message && code && !["0", "200", "success"].includes(code)) {
+    return message;
+  }
+
+  if (message && ["error", "failed"].includes(status)) {
+    return message;
+  }
+
+  return "";
+}
+
+function classifyVideoResponseError(errorText) {
+  const normalized = String(errorText ?? "").toLowerCase();
+
+  if (!normalized) {
+    return {
+      kind: "upstream_error",
+      label: "上游错误"
+    };
+  }
+
+  if (
+    /invalidparameter|badrequest|invalid request|invalid request format|validation|required|must be|not supported|unsupported|参数|字段|格式|校验|必填/u.test(
+      normalized
+    )
+  ) {
+    return {
+      kind: "schema_mismatch",
+      label: "接口参数错误"
+    };
+  }
+
+  if (/resourcenotfound|notfound|not found|不存在|未找到/u.test(normalized)) {
+    return {
+      kind: "nonexistent_entity",
+      label: "目标不存在"
+    };
+  }
+
+  return {
+    kind: "upstream_error",
+    label: "上游错误"
+  };
+}
+
+function extractVideoTaskId(responseJson, taskIdPath = "") {
+  const protocolTaskId = normalizeProtocolText(readSimpleJsonPath(responseJson, taskIdPath));
+
+  if (protocolTaskId) {
+    return protocolTaskId;
+  }
+
+  const seen = new WeakSet();
+  const queue = [responseJson];
+
+  while (queue.length) {
+    const item = queue.shift();
+
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+
+    if (seen.has(item)) {
+      continue;
+    }
+
+    seen.add(item);
+
+    const taskId = pickNestedText(item, ["task_id", "taskId", "taskID"]);
+
+    if (taskId) {
+      return taskId;
+    }
+
+    const genericId = pickNestedText(item, ["id"]);
+
+    if (genericId && /^(cgt-|task-|video-|vid-|[a-f0-9]{24,}|[a-z0-9_-]{16,})/iu.test(genericId)) {
+      return genericId;
+    }
+
+    for (const value of Object.values(item)) {
+      if (Array.isArray(value)) {
+        queue.push(...value);
+      } else if (value && typeof value === "object") {
+        queue.push(value);
+      }
+    }
+  }
+
+  return "";
+}
+
+function extractVideoStatus(responseJson) {
+  const seen = new WeakSet();
+  const queue = [responseJson];
+
+  while (queue.length) {
+    const item = queue.shift();
+
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+
+    if (seen.has(item)) {
+      continue;
+    }
+
+    seen.add(item);
+
+    const status = pickNestedText(item, ["status", "state", "task_status", "taskStatus"]);
+
+    if (status) {
+      return status;
+    }
+
+    for (const value of Object.values(item)) {
+      if (Array.isArray(value)) {
+        queue.push(...value);
+      } else if (value && typeof value === "object") {
+        queue.push(value);
+      }
+    }
+  }
+
+  return "";
+}
+
+function pickVideoUrl(item) {
+  if (!item || typeof item !== "object") {
+    return "";
+  }
+
+  for (const key of [
+    "video_url",
+    "videoUrl",
+    "source_video_url",
+    "sourceVideoUrl",
+    "stream_video_url",
+    "streamVideoUrl",
+    "file_url",
+    "fileUrl",
+    "output_url",
+    "outputUrl",
+    "result_url",
+    "resultUrl",
+    "download_url",
+    "downloadUrl",
+    "url"
+  ]) {
+    const value = item[key];
+
+    if (typeof value === "string" && /^https?:\/\//iu.test(value.trim())) {
+      return value.trim();
+    }
+
+    if (value && typeof value === "object") {
+      const nestedUrl = pickNestedText(value, [
+        "url",
+        "video_url",
+        "videoUrl",
+        "source_video_url",
+        "sourceVideoUrl",
+        "file_url",
+        "fileUrl",
+        "download_url",
+        "downloadUrl"
+      ]);
+
+      if (nestedUrl && /^https?:\/\//iu.test(nestedUrl)) {
+        return nestedUrl;
+      }
+    }
+  }
+
+  return "";
+}
+
+function hasExplicitVideoUrlField(item) {
+  if (!item || typeof item !== "object") {
+    return false;
+  }
+
+  return [
+    "video_url",
+    "videoUrl",
+    "source_video_url",
+    "sourceVideoUrl",
+    "stream_video_url",
+    "streamVideoUrl"
+  ].some((key) => {
+    const value = item[key];
+    return typeof value === "string" || (value && typeof value === "object");
+  });
+}
+
+function hasVideoResultContext(pathSegments) {
+  const text = (Array.isArray(pathSegments) ? pathSegments : []).join(".").toLowerCase();
+
+  return /(^|\.)videos?($|\.)|video_?url|result|output|works?|file|download/u.test(text);
+}
+
+function isLikelyVideoUrl(url, item, pathSegments = []) {
+  if (!url || !/^https?:\/\//iu.test(url)) {
+    return false;
+  }
+
+  const mimeType = String(item?.mimeType ?? item?.mime_type ?? item?.type ?? "").toLowerCase();
+
+  return (
+    hasExplicitVideoUrlField(item) ||
+    mimeType.includes("video") ||
+    /\.(mp4|mov|webm|m4v)(?:[?#].*)?$/iu.test(url) ||
+    (hasVideoResultContext(pathSegments) && !/\.(?:jpg|jpeg|png|webp|gif|mp3|wav|m4a|aac)(?:[?#].*)?$/iu.test(url))
+  );
+}
+
+function pickLastFrameUrl(item) {
+  if (!item || typeof item !== "object") {
+    return "";
+  }
+
+  for (const key of ["last_frame_url", "lastFrameUrl", "last_frame", "lastFrame"]) {
+    const value = item[key];
+
+    if (typeof value === "string" && /^https?:\/\//iu.test(value.trim())) {
+      return value.trim();
+    }
+
+    if (value && typeof value === "object") {
+      const nestedUrl = pickNestedText(value, ["url", "image_url", "imageUrl"]);
+
+      if (nestedUrl && /^https?:\/\//iu.test(nestedUrl)) {
+        return nestedUrl;
+      }
+    }
+  }
+
+  return "";
+}
+
+function extractVideoArtifacts(responseJson, context) {
+  const artifacts = [];
+  const seenObjects = new WeakSet();
+  const seenUrls = new Set();
+
+  const protocolVideoUrl = normalizeProtocolText(readSimpleJsonPath(responseJson, context.resultUrlPath));
+
+  if (protocolVideoUrl && /^https?:\/\//iu.test(protocolVideoUrl)) {
+    seenUrls.add(protocolVideoUrl);
+    artifacts.push({
+      id: `video_gen_${Date.now()}_${artifacts.length + 1}`,
+      kind: "video",
+      title: `video_gen 结果 ${artifacts.length + 1}`,
+      mimeType: "video/mp4",
+      url: protocolVideoUrl,
+      provider: context.provider,
+      model: context.model,
+      prompt: context.prompt,
+      metadata: {
+        operation: context.operation,
+        mode: context.mode,
+        endpoint: context.endpoint,
+        taskId: context.taskId,
+        status: context.status,
+        resultUrlPath: context.resultUrlPath,
+        lastFrameUrl: ""
+      }
+    });
+  }
+
+  function visit(item, pathSegments = []) {
+    if (!item || typeof item !== "object") {
+      return;
+    }
+
+    if (seenObjects.has(item)) {
+      return;
+    }
+
+    seenObjects.add(item);
+
+    const videoUrl = pickVideoUrl(item);
+
+    if (videoUrl && !seenUrls.has(videoUrl) && isLikelyVideoUrl(videoUrl, item, pathSegments)) {
+      seenUrls.add(videoUrl);
+      artifacts.push({
+        id: `video_gen_${Date.now()}_${artifacts.length + 1}`,
+        kind: "video",
+        title: `video_gen 结果 ${artifacts.length + 1}`,
+        mimeType: "video/mp4",
+        url: videoUrl,
+        provider: context.provider,
+        model: context.model,
+        prompt: context.prompt,
+        metadata: {
+          operation: context.operation,
+          mode: context.mode,
+          endpoint: context.endpoint,
+          taskId: context.taskId,
+          status: context.status,
+          lastFrameUrl: pickLastFrameUrl(item)
+        }
+      });
+    }
+
+    for (const [key, value] of Object.entries(item)) {
+      const nextPathSegments = [...pathSegments, key];
+
+      if (Array.isArray(value)) {
+        value.forEach((entry, index) => visit(entry, [...nextPathSegments, String(index)]));
+      } else if (value && typeof value === "object") {
+        visit(value, nextPathSegments);
+      }
+    }
+  }
+
+  visit(responseJson);
+  return artifacts;
+}
+
+function sanitizeVideoResponse(responseJson, protocol = {}) {
+  if (!responseJson || typeof responseJson !== "object") {
+    return {
+      raw: responseJson
+    };
+  }
+
+  return {
+    taskId: extractVideoTaskId(responseJson, protocol.taskIdPath),
+    status: extractVideoStatus(responseJson),
+    responseKeys: Object.keys(responseJson),
+    raw: responseJson
+  };
+}
+
 async function callImageGen(argumentsObject) {
   const configs = await readToolConfigs();
   const resolved = resolveRunnableToolConfig(configs, "image_gen");
@@ -1086,9 +3288,10 @@ async function callImageGen(argumentsObject) {
 
   const { provider, runtime } = resolved;
   const prompt = String(argumentsObject?.prompt ?? "").trim();
-  const image = String(argumentsObject?.image ?? "").trim();
-  const images = toStringArray(argumentsObject?.images);
-  const hasImageInput = Boolean(image) || images.length > 0;
+  const imageInputs = uniqueStrings([String(argumentsObject?.image ?? "").trim(), ...toStringArray(argumentsObject?.images)]);
+  const image = imageInputs[0] ?? "";
+  const images = imageInputs;
+  const hasImageInput = imageInputs.length > 0;
   const operationName = hasImageInput ? "image_to_image" : "text_to_image";
   const operation = runtime.operations[operationName];
 
@@ -1143,14 +3346,24 @@ async function callImageGen(argumentsObject) {
     requestBody: sanitizedRequestBody,
     prompt: truncateText(prompt, 240),
     hasImage: Boolean(image),
-    imageCount: images.length
+    imageCount: imageInputs.length,
+    timeoutMs: IMAGE_GEN_TIMEOUT_MS
   };
   const requestStartedAt = Date.now();
   logToolCall("image_gen request", callLog);
   let response;
 
   try {
-    response = await postJson(endpoint, apiKey, requestBody);
+    response =
+      operationName === "image_to_image"
+        ? await postImageEditMultipart(endpoint, apiKey, requestBody, imageInputs, {
+            timeoutMs: IMAGE_GEN_TIMEOUT_MS,
+            timeoutLabel: "image_gen 图生图请求"
+          })
+        : await postJson(endpoint, apiKey, requestBody, {
+            timeoutMs: IMAGE_GEN_TIMEOUT_MS,
+            timeoutLabel: "image_gen 请求"
+          });
   } catch (error) {
     logToolCall("image_gen failure", {
       ...callLog,
@@ -1205,6 +3418,337 @@ ${truncateText(JSON.stringify(sanitized, null, 2))}`,
       requestBody: sanitizedRequestBody,
       artifacts,
       result: sanitized
+    }
+  );
+}
+
+async function callVideoGen(argumentsObject) {
+  const operationName = normalizeVideoOperation(argumentsObject?.operation);
+
+  if (!operationName) {
+    throw new Error("video_gen 需要 operation 参数，可选 submit、query");
+  }
+
+  const requestedProvider = String(argumentsObject?.provider ?? "").trim();
+
+  if (requestedProvider && !VIDEO_PROVIDER_VALUES.has(requestedProvider)) {
+    throw new Error("video_gen 的 provider 当前仅支持 seedance");
+  }
+
+  const configs = await readToolConfigs();
+  const resolved = resolveRunnableToolConfig(configs, "video_gen", requestedProvider);
+
+  if (!resolved) {
+    throw new Error("video_gen 未启用，或目标供应商未启用 / 未配置运行时。请先在能力拓展的 TOOL 配置中启用 video_gen。");
+  }
+
+  const { provider, runtime } = resolved;
+  const operation = runtime.operations[operationName];
+
+  if (!operation) {
+    throw new Error(`video_gen 当前供应商不支持 ${operationName}`);
+  }
+
+  const apiKey = String(provider.apiKey ?? "").trim();
+  const baseUrl = normalizeBaseUrl(provider.baseUrl, "video_gen", provider.provider);
+  const submitUrl =
+    normalizeVideoProviderUrl(provider.submitUrl) ||
+    (baseUrl ? buildVideoOperationUrl(baseUrl, runtime.operations.submit, "") : DEFAULT_SEEDANCE_SUBMIT_URL);
+  const queryUrl =
+    normalizeVideoProviderUrl(provider.queryUrl) ||
+    (baseUrl ? buildVideoOperationUrl(baseUrl, runtime.operations.query, "") : DEFAULT_SEEDANCE_QUERY_URL);
+  const protocol = {
+    taskIdPath: String(provider.taskIdPath ?? DEFAULT_SEEDANCE_TASK_ID_PATH).trim() || DEFAULT_SEEDANCE_TASK_ID_PATH,
+    resultUrlPath: String(provider.resultUrlPath ?? DEFAULT_SEEDANCE_RESULT_URL_PATH).trim() || DEFAULT_SEEDANCE_RESULT_URL_PATH
+  };
+  const configuredModel = String(argumentsObject?.model ?? provider.model ?? "").trim();
+  const model = configuredModel === "doubao-seedance-2-0-260128-video" ? DEFAULT_SEEDANCE_MODEL : configuredModel;
+
+  if (!apiKey) {
+    throw new Error(`${provider.label || provider.provider} 已启用，但缺少 API Key`);
+  }
+
+  if (operationName === "submit" && !submitUrl) {
+    throw new Error(`${provider.label || provider.provider} 已启用，但缺少提交接口`);
+  }
+
+  if (operationName === "query" && !queryUrl) {
+    throw new Error(`${provider.label || provider.provider} 已启用，但缺少轮询接口`);
+  }
+
+  if (operationName === "submit" && !model) {
+    throw new Error(`${provider.label || provider.provider} 已启用，但缺少模型 / 能力 ID`);
+  }
+
+  const prompt = String(argumentsObject?.prompt ?? "").trim();
+  const mode = normalizeVideoMode(argumentsObject?.mode, argumentsObject);
+  const taskId = String(argumentsObject?.taskId ?? argumentsObject?.task_id ?? "").trim();
+  const requestStartedAt = Date.now();
+  let endpoint = buildVideoSubmitUrl(baseUrl, operation, submitUrl);
+  let requestBody = null;
+  let response;
+
+  if (operationName === "query") {
+    if (!taskId) {
+      throw new Error("video_gen 查询需要 taskId 参数");
+    }
+
+    endpoint = buildVideoQueryUrl(baseUrl, operation, taskId, queryUrl);
+  } else {
+    requestBody = buildSeedanceVideoRequestBody(operationName, argumentsObject, model);
+  }
+
+  const callLog = {
+    tool: "video_gen",
+    provider: provider.provider,
+    endpoint: operation.endpoint,
+    url: endpoint,
+    model,
+    operation: operationName,
+    protocol,
+    ...(operationName === "submit" ? { mode } : {}),
+    ...(taskId ? { taskId } : {}),
+    ...(requestBody ? { requestBody: sanitizeVideoRequestBody(requestBody) } : {}),
+    prompt: truncateText(prompt, 240),
+    timeoutMs: operationName === "query" ? VIDEO_QUERY_TIMEOUT_MS : VIDEO_GEN_TIMEOUT_MS
+  };
+  logToolCall("video_gen request", callLog);
+
+  try {
+    if (operationName === "query") {
+      response = await getJson(endpoint, apiKey, {
+        timeoutMs: VIDEO_QUERY_TIMEOUT_MS,
+        timeoutLabel: "video_gen 查询"
+      });
+    } else {
+      response = await postJson(endpoint, apiKey, requestBody, {
+        timeoutMs: VIDEO_GEN_TIMEOUT_MS,
+        timeoutLabel: "video_gen 提交"
+      });
+    }
+  } catch (error) {
+    const rawMessage = error instanceof Error ? error.message : String(error);
+    const shouldHealthCheck = isNetworkErrorMessage(rawMessage);
+    let diagnosticMessage = normalizeNetworkErrorMessage(rawMessage);
+    let healthCheck = null;
+
+    if (shouldHealthCheck) {
+      healthCheck = await probeVideoProxyHealth({
+        baseUrl,
+        apiKey,
+        queryOperation: runtime.operations.query,
+        queryUrl,
+        protocol
+      });
+      const healthText = healthCheck.ok
+        ? `健康检查通过：${healthCheck.message}${healthCheck.durationMs ? `（${healthCheck.durationMs}ms）` : ""}`
+        : `健康检查失败：${healthCheck.message}${healthCheck.durationMs ? `（${healthCheck.durationMs}ms）` : ""}`;
+      diagnosticMessage = `${diagnosticMessage}；${healthText}`;
+    }
+
+    if (operationName === "submit" && shouldHealthCheck) {
+      diagnosticMessage = `video_gen 提交状态未知：提交请求发生网络异常，不能安全自动重试以免重复生成或重复扣费。${diagnosticMessage}。建议稍后检查上游任务列表，或确认未创建任务后重新提交。`;
+    }
+
+    logToolCall("video_gen failure", {
+      ...callLog,
+      durationMs: Date.now() - requestStartedAt,
+      error: diagnosticMessage,
+      ...(healthCheck ? { healthCheck } : {})
+    });
+    throw new Error(diagnosticMessage);
+  }
+
+  const sanitized = sanitizeVideoResponse(response, protocol);
+  const responseTaskId = extractVideoTaskId(response, protocol.taskIdPath) || taskId;
+  let responseStatus = extractVideoStatus(response);
+  const responseError = getVideoResponseError(response);
+
+  if (responseError) {
+    const errorClass = classifyVideoResponseError(responseError);
+    throw new Error(`上游视频接口${errorClass.label}：${responseError}`);
+  }
+
+  let artifacts = extractVideoArtifacts(response, {
+    provider: provider.provider,
+    model,
+    prompt,
+    operation: operationName,
+    mode,
+    endpoint,
+    taskId: responseTaskId,
+    status: responseStatus,
+    resultUrlPath: protocol.resultUrlPath
+  });
+  let finalResult = response;
+  let finalSanitized = sanitized;
+  const pollHistory = [];
+
+  if (responseTaskId && shouldPollVideoTool(argumentsObject) && !artifacts.length && (!responseStatus || isVideoPendingStatus(responseStatus))) {
+    const queryOperation = runtime.operations.query;
+    const pollAttempts = getVideoPollAttempts(argumentsObject);
+    const pollIntervalMs = getVideoPollIntervalMs(argumentsObject);
+    const pollTimeoutMs = getVideoPollTimeoutMs(argumentsObject);
+    const pollStartedAt = Date.now();
+    let pollNetworkErrors = 0;
+
+    if (queryOperation) {
+      const queryContext = buildVideoQueryContext({
+        provider,
+        operation: queryOperation,
+        baseUrl,
+        apiKey,
+        model,
+        prompt,
+        mode,
+        taskId: responseTaskId,
+        queryUrl,
+        protocol
+      });
+
+      for (let pollIndex = 1; pollIndex <= pollAttempts; pollIndex += 1) {
+        const elapsedMs = Date.now() - pollStartedAt;
+
+        if (elapsedMs >= pollTimeoutMs) {
+          pollHistory.push({
+            attempt: pollIndex,
+            status: responseStatus || "poll_timeout",
+            artifacts: artifacts.length,
+            elapsedMs,
+            stopped: "poll_timeout"
+          });
+          break;
+        }
+
+        if (pollIndex > 1) {
+          const remainingMs = pollTimeoutMs - elapsedMs;
+          await new Promise((resolve) => setTimeout(resolve, Math.min(pollIntervalMs, remainingMs)));
+        }
+
+        logToolCall("video_gen poll", {
+          taskId: responseTaskId,
+          attempt: pollIndex,
+          maxAttempts: pollAttempts,
+          intervalMs: pollIntervalMs,
+          timeoutMs: pollTimeoutMs,
+          url: queryContext.endpoint
+        });
+        let queryResult;
+
+        try {
+          queryResult = await queryContext.query();
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          const isNetworkError = isNetworkErrorMessage(errorMessage);
+
+          pollHistory.push({
+            attempt: pollIndex,
+            status: responseStatus || "query_error",
+            artifacts: artifacts.length,
+            elapsedMs: Date.now() - pollStartedAt,
+            error: normalizeNetworkErrorMessage(errorMessage),
+            ...(isNetworkError ? { recoverable: pollNetworkErrors + 1 < VIDEO_POLL_MAX_NETWORK_ERRORS } : {})
+          });
+
+          if (isNetworkError && pollNetworkErrors + 1 < VIDEO_POLL_MAX_NETWORK_ERRORS) {
+            pollNetworkErrors += 1;
+            continue;
+          }
+
+          break;
+        }
+
+        finalResult = queryResult.response;
+        finalSanitized = queryResult.sanitized;
+        responseStatus = queryResult.status || responseStatus;
+        artifacts = queryResult.artifacts;
+        pollHistory.push({
+          attempt: pollIndex,
+          status: responseStatus,
+          artifacts: artifacts.length,
+          elapsedMs: Date.now() - pollStartedAt
+        });
+
+        if (artifacts.length || (responseStatus && !isVideoPendingStatus(responseStatus))) {
+          break;
+        }
+      }
+    }
+  }
+
+  logToolCall("video_gen response", {
+    ...callLog,
+    durationMs: Date.now() - requestStartedAt,
+    taskId: responseTaskId,
+    status: responseStatus,
+    artifacts: artifacts.length,
+    pollHistory,
+    responseKeys: finalSanitized.responseKeys
+  });
+
+  const finalResponseError = finalResult === response ? "" : getVideoResponseError(finalResult);
+
+  if (finalResponseError) {
+    const errorClass = classifyVideoResponseError(finalResponseError);
+    throw new Error(`上游视频查询接口${errorClass.label}：${finalResponseError}`);
+  }
+
+  if (responseStatus && isVideoFailedStatus(responseStatus)) {
+    throw new Error(`视频生成任务失败：${responseStatus}`);
+  }
+
+  if (operationName === "submit" && !responseTaskId) {
+    throw new Error(`上游视频接口未返回 taskId：${truncateText(JSON.stringify(sanitized), 1200)}`);
+  }
+
+  if (!artifacts.length && responseStatus && isVideoCompletedStatus(responseStatus)) {
+    throw new Error(`视频生成任务已完成，但上游未返回可播放视频 URL：${truncateText(JSON.stringify(finalSanitized), 1200)}`);
+  }
+
+  const pollError = artifacts.length ? "" : [...pollHistory].reverse().find((entry) => entry?.error && !entry?.recoverable)?.error ?? "";
+  const hasPollStop = pollHistory.some((entry) => entry?.stopped);
+  const hasUnknownStatus = responseTaskId && !responseStatus && !artifacts.length;
+  const isPending = Boolean(
+    !artifacts.length &&
+      !pollError &&
+      (hasUnknownStatus || hasPollStop || (responseStatus && isVideoPendingStatus(responseStatus)))
+  );
+  const isCompleted = Boolean(artifacts.length || (responseStatus && isVideoCompletedStatus(responseStatus) && !isPending && !pollError));
+  const pollExhausted = Boolean(pollHistory.length && isPending);
+  const pollFailed = Boolean(pollError);
+
+  return buildTextResult(
+    `video_gen 调用完成
+provider=${provider.label || provider.provider}
+endpoint=${endpoint}
+${model ? `model=${model}\n` : ""}operation=${operationName}
+${operationName === "submit" ? `mode=${mode}\n` : ""}${responseTaskId ? `taskId=${responseTaskId}\n` : ""}${responseStatus ? `status=${responseStatus}\n` : ""}${pollHistory.length ? `polls=${pollHistory.length}\n` : ""}${pollError ? `pollError=${pollError}\n` : ""}pending=${isPending}
+completed=${isCompleted}
+artifacts=${artifacts.length}
+
+结果摘要：
+${truncateText(JSON.stringify(finalSanitized.raw ?? finalSanitized, null, 2))}`,
+    {
+      provider: provider.provider,
+      endpoint,
+      submitUrl,
+      queryUrl,
+      protocol,
+      model,
+      operation: operationName,
+      mode,
+      taskId: responseTaskId,
+      status: responseStatus,
+      pending: isPending,
+      completed: isCompleted,
+      pollExhausted,
+      pollFailed,
+      ...(pollError ? { pollError } : {}),
+      call: callLog,
+      ...(requestBody ? { requestBody: sanitizeVideoRequestBody(requestBody) } : {}),
+      ...(pollHistory.length ? { pollHistory } : {}),
+      artifacts,
+      result: finalSanitized.raw ?? finalSanitized
     }
   );
 }
@@ -1266,6 +3810,7 @@ async function callMusicGen(argumentsObject) {
     }
 
     endpoint = buildMusicQueryUrl(baseUrl, operation, provider.provider, taskId);
+    requestBody = provider.provider === "suno" ? { taskId } : null;
   } else if (operationName === "vocal_clone") {
     if (!vocalFilePath) {
       throw new Error("vocal_clone 需要 filePath 参数");
@@ -1284,17 +3829,33 @@ async function callMusicGen(argumentsObject) {
     ...(taskId ? { taskId } : {}),
     ...(vocalFilePath ? { filePath: vocalFilePath } : {}),
     ...(requestBody ? { requestBody: sanitizeMusicRequestBody(requestBody) } : {}),
-    prompt: truncateText(prompt, 240)
+    prompt: truncateText(prompt, 240),
+    timeoutMs: operationName === "query" ? MUSIC_QUERY_TIMEOUT_MS : MUSIC_GEN_TIMEOUT_MS
   };
   logToolCall("music_gen request", callLog);
 
   try {
     if (operationName === "query") {
-      response = await getJson(endpoint, apiKey);
+      response =
+        provider.provider === "suno"
+          ? await postJson(endpoint, apiKey, requestBody, {
+              timeoutMs: MUSIC_QUERY_TIMEOUT_MS,
+              timeoutLabel: "music_gen 查询"
+            })
+          : await getJson(endpoint, apiKey, {
+              timeoutMs: MUSIC_QUERY_TIMEOUT_MS,
+              timeoutLabel: "music_gen 查询"
+            });
     } else if (operationName === "vocal_clone") {
-      response = await postMultipartFile(endpoint, apiKey, vocalFilePath);
+      response = await postMultipartFile(endpoint, apiKey, vocalFilePath, "file", {
+        timeoutMs: MUSIC_GEN_TIMEOUT_MS,
+        timeoutLabel: "music_gen 提交"
+      });
     } else {
-      response = await postJson(endpoint, apiKey, requestBody);
+      response = await postJson(endpoint, apiKey, requestBody, {
+        timeoutMs: MUSIC_GEN_TIMEOUT_MS,
+        timeoutLabel: "music_gen 提交"
+      });
     }
   } catch (error) {
     logToolCall("music_gen failure", {
@@ -1307,9 +3868,9 @@ async function callMusicGen(argumentsObject) {
 
   const sanitized = sanitizeMusicResponse(response);
   const responseTaskId = extractMusicTaskId(response) || taskId;
-  const responseStatus = extractMusicStatus(response);
+  let responseStatus = extractMusicStatus(response);
   const responseError = getMusicResponseError(response);
-  const artifacts = extractMusicArtifacts(response, {
+  let artifacts = extractMusicArtifacts(response, {
     provider: provider.provider,
     model,
     prompt,
@@ -1318,6 +3879,97 @@ async function callMusicGen(argumentsObject) {
     taskId: responseTaskId,
     status: responseStatus
   });
+  let finalResult = response;
+  let finalSanitized = sanitized;
+  const pollHistory = [];
+
+  if (responseError) {
+    throw new Error(`上游音乐接口返回错误：${responseError}`);
+  }
+
+  if (
+    operationName !== "vocal_clone" &&
+    responseTaskId &&
+    shouldPollMusicTool(argumentsObject) &&
+    !artifacts.length &&
+    (!responseStatus || isMusicPendingStatus(responseStatus))
+  ) {
+    const queryOperation = runtime.operations.query;
+    const pollAttempts = getMusicPollAttempts(argumentsObject);
+    const pollIntervalMs = getMusicPollIntervalMs(argumentsObject);
+    const pollTimeoutMs = getMusicPollTimeoutMs(argumentsObject);
+    const pollStartedAt = Date.now();
+
+    if (queryOperation) {
+      const queryContext = buildMusicQueryContext({
+        provider,
+        operation: queryOperation,
+        baseUrl,
+        apiKey,
+        model,
+        prompt,
+        taskId: responseTaskId
+      });
+
+      for (let pollIndex = 1; pollIndex <= pollAttempts; pollIndex += 1) {
+        const elapsedMs = Date.now() - pollStartedAt;
+
+        if (elapsedMs >= pollTimeoutMs) {
+          pollHistory.push({
+            attempt: pollIndex,
+            status: responseStatus || "poll_timeout",
+            artifacts: artifacts.length,
+            elapsedMs,
+            stopped: "poll_timeout"
+          });
+          break;
+        }
+
+        if (pollIndex > 1) {
+          const remainingMs = pollTimeoutMs - elapsedMs;
+          await new Promise((resolve) => setTimeout(resolve, Math.min(pollIntervalMs, remainingMs)));
+        }
+
+        logToolCall("music_gen poll", {
+          taskId: responseTaskId,
+          attempt: pollIndex,
+          maxAttempts: pollAttempts,
+          intervalMs: pollIntervalMs,
+          timeoutMs: pollTimeoutMs,
+          url: queryContext.endpoint
+        });
+        let queryResult;
+
+        try {
+          queryResult = await queryContext.query();
+        } catch (error) {
+          pollHistory.push({
+            attempt: pollIndex,
+            status: responseStatus || "query_error",
+            artifacts: artifacts.length,
+            elapsedMs: Date.now() - pollStartedAt,
+            error: error instanceof Error ? error.message : String(error)
+          });
+          break;
+        }
+
+        finalResult = queryResult.response;
+        finalSanitized = queryResult.sanitized;
+        responseStatus = queryResult.status || responseStatus;
+        artifacts = queryResult.artifacts;
+        pollHistory.push({
+          attempt: pollIndex,
+          status: responseStatus,
+          artifacts: artifacts.length,
+          elapsedMs: Date.now() - pollStartedAt
+        });
+
+        if (artifacts.length || (responseStatus && !isMusicPendingStatus(responseStatus))) {
+          break;
+        }
+      }
+    }
+  }
 
   logToolCall("music_gen response", {
     ...callLog,
@@ -1325,22 +3977,51 @@ async function callMusicGen(argumentsObject) {
     taskId: responseTaskId,
     status: responseStatus,
     artifacts: artifacts.length,
-    responseKeys: sanitized.responseKeys
+    pollHistory,
+    responseKeys: finalSanitized.responseKeys
   });
 
-  if (responseError) {
-    throw new Error(`上游音乐接口返回错误：${responseError}`);
+  const finalResponseError = finalResult === response ? "" : getMusicResponseError(finalResult);
+
+  if (finalResponseError) {
+    throw new Error(`上游音乐查询接口返回错误：${finalResponseError}`);
   }
+
+  if (responseStatus && isMusicFailedStatus(responseStatus)) {
+    throw new Error(`音乐生成任务失败：${responseStatus}`);
+  }
+
+  if (["generate_song", "generate_instrumental"].includes(operationName) && !responseTaskId && !artifacts.length) {
+    throw new Error(`上游音乐接口未返回 taskId 或音频 URL：${truncateText(JSON.stringify(sanitized), 1200)}`);
+  }
+
+  if (!artifacts.length && responseStatus && isMusicCompletedStatus(responseStatus)) {
+    throw new Error(`音乐生成任务已完成，但上游未返回可播放音频 URL：${truncateText(JSON.stringify(finalSanitized), 1200)}`);
+  }
+
+  const pollError = [...pollHistory].reverse().find((entry) => entry?.error)?.error ?? "";
+  const hasPollStop = pollHistory.some((entry) => entry?.stopped);
+  const hasUnknownStatus = responseTaskId && !responseStatus && !artifacts.length;
+  const isPending = Boolean(
+    !artifacts.length &&
+      !pollError &&
+      (hasUnknownStatus || hasPollStop || (responseStatus && isMusicPendingStatus(responseStatus)))
+  );
+  const isCompleted = Boolean(artifacts.length || (responseStatus && isMusicCompletedStatus(responseStatus) && !isPending && !pollError));
+  const pollExhausted = Boolean(pollHistory.length && isPending);
+  const pollFailed = Boolean(pollError);
 
   return buildTextResult(
     `music_gen 调用完成
 provider=${provider.label || provider.provider}
 endpoint=${operation.endpoint}
 ${model ? `model=${model}\n` : ""}operation=${operationName}
-${responseTaskId ? `taskId=${responseTaskId}\n` : ""}${responseStatus ? `status=${responseStatus}\n` : ""}artifacts=${artifacts.length}
+${responseTaskId ? `taskId=${responseTaskId}\n` : ""}${responseStatus ? `status=${responseStatus}\n` : ""}${pollHistory.length ? `polls=${pollHistory.length}\n` : ""}${pollError ? `pollError=${pollError}\n` : ""}pending=${isPending}
+completed=${isCompleted}
+artifacts=${artifacts.length}
 
 结果摘要：
-${truncateText(JSON.stringify(sanitized.raw ?? sanitized, null, 2))}`,
+${truncateText(JSON.stringify(finalSanitized.raw ?? finalSanitized, null, 2))}`,
     {
       provider: provider.provider,
       endpoint: operation.endpoint,
@@ -1348,10 +4029,16 @@ ${truncateText(JSON.stringify(sanitized.raw ?? sanitized, null, 2))}`,
       operation: operationName,
       taskId: responseTaskId,
       status: responseStatus,
+      pending: isPending,
+      completed: isCompleted,
+      pollExhausted,
+      pollFailed,
+      ...(pollError ? { pollError } : {}),
       call: callLog,
       ...(requestBody ? { requestBody: sanitizeMusicRequestBody(requestBody) } : {}),
+      ...(pollHistory.length ? { pollHistory } : {}),
       artifacts,
-      result: sanitized.raw ?? sanitized
+      result: finalSanitized.raw ?? finalSanitized
     }
   );
 }
@@ -1386,6 +4073,11 @@ async function handleRequest(message) {
 
     if (toolName === "image_gen") {
       ok(id, await callImageGen(argumentsObject));
+      return;
+    }
+
+    if (toolName === "video_gen") {
+      ok(id, await callVideoGen(argumentsObject));
       return;
     }
 

@@ -48,11 +48,107 @@ export interface AgentCapabilityRoutingContext {
   summary: string;
   needs: AgentCapabilityNeed[];
   groups: AgentCapabilityRouteGroup[];
-  allToolsAvailable: true;
+  visibleToolCount: number;
+  hiddenToolCount: number;
+  allToolsAvailable: false;
   routingPolicy: string;
 }
 
 const MAX_ROUTED_TOOLS_PER_GROUP = 6;
+const MAX_VISIBLE_PLANNER_TOOLS = 18;
+const DEFAULT_VISIBLE_TOOL_NAMES = ["read_file", "search_files", "web_research"];
+const DOMAIN_VISIBLE_TOOL_NAMES: Record<string, string[]> = {
+  workspace: ["list_directory", "read_file", "search_files", "validate_json_file", "diff_paths", "run_shell_command"],
+  web_research: ["web_research", "github_search_repositories", "open_url", "read_web_page"],
+  desktop: ["get_app_state", "open_app", "open_url", "wait", "click_text"],
+  generation: ["image_gen", "video_gen", "music_gen"],
+  writing_asset: ["writing_list_books", "writing_read_book", "writing_search_book"],
+  comic_asset: ["comic_list_projects", "comic_read_project"],
+  application_asset: ["writing_list_books", "writing_read_book", "writing_search_book", "comic_list_projects", "comic_read_project"]
+};
+const DOMAIN_WRITE_TOOL_NAMES: Record<string, string[]> = {
+  workspace: ["write_file", "replace_in_file"],
+  writing_asset: ["writing_create_book", "writing_update_chapter", "writing_update_book_fields", "writing_update_story_assets"],
+  comic_asset: [
+    "comic_create_project",
+    "comic_create_chapter",
+    "comic_import_chapters",
+    "comic_update_chapter",
+    "comic_update_project_fields",
+    "comic_update_chapter_images",
+    "comic_update_assets"
+  ],
+  application_asset: [
+    "writing_update_chapter",
+    "writing_update_book_fields",
+    "writing_update_story_assets",
+    "comic_create_project",
+    "comic_create_chapter",
+    "comic_import_chapters",
+    "comic_update_chapter",
+    "comic_update_project_fields",
+    "comic_update_chapter_images",
+    "comic_update_assets"
+  ]
+};
+const DOMAIN_VERIFY_TOOL_NAMES: Record<string, string[]> = {
+  workspace: ["read_file", "search_files", "validate_json_file", "diff_paths"],
+  web_research: ["web_research", "read_web_page", "github_search_repositories"],
+  desktop: ["get_app_state"],
+  writing_asset: ["writing_list_books", "writing_read_book", "writing_search_book"],
+  comic_asset: ["comic_list_projects", "comic_read_project"],
+  application_asset: [
+    "writing_list_books",
+    "writing_read_book",
+    "writing_search_book",
+    "comic_list_projects",
+    "comic_read_project"
+  ]
+};
+const PLANNER_DOMAIN_NEEDS = new Set(["workspace", "web_research", "desktop", "generation", "writing_asset", "comic_asset", "application_asset"]);
+const PLANNER_ACTION_NEEDS = new Set(["read", "write", "verify", "operate_media"]);
+const RESOURCE_DOMAIN_NEEDS: Record<string, string[]> = {
+  workspace: ["workspace"],
+  codebase: ["workspace"],
+  web: ["web_research"],
+  desktop: ["desktop"],
+  artifact: ["workspace", "generation"],
+  writing: ["writing_asset", "application_asset"],
+  comic: ["comic_asset", "application_asset"],
+  media: ["generation"],
+  conversation: ["read"]
+};
+const DESKTOP_MEDIA_TOOL_NAMES = ["wait", "get_app_state", "click_text", "play_media", "click_window_area", "take_screenshot"];
+const RESOURCE_CAPABILITY_NEEDS: Record<string, string[]> = {
+  "codebase.inspect": ["workspace", "read"],
+  "codebase.edit": ["workspace", "write"],
+  "codebase.verify": ["workspace", "verify"],
+  "web.research": ["web_research", "search", "read"],
+  "desktop.inspect": ["desktop", "read"],
+  "desktop.operate": ["desktop", "operate_media"],
+  "media.generate": ["generation"],
+  "writing.review_continuity": ["writing_asset", "application_asset", "read", "verify"],
+  "writing.update_asset": ["writing_asset", "application_asset", "write"],
+  "comic.read_project": ["comic_asset", "application_asset", "read"],
+  "comic.split_storyboard": ["comic_asset", "application_asset", "write"],
+  "comic.render_images": ["generation", "comic_asset", "application_asset", "write"]
+};
+const HIDDEN_PRIMITIVE_TOOL_NAMES = new Set([
+  "path_info",
+  "inspect_path",
+  "normalize_path",
+  "join_path",
+  "relative_path",
+  "create_directory",
+  "move_path",
+  "delete_path",
+  "web_search",
+  "web_search_v2",
+  "list_apps",
+  "click",
+  "type_text",
+  "press_key"
+]);
 
 function normalizeText(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
@@ -67,6 +163,29 @@ function addNeed(needs: Map<string, AgentCapabilityNeed>, capability: string, we
       weight,
       reason
     });
+  }
+}
+
+function addResourceGatewayNeeds(contextPacket: AgentContextPacket, needs: Map<string, AgentCapabilityNeed>): void {
+  const gatewayPlan = contextPacket.resources.gatewayPlan;
+
+  for (const step of gatewayPlan.steps) {
+    for (const capability of RESOURCE_CAPABILITY_NEEDS[step.capabilityId] ?? []) {
+      const phaseWeight = isPlannerDomainNeed(capability)
+        ? step.phase === "act"
+          ? 9
+          : step.phase === "verify"
+            ? 8
+            : 7
+        : step.phase === "act"
+          ? 6
+          : 5;
+      addNeed(needs, capability, phaseWeight, `Resource Gateway ${step.phase}:${step.capabilityId} 建议 ${capability}`);
+    }
+
+    for (const executionDomain of step.preferredExecutionDomains) {
+      addNeed(needs, executionDomain, step.phase === "act" ? 9 : 7, `Resource Gateway ${step.capabilityId} 偏好 ${executionDomain}`);
+    }
   }
 }
 
@@ -86,6 +205,41 @@ function inferNeedsFromContext(contextPacket: AgentContextPacket): AgentCapabili
   );
   const needs = new Map<string, AgentCapabilityNeed>();
 
+  for (const resource of contextPacket.resources.candidates) {
+    for (const capability of RESOURCE_DOMAIN_NEEDS[resource.domain] ?? []) {
+      addNeed(needs, capability, Math.max(5, Math.round(resource.confidence * 10)), `资源 ${resource.type} 需要 ${capability} 执行域`);
+    }
+
+    for (const executionDomain of resource.preferredExecutionDomains) {
+      addNeed(
+        needs,
+        executionDomain,
+        Math.max(5, Math.round(resource.confidence * 10)),
+        `资源 ${resource.type} 偏好 ${executionDomain} 执行域`
+      );
+    }
+  }
+
+  for (const capability of contextPacket.resources.capabilityFrame.capabilities) {
+    if (["read", "write", "update", "review", "verify", "generate", "search", "research", "operate"].includes(capability)) {
+      const mappedCapability =
+        capability === "generate"
+          ? "generation"
+          : capability === "search" || capability === "research"
+            ? "web_research"
+            : capability === "update"
+              ? "write"
+              : capability === "review"
+                ? "verify"
+                : capability === "operate"
+                  ? "desktop"
+                  : capability;
+      addNeed(needs, mappedCapability, 6, `资源能力帧建议 ${capability}`);
+    }
+  }
+
+  addResourceGatewayNeeds(contextPacket, needs);
+
   if (/file|path|workspace|repo|code|diff|json|文件|目录|路径|仓库|代码|读取|修改/u.test(text)) {
     addNeed(needs, "workspace", 7, "任务涉及本地文件、仓库、路径、代码或 JSON");
   }
@@ -98,19 +252,36 @@ function inferNeedsFromContext(contextPacket: AgentContextPacket): AgentCapabili
     addNeed(needs, "desktop", 7, "任务涉及桌面应用、浏览器、点击、输入、截图或 UI 状态");
   }
 
-  if (/image|video|music|audio|generate|poster|图片|视频|音乐|音频|生成|海报/u.test(text)) {
+  if (/play|bilibili|youtube|video site|media|player|watch|episode|播放|开播|视频站|播放器|番剧|剧集|动漫|动画|B站|哔哩|凡人修仙传/iu.test(text)) {
+    addNeed(needs, "desktop", 8, "任务涉及浏览器媒体播放，需要桌面状态和网页操作能力");
+    addNeed(needs, "operate_media", 7, "任务需要等待页面、点击可见文本、尝试播放并截图验证");
+  }
+
+  if (
+    /image|video|music|audio|poster|cover|illustration|图片|图像|视频|音乐|音频|歌曲|曲子|乐曲|配乐|伴奏|bgm|钢琴曲|笛子音乐|纯音乐|海报|封面|插画|生图|生成结果|任务状态|task\s*id|taskid|视频链接|音频链接|图片链接|轮询生成/u.test(
+      text
+    )
+  ) {
     addNeed(needs, "generation", 7, "任务涉及图片、视频、音乐、音频或生成类产物");
   }
 
-  if (/writing|book|chapter|novel|application|story|asset|小说|章节|书稿|应用|故事|资产/u.test(text)) {
-    addNeed(needs, "application_asset", 7, "任务涉及应用广场资产、小说、章节或故事资产");
+  if (/writing|book|novel|墨笔生花|添香小筑|小说|书稿|书籍/u.test(text)) {
+    addNeed(needs, "writing_asset", 8, "任务涉及墨笔生花小说或书稿资产");
+  }
+
+  if (/comic|storyboard|丹青溢彩|灵绘小筑|漫画|分镜/u.test(text)) {
+    addNeed(needs, "comic_asset", 8, "任务涉及丹青溢彩漫画、章节、分镜或素材资产");
+  }
+
+  if (/application|asset|应用|素材|资产/u.test(text)) {
+    addNeed(needs, "application_asset", 7, "任务涉及应用广场资产、小说/漫画、章节、分镜、素材或故事资产");
   }
 
   if (/verify|check|test|exists|contains|status|验证|检查|测试|存在|包含|状态/u.test(text)) {
     addNeed(needs, "verify", 6, "任务处于验证、检查或状态确认语义");
   }
 
-  if (/write|update|replace|create|save|delete|修改|写入|更新|创建|保存|删除/u.test(text)) {
+  if (/write|update|replace|create|append|add|save|delete|修改|写入|写回|更新|创建|新增|增加|追加|补全|补充|保存|删除/u.test(text)) {
     addNeed(needs, "write", 5, "任务包含写入、创建、更新或删除意图");
   }
 
@@ -145,6 +316,83 @@ function riskPenalty(risk: ToolRisk): number {
   return 0;
 }
 
+function isPlannerDomainNeed(capability: string): boolean {
+  return PLANNER_DOMAIN_NEEDS.has(capability);
+}
+
+function isPlannerActionNeed(capability: string): boolean {
+  return PLANNER_ACTION_NEEDS.has(capability);
+}
+
+function isApplicationSubdomain(domain: string): boolean {
+  return domain === "writing_asset" || domain === "comic_asset" || domain === "application_asset";
+}
+
+function isToolInDomain(tool: McpToolDefinition | AgentCapabilityRouteTool, domain: string): boolean {
+  const toolDomain = "executionDomain" in tool ? tool.executionDomain : inferToolExecutionDomain(tool);
+
+  if (toolDomain === domain) {
+    return true;
+  }
+
+  if (domain === "application_asset" && isApplicationSubdomain(toolDomain)) {
+    return true;
+  }
+
+  if (isApplicationSubdomain(domain) && toolDomain === "application_asset") {
+    return true;
+  }
+
+  return false;
+}
+
+function isBridgeToolForDomain(toolName: string, domain: string): boolean {
+  return Boolean(DOMAIN_VISIBLE_TOOL_NAMES[domain]?.includes(toolName));
+}
+
+function isToolRelevantToDomains(tool: McpToolDefinition | AgentCapabilityRouteTool, domains: Set<string>): boolean {
+  if (!domains.size) {
+    return true;
+  }
+
+  for (const domain of domains) {
+    if (isToolInDomain(tool, domain) || isBridgeToolForDomain(tool.name, domain)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function hasSpecificApplicationDomain(domains: Set<string>): boolean {
+  return domains.has("writing_asset") || domains.has("comic_asset");
+}
+
+function shouldUseBroadApplicationDomain(domain: string, domains: Set<string>): boolean {
+  return !(domain === "application_asset" && hasSpecificApplicationDomain(domains));
+}
+
+function isToolAllowedBySpecificApplicationDomains(
+  tool: McpToolDefinition | AgentCapabilityRouteTool,
+  domains: Set<string>
+): boolean {
+  if (!hasSpecificApplicationDomain(domains)) {
+    return true;
+  }
+
+  const executionDomain = "executionDomain" in tool ? tool.executionDomain : inferToolExecutionDomain(tool);
+
+  if (executionDomain === "writing_asset") {
+    return domains.has("writing_asset");
+  }
+
+  if (executionDomain === "comic_asset") {
+    return domains.has("comic_asset");
+  }
+
+  return true;
+}
+
 function scoreToolForNeed(tool: McpToolDefinition, need: AgentCapabilityNeed): AgentCapabilityRouteTool {
   const capability = inferToolCapabilities(tool);
   const verbs = inferToolVerbs(tool);
@@ -152,10 +400,11 @@ function scoreToolForNeed(tool: McpToolDefinition, need: AgentCapabilityNeed): A
   const riskLevel = inferToolRiskLevel(tool);
   const cost = inferToolCost(tool);
   const payload = buildPlannerToolPayload([tool])[0] ?? {};
+  const toolText = normalizeText(`${tool.serverName} ${tool.name} ${tool.description ?? ""}`);
   const matchedNeeds: string[] = [];
   let score = 0;
 
-  if (executionDomain === need.capability) {
+  if (isPlannerDomainNeed(need.capability) && isToolInDomain(tool, need.capability)) {
     score += need.weight + 4;
     matchedNeeds.push(`domain:${need.capability}`);
   }
@@ -173,6 +422,16 @@ function scoreToolForNeed(tool: McpToolDefinition, need: AgentCapabilityNeed): A
   if (need.capability === "verify" && capability.includes("read")) {
     score += 2;
     matchedNeeds.push("readable_verification");
+  }
+
+  if (need.capability === "writing_asset" && /writing|book|novel|小说|书稿/u.test(toolText)) {
+    score += need.weight + 4;
+    matchedNeeds.push("domain:writing_asset");
+  }
+
+  if (need.capability === "comic_asset" && /comic|storyboard|漫画|分镜/u.test(toolText)) {
+    score += need.weight + 4;
+    matchedNeeds.push("domain:comic_asset");
   }
 
   score -= costPenalty(cost);
@@ -197,14 +456,69 @@ function scoreToolForNeed(tool: McpToolDefinition, need: AgentCapabilityNeed): A
   };
 }
 
+function isResourceGatewayStepRelevantToNeed(capabilityId: string, need: AgentCapabilityNeed): boolean {
+  const capabilities = RESOURCE_CAPABILITY_NEEDS[capabilityId] ?? [];
+
+  return capabilities.includes(need.capability);
+}
+
+function scoreToolForResourceGateway(tool: McpToolDefinition, contextPacket: AgentContextPacket, need: AgentCapabilityNeed): number {
+  const gatewayPlan = contextPacket.resources.gatewayPlan;
+
+  if (!gatewayPlan.steps.length) {
+    return 0;
+  }
+
+  const toolText = normalizeText(`${tool.serverName} ${tool.name} ${tool.description ?? ""}`);
+  let score = 0;
+
+  for (const step of gatewayPlan.steps) {
+    if (!isResourceGatewayStepRelevantToNeed(step.capabilityId, need)) {
+      continue;
+    }
+
+    if (step.toolHints.includes(tool.name)) {
+      score += step.phase === "act" ? 8 : step.phase === "verify" ? 6 : 5;
+    }
+
+    if (step.preferredExecutionDomains.includes(inferToolExecutionDomain(tool))) {
+      score += step.phase === "act" ? 4 : 3;
+    }
+
+    if (step.toolHints.some((hint) => toolText.includes(normalizeText(hint)))) {
+      score += 2;
+    }
+  }
+
+  if (score > 0 && gatewayPlan.toolBias.includes(tool.name)) {
+    score += 4;
+  }
+
+  return score;
+}
+
 export function buildCapabilityRoutingContext(
   contextPacket: AgentContextPacket,
   candidateTools: McpToolDefinition[]
 ): AgentCapabilityRoutingContext {
   const needs = inferNeedsFromContext(contextPacket);
+  const domainNeeds = new Set(needs.filter((need) => isPlannerDomainNeed(need.capability)).map((need) => need.capability));
   const groups = needs.map((need) => {
-    const tools = candidateTools
-      .map((tool) => scoreToolForNeed(tool, need))
+    const scopedTools =
+      isPlannerActionNeed(need.capability) && domainNeeds.size
+        ? candidateTools.filter((tool) => isToolRelevantToDomains(tool, domainNeeds))
+        : candidateTools;
+    const tools = scopedTools
+      .map((tool) => {
+        const scoredTool = scoreToolForNeed(tool, need);
+        const gatewayScore = scoreToolForResourceGateway(tool, contextPacket, need);
+
+        return {
+          ...scoredTool,
+          score: scoredTool.score + gatewayScore,
+          matchedNeeds: gatewayScore > 0 ? [...scoredTool.matchedNeeds, "resource_gateway"] : scoredTool.matchedNeeds
+        };
+      })
       .filter((tool) => tool.score > 0)
       .sort((left, right) => right.score - left.score || left.serverName.localeCompare(right.serverName) || left.name.localeCompare(right.name))
       .slice(0, MAX_ROUTED_TOOLS_PER_GROUP);
@@ -216,12 +530,178 @@ export function buildCapabilityRoutingContext(
     };
   });
   const routedCount = new Set(groups.flatMap((group) => group.tools.map((tool) => `${tool.serverId}:${tool.name}`))).size;
+  const visibleTools = buildPlannerVisibleTools(candidateTools, groups);
+  const gatewaySummary = contextPacket.resources.gatewayPlan.steps.length ? ` Resource Gateway：${contextPacket.resources.gatewayPlan.summary}` : "";
 
   return {
-    summary: `Capability Routing 仅用于分组和排序提示：识别 ${needs.length} 个能力需求，推荐关注 ${routedCount}/${candidateTools.length} 个工具；完整候选工具仍全部可选。`,
+    summary: `Capability Routing 已生成 Planner Tool View：识别 ${needs.length} 个能力需求，推荐关注 ${routedCount}/${candidateTools.length} 个工具；本轮 planner 只可从 ${visibleTools.length} 个可见工具中选择，隐藏 ${candidateTools.length - visibleTools.length} 个底层原语或低相关工具。${gatewaySummary}`,
     needs,
     groups,
-    allToolsAvailable: true,
-    routingPolicy: "模型仍可选择完整候选列表中的任意工具；routing 不做候选裁剪、不做强制路由，只作为成本、风险和能力匹配提示。"
+    visibleToolCount: visibleTools.length,
+    hiddenToolCount: Math.max(0, candidateTools.length - visibleTools.length),
+    allToolsAvailable: false,
+    routingPolicy:
+      "Planner Tool View 是本轮工具白名单：模型只能选择可见工具列表中的工具；路径拼接、桌面点击/输入/按键等底层原语默认隐藏，除非没有更高层语义工具可用。"
   };
+}
+
+function toolKey(tool: Pick<McpToolDefinition, "serverId" | "name">): string {
+  return `${tool.serverId}:${tool.name}`;
+}
+
+function comparePlannerTools(left: McpToolDefinition, right: McpToolDefinition): number {
+  const leftRisk = inferToolRiskLevel(left);
+  const rightRisk = inferToolRiskLevel(right);
+  const leftCost = inferToolCost(left);
+  const rightCost = inferToolCost(right);
+  const riskOrder = { low: 0, medium: 1, high: 2 } as const;
+  const costOrder = { low: 0, medium: 1, high: 2 } as const;
+
+  return (
+    riskOrder[leftRisk] - riskOrder[rightRisk] ||
+    costOrder[leftCost] - costOrder[rightCost] ||
+    left.serverName.localeCompare(right.serverName) ||
+    left.name.localeCompare(right.name)
+  );
+}
+
+export function buildPlannerVisibleTools(
+  candidateTools: McpToolDefinition[],
+  groups: AgentCapabilityRouteGroup[],
+  maxVisibleTools = MAX_VISIBLE_PLANNER_TOOLS
+): McpToolDefinition[] {
+  const selected = new Map<string, McpToolDefinition>();
+  const needs = new Set(groups.map((group) => group.capability));
+  const domainNeeds = new Set([...needs].filter((capability) => isPlannerDomainNeed(capability)));
+  const hasWriteNeed = needs.has("write");
+  const hasVerifyNeed = needs.has("verify");
+  const hasMediaOperationNeed = needs.has("operate_media");
+  const effectiveDomains = domainNeeds.size ? domainNeeds : new Set(["read"]);
+  const pinnedToolNames = new Set<string>();
+
+  if (domainNeeds.has("generation")) {
+    for (const toolName of DOMAIN_VISIBLE_TOOL_NAMES.generation ?? []) {
+      pinnedToolNames.add(toolName);
+    }
+  }
+
+  const addTool = (tool: McpToolDefinition | undefined, options: { allowPrimitive?: boolean } = {}): void => {
+    if (!tool) {
+      return;
+    }
+
+    if (!options.allowPrimitive && HIDDEN_PRIMITIVE_TOOL_NAMES.has(tool.name)) {
+      return;
+    }
+
+    selected.set(toolKey(tool), tool);
+  };
+  const addToolByName = (toolName: string): void => {
+    addTool(candidateTools.find((tool) => tool.name === toolName));
+  };
+
+  for (const domain of effectiveDomains) {
+    const toolNames = domain === "read" ? DEFAULT_VISIBLE_TOOL_NAMES : DOMAIN_VISIBLE_TOOL_NAMES[domain] ?? [];
+
+    for (const toolName of toolNames) {
+      addToolByName(toolName);
+    }
+  }
+
+  if (hasWriteNeed) {
+    for (const domain of domainNeeds) {
+      if (!shouldUseBroadApplicationDomain(domain, domainNeeds)) {
+        continue;
+      }
+
+      for (const toolName of DOMAIN_WRITE_TOOL_NAMES[domain] ?? []) {
+        addToolByName(toolName);
+      }
+    }
+  }
+
+  if (hasVerifyNeed) {
+    for (const domain of domainNeeds) {
+      if (!shouldUseBroadApplicationDomain(domain, domainNeeds)) {
+        continue;
+      }
+
+      for (const toolName of DOMAIN_VERIFY_TOOL_NAMES[domain] ?? []) {
+        addToolByName(toolName);
+      }
+    }
+  }
+
+  if (hasMediaOperationNeed && domainNeeds.has("desktop")) {
+    for (const toolName of DESKTOP_MEDIA_TOOL_NAMES) {
+      addToolByName(toolName);
+    }
+  }
+
+  for (const routedTool of groups.flatMap((group) => group.tools.filter((tool) => tool.matchedNeeds.includes("resource_gateway")))) {
+    if (!isToolAllowedBySpecificApplicationDomains(routedTool, domainNeeds)) {
+      continue;
+    }
+
+    addTool(candidateTools.find((tool) => tool.serverId === routedTool.serverId && tool.name === routedTool.name));
+  }
+
+  for (const group of groups) {
+    for (const routedTool of group.tools) {
+      if (isPlannerDomainNeed(group.capability) && !isToolRelevantToDomains(routedTool, new Set([group.capability]))) {
+        continue;
+      }
+
+      if (!isPlannerDomainNeed(group.capability) && !domainNeeds.size) {
+        continue;
+      }
+
+      if (!isPlannerDomainNeed(group.capability) && !isToolRelevantToDomains(routedTool, domainNeeds)) {
+        continue;
+      }
+
+      if (!isToolAllowedBySpecificApplicationDomains(routedTool, domainNeeds)) {
+        continue;
+      }
+
+      if (routedTool.sideEffects === "stateful" && !hasWriteNeed && !domainNeeds.has("generation")) {
+        continue;
+      }
+
+      addTool(candidateTools.find((tool) => tool.serverId === routedTool.serverId && tool.name === routedTool.name));
+    }
+  }
+
+  if (!selected.size) {
+    for (const toolName of DEFAULT_VISIBLE_TOOL_NAMES) {
+      addToolByName(toolName);
+    }
+  }
+
+  if (!selected.size) {
+    const fallbackTools = candidateTools.filter((entry) => !HIDDEN_PRIMITIVE_TOOL_NAMES.has(entry.name)).sort(comparePlannerTools);
+
+    for (const tool of fallbackTools.length ? fallbackTools : candidateTools.sort(comparePlannerTools)) {
+      addTool(tool, { allowPrimitive: !fallbackTools.length });
+    }
+  }
+
+  if (selected.size > maxVisibleTools) {
+    const routedKeys = new Set(groups.flatMap((group) => group.tools.map((tool) => `${tool.serverId}:${tool.name}`)));
+    const pinnedKeys = new Set(
+      [...selected.values()].filter((tool) => pinnedToolNames.has(tool.name)).map((tool) => toolKey(tool))
+    );
+    const entries = [...selected.values()].sort((left, right) => {
+      const leftPinned = pinnedKeys.has(toolKey(left)) ? 0 : 1;
+      const rightPinned = pinnedKeys.has(toolKey(right)) ? 0 : 1;
+      const leftRouted = routedKeys.has(toolKey(left)) ? 0 : 1;
+      const rightRouted = routedKeys.has(toolKey(right)) ? 0 : 1;
+
+      return leftPinned - rightPinned || leftRouted - rightRouted || comparePlannerTools(left, right);
+    });
+
+    return entries.slice(0, maxVisibleTools);
+  }
+
+  return [...selected.values()].sort(comparePlannerTools);
 }

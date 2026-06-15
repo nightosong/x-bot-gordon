@@ -141,10 +141,19 @@
                       :alt="product.title"
                       class="command-generated-product-image"
                       loading="lazy"
+                      role="button"
+                      tabindex="0"
+                      :title="`放大 ${product.title || '图片'}`"
+                      @click="openGeneratedImagePreview(product)"
+                      @keydown.enter.prevent="openGeneratedImagePreview(product)"
+                      @keydown.space.prevent="openGeneratedImagePreview(product)"
                     />
                     <div v-else-if="product.kind === 'audio'" class="command-generated-product-audio">
                       <GIcon name="music" :size="20" />
                       <audio :src="product.src" controls></audio>
+                    </div>
+                    <div v-else-if="product.kind === 'video'" class="command-generated-product-video">
+                      <video :src="product.src" controls playsinline></video>
                     </div>
                     <div class="command-generated-product-meta">
                       <p class="command-generated-product-title">{{ product.title }}</p>
@@ -156,7 +165,7 @@
                         target="_blank"
                         rel="noreferrer"
                       >
-                        {{ product.kind === "audio" ? "打开音频" : "打开原图" }}
+                        {{ product.kind === "audio" ? "打开音频" : product.kind === "video" ? "打开视频" : "打开原图" }}
                       </a>
                     </div>
                   </article>
@@ -202,9 +211,38 @@
               </article>
 
               <article v-if="ui.command.isRunning" class="command-message is-assistant is-pending">
-                <div v-if="getCommandResponseProcessItems(ui.command.liveProgress?.artifact).length" class="command-response-process is-live">
+                <div
+                  v-if="commandLiveActivityItem"
+                  class="command-live-activity"
+                  :class="commandLiveActivityItem.className"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <span class="command-live-activity-mark" aria-hidden="true">
+                    <span></span>
+                  </span>
+                  <div class="command-live-activity-main">
+                    <div class="command-live-activity-head">
+                      <span class="command-live-activity-label">{{ commandLiveActivityItem.label }}</span>
+                      <span v-if="commandLiveActivityItem.createdAt" class="command-live-activity-time">
+                        {{ formatLocalDateTime(commandLiveActivityItem.createdAt) }}
+                      </span>
+                    </div>
+                    <p class="command-live-activity-title">{{ commandLiveActivityItem.title }}</p>
+                    <p v-if="commandLiveActivityItem.detail" class="command-live-activity-detail">
+                      {{ commandLiveActivityItem.detail }}
+                    </p>
+                  </div>
+                  <span class="command-live-activity-dots" aria-hidden="true">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </span>
+                </div>
+
+                <div v-if="commandLiveProcessItems.length" class="command-response-process is-live">
                   <article
-                    v-for="item in getCommandResponseProcessItems(ui.command.liveProgress?.artifact)"
+                    v-for="item in commandLiveProcessItems"
                     :key="item.id"
                     class="command-response-process-item"
                     :class="item.className"
@@ -248,7 +286,7 @@
                 ></div>
 
                 <div
-                  v-else-if="!getCommandResponseProcessItems(ui.command.liveProgress?.artifact).length"
+                  v-else-if="!commandLiveActivityItem && !commandLiveProcessItems.length"
                   class="command-live-waiting"
                   role="status"
                   aria-live="polite"
@@ -276,10 +314,19 @@
                       :alt="product.title"
                       class="command-generated-product-image"
                       loading="lazy"
+                      role="button"
+                      tabindex="0"
+                      :title="`放大 ${product.title || '图片'}`"
+                      @click="openGeneratedImagePreview(product)"
+                      @keydown.enter.prevent="openGeneratedImagePreview(product)"
+                      @keydown.space.prevent="openGeneratedImagePreview(product)"
                     />
                     <div v-else-if="product.kind === 'audio'" class="command-generated-product-audio">
                       <GIcon name="music" :size="20" />
                       <audio :src="product.src" controls></audio>
+                    </div>
+                    <div v-else-if="product.kind === 'video'" class="command-generated-product-video">
+                      <video :src="product.src" controls playsinline></video>
                     </div>
                     <div class="command-generated-product-meta">
                       <p class="command-generated-product-title">{{ product.title }}</p>
@@ -291,7 +338,7 @@
                         target="_blank"
                         rel="noreferrer"
                       >
-                        {{ product.kind === "audio" ? "打开音频" : "打开原图" }}
+                        {{ product.kind === "audio" ? "打开音频" : product.kind === "video" ? "打开视频" : "打开原图" }}
                       </a>
                     </div>
                   </article>
@@ -299,6 +346,35 @@
 
                 <div class="command-message-foot">
                   <span class="command-message-time">{{ ui.command.liveProgress?.updatedAt ? formatLocalDateTime(ui.command.liveProgress.updatedAt) : "处理中" }}</span>
+                </div>
+              </article>
+
+              <article
+                v-for="message in pendingCommandGuidanceMessages"
+                :key="message.id"
+                class="command-message is-user"
+              >
+                <div
+                  v-if="message.content"
+                  class="command-message-body command-rich-text"
+                  v-html="renderRichText(message.content)"
+                  @click="handleRichTextClick"
+                ></div>
+
+                <div v-if="message.attachments?.length" class="command-message-attachments">
+                  <span
+                    v-for="attachment in message.attachments"
+                    :key="attachment.id"
+                    class="command-message-attachment"
+                    :class="{ 'is-error': attachment.readStatus === 'error' }"
+                    :title="getCommandAttachmentTitle(attachment)"
+                  >
+                    {{ attachment.name }}
+                  </span>
+                </div>
+
+                <div class="command-message-foot">
+                  <span class="command-message-time">{{ formatLocalDateTime(message.createdAt) }}</span>
                 </div>
               </article>
             </div>
@@ -343,7 +419,7 @@
                 </div>
 
                 <label class="command-inline-toggle command-settings-toggle">
-                  <span class="command-inline-toggle-label">允许自动工具</span>
+                  <span class="command-inline-toggle-label">按需使用工具</span>
                   <input v-model="ui.command.form.autoSelectMcp" type="checkbox" />
                 </label>
 
@@ -388,6 +464,44 @@
 
             <div v-else class="command-input-shell command-input-shell-plain">
               <div class="command-input-frame">
+                <div v-if="ui.command.requestQueue?.length" class="command-request-queue" aria-label="请求队列">
+                  <article
+                    v-for="item in ui.command.requestQueue"
+                    :key="item.id"
+                    class="command-request-queue-item"
+                    :title="item.content || item.attachments?.map((attachment) => attachment.name).join('、') || '附件请求'"
+                  >
+                    <span class="command-request-queue-copy">{{ getCommandQueueItemSummary(item) }}</span>
+                    <span v-if="item.attachments?.length" class="command-request-queue-count">+{{ item.attachments.length }}</span>
+                    <button
+                      type="button"
+                      class="command-request-queue-guide"
+                      title="发送为下一轮引导"
+                      @click="handleCommandQueueItemGuide(item.id)"
+                    >
+                      引导
+                    </button>
+                    <button
+                      type="button"
+                      class="model-icon-button command-request-queue-icon"
+                      aria-label="编辑队列请求"
+                      title="编辑"
+                      @click="handleCommandQueueItemEdit(item.id)"
+                    >
+                      <GIcon name="edit" :size="13" />
+                    </button>
+                    <button
+                      type="button"
+                      class="model-icon-button command-request-queue-icon is-danger"
+                      aria-label="删除队列请求"
+                      title="删除"
+                      @click="handleCommandQueueItemDelete(item.id)"
+                    >
+                      <GIcon name="delete" :size="13" />
+                    </button>
+                  </article>
+                </div>
+
                 <div v-if="ui.command.attachments.length" class="command-attachment-tray">
                   <span
                     v-for="attachment in ui.command.attachments"
@@ -413,7 +527,7 @@
                   ref="commandInputRef"
                   v-model="ui.command.draftInput"
                   class="field-textarea command-input"
-                  :placeholder="commandSelectedAgent ? (ui.command.isRunning ? '输入新的引导，Enter 会停止当前轮并继续执行。' : '直接告诉 Gordon 你要完成什么工作，Enter 发送，Shift + Enter 换行。') : '先在能力拓展里启用一个 Agent，Gordon 才能开始工作。'"
+                  :placeholder="commandSelectedAgent ? (ui.command.isRunning ? '继续输入请求，Enter 加入队列。' : '直接告诉 Gordon 你要完成什么工作，Enter 发送，Shift + Enter 换行。') : '先在能力拓展里启用一个 Agent，Gordon 才能开始工作。'"
                   :disabled="!commandSelectedAgent"
                   autofocus
                   @compositionstart="handleCommandInputCompositionStart"
@@ -434,7 +548,7 @@
                 <button
                   type="button"
                   class="model-icon-button command-input-attach"
-                  :disabled="!commandSelectedAgent || ui.command.isRunning"
+                  :disabled="!commandSelectedAgent"
                   aria-label="上传附件"
                   title="上传附件"
                   @click="handleCommandAttachmentSelect"
@@ -443,7 +557,7 @@
                 </button>
 
                 <button
-                  v-if="ui.command.isRunning"
+                  v-if="ui.command.isRunning && !hasCommandDraftContent()"
                   type="button"
                   class="model-icon-button command-input-submit is-running"
                   :class="{ 'is-cancelling': ui.command.cancelRequested }"
@@ -539,6 +653,7 @@ const props = defineProps({
   workbench: { type: Object, required: true },
   activeCommandSession: { type: Object, default: null },
   activeCommandMessages: { type: Array, default: () => [] },
+  pendingCommandGuidanceMessages: { type: Array, default: () => [] },
   commandChatTitle: { type: String, default: "开始一轮协作" },
   commandSettingsSummary: { type: String, default: "" },
   enabledAgentProfiles: { type: Array, default: () => [] },
@@ -549,9 +664,12 @@ const props = defineProps({
   backToCommandList: { type: Function, required: true },
   beginNewCommandSession: { type: Function, required: true },
   getCommandArtifactProducts: { type: Function, required: true },
+  getCommandLiveActivityItem: { type: Function, required: true },
   getCommandResponseProcessItems: { type: Function, required: true },
   getCommandLiveStatusText: { type: Function, required: true },
+  getCommandQueueItemSummary: { type: Function, required: true },
   getSkillOptionLabel: { type: Function, required: true },
+  hasCommandDraftContent: { type: Function, required: true },
   handleCommandAgentChange: { type: Function, required: true },
   handleCommandAttachmentSelect: { type: Function, required: true },
   handleCommandInputCompositionEnd: { type: Function, required: true },
@@ -560,6 +678,9 @@ const props = defineProps({
   handleCommandLoadMcpTools: { type: Function, required: true },
   handleCommandMessageCopy: { type: Function, required: true },
   handleCommandMessageExport: { type: Function, required: true },
+  handleCommandQueueItemDelete: { type: Function, required: true },
+  handleCommandQueueItemEdit: { type: Function, required: true },
+  handleCommandQueueItemGuide: { type: Function, required: true },
   handleCommandRunCancel: { type: Function, required: true },
   handleCommandServerChange: { type: Function, required: true },
   handleCommandSessionDelete: { type: Function, required: true },
@@ -603,6 +724,9 @@ const commandToolSelectOptions = computed(() => [
   }))
 ]);
 
+const commandLiveActivityItem = computed(() => props.getCommandLiveActivityItem(props.ui.command.liveProgress));
+const commandLiveProcessItems = computed(() => props.getCommandResponseProcessItems(props.ui.command.liveProgress?.artifact));
+
 function focusCommandInput() {
   commandInputRef.value?.focus?.();
 }
@@ -611,6 +735,23 @@ function scrollCommandToBottom() {
   if (commandMessagesRef.value) {
     commandMessagesRef.value.scrollTop = commandMessagesRef.value.scrollHeight;
   }
+}
+
+function openGeneratedImagePreview(product) {
+  if (!product?.src) {
+    return;
+  }
+
+  window.dispatchEvent(
+    new CustomEvent("gordon:image-preview:open", {
+      detail: {
+        src: product.src,
+        alt: product.title || "生成图片",
+        title: product.title || "生成图片",
+        downloadTitle: product.title || "生成图片"
+      }
+    })
+  );
 }
 
 defineExpose({

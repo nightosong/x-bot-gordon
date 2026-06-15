@@ -1,6 +1,10 @@
 import type { McpToolDefinition } from "../../shared/src/index.js";
 import type { AgentContextPacket } from "./context-packet.js";
-import { inferToolCapabilities, inferToolExecutionDomain, inferToolRiskLevel } from "./tool-metadata.js";
+import {
+  assessExternalEvidenceRequirement,
+  hasSuccessfulExternalEvidenceInContext,
+  isExternalEvidenceTool
+} from "./external-evidence.js";
 import { stringifyArguments } from "./runtime-utils.js";
 
 export type AgentPlanCriticDecision = "allow" | "revise" | "stop";
@@ -78,17 +82,23 @@ function repeatsActiveDecisionMemory(contextPacket: AgentContextPacket, tool: Mc
   });
 }
 
-function shouldPreferVerificationOnly(contextPacket: AgentContextPacket): boolean {
-  return contextPacket.goal.taskPhase === "verifying" || contextPacket.verification.structuredSuccessCriteria.some((criterion) => {
-    const isActive = criterion.status === "pending" || criterion.status === "unknown";
-    return isActive && criterion.type !== "text_response" && criterion.type !== "custom";
-  });
-}
-
 export function critiqueMcpToolPlan(input: AgentPlanCriticInput): AgentPlanCriticResult {
   const issues: string[] = [];
 
   if (!input.shouldCall) {
+    const evidenceRequirement = assessExternalEvidenceRequirement(input.contextPacket);
+    const hasExternalEvidenceTool = input.candidateTools.some(isExternalEvidenceTool);
+
+    if (evidenceRequirement.required && hasExternalEvidenceTool && !hasSuccessfulExternalEvidenceInContext(input.contextPacket)) {
+      return {
+        decision: "revise",
+        reason: "当前请求需要外部证据，不能接受无需工具的规划",
+        issues: ["missing_required_external_evidence"],
+        revisionHint:
+          "请选择 web_research、web_search_v2、read_web_page 或 github_search_repositories 等搜索/来源读取工具，先获取来源证据；没有成功工具结果前不要基于记忆回答最新事实、官网价格或官方结论"
+      };
+    }
+
     return {
       decision: "allow",
       reason: "Planner 判断无需调用工具",
@@ -123,19 +133,6 @@ export function critiqueMcpToolPlan(input: AgentPlanCriticInput): AgentPlanCriti
     issues.push("duplicate_recent_tool_call");
   }
 
-  const capabilities = inferToolCapabilities(tool);
-  const riskLevel = inferToolRiskLevel(tool);
-  const executionDomain = inferToolExecutionDomain(tool);
-  const verificationOnly = shouldPreferVerificationOnly(input.contextPacket);
-
-  if (verificationOnly && riskLevel === "high" && capabilities.some((capability) => ["write", "execute", "generate"].includes(capability))) {
-    issues.push("high_risk_action_during_verification");
-  }
-
-  if (input.contextPacket.goal.taskPhase === "recovering" && riskLevel === "high" && !input.reason.toLowerCase().includes("fallback")) {
-    issues.push("high_risk_recovery_without_fallback_reason");
-  }
-
   if (issues.includes("repeats_active_decision_memory") || issues.includes("duplicate_recent_tool_call")) {
     return {
       decision: "revise",
@@ -145,30 +142,12 @@ export function critiqueMcpToolPlan(input: AgentPlanCriticInput): AgentPlanCriti
     };
   }
 
-  if (issues.includes("high_risk_action_during_verification")) {
-    return {
-      decision: "revise",
-      reason: "验证阶段不应优先执行高副作用工具",
-      issues,
-      revisionHint: `优先选择读取、检查或状态类工具验证成功条件；当前工具执行域为 ${executionDomain}，风险为 ${riskLevel}`
-    };
-  }
-
   if (issues.includes("missing_expected_outcome") || issues.includes("missing_verification_method")) {
     return {
       decision: "revise",
       reason: "工具计划缺少可观察预期或验证方式",
       issues,
       revisionHint: "补齐 expectedOutcome 与 verificationMethod 后再执行；如果无法定义验证方式，应停止工具调用并说明未验证状态"
-    };
-  }
-
-  if (issues.includes("high_risk_recovery_without_fallback_reason")) {
-    return {
-      decision: "revise",
-      reason: "恢复阶段的高风险动作缺少 fallback 依据",
-      issues,
-      revisionHint: "先选择低风险观察或明确说明 fallback 依据，再执行高副作用动作"
     };
   }
 

@@ -20,6 +20,10 @@ function cloneToolProviderEditorValues(providers = []) {
     model: provider?.model ?? "",
     apiKey: provider?.apiKey ?? "",
     baseUrl: provider?.baseUrl ?? "",
+    submitUrl: provider?.submitUrl ?? "",
+    queryUrl: provider?.queryUrl ?? "",
+    taskIdPath: provider?.taskIdPath ?? "",
+    resultUrlPath: provider?.resultUrlPath ?? "",
     enabled: Boolean(provider?.enabled),
     notes: provider?.notes ?? "",
     updatedAt: provider?.updatedAt ?? new Date().toISOString()
@@ -281,6 +285,10 @@ export function createExtensionsActions({
           model: provider.model.trim(),
           apiKey: provider.apiKey.trim(),
           baseUrl: provider.baseUrl.trim(),
+          submitUrl: provider.submitUrl.trim(),
+          queryUrl: provider.queryUrl.trim(),
+          taskIdPath: provider.taskIdPath.trim(),
+          resultUrlPath: provider.resultUrlPath.trim(),
           notes: provider.notes.trim(),
           updatedAt: new Date().toISOString()
         }));

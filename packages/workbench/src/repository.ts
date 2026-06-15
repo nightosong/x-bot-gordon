@@ -11,12 +11,17 @@ import type {
   ComicAssetType,
   ComicAssetView,
   ComicAssetViewKind,
+  ComicAssetVariant,
   ComicChapter,
   ComicChapterImage,
   ComicChapterStatus,
+  ComicStoryboardKind,
+  ComicStoryboardShot,
   ComicProject,
   ComicProjectFormat,
   ComicProjectPalette,
+  ComicSourceMeta,
+  ComicSourceRef,
   CommandWorkshopSession,
   DatabaseConnectionItem,
   GithubSkillImportRequest,
@@ -31,6 +36,11 @@ import type {
   MusicTrackKind,
   MusicTrackProvider,
   MusicTrackStatus,
+  InfoRadarItem,
+  InfoRadarRefreshRun,
+  InfoRadarSource,
+  InfoRadarSourceKind,
+  InfoRadarWindow,
   SkillKind,
   SkillDefinition,
   ToolConfig,
@@ -55,6 +65,7 @@ import type {
   WeeklyReportTemplateItem,
   WeeklyProgressTaskItem,
   WritingBook,
+  WritingCharacterArc,
   WritingBookIntroSection,
   WritingBookLength,
   WritingBookPart,
@@ -70,6 +81,8 @@ import type {
   WritingOutlinePlannerStatus,
   WritingBookSaveOptions,
   WritingChapterStatus,
+  WritingEvidenceRef,
+  WritingGenreProfile,
   WritingStoryAssetEntry,
   WritingStoryAssets,
   WritingStyleProfile,
@@ -85,6 +98,9 @@ import {
 import { readPromptAsset } from "./prompt-assets.js";
 
 const RETIRED_AGENT_PROFILE_IDS = new Set(["builtin:agent:arthur"]);
+const DEFAULT_INFO_RADAR_CARD_ID = "workflow_info_radar";
+const DEFAULT_API_WORKFLOW_CARD_ID = "workflow_api_test";
+const INFO_RADAR_SOURCE_KINDS = new Set<InfoRadarSourceKind>(["rss", "web_page", "search", "wechat", "manual"]);
 
 async function readJsonFile<T>(filePath: string): Promise<T> {
   const content = await readFile(filePath, "utf8");
@@ -1838,7 +1854,7 @@ const TOOL_CONFIG_CATALOG: Record<
   },
   video_gen: {
     title: "视频生成",
-    description: "内置视频生成工具能力，面向文生视频、图生视频和分镜生成台。",
+    description: "内置视频生成工具能力，面向文生视频、图生视频、首尾帧生视频、参考图生视频和分镜生成台。",
     providers: [
       { provider: "seedance", label: "Seedance" },
       { provider: "pixverse", label: "PixVerse" },
@@ -1873,6 +1889,37 @@ const TOOL_PROVIDER_RUNTIME_CONFIG: Partial<
       }
     }
   },
+  video_gen: {
+    seedance: {
+      operations: {
+        submit: {
+          endpoint: "gpt-proxy/volengine/video/submit",
+          parameters: [
+            "mode",
+            "prompt",
+            "model",
+            "durationSeconds",
+            "ratio",
+            "resolution",
+            "image",
+            "firstFrameImage",
+            "lastFrameImage",
+            "referenceImages",
+            "referenceVideos",
+            "referenceAudios",
+            "returnLastFrame",
+            "generateAudio",
+            "frames",
+            "priority"
+          ]
+        },
+        query: {
+          endpoint: "gpt-proxy/volengine/video/task/{task_id}",
+          parameters: ["taskId"]
+        }
+      }
+    }
+  },
   music_gen: {
     mureka: {
       operations: {
@@ -1897,15 +1944,15 @@ const TOOL_PROVIDER_RUNTIME_CONFIG: Partial<
     suno: {
       operations: {
         generate_song: {
-          endpoint: "api/v1/generate",
-          parameters: ["prompt", "style", "title", "model", "instrumental", "callbackUrl"]
+          endpoint: "gpt-proxy/suno/generate",
+          parameters: ["prompt", "model", "instrumental"]
         },
         generate_instrumental: {
-          endpoint: "api/v1/generate",
-          parameters: ["prompt", "style", "title", "model", "instrumental", "callbackUrl"]
+          endpoint: "gpt-proxy/suno/generate",
+          parameters: ["prompt", "model", "instrumental"]
         },
         query: {
-          endpoint: "api/v1/generate/record-info",
+          endpoint: "gpt-proxy/suno/detail",
           parameters: ["taskId"]
         }
       }
@@ -1914,9 +1961,38 @@ const TOOL_PROVIDER_RUNTIME_CONFIG: Partial<
 };
 
 const TOOL_PROVIDER_DEFAULT_BASE_URLS: Partial<Record<ToolConfigName, Partial<Record<ToolConfigProvider, string>>>> = {
+  video_gen: {
+    seedance: ""
+  },
   music_gen: {
     mureka: "https://api.mureka.ai",
     suno: "https://api.sunoapi.org"
+  }
+};
+
+const TOOL_PROVIDER_DEFAULT_REQUEST_PROTOCOLS: Partial<
+  Record<
+    ToolConfigName,
+    Partial<
+      Record<
+        ToolConfigProvider,
+        {
+          submitUrl?: string;
+          queryUrl?: string;
+          taskIdPath?: string;
+          resultUrlPath?: string;
+        }
+      >
+    >
+  >
+> = {
+  video_gen: {
+    seedance: {
+      submitUrl: "https://api-maas-test.singularity-ai.com/gpt-proxy/volengine/video/submit",
+      queryUrl: "https://api-maas-test.singularity-ai.com/gpt-proxy/volengine/video/task/{task_id}",
+      taskIdPath: "$.data.task_id",
+      resultUrlPath: "$.data.video_url"
+    }
   }
 };
 
@@ -1945,26 +2021,93 @@ function getDefaultToolProviderRuntimeConfig(
 }
 
 function normalizeToolProviderBaseUrl(toolName: ToolConfigName, provider: ToolConfigProvider, baseUrl: string): string {
-  const normalizedBaseUrl = baseUrl.trim();
+  const normalizedBaseUrl = baseUrl.trim().replace(/^["']+/u, "").replace(/["']+$/u, "");
 
   if (toolName === "image_gen" && provider === "openai") {
     return normalizedBaseUrl.replace(/\/imagen(?:\/edit(?:\/base64)?)?\/?$/u, "");
   }
 
+  if (toolName === "video_gen" && provider === "seedance") {
+    return normalizedBaseUrl
+      .replace(/\/gpt-proxy\/volengine\/video(?:\/(?:submit|task(?:\/[^/]+)?))?\/?$/u, "")
+      .replace(/\/api\/v3\/contents\/generations\/tasks(?:\/[^/]+)?\/?$/u, "")
+      .replace(/\/api\/v3\/?$/u, "");
+  }
+
+  if (toolName === "music_gen" && provider === "suno") {
+    return normalizedBaseUrl.replace(/\/(?:api\/v1\/generate(?:\/record-info)?|gpt-proxy\/suno\/(?:generate|detail))\/?$/u, "");
+  }
+
   return normalizedBaseUrl;
+}
+
+function normalizeToolProviderUrl(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .replace(/^["']+/u, "")
+    .replace(/["']+$/u, "");
+}
+
+function joinToolProviderUrl(baseUrl: string, endpoint: string): string {
+  const normalizedBaseUrl = normalizeToolProviderUrl(baseUrl).replace(/\/+$/u, "");
+  const normalizedEndpoint = String(endpoint ?? "").trim().replace(/^\/+/u, "");
+
+  if (!normalizedBaseUrl || !normalizedEndpoint) {
+    return "";
+  }
+
+  return `${normalizedBaseUrl}/${normalizedEndpoint}`;
+}
+
+function deriveToolProviderOperationUrl(
+  toolName: ToolConfigName,
+  providerName: ToolConfigProvider,
+  provider: Partial<ToolProviderConfig> | null | undefined,
+  operationName: string
+): string {
+  const operation = provider?.runtime?.operations?.[operationName] ?? TOOL_PROVIDER_RUNTIME_CONFIG[toolName]?.[providerName]?.operations?.[operationName];
+  const rawEndpoint = String(operation?.endpoint ?? "").trim();
+
+  if (!rawEndpoint) {
+    return "";
+  }
+
+  if (/^https?:\/\//iu.test(rawEndpoint)) {
+    return normalizeToolProviderUrl(rawEndpoint);
+  }
+
+  const rawBaseUrl = normalizeToolProviderUrl(provider?.baseUrl);
+  const normalizedBaseUrl = normalizeToolProviderBaseUrl(toolName, providerName, rawBaseUrl);
+
+  return joinToolProviderUrl(normalizedBaseUrl || rawBaseUrl, rawEndpoint);
+}
+
+function normalizeToolProviderModel(toolName: ToolConfigName, provider: ToolConfigProvider, value: unknown): string {
+  const model = String(value ?? "").trim();
+
+  if (toolName === "video_gen" && provider === "seedance" && model === "doubao-seedance-2-0-260128-video") {
+    return "doubao-seedance-2-0-260128";
+  }
+
+  return model;
 }
 
 function createDefaultToolProviderConfig(toolName: ToolConfigName, provider: ToolConfigProvider, label: string): ToolProviderConfig {
   const runtime = getDefaultToolProviderRuntimeConfig(toolName, provider);
   const baseUrl = TOOL_PROVIDER_DEFAULT_BASE_URLS[toolName]?.[provider] ?? "";
+  const requestProtocol = TOOL_PROVIDER_DEFAULT_REQUEST_PROTOCOLS[toolName]?.[provider] ?? {};
 
   return {
     id: `tool_provider_${toolName}_${provider}`,
     provider,
     label,
-    model: "",
+    model: toolName === "video_gen" && provider === "seedance" ? "doubao-seedance-2-0-260128" : "",
     apiKey: "",
     baseUrl,
+    ...(requestProtocol.submitUrl ? { submitUrl: requestProtocol.submitUrl } : {}),
+    ...(requestProtocol.queryUrl ? { queryUrl: requestProtocol.queryUrl } : {}),
+    ...(requestProtocol.taskIdPath ? { taskIdPath: requestProtocol.taskIdPath } : {}),
+    ...(requestProtocol.resultUrlPath ? { resultUrlPath: requestProtocol.resultUrlPath } : {}),
     enabled: false,
     notes: "",
     ...(runtime ? { runtime } : {}),
@@ -2013,14 +2156,41 @@ function normalizeToolProviderConfig(
   const updatedAt = String(provider?.updatedAt ?? "").trim() || defaultProvider.updatedAt;
   const runtime = cloneToolProviderRuntimeConfig(defaultProvider.runtime);
   const inputBaseUrl = String(provider?.baseUrl ?? "").trim();
+  const defaultRequestProtocol = TOOL_PROVIDER_DEFAULT_REQUEST_PROTOCOLS[toolName]?.[normalizedProvider] ?? {};
+  const submitUrl =
+    normalizeToolProviderUrl(provider?.submitUrl) ||
+    deriveToolProviderOperationUrl(toolName, normalizedProvider, provider, "submit") ||
+    defaultRequestProtocol.submitUrl ||
+    defaultProvider.submitUrl ||
+    "";
+  const queryUrl =
+    normalizeToolProviderUrl(provider?.queryUrl) ||
+    deriveToolProviderOperationUrl(toolName, normalizedProvider, provider, "query") ||
+    defaultRequestProtocol.queryUrl ||
+    defaultProvider.queryUrl ||
+    "";
+  const taskIdPath =
+    String(provider?.taskIdPath ?? "").trim() ||
+    defaultRequestProtocol.taskIdPath ||
+    defaultProvider.taskIdPath ||
+    "";
+  const resultUrlPath =
+    String(provider?.resultUrlPath ?? "").trim() ||
+    defaultRequestProtocol.resultUrlPath ||
+    defaultProvider.resultUrlPath ||
+    "";
 
   return {
     id: String(provider?.id ?? "").trim() || defaultProvider.id,
     provider: normalizedProvider,
     label: String(provider?.label ?? "").trim() || defaultProvider.label,
-    model: String(provider?.model ?? ""),
+    model: normalizeToolProviderModel(toolName, normalizedProvider, provider?.model),
     apiKey: String(provider?.apiKey ?? ""),
     baseUrl: normalizeToolProviderBaseUrl(toolName, normalizedProvider, inputBaseUrl || defaultProvider.baseUrl || ""),
+    ...(submitUrl ? { submitUrl } : {}),
+    ...(queryUrl ? { queryUrl } : {}),
+    ...(taskIdPath ? { taskIdPath } : {}),
+    ...(resultUrlPath ? { resultUrlPath } : {}),
     enabled: Boolean(provider?.enabled),
     notes: String(provider?.notes ?? ""),
     ...(runtime ? { runtime } : {}),
@@ -2124,6 +2294,25 @@ function normalizeWritingOutlinePlannerStatus(value: unknown): WritingOutlinePla
 function normalizeWritingBookPartType(value: unknown): WritingBookPartType {
   const type = String(value ?? "");
   return WRITING_BOOK_PART_TYPES.has(type as WritingBookPartType) ? (type as WritingBookPartType) : "act";
+}
+
+function normalizeWritingGenreProfile(
+  input: Partial<WritingGenreProfile> | Record<string, unknown> | null | undefined,
+  fallbackGenre = ""
+): WritingGenreProfile {
+  const source = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  const fallbackParts = normalizeStringList(fallbackGenre);
+  const primaryGenre = String(source.primaryGenre ?? source.genre ?? fallbackParts[0] ?? fallbackGenre ?? "").trim();
+  const storyEngine = String(source.storyEngine ?? source.engine ?? "").trim();
+
+  return {
+    primaryGenre: primaryGenre || "小说",
+    subGenres: normalizeStringList(source.subGenres ?? source.subgenres ?? fallbackParts.slice(1)),
+    storyEngine: storyEngine === "成长升级" ? "成长沉淀" : storyEngine,
+    ...(source.audience ? { audience: String(source.audience).trim() } : {}),
+    ...(source.tone ? { tone: String(source.tone).trim() } : {}),
+    updatedAt: String(source.updatedAt ?? new Date().toISOString())
+  };
 }
 
 function parseStoredWritingChapterIndex(value: unknown): number | null {
@@ -2290,22 +2479,86 @@ function normalizeOptionalChapterIndex(value: unknown): number | undefined {
   return value === null || value === undefined || value === "" ? undefined : normalizeWritingChapterIndex(value, 0);
 }
 
+function normalizeWritingEvidenceRef(
+  input: Partial<WritingEvidenceRef> | Record<string, unknown> | string | null | undefined,
+  index: number,
+  bookId: string
+): WritingEvidenceRef | null {
+  const source = input && typeof input === "object" ? input : { note: input };
+  const note = String(
+    source.note ??
+      (source as Record<string, unknown>).summary ??
+      (source as Record<string, unknown>).detail ??
+      (source as Record<string, unknown>).evidence ??
+      ""
+  ).trim();
+  const quote = String((source as Record<string, unknown>).quote ?? (source as Record<string, unknown>).text ?? "").trim();
+  const chapterIndex = normalizeOptionalChapterIndex(
+    (source as Record<string, unknown>).chapterIndex ?? (source as Record<string, unknown>).chapter
+  );
+  const chapterId = String((source as Record<string, unknown>).chapterId ?? "").trim();
+
+  if (!note && !quote && !chapterIndex && !chapterId) {
+    return null;
+  }
+
+  return {
+    id: String((source as Record<string, unknown>).id ?? `${bookId}_evidence_${index + 1}`),
+    ...(chapterIndex ? { chapterIndex } : {}),
+    ...(chapterId ? { chapterId } : {}),
+    ...(quote ? { quote } : {}),
+    note: note || quote || (chapterIndex ? `第${chapterIndex}章证据` : "证据")
+  };
+}
+
+function normalizeWritingEvidenceRefs(input: unknown, bookId: string): WritingEvidenceRef[] {
+  if (Array.isArray(input)) {
+    return input
+      .map((entry, index) => normalizeWritingEvidenceRef(entry as Partial<WritingEvidenceRef>, index, bookId))
+      .filter((entry): entry is WritingEvidenceRef => Boolean(entry));
+  }
+
+  const normalized = normalizeWritingEvidenceRef(input as string, 0, bookId);
+  return normalized ? [normalized] : [];
+}
+
+function normalizeWritingEvidenceRefsFromSource(source: Record<string, unknown>, bookId: string): WritingEvidenceRef[] {
+  const explicit = normalizeWritingEvidenceRefs(source.evidenceRefs, bookId);
+  const legacyEvidence = normalizeWritingEvidenceRefs(source.evidence ?? source.evidenceText, bookId);
+  const chapterIndex = normalizeOptionalChapterIndex(source.chapterIndex ?? source.chapter);
+  const chapterId = String(source.chapterId ?? "").trim();
+
+  if (!chapterIndex && !chapterId) {
+    return [...explicit, ...legacyEvidence];
+  }
+
+  const chapterEvidence: WritingEvidenceRef = {
+    id: `${bookId}_chapter_evidence_${chapterId || chapterIndex || explicit.length + legacyEvidence.length + 1}`,
+    ...(chapterIndex ? { chapterIndex } : {}),
+    ...(chapterId ? { chapterId } : {}),
+    note: chapterIndex ? `第${chapterIndex}章出现或更新` : "章节证据"
+  };
+
+  return [...explicit, ...legacyEvidence, chapterEvidence];
+}
+
 function normalizeWritingStoryAssetEntry(
   input: Partial<WritingStoryAssetEntry> | Record<string, unknown> | null | undefined,
   index: number,
   bookId: string,
   group: string
 ): WritingStoryAssetEntry | null {
+  const source = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
   const timestamp = String(input?.updatedAt ?? new Date().toISOString());
-  const title = String(input?.title ?? (input as Record<string, unknown> | undefined)?.name ?? (input as Record<string, unknown> | undefined)?.key ?? "").trim();
+  const title = String(input?.title ?? source.name ?? source.key ?? "").trim();
   const detail = String(
     input?.detail ??
-      (input as Record<string, unknown> | undefined)?.description ??
-      (input as Record<string, unknown> | undefined)?.summary ??
-      (input as Record<string, unknown> | undefined)?.value ??
+      source.description ??
+      source.summary ??
+      source.value ??
       ""
   ).trim();
-  const chapterIndex = normalizeOptionalChapterIndex(input?.chapterIndex ?? (input as Record<string, unknown> | undefined)?.chapter);
+  const chapterIndex = normalizeOptionalChapterIndex(input?.chapterIndex ?? source.chapter);
 
   if (!title && !detail) {
     return null;
@@ -2318,6 +2571,8 @@ function normalizeWritingStoryAssetEntry(
     tags: normalizeStringList(input?.tags),
     ...(chapterIndex ? { chapterIndex } : {}),
     ...(input?.status ? { status: String(input.status) } : {}),
+    evidenceRefs: normalizeWritingEvidenceRefsFromSource(source, bookId),
+    ...(source.impact ? { impact: String(source.impact).trim() } : {}),
     updatedAt: timestamp
   };
 }
@@ -2333,7 +2588,8 @@ function normalizeWritingCharacterAsset(
   index: number,
   bookId: string
 ): WritingCharacterAsset | null {
-  const name = String(input?.name ?? (input as Record<string, unknown> | undefined)?.title ?? "").trim();
+  const source = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  const name = String(input?.name ?? source.title ?? "").trim();
   const relationships = normalizeStringList(input?.relationships);
 
   if (
@@ -2360,6 +2616,8 @@ function normalizeWritingCharacterAsset(
     relationships,
     tags: normalizeStringList(input?.tags),
     status: String(input?.status ?? "active"),
+    evidenceRefs: normalizeWritingEvidenceRefsFromSource(source, bookId),
+    ...(source.impact ? { impact: String(source.impact).trim() } : {}),
     updatedAt: String(input?.updatedAt ?? new Date().toISOString())
   };
 }
@@ -2375,15 +2633,16 @@ function normalizeWritingForeshadowAsset(
   index: number,
   bookId: string
 ): WritingForeshadowAsset | null {
-  const title = String(input?.title ?? (input as Record<string, unknown> | undefined)?.name ?? "").trim();
-  const setup = String(input?.setup ?? (input as Record<string, unknown> | undefined)?.detail ?? "").trim();
+  const source = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  const title = String(input?.title ?? source.name ?? "").trim();
+  const setup = String(input?.setup ?? source.detail ?? "").trim();
   const payoff = String(
     input?.payoff ??
-      (input as Record<string, unknown> | undefined)?.plannedPayoff ??
-      (input as Record<string, unknown> | undefined)?.payoffPlan ??
+      source.plannedPayoff ??
+      source.payoffPlan ??
       ""
   ).trim();
-  const chapterIndex = normalizeOptionalChapterIndex(input?.chapterIndex ?? (input as Record<string, unknown> | undefined)?.setupChapterIndex);
+  const chapterIndex = normalizeOptionalChapterIndex(input?.chapterIndex ?? source.setupChapterIndex);
   const payoffChapterIndex = normalizeOptionalChapterIndex(input?.payoffChapterIndex);
 
   if (!title && !setup && !payoff) {
@@ -2399,6 +2658,8 @@ function normalizeWritingForeshadowAsset(
     ...(chapterIndex ? { chapterIndex } : {}),
     ...(payoffChapterIndex ? { payoffChapterIndex } : {}),
     tags: normalizeStringList(input?.tags),
+    evidenceRefs: normalizeWritingEvidenceRefsFromSource(source, bookId),
+    ...(source.impact ? { impact: String(source.impact).trim() } : {}),
     updatedAt: String(input?.updatedAt ?? new Date().toISOString())
   };
 }
@@ -2425,6 +2686,42 @@ function normalizeWritingStyleProfile(input: Partial<WritingStyleProfile> | null
   };
 }
 
+function normalizeWritingCharacterArc(
+  input: Partial<WritingCharacterArc> | Record<string, unknown> | null | undefined,
+  index: number,
+  bookId: string
+): WritingCharacterArc | null {
+  const source = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  const characterName = String(source.characterName ?? source.name ?? source.title ?? "").trim();
+  const want = String(source.want ?? source.goal ?? "").trim();
+  const need = String(source.need ?? "").trim();
+  const currentStage = String(source.currentStage ?? source.stage ?? "").trim();
+  const nextPressure = String(source.nextPressure ?? source.pressure ?? "").trim();
+  const endpoint = String(source.endpoint ?? source.endState ?? source.payoff ?? "").trim();
+
+  if (!characterName && !want && !need && !currentStage && !nextPressure && !endpoint) {
+    return null;
+  }
+
+  return {
+    id: String(source.id ?? `${bookId}_character_arc_${index + 1}`),
+    characterName: characterName || `未命名人物 ${index + 1}`,
+    want,
+    need,
+    currentStage,
+    nextPressure,
+    endpoint,
+    evidenceRefs: normalizeWritingEvidenceRefsFromSource(source, bookId),
+    updatedAt: String(source.updatedAt ?? new Date().toISOString())
+  };
+}
+
+function normalizeWritingCharacterArcs(input: unknown, bookId: string): WritingCharacterArc[] {
+  return (Array.isArray(input) ? input : [])
+    .map((entry, index) => normalizeWritingCharacterArc(entry as Partial<WritingCharacterArc>, index, bookId))
+    .filter((entry): entry is WritingCharacterArc => Boolean(entry));
+}
+
 function normalizeWritingStoryAssets(input: Partial<WritingStoryAssets> | null | undefined, bookId: string): WritingStoryAssets {
   return {
     premise: String(input?.premise ?? "").trim(),
@@ -2434,6 +2731,7 @@ function normalizeWritingStoryAssets(input: Partial<WritingStoryAssets> | null |
     timeline: normalizeWritingStoryAssetEntries(input?.timeline, bookId, "timeline"),
     foreshadows: normalizeWritingForeshadowAssets(input?.foreshadows, bookId),
     rules: normalizeWritingStoryAssetEntries(input?.rules, bookId, "rule"),
+    characterArcs: normalizeWritingCharacterArcs(input?.characterArcs, bookId),
     styleProfile: normalizeWritingStyleProfile(input?.styleProfile),
     memoryNotes: normalizeWritingStoryAssetEntries(input?.memoryNotes, bookId, "memory"),
     updatedAt: String(input?.updatedAt ?? new Date().toISOString())
@@ -2490,6 +2788,8 @@ function normalizeWritingNarrativeStateNode(
       resolvedAtChapterIndex: normalizeOptionalChapterIndex(source.resolvedAtChapterIndex)
     } : {}),
     evidenceChapterIds: normalizeStringList(source.evidenceChapterIds),
+    evidenceRefs: normalizeWritingEvidenceRefsFromSource(source as Record<string, unknown>, bookId),
+    ...((source as Record<string, unknown>).impact ? { impact: String((source as Record<string, unknown>).impact).trim() } : {}),
     relatedNodeIds: normalizeStringList(source.relatedNodeIds),
     riskLevel: normalizeWritingNarrativeRiskLevel(source.riskLevel),
     updatedAt: String(source.updatedAt ?? new Date().toISOString())
@@ -2542,6 +2842,8 @@ function deriveWritingNarrativeStateFromStoryAssets(assets: WritingStoryAssets, 
     ...(options.payoffDeadlineChapterIndex ? { payoffDeadlineChapterIndex: options.payoffDeadlineChapterIndex } : {}),
     ...(options.resolvedAtChapterIndex ? { resolvedAtChapterIndex: options.resolvedAtChapterIndex } : {}),
     evidenceChapterIds: normalizeStringList(options.evidenceChapterIds),
+    evidenceRefs: normalizeWritingEvidenceRefs(options.evidenceRefs, bookId),
+    ...(options.impact ? { impact: String(options.impact).trim() } : {}),
     relatedNodeIds: normalizeStringList(options.relatedNodeIds),
     riskLevel: normalizeWritingNarrativeRiskLevel(options.riskLevel),
     updatedAt: String(options.updatedAt ?? now)
@@ -2559,7 +2861,7 @@ function deriveWritingNarrativeStateFromStoryAssets(assets: WritingStoryAssets, 
           character.relationships.length ? `关系：${character.relationships.join("；")}` : ""
         ].filter(Boolean).join(" / "),
         index,
-        { id: character.id, status: character.status, updatedAt: character.updatedAt }
+        { id: character.id, status: character.status, evidenceRefs: character.evidenceRefs, impact: character.impact, updatedAt: character.updatedAt }
       )
     ),
     worldRules: [...assets.rules, ...assets.worldview].map((entry, index) =>
@@ -2567,6 +2869,8 @@ function deriveWritingNarrativeStateFromStoryAssets(assets: WritingStoryAssets, 
         id: entry.id,
         status: entry.status ?? "active",
         introducedAtChapterIndex: entry.chapterIndex,
+        evidenceRefs: entry.evidenceRefs,
+        impact: entry.impact,
         updatedAt: entry.updatedAt
       })
     ),
@@ -2576,6 +2880,8 @@ function deriveWritingNarrativeStateFromStoryAssets(assets: WritingStoryAssets, 
         id: entry.id,
         status: entry.status ?? "active",
         introducedAtChapterIndex: entry.chapterIndex,
+        evidenceRefs: entry.evidenceRefs,
+        impact: entry.impact,
         updatedAt: entry.updatedAt
       })),
     regions: assets.worldview
@@ -2584,6 +2890,8 @@ function deriveWritingNarrativeStateFromStoryAssets(assets: WritingStoryAssets, 
         id: `${entry.id}_region`,
         status: entry.status ?? "active",
         introducedAtChapterIndex: entry.chapterIndex,
+        evidenceRefs: entry.evidenceRefs,
+        impact: entry.impact,
         updatedAt: entry.updatedAt
       })),
     foreshadows: assets.foreshadows.map((entry, index) =>
@@ -2592,23 +2900,40 @@ function deriveWritingNarrativeStateFromStoryAssets(assets: WritingStoryAssets, 
         status: entry.status,
         introducedAtChapterIndex: entry.chapterIndex,
         payoffDeadlineChapterIndex: entry.payoffChapterIndex,
+        evidenceRefs: entry.evidenceRefs,
+        impact: entry.impact,
         updatedAt: entry.updatedAt,
         riskLevel: entry.status === "open" ? "medium" : "low"
       })
     ),
-    arcs: assets.characters
+    arcs: [
+      ...assets.characterArcs.map((arc, index) =>
+        toNode("arc", `${arc.characterName}：人物弧线`, [arc.want ? `Want：${arc.want}` : "", arc.need ? `Need：${arc.need}` : "", arc.currentStage ? `阶段：${arc.currentStage}` : "", arc.nextPressure ? `下一压力：${arc.nextPressure}` : "", arc.endpoint ? `终点：${arc.endpoint}` : ""].filter(Boolean).join(" / "), index, {
+          id: arc.id,
+          status: "active",
+          evidenceRefs: arc.evidenceRefs,
+          relatedNodeIds: assets.characters.filter((character) => character.name === arc.characterName).map((character) => character.id),
+          updatedAt: arc.updatedAt
+        })
+      ),
+      ...assets.characters
       .filter((character) => character.growthArc)
       .map((character, index) => toNode("arc", `${character.name}：成长弧`, character.growthArc, index, {
         id: `${character.id}_arc`,
         relatedNodeIds: [character.id],
         status: character.status,
+        evidenceRefs: character.evidenceRefs,
+        impact: character.impact,
         updatedAt: character.updatedAt
-      })),
+      }))
+    ],
     timelineEvents: assets.timeline.map((entry, index) =>
       toNode("timelineEvent", entry.title, entry.detail, index, {
         id: entry.id,
         status: entry.status ?? "active",
         introducedAtChapterIndex: entry.chapterIndex,
+        evidenceRefs: entry.evidenceRefs,
+        impact: entry.impact,
         updatedAt: entry.updatedAt
       })
     ),
@@ -2691,16 +3016,21 @@ function normalizeWritingBookConfig(input: Partial<WritingBook> | null | undefin
   const outlinePlannerJob = normalizeWritingOutlinePlannerJob(input?.outlinePlannerJob);
   const legacyDetailedOutline = String(input?.seriesPlan ?? "").trim();
   const storyAssets = normalizeWritingStoryAssets(input?.storyAssets, id);
+  const genre = String(input?.genre ?? "小说 / 待定类型");
 
   return {
     id,
     title,
     author: String(input?.author ?? "Song"),
     length: normalizeWritingBookLength(input?.length),
-    genre: String(input?.genre ?? "小说 / 待定类型"),
+    genre,
+    genreProfile: normalizeWritingGenreProfile(input?.genreProfile, genre),
     status: String(input?.status ?? "新建"),
     updatedAt: timestamp,
     coverTone: String(input?.coverTone ?? "teal"),
+    coverUrl: String(input?.coverUrl ?? "").trim(),
+    coverPrompt: String(input?.coverPrompt ?? ""),
+    coverShouldShowTitle: input?.coverShouldShowTitle !== false,
     intro: String(input?.intro ?? ""),
     outlineGuide: legacyDetailedOutline || String(input?.outlineGuide ?? ""),
     seriesPlan: "",
@@ -3051,6 +3381,7 @@ export async function deleteWritingBook(bookId: string, moveToTrash: (targetPath
 const COMIC_PROJECT_FORMATS = new Set<ComicProjectFormat>(["poster", "serial"]);
 const COMIC_PROJECT_PALETTES = new Set<ComicProjectPalette>(["monochrome", "color"]);
 const COMIC_CHAPTER_STATUSES = new Set<ComicChapterStatus>(["todo", "inProgress", "done"]);
+const COMIC_STORYBOARD_KINDS = new Set<ComicStoryboardKind>(["dialogue", "scene", "action", "transition", "emotion", "other"]);
 const COMIC_ASSET_TYPES = new Set<ComicAssetType>(["character", "prop", "scene"]);
 const COMIC_ASSET_VIEW_KINDS = new Set<ComicAssetViewKind>(["turnaround", "front", "side", "back", "angle", "wide", "detail"]);
 
@@ -3067,6 +3398,11 @@ function normalizeComicProjectPalette(value: unknown): ComicProjectPalette {
 function normalizeComicChapterStatus(value: unknown): ComicChapterStatus {
   const status = String(value ?? "").trim();
   return COMIC_CHAPTER_STATUSES.has(status as ComicChapterStatus) ? (status as ComicChapterStatus) : "todo";
+}
+
+function normalizeComicStoryboardKind(value: unknown): ComicStoryboardKind {
+  const kind = String(value ?? "").trim();
+  return COMIC_STORYBOARD_KINDS.has(kind as ComicStoryboardKind) ? (kind as ComicStoryboardKind) : "other";
 }
 
 function normalizeComicAssetType(value: unknown): ComicAssetType {
@@ -3087,6 +3423,89 @@ function normalizeComicAssetRefs(input: unknown): string[] {
         .filter(Boolean)
     )
   );
+}
+
+function normalizeOptionalComicChapterIndex(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  const parsed = Math.round(Number(value));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function normalizeComicSourceType(value: unknown): ComicSourceRef["sourceType"] {
+  const sourceType = String(value ?? "").trim();
+  return sourceType === "web" || sourceType === "novel" || sourceType === "chapter" || sourceType === "file" || sourceType === "manual"
+    ? sourceType
+    : "manual";
+}
+
+function normalizeComicProjectSourceType(value: unknown): ComicSourceMeta["sourceType"] {
+  const sourceType = String(value ?? "").trim();
+  return sourceType === "web" || sourceType === "novel" || sourceType === "file" || sourceType === "manual" ? sourceType : "manual";
+}
+
+function normalizeComicSourceRef(input: Partial<ComicSourceRef> | null | undefined): ComicSourceRef | null {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+
+  const sourceUrl = String(input.sourceUrl ?? "").trim();
+  const sourceTitle = String(input.sourceTitle ?? "").trim();
+  const chapterIndex = normalizeOptionalComicChapterIndex(input.chapterIndex);
+  const chapterTitle = String(input.chapterTitle ?? "").trim();
+  const note = String(input.note ?? "").trim();
+
+  if (!sourceUrl && !sourceTitle && chapterIndex === undefined && !chapterTitle && !note) {
+    return null;
+  }
+
+  return {
+    sourceType: normalizeComicSourceType(input.sourceType),
+    ...(sourceUrl ? { sourceUrl } : {}),
+    ...(sourceTitle ? { sourceTitle } : {}),
+    ...(chapterIndex !== undefined ? { chapterIndex } : {}),
+    ...(chapterTitle ? { chapterTitle } : {}),
+    ...(note ? { note } : {})
+  };
+}
+
+function normalizeComicSourceRefs(input: unknown): ComicSourceRef[] {
+  return (Array.isArray(input) ? input : [])
+    .map((entry) => normalizeComicSourceRef(entry as Partial<ComicSourceRef>))
+    .filter((entry): entry is ComicSourceRef => Boolean(entry));
+}
+
+function normalizeComicProjectSource(input: Partial<ComicSourceMeta> | null | undefined): ComicSourceMeta | undefined {
+  if (!input || typeof input !== "object") {
+    return undefined;
+  }
+
+  const sourceUrl = String(input.sourceUrl ?? "").trim();
+  const sourceTitle = String(input.sourceTitle ?? "").trim();
+  const importedAt = String(input.importedAt ?? "").trim();
+  const importedBy = String(input.importedBy ?? "").trim();
+  const chapterCount = normalizeOptionalComicChapterIndex(input.chapterCount);
+  const extractionStatus = String(input.extractionStatus ?? "").trim();
+  const notes = String(input.notes ?? "").trim();
+
+  if (!sourceUrl && !sourceTitle && !importedAt && !importedBy && chapterCount === undefined && !extractionStatus && !notes) {
+    return undefined;
+  }
+
+  return {
+    sourceType: normalizeComicProjectSourceType(input.sourceType),
+    ...(sourceUrl ? { sourceUrl } : {}),
+    ...(sourceTitle ? { sourceTitle } : {}),
+    ...(importedAt ? { importedAt } : {}),
+    ...(importedBy ? { importedBy } : {}),
+    ...(chapterCount !== undefined ? { chapterCount } : {}),
+    ...(extractionStatus === "planned" || extractionStatus === "partial" || extractionStatus === "complete" || extractionStatus === "blocked"
+      ? { extractionStatus }
+      : {}),
+    ...(notes ? { notes } : {})
+  };
 }
 
 function cleanComicImageSource(value: unknown): string {
@@ -3132,6 +3551,7 @@ function normalizeComicChapterImage(input: Partial<ComicChapterImage> | null | u
 
   return {
     id: String(input?.id ?? "").trim() || `comic_chapter_image_${randomUUID()}`,
+    storyboardId: String(input?.storyboardId ?? "").trim() || undefined,
     alt: String(input?.alt ?? "").trim() || `画面 ${index + 1}`,
     src: cleanComicImageSource(input?.src),
     prompt: String(input?.prompt ?? ""),
@@ -3161,6 +3581,71 @@ function normalizeComicChapterImages(input: unknown, legacyContent = ""): ComicC
   });
 
   return images;
+}
+
+function normalizeComicStoryboardShot(input: Partial<ComicStoryboardShot> | null | undefined, index = 0, chapterPrompt = ""): ComicStoryboardShot {
+  const now = new Date().toISOString();
+  const order = Math.max(1, Math.round(Number(input?.index ?? index + 1) || index + 1));
+
+  return {
+    id: String(input?.id ?? "").trim() || `comic_storyboard_${randomUUID()}`,
+    index: order,
+    kind: normalizeComicStoryboardKind(input?.kind),
+    title: String(input?.title ?? "").trim() || `分镜 ${order}`,
+    beat: String(input?.beat ?? ""),
+    dialogue: String(input?.dialogue ?? ""),
+    camera: String(input?.camera ?? ""),
+    prompt: String(input?.prompt ?? "").trim() || chapterPrompt,
+    status: normalizeComicChapterStatus(input?.status),
+    imageIds: Array.from(
+      new Set((Array.isArray(input?.imageIds) ? input.imageIds : []).map((imageId) => String(imageId ?? "").trim()).filter(Boolean))
+    ),
+    updatedAt: String(input?.updatedAt ?? "").trim() || now
+  };
+}
+
+function normalizeComicStoryboards(input: unknown, chapterPrompt = "", images: ComicChapterImage[] = []): ComicStoryboardShot[] {
+  const storyboards = (Array.isArray(input) ? input : [])
+    .map((shot, index) => normalizeComicStoryboardShot(shot as Partial<ComicStoryboardShot>, index, chapterPrompt))
+    .sort((left, right) => left.index - right.index)
+    .map((shot, index) => ({ ...shot, index: index + 1 }));
+
+  if (storyboards.length) {
+    const storyboardIds = new Set(storyboards.map((shot) => shot.id));
+
+    return storyboards.map((shot) => ({
+      ...shot,
+      imageIds: shot.imageIds.filter((imageId) => images.some((image) => image.id === imageId))
+    })).map((shot) => ({
+      ...shot,
+      imageIds: Array.from(
+        new Set([
+          ...shot.imageIds,
+          ...images.filter((image) => image.storyboardId === shot.id && storyboardIds.has(shot.id)).map((image) => image.id)
+        ])
+      )
+    }));
+  }
+
+  if (!chapterPrompt && !images.length) {
+    return [];
+  }
+
+  return [
+    normalizeComicStoryboardShot(
+      {
+        index: 1,
+        kind: "scene",
+        title: "分镜 1",
+        beat: "",
+        prompt: chapterPrompt,
+        imageIds: images.map((image) => image.id),
+        status: images.length ? "inProgress" : "todo"
+      },
+      0,
+      chapterPrompt
+    )
+  ];
 }
 
 function parseComicImageDataUrl(value: string): { buffer: Buffer; extension: string } | null {
@@ -3285,6 +3770,12 @@ function normalizeComicChapter(input: Partial<ComicChapter> | null | undefined, 
     ...image,
     prompt: image.prompt || chapterPrompt
   }));
+  const storyboards = normalizeComicStoryboards(input?.storyboards, chapterPrompt, images);
+  const storyboardIds = new Set(storyboards.map((shot) => shot.id));
+  const normalizedImages = images.map((image) => ({
+    ...image,
+    storyboardId: image.storyboardId && storyboardIds.has(image.storyboardId) ? image.storyboardId : storyboards[0]?.id
+  }));
 
   return {
     id: String(input?.id ?? "").trim() || `comic_chapter_${randomUUID()}`,
@@ -3293,7 +3784,17 @@ function normalizeComicChapter(input: Partial<ComicChapter> | null | undefined, 
     summary: String(input?.summary ?? ""),
     prompt: chapterPrompt,
     content: stripComicChapterImageMarkdown(content),
-    images,
+    sourceRefs: normalizeComicSourceRefs(input?.sourceRefs),
+    storyboards: storyboards.map((shot) => ({
+      ...shot,
+      imageIds: Array.from(
+        new Set([
+          ...shot.imageIds.filter((imageId) => normalizedImages.some((image) => image.id === imageId)),
+          ...normalizedImages.filter((image) => image.storyboardId === shot.id).map((image) => image.id)
+        ])
+      )
+    })),
+    images: normalizedImages,
     status: normalizeComicChapterStatus(input?.status),
     assetRefs: normalizeComicAssetRefs(input?.assetRefs),
     updatedAt: String(input?.updatedAt ?? "").trim() || now
@@ -3313,10 +3814,11 @@ function normalizeComicChapters(input: unknown): ComicChapter[] {
     normalizeComicChapter(
       {
         index: 1,
-        title: "开场分镜",
+        title: "第 1 章",
         summary: "写下这一章的场景目标、镜头顺序、角色动作和结尾画面。",
         prompt: "基于总介绍生成开场分镜，明确画面、动作、对白和页数。",
         content: "",
+        storyboards: [],
         status: "inProgress"
       },
       0
@@ -3338,6 +3840,47 @@ function normalizeComicAssetView(input: Partial<ComicAssetView> | null | undefin
 
 function normalizeComicAssetViews(input: unknown): ComicAssetView[] {
   return (Array.isArray(input) ? input : []).map((view, index) => normalizeComicAssetView(view as Partial<ComicAssetView>, index));
+}
+
+function normalizeComicAssetVariant(
+  input: Partial<ComicAssetVariant> | null | undefined,
+  index = 0,
+  fallbackViews: ComicAssetView[] = []
+): ComicAssetVariant | null {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+
+  const now = new Date().toISOString();
+  const views = normalizeComicAssetViews(input.views);
+  const label = String(input.label ?? "").trim();
+  const description = String(input.description ?? "");
+  const prompt = String(input.prompt ?? "");
+  const chapterStartIndex = normalizeOptionalComicChapterIndex(input.chapterStartIndex);
+  const chapterEndIndex = normalizeOptionalComicChapterIndex(input.chapterEndIndex);
+  const sourceRefs = normalizeComicSourceRefs(input.sourceRefs);
+
+  if (!label && !description && !prompt && chapterStartIndex === undefined && chapterEndIndex === undefined && !views.length && !sourceRefs.length) {
+    return null;
+  }
+
+  return {
+    id: String(input.id ?? "").trim() || `comic_asset_variant_${randomUUID()}`,
+    label: label || `版本 ${index + 1}`,
+    ...(chapterStartIndex !== undefined ? { chapterStartIndex } : {}),
+    ...(chapterEndIndex !== undefined ? { chapterEndIndex } : {}),
+    ...(description ? { description } : {}),
+    ...(prompt ? { prompt } : {}),
+    views: views.length ? views : fallbackViews,
+    ...(sourceRefs.length ? { sourceRefs } : {}),
+    updatedAt: String(input.updatedAt ?? "").trim() || now
+  };
+}
+
+function normalizeComicAssetVariants(input: unknown, fallbackViews: ComicAssetView[] = []): ComicAssetVariant[] {
+  return (Array.isArray(input) ? input : [])
+    .map((variant, index) => normalizeComicAssetVariant(variant as Partial<ComicAssetVariant>, index, fallbackViews))
+    .filter((variant): variant is ComicAssetVariant => Boolean(variant));
 }
 
 function isLegacyEmptyComicTurnaroundViewSet(type: ComicAssetType, views: ComicAssetView[]): boolean {
@@ -3392,6 +3935,11 @@ function normalizeComicAsset(
   const type = normalizeComicAssetType(input?.type);
   const defaultName = type === "character" ? "人物素材" : type === "prop" ? "物品素材" : "场景素材";
   const views = normalizeComicAssetViews(input?.views);
+  const normalizedViews = views.length && !isLegacyEmptyComicTurnaroundViewSet(type, views) ? views : getDefaultComicAssetViews(type);
+  const chapterStartIndex = normalizeOptionalComicChapterIndex(input?.chapterStartIndex);
+  const chapterEndIndex = normalizeOptionalComicChapterIndex(input?.chapterEndIndex);
+  const sourceRefs = normalizeComicSourceRefs(input?.sourceRefs);
+  const variants = normalizeComicAssetVariants(input?.variants, normalizedViews);
 
   return {
     id: String(input?.id ?? "").trim() || `comic_asset_${randomUUID()}`,
@@ -3399,7 +3947,12 @@ function normalizeComicAsset(
     type,
     description: String(input?.description ?? ""),
     prompt: String(input?.prompt ?? ""),
-    views: views.length && !isLegacyEmptyComicTurnaroundViewSet(type, views) ? views : getDefaultComicAssetViews(type),
+    variantLabel: String(input?.variantLabel ?? "").trim() || undefined,
+    ...(chapterStartIndex !== undefined ? { chapterStartIndex } : {}),
+    ...(chapterEndIndex !== undefined ? { chapterEndIndex } : {}),
+    ...(sourceRefs.length ? { sourceRefs } : {}),
+    views: normalizedViews,
+    ...(variants.length ? { variants } : {}),
     createdAt,
     updatedAt: String(input?.updatedAt ?? "").trim() || createdAt
   };
@@ -3445,6 +3998,10 @@ function normalizeComicProject(input: Partial<ComicProject> | null | undefined, 
     episodePlan: String(input?.episodePlan ?? ""),
     pageCount: Math.max(1, Math.round(Number(input?.pageCount ?? 1) || 1)),
     coverTone: String(input?.coverTone ?? "").trim() || (index % 2 === 0 ? "ink" : "coral"),
+    coverUrl: String(input?.coverUrl ?? "").trim(),
+    coverPrompt: String(input?.coverPrompt ?? ""),
+    coverShouldShowTitle: input?.coverShouldShowTitle !== false,
+    source: normalizeComicProjectSource(input?.source),
     assets,
     chapters,
     createdAt,
@@ -3553,6 +4110,14 @@ function normalizeVideoShot(input: Partial<VideoShot> | null | undefined, index 
     negativePrompt: String(input?.negativePrompt ?? ""),
     reference: String(input?.reference ?? ""),
     output: String(input?.output ?? ""),
+    taskId: String(input?.taskId ?? "").trim(),
+    videoUrl: String(input?.videoUrl ?? "").trim(),
+    lastFrameUrl: String(input?.lastFrameUrl ?? "").trim(),
+    provider: String(input?.provider ?? "").trim(),
+    model: String(input?.model ?? "").trim(),
+    ...(input?.rawResult && typeof input.rawResult === "object" && !Array.isArray(input.rawResult)
+      ? { rawResult: input.rawResult as Record<string, unknown> }
+      : {}),
     status: normalizeVideoShotStatus(input?.status),
     durationSeconds: normalizeVideoDurationSeconds(input?.durationSeconds, 5),
     updatedAt: String(input?.updatedAt ?? "").trim() || now
@@ -3604,6 +4169,10 @@ function normalizeVideoProject(input: Partial<VideoProject> | null | undefined, 
     storyboardPlan: String(input?.storyboardPlan ?? ""),
     durationSeconds: normalizeVideoDurationSeconds(input?.durationSeconds, 5),
     coverTone: String(input?.coverTone ?? "").trim() || (index % 2 === 0 ? "lumen" : "violet"),
+    coverUrl: String(input?.coverUrl ?? "").trim(),
+    coverPrompt: String(input?.coverPrompt ?? ""),
+    coverShouldShowTitle: input?.coverShouldShowTitle !== false,
+    assets: normalizeComicAssets(input?.assets),
     shots: normalizeVideoShots(input?.shots),
     createdAt,
     updatedAt
@@ -3737,6 +4306,9 @@ function normalizeMusicProject(input: Partial<MusicProject> | null | undefined, 
     status: String(input?.status ?? "").trim() || "草稿",
     summary: String(input?.summary ?? ""),
     coverTone: String(input?.coverTone ?? "").trim() || (index % 2 === 0 ? "lunar" : "jade"),
+    coverUrl: String(input?.coverUrl ?? "").trim(),
+    coverPrompt: String(input?.coverPrompt ?? ""),
+    coverShouldShowTitle: input?.coverShouldShowTitle !== false,
     tracks: normalizeMusicTracks(input?.tracks),
     createdAt,
     updatedAt
@@ -3963,11 +4535,307 @@ function normalizeLegacyWorkflowLibrary(legacyEntries: unknown[]): WorkflowLibra
     }));
 }
 
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.map((entry) => String(entry ?? "").trim()).filter(Boolean);
+}
+
+function normalizeInfoRadarSourceKind(value: unknown): InfoRadarSourceKind {
+  const kind = String(value ?? "").trim();
+  return INFO_RADAR_SOURCE_KINDS.has(kind as InfoRadarSourceKind) ? (kind as InfoRadarSourceKind) : "web_page";
+}
+
+function normalizeInfoRadarSource(input: Partial<InfoRadarSource> | null | undefined, windowId = ""): InfoRadarSource | null {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+
+  const kind = normalizeInfoRadarSourceKind(input.kind);
+  const title = String(input.title ?? "").trim();
+  const url = String(input.url ?? "").trim();
+  const query = String(input.query ?? "").trim();
+  const hasLocator = kind === "search" ? Boolean(query || url) : kind === "manual" ? Boolean(title || url || query) : Boolean(url);
+
+  if (!hasLocator && !title) {
+    return null;
+  }
+
+  const timestamp = String(input.updatedAt ?? "").trim() || new Date().toISOString();
+
+  return {
+    id: String(input.id ?? "").trim() || `info_source_${windowId || randomUUID()}_${randomUUID()}`,
+    kind,
+    title: title || query || url || "未命名来源",
+    url,
+    query,
+    enabled: input.enabled !== false,
+    tags: normalizeStringArray(input.tags),
+    notes: String(input.notes ?? "").trim(),
+    updatedAt: timestamp
+  };
+}
+
+function normalizeInfoRadarItem(input: Partial<InfoRadarItem> | null | undefined): InfoRadarItem | null {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+
+  const title = String(input.title ?? "").trim();
+  const url = String(input.url ?? "").trim();
+
+  if (!title && !url) {
+    return null;
+  }
+
+  const sourceKind = normalizeInfoRadarSourceKind(input.sourceKind);
+  const fetchedAt = String(input.fetchedAt ?? "").trim() || new Date().toISOString();
+  const status = input.status === "saved" || input.status === "ignored" ? input.status : "new";
+
+  return {
+    id: String(input.id ?? "").trim() || `info_item_${randomUUID()}`,
+    sourceId: String(input.sourceId ?? "").trim(),
+    sourceTitle: String(input.sourceTitle ?? "").trim() || "未知来源",
+    sourceKind,
+    title: title || url,
+    url,
+    summary: String(input.summary ?? "").trim(),
+    ...(input.author ? { author: String(input.author).trim() } : {}),
+    ...(input.publishedAt ? { publishedAt: String(input.publishedAt).trim() } : {}),
+    fetchedAt,
+    tags: normalizeStringArray(input.tags),
+    score: Number.isFinite(Number(input.score)) ? Number(input.score) : 0,
+    status
+  };
+}
+
+function normalizeInfoRadarRefreshRun(input: Partial<InfoRadarRefreshRun> | null | undefined): InfoRadarRefreshRun | null {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+
+  const startedAt = String(input.startedAt ?? "").trim() || new Date().toISOString();
+  const finishedAt = String(input.finishedAt ?? "").trim() || startedAt;
+  const status = input.status === "success" || input.status === "partial" || input.status === "failed" ? input.status : "success";
+
+  return {
+    id: String(input.id ?? "").trim() || `info_run_${randomUUID()}`,
+    status,
+    startedAt,
+    finishedAt,
+    sourceCount: Math.max(0, Number(input.sourceCount ?? 0) || 0),
+    itemCount: Math.max(0, Number(input.itemCount ?? 0) || 0),
+    message: String(input.message ?? "").trim()
+  };
+}
+
+function normalizeInfoRadarWindow(input: Partial<InfoRadarWindow> | null | undefined): InfoRadarWindow | null {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+
+  const title = String(input.title ?? "").trim();
+
+  if (!title) {
+    return null;
+  }
+
+  const timestamp = String(input.updatedAt ?? input.createdAt ?? "").trim() || new Date().toISOString();
+  const windowId = String(input.id ?? "").trim() || `info_window_${randomUUID()}`;
+  const sources = (Array.isArray(input.sources) ? input.sources : [])
+    .map((source) => normalizeInfoRadarSource(source, windowId))
+    .filter((source): source is InfoRadarSource => Boolean(source));
+  const items = (Array.isArray(input.items) ? input.items : [])
+    .map(normalizeInfoRadarItem)
+    .filter((item): item is InfoRadarItem => Boolean(item))
+    .slice(0, 200);
+  const runHistory = (Array.isArray(input.runHistory) ? input.runHistory : [])
+    .map(normalizeInfoRadarRefreshRun)
+    .filter((run): run is InfoRadarRefreshRun => Boolean(run))
+    .slice(0, 20);
+
+  return {
+    id: windowId,
+    title,
+    summary: String(input.summary ?? "").trim(),
+    category: String(input.category ?? "").trim() || "综合",
+    status: input.status === "paused" ? "paused" : "active",
+    cadence:
+      input.cadence === "hourly" || input.cadence === "daily" || input.cadence === "weekly" ? input.cadence : "manual",
+    keywords: normalizeStringArray(input.keywords),
+    negativeKeywords: normalizeStringArray(input.negativeKeywords),
+    sources,
+    digestPrompt: String(input.digestPrompt ?? "").trim(),
+    items,
+    runHistory,
+    createdAt: String(input.createdAt ?? "").trim() || timestamp,
+    updatedAt: timestamp,
+    ...(input.lastRefreshedAt ? { lastRefreshedAt: String(input.lastRefreshedAt).trim() } : {})
+  };
+}
+
+function createDefaultInfoRadarCard(): WorkflowLibraryItem {
+  const now = new Date().toISOString();
+
+  return {
+    id: DEFAULT_INFO_RADAR_CARD_ID,
+    kind: "info-radar",
+    title: "信息雷达",
+    summary: "长期追踪技术、金融、科研、政治等外部信息，并沉淀为可复用的信息窗口。",
+    description: "把常看的信息源、关键词和总结规则配置成窗口，手动或定时刷新后形成个人情报台。",
+    tags: ["资讯", "研究", "雷达"],
+    status: "active",
+    usageCount: 0,
+    createdAt: now,
+    updatedAt: now,
+    records: [],
+    infoWindows: [
+      {
+        id: "info_window_tech_radar",
+        title: "技术与 Agent 趋势",
+        summary: "跟踪 AI、Agent、模型发布、开源工具和工程实践。",
+        category: "技术",
+        status: "active",
+        cadence: "manual",
+        keywords: ["AI", "Agent", "模型", "开源", "工程"],
+        negativeKeywords: [],
+        digestPrompt: "按重要性归纳：重大变化、可行动线索、需要继续深挖的问题。",
+        sources: [
+          {
+            id: "info_source_openai_blog",
+            kind: "rss",
+            title: "OpenAI Blog",
+            url: "https://openai.com/news/rss.xml",
+            query: "",
+            enabled: true,
+            tags: ["AI", "官方"],
+            notes: "官方发布源",
+            updatedAt: now
+          },
+          {
+            id: "info_source_hn_frontpage",
+            kind: "rss",
+            title: "Hacker News",
+            url: "https://hnrss.org/frontpage",
+            query: "",
+            enabled: true,
+            tags: ["技术", "社区"],
+            notes: "",
+            updatedAt: now
+          }
+        ],
+        items: [],
+        runHistory: [],
+        createdAt: now,
+        updatedAt: now
+      },
+      {
+        id: "info_window_research_radar",
+        title: "科研论文观察",
+        summary: "关注 arXiv、实验室博客和研究动态，保留后续接论文工具的入口。",
+        category: "科研",
+        status: "active",
+        cadence: "manual",
+        keywords: ["paper", "research", "benchmark", "agent"],
+        negativeKeywords: [],
+        digestPrompt: "提取论文问题、方法、证据强度、潜在复现实验和与现有项目的关系。",
+        sources: [
+          {
+            id: "info_source_arxiv_ai",
+            kind: "rss",
+            title: "arXiv cs.AI",
+            url: "https://export.arxiv.org/rss/cs.AI",
+            query: "",
+            enabled: true,
+            tags: ["论文", "AI"],
+            notes: "",
+            updatedAt: now
+          }
+        ],
+        items: [],
+        runHistory: [],
+        createdAt: now,
+        updatedAt: now
+      }
+    ]
+  };
+}
+
+function createDefaultApiWorkflowCard(): WorkflowLibraryItem {
+  const now = new Date().toISOString();
+
+  return {
+    id: DEFAULT_API_WORKFLOW_CARD_ID,
+    kind: "api-test",
+    title: "模型接口测试",
+    summary: "沉淀可复用 curl 流程，用于提交、轮询和结果检查。",
+    description: "维护多步骤 API 请求、环境变量和轮询终止条件。",
+    tags: ["API", "curl", "调试"],
+    status: "active",
+    usageCount: 0,
+    createdAt: now,
+    updatedAt: now,
+    records: []
+  };
+}
+
+function normalizeWorkflowLibraryItem(input: Partial<WorkflowLibraryItem> | null | undefined): WorkflowLibraryItem | null {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+
+  const kind = input.kind === "info-radar" ? "info-radar" : "api-test";
+  const now = new Date().toISOString();
+  const normalized: WorkflowLibraryItem = {
+    id: String(input.id ?? "").trim() || (kind === "info-radar" ? DEFAULT_INFO_RADAR_CARD_ID : `workflow_${randomUUID()}`),
+    kind,
+    title: String(input.title ?? "").trim() || (kind === "info-radar" ? "信息雷达" : "模型接口测试"),
+    summary: String(input.summary ?? "").trim(),
+    description: String(input.description ?? "").trim(),
+    tags: normalizeStringArray(input.tags),
+    status: input.status === "draft" ? "draft" : "active",
+    usageCount: Math.max(0, Number(input.usageCount ?? 0) || 0),
+    createdAt: String(input.createdAt ?? "").trim() || now,
+    updatedAt: String(input.updatedAt ?? "").trim() || now,
+    ...(input.lastUsedAt ? { lastUsedAt: String(input.lastUsedAt).trim() } : {}),
+    records: Array.isArray(input.records) ? (input.records as WorkflowRecord[]) : []
+  };
+
+  if (kind === "info-radar") {
+    normalized.infoWindows = (Array.isArray(input.infoWindows) ? input.infoWindows : [])
+      .map(normalizeInfoRadarWindow)
+      .filter((window): window is InfoRadarWindow => Boolean(window));
+  }
+
+  return normalized;
+}
+
+function ensureWorkflowLibraryDefaults(items: WorkflowLibraryItem[]): WorkflowLibraryItem[] {
+  const normalizedItems = items
+    .map(normalizeWorkflowLibraryItem)
+    .filter((item): item is WorkflowLibraryItem => Boolean(item));
+  const hasInfoRadar = normalizedItems.some((item) => item.kind === "info-radar");
+  const hasApiWorkflow = normalizedItems.some((item) => item.kind === "api-test");
+  const nextItems = [...normalizedItems];
+
+  if (!hasInfoRadar) {
+    nextItems.unshift(createDefaultInfoRadarCard());
+  }
+
+  if (!hasApiWorkflow) {
+    nextItems.push(createDefaultApiWorkflowCard());
+  }
+
+  return sortByUpdatedAtDescending(nextItems);
+}
+
 export async function listWorkflowLibrary(): Promise<WorkflowLibraryItem[]> {
   const filePath = getWorkflowLibraryFilePath();
 
   try {
-    return sortByUpdatedAtDescending(await readWorkbenchCollection<WorkflowLibraryItem>(filePath));
+    return ensureWorkflowLibraryDefaults(await readWorkbenchCollection<WorkflowLibraryItem>(filePath));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
       throw error;
@@ -3975,18 +4843,24 @@ export async function listWorkflowLibrary(): Promise<WorkflowLibraryItem[]> {
   }
 
   const legacyEntries = await readWorkbenchCollection<unknown>(getLegacyEfficiencyToolsFilePath());
-  return sortByUpdatedAtDescending(normalizeLegacyWorkflowLibrary(legacyEntries));
+  return ensureWorkflowLibraryDefaults(normalizeLegacyWorkflowLibrary(legacyEntries));
 }
 
 export async function upsertWorkflowLibraryItem(item: WorkflowLibraryItem): Promise<WorkflowLibraryItem[]> {
+  const normalizedItem = normalizeWorkflowLibraryItem(item);
+
+  if (!normalizedItem) {
+    return listWorkflowLibrary();
+  }
+
   const current = await listWorkflowLibrary();
-  const existingIndex = current.findIndex((entry) => entry.id === item.id);
+  const existingIndex = current.findIndex((entry) => entry.id === normalizedItem.id);
   const nextItems = [...current];
 
   if (existingIndex >= 0) {
-    nextItems[existingIndex] = item;
+    nextItems[existingIndex] = normalizedItem;
   } else {
-    nextItems.unshift(item);
+    nextItems.unshift(normalizedItem);
   }
 
   await writeWorkbenchCollection(getWorkflowLibraryFilePath(), sortByUpdatedAtDescending(nextItems));

@@ -4,6 +4,7 @@ import test from "node:test";
 import type { McpToolDefinition } from "../../shared/src/index.js";
 import type { AgentContextPacket } from "./context-packet.js";
 import { critiqueMcpToolPlan } from "./plan-critic.js";
+import { buildAgentResourceContext } from "./resource-registry.js";
 
 function createContextPacket(overrides: Partial<AgentContextPacket> = {}): AgentContextPacket {
   return {
@@ -12,6 +13,29 @@ function createContextPacket(overrides: Partial<AgentContextPacket> = {}): Agent
       objective: "实现 Plan Critic",
       taskPhase: "executing"
     },
+    resources: buildAgentResourceContext({
+      userInput: "继续推进 Plan Critic 代码实现",
+      conversationMessages: [],
+      taskLedger: {
+        taskPhase: "executing",
+        objective: "实现 Plan Critic",
+        constraints: [],
+        completedSubtasks: [],
+        pendingSubtasks: [],
+        activePlan: [],
+        decisionTrace: [],
+        decisionMemory: [],
+        observations: [],
+        evidenceGraph: [],
+        discoveredFacts: [],
+        failedAttempts: [],
+        environmentState: [],
+        userInterruptions: [],
+        successCriteria: [],
+        structuredSuccessCriteria: []
+      },
+      mcpCalls: []
+    }),
     constraints: [],
     plan: [],
     decisionMemory: [],
@@ -137,7 +161,7 @@ test("critiqueMcpToolPlan recognizes server id decision memory routes", () => {
   assert.ok(result.issues.includes("repeats_active_decision_memory"));
 });
 
-test("critiqueMcpToolPlan requests revision for high-risk tools during verification", () => {
+test("critiqueMcpToolPlan allows high-risk tools because execution permission handles approval", () => {
   const result = critiqueMcpToolPlan({
     contextPacket: createContextPacket({
       goal: {
@@ -171,8 +195,117 @@ test("critiqueMcpToolPlan requests revision for high-risk tools during verificat
     shouldCall: true
   });
 
+  assert.equal(result.decision, "allow");
+});
+
+test("critiqueMcpToolPlan allows state-changing tools during execution even with pending criteria", () => {
+  const result = critiqueMcpToolPlan({
+    contextPacket: createContextPacket({
+      goal: {
+        latestUserRequest: "写回漫画项目",
+        objective: "更新丹青溢彩项目 OVERVIEW",
+        taskPhase: "executing"
+      },
+      verification: {
+        successCriteria: [],
+        structuredSuccessCriteria: [
+          {
+            type: "tool_result",
+            target: "comic_update_project_fields",
+            expected: "applied=true",
+            verificationMethod: "工具结果 applied 为 true",
+            status: "pending"
+          }
+        ]
+      }
+    }),
+    candidateTools: [
+      createTool({
+        serverId: "builtin:mcp:application-tools",
+        serverName: "Application Tools",
+        name: "comic_update_project_fields",
+        description: "写回丹青溢彩漫画项目级字段"
+      })
+    ],
+    serverId: "builtin:mcp:application-tools",
+    toolName: "comic_update_project_fields",
+    arguments: { projectIdOrTitle: "寂寞青梅", summary: "更新", dryRun: false },
+    expectedOutcome: "项目字段写回成功",
+    verificationMethod: "读回项目字段确认内容",
+    reason: "用户明确要求写回",
+    shouldCall: true
+  });
+
+  assert.equal(result.decision, "allow");
+});
+
+test("critiqueMcpToolPlan allows high-risk recovery tools so executor can request permission", () => {
+  const result = critiqueMcpToolPlan({
+    contextPacket: createContextPacket({
+      goal: {
+        latestUserRequest: "继续写回资产",
+        objective: "恢复丹青溢彩项目字段写入",
+        taskPhase: "recovering"
+      },
+      recovery: {
+        failedAttempts: [
+          {
+            action: "第一次写回项目字段",
+            reason: "permission required",
+            category: "permission_denied"
+          }
+        ],
+        userInterruptions: []
+      }
+    }),
+    candidateTools: [
+      createTool({
+        serverId: "builtin:mcp:application-tools",
+        serverName: "Application Tools",
+        name: "comic_update_project_fields",
+        description: "写回丹青溢彩漫画项目级字段"
+      })
+    ],
+    serverId: "builtin:mcp:application-tools",
+    toolName: "comic_update_project_fields",
+    arguments: { projectIdOrTitle: "寂寞青梅", summary: "恢复写入", dryRun: false },
+    expectedOutcome: "项目字段写回成功",
+    verificationMethod: "读回项目字段确认内容",
+    reason: "用户要求继续执行写回",
+    shouldCall: true
+  });
+
+  assert.equal(result.decision, "allow");
+  assert.deepEqual(result.issues, []);
+});
+
+test("critiqueMcpToolPlan requires external evidence for current official pricing questions", () => {
+  const result = critiqueMcpToolPlan({
+    contextPacket: createContextPacket({
+      goal: {
+        latestUserRequest: "帮我联网查一下 Anthropic Claude 最新官方 API 价格",
+        objective: "确认 Anthropic Claude 最新官网价格",
+        taskPhase: "planning"
+      }
+    }),
+    candidateTools: [
+      createTool({
+        serverId: "builtin:mcp:search-tools",
+        serverName: "Search Tools",
+        name: "web_research",
+        description: "复合联网研究，适合最新事实、官方文档和带来源结论。"
+      })
+    ],
+    serverId: null,
+    toolName: null,
+    arguments: {},
+    reason: "可以基于已有知识回答",
+    shouldCall: false
+  });
+
   assert.equal(result.decision, "revise");
-  assert.ok(result.issues.includes("high_risk_action_during_verification"));
+  assert.ok(result.issues.includes("missing_required_external_evidence"));
+  assert.match(result.revisionHint ?? "", /web_research/u);
 });
 
 test("critiqueMcpToolPlan stops invalid tool selections", () => {

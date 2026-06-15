@@ -1,10 +1,17 @@
 import { computed } from "vue";
 
 import {
+  BUILTIN_APPLICATION_TOOLS_MCP_ID,
+  BUILTIN_GORDON_AGENT_ID,
+  BUILTIN_WRITING_SKILL_ID
+} from "../../lib/presenter.js";
+import { didAgentMutateWorkbenchResources } from "../shell/workbenchRefreshDetection.js";
+import {
   WRITING_AI_TASKS,
   WRITING_APP_NAME,
   WRITING_CHAPTER_MAX_OUTPUT_TOKENS,
   WRITING_DEFAULT_MAX_OUTPUT_TOKENS,
+  WRITING_GENRE_PROMPT_GUIDES,
   WRITING_INTRO_SECTION_DEFINITIONS,
   WRITING_LENGTH_PROFILES,
   WRITING_LONG_OUTLINE_BATCH_MAX_TOKENS,
@@ -22,6 +29,12 @@ import {
   buildWritingLongOutlineMasterPrompt as buildWritingLongOutlineMasterPromptFromAssets,
   getWritingTaskPromptSpec as getWritingTaskPromptSpecFromAssets
 } from "./writingPromptBuilder.js";
+import {
+  buildWritingAgentTaskPackage,
+  buildWritingDirectorPlan,
+  buildWritingDirectorPlanContent,
+  buildWritingEventGraphContext
+} from "./writingDirector.js";
 
 const WRITING_REVIEW_ONLY_TASK_IDS = new Set([
   "openingAudit",
@@ -39,6 +52,16 @@ const WRITING_STORY_ASSET_TASK_IDS = new Set(["continuityMemory", "relationshipC
 const WRITING_INTRO_PLANNING_TASK_IDS = new Set(["storySetup", "storyRefine", "world", "character", "storyBible"]);
 const WRITING_INTRO_SUMMARY_TASK_IDS = new Set(["premise"]);
 const WRITING_CHAPTER_SUMMARY_TASK_IDS = new Set(["chapterPlan"]);
+const WRITING_PRODUCT_OUTPUT_META_LINE_PATTERN =
+  /(?:根据(?:你|您|作者|用户).{0,12}(?:要求|建议|反馈)|(?:上一版|这一版|旧版|新版|本版|本次)(?:设定|大纲|方案|调整|修改|重构)?|(?:以下是|下面是).{0,18}(?:优化稿|修改稿|重构稿|新版|调整后)|(?:保留|融合|降级|删除|取舍判断|资产盘点|风险残留|待审备注|修改说明|优化建议|整合方案)[:：]|用户明确要求|讨论上下文|review\s*建议)/iu;
+const WRITING_PRODUCT_OUTPUT_META_PHRASE_PATTERN =
+  /(?:不再使用|不再采用|不要写成|不写成|不加入|不要加入|必须删除|必须降级|已被用户否定|用户明确要求(?:不要|不写|排除)|旧方案|旧设定残留|新版设定|本次调整|修改建议|review\s*建议|讨论上下文|保留与取舍判断|资产盘点|风险残留|待审备注)/iu;
+
+function isWritingWriteIntent(value) {
+  return /保存|写入|写回|改写|修改|更新|替换|覆盖|落盘|同步|提交|应用到|直接改|直接写/u.test(
+    String(value ?? "").trim()
+  );
+}
 
 export function createWritingAiActions({
   activeWritingBook,
@@ -48,6 +71,7 @@ export function createWritingAiActions({
   activeWritingLengthProfile,
   activeWritingOutlinePlannerJob,
   activeWritingTask,
+  buildWritingGenreProfileContent,
   buildWritingIntroContent,
   buildWritingOutlineContent,
   buildWritingNarrativeStateContent,
@@ -77,6 +101,7 @@ export function createWritingAiActions({
   normalizeWritingStoryAssetsForUi,
   parseWritingChapterIndex,
   persistWritingBookById,
+  refreshWorkbenchSnapshot,
   selectWritingChapter,
   setStatus,
   setWritingAiTaskPickerOpen,
@@ -87,11 +112,13 @@ export function createWritingAiActions({
   splitWritingBookPartTitlePrefix,
   splitWritingChapterTitlePrefix,
   touchWritingBook,
+  toPlainIpcData,
   truncateText,
   ui,
   writingPromptAssets
 }) {
   let activeWritingModelRequestId = "";
+  let activeWritingAgentProgressEventId = "";
 
   const activeWritingLongOutlineRequest = computed(() =>
     getWritingLongOutlineRequest({
@@ -116,6 +143,43 @@ function getWritingTaskPromptSpec(tabId, taskId) {
     taskId,
     WRITING_AI_TASKS[tabId] ?? WRITING_AI_TASKS.intro
   );
+}
+
+function stripWritingFence(value) {
+  const text = String(value ?? "").trim();
+  const match = text.match(/^```(?:markdown|md|text)?\s*([\s\S]*?)\s*```$/iu);
+
+  return match ? match[1].trim() : text;
+}
+
+function sanitizeWritingProductOutput(value) {
+  const text = stripWritingFence(value);
+  const lines = text.split(/\r?\n/g);
+  const sanitizedLines = [];
+
+  for (const line of lines) {
+    const compact = line.trim();
+
+    if (!compact) {
+      sanitizedLines.push(line);
+      continue;
+    }
+
+    if (WRITING_PRODUCT_OUTPUT_META_LINE_PATTERN.test(compact)) {
+      continue;
+    }
+
+    sanitizedLines.push(line);
+  }
+
+  return sanitizedLines
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function hasWritingProductOutputMetaLeak(value) {
+  return WRITING_PRODUCT_OUTPUT_META_PHRASE_PATTERN.test(String(value ?? ""));
 }
 
 function parseWritingInstructionPartCount(instruction) {
@@ -396,22 +460,33 @@ function buildWritingStyleProfileRuntimeContent(book) {
   return lines.length ? lines.map((line) => `- ${line}`).join("\n") : "";
 }
 
-function buildWritingAssistantPrompt({ book, tabId, task, instruction }) {
+function buildWritingAgentContext({
+  book = activeWritingBook.value,
+  tabId = ui.marketplace.writing.activeTab,
+  task = activeWritingTask.value,
+  instruction = ui.marketplace.writing.aiInstruction
+} = {}) {
   if (!book) {
-    return "";
+    return null;
   }
 
   const lengthProfile = WRITING_LENGTH_PROFILES[book.length] ?? WRITING_LENGTH_PROFILES.long;
   const tabTitle = getWritingTabTitle(tabId);
   const content = getWritingBookContent(book, tabId);
   const currentChapter = activeWritingChapter.value ?? getPreferredWritingChapter(book);
+  const chapters = getWritingChapters(book);
+  const currentChapterIndex = currentChapter ? chapters.findIndex((chapter) => chapter.id === currentChapter.id) : -1;
   const taskSpec = getWritingTaskPromptSpec(tabId, task?.id);
   const longOutlineRequest = getWritingLongOutlineRequest({ book, tabId, task, instruction });
   const shouldIgnoreOutline = !longOutlineRequest && shouldIgnoreExistingWritingOutline(instruction, task?.id);
+  const directorPlan = buildWritingDirectorPlan({ book, tabId, task, instruction, currentChapter });
+  const directorPlanContent = buildWritingDirectorPlanContent(directorPlan);
   const introContent = buildWritingIntroContent(book) || "(空)";
   const storyMemoryContent = buildWritingStoryMemoryContext(book, currentChapter);
   const narrativeStateContent = typeof buildWritingNarrativeStateContent === "function" ? buildWritingNarrativeStateContent(book) : "";
+  const genreProfileContent = typeof buildWritingGenreProfileContent === "function" ? buildWritingGenreProfileContent(book) : "";
   const styleProfileContent = buildWritingStyleProfileRuntimeContent(book);
+  const eventGraphContent = buildWritingEventGraphContext({ book, chapters, currentChapter });
   const outlineContent = longOutlineRequest
     ? buildWritingLongOutlineSeedContent(book)
     : shouldIgnoreOutline
@@ -428,7 +503,7 @@ function buildWritingAssistantPrompt({ book, tabId, task, instruction }) {
   const chapterContext =
     currentChapter
       ? [
-          `标题：${getWritingChapterDisplayTitle(currentChapter, getWritingChapters(book).findIndex((chapter) => chapter.id === currentChapter.id))}`,
+          `标题：${getWritingChapterDisplayTitle(currentChapter, currentChapterIndex)}`,
           `状态：${getWritingChapterStatusLabel(currentChapter.status)}`,
           `简介：${currentChapter.summary || "(空)"}`,
           "正文：",
@@ -436,25 +511,120 @@ function buildWritingAssistantPrompt({ book, tabId, task, instruction }) {
         ].join("\n")
       : "(空)";
 
+  return {
+    lengthProfile,
+    tabTitle,
+    content,
+    currentChapter,
+    currentChapterIndex,
+    taskSpec,
+    longOutlineRequest,
+    longOutlineTargetContent: longOutlineRequest ? buildWritingLongOutlineTargetContent(longOutlineRequest) : "",
+    shouldIgnoreOutline,
+    directorPlan,
+    directorPlanContent,
+    introContent,
+    storyMemoryContent,
+    narrativeStateContent,
+    genreProfileContent,
+    styleProfileContent,
+    eventGraphContent,
+    outlineContent,
+    currentModuleContent,
+    chapterContext
+  };
+}
+
+function buildWritingAssistantPrompt({
+  book = activeWritingBook.value,
+  tabId = ui.marketplace.writing.activeTab,
+  task = activeWritingTask.value,
+  instruction = ui.marketplace.writing.aiInstruction
+} = {}) {
+  const context = buildWritingAgentContext({ book, tabId, task, instruction });
+
+  if (!context) {
+    return "";
+  }
+
   return buildWritingAssistantPromptFromAssets({
     appName: WRITING_APP_NAME,
     book,
-    lengthProfile,
-    tabTitle,
+    lengthProfile: context.lengthProfile,
+    tabTitle: context.tabTitle,
     task,
-    taskSpec,
+    taskSpec: context.taskSpec,
     instruction,
     promptAssets: writingPromptAssets,
     chapterOutputDefaults: tabId === "chapter" ? writingPromptAssets.chapterOutputDefaults : [],
-    longOutlineContent: longOutlineRequest ? buildWritingLongOutlineTargetContent(longOutlineRequest) : "",
-    storyMemoryContent,
-    narrativeStateContent,
-    styleProfileContent,
-    introContent,
-    outlineContent,
-    chapterContext,
-    currentModuleContent
+    genrePromptGuides: WRITING_GENRE_PROMPT_GUIDES,
+    genreProfileContent: context.genreProfileContent,
+    directorPlanContent: context.directorPlanContent,
+    eventGraphContent: context.eventGraphContent,
+    longOutlineContent: context.longOutlineTargetContent,
+    storyMemoryContent: context.storyMemoryContent,
+    narrativeStateContent: context.narrativeStateContent,
+    styleProfileContent: context.styleProfileContent,
+    introContent: context.introContent,
+    outlineContent: context.outlineContent,
+    chapterContext: context.chapterContext,
+    currentModuleContent: context.currentModuleContent
   });
+}
+
+function buildWritingAgentRunInput({
+  book = activeWritingBook.value,
+  tabId = ui.marketplace.writing.activeTab,
+  task = activeWritingTask.value,
+  instruction = ui.marketplace.writing.aiInstruction,
+  outputTarget = "预览，不直接写回",
+  writeIntent = false,
+  conversationMessages = []
+} = {}) {
+  const context = buildWritingAgentContext({ book, tabId, task, instruction });
+
+  if (!context) {
+    return null;
+  }
+
+  const userInput = buildWritingAgentTaskPackage({
+    appName: WRITING_APP_NAME,
+    book,
+    tabTitle: context.tabTitle,
+    task,
+    instruction,
+    directorPlanContent: context.directorPlanContent,
+    eventGraphContent: context.eventGraphContent,
+    genreProfileContent: context.genreProfileContent,
+    storyMemoryContent: context.storyMemoryContent,
+    narrativeStateContent: context.narrativeStateContent,
+    styleProfileContent: context.styleProfileContent,
+    introContent: context.introContent,
+    outlineContent: context.outlineContent,
+    chapterContext: context.chapterContext,
+    currentModuleContent: context.currentModuleContent,
+    outputTarget,
+    writeIntent
+  });
+  const runRequest = {
+    agentProfileId: BUILTIN_GORDON_AGENT_ID,
+    userInput: [
+      userInput,
+      "",
+      "Gordon Runtime Hint：",
+      `- skillId：${BUILTIN_WRITING_SKILL_ID}`,
+      `- preferredApplicationToolServer：${BUILTIN_APPLICATION_TOOLS_MCP_ID}`,
+      "- Gordon Runtime 会从完整授权工具集中生成本轮 Planner 可见工具白名单；前端只提供应用上下文，不做工具硬路由。",
+      writeIntent
+        ? "- 本轮作者明确要求保存 / 写入 / 改写书稿资产：必须优先使用 Application Tools 的 writing_* 工具或可用 fallback 完成写回，并读回验证；没有成功工具结果前，不要把计划说成已完成。"
+        : ""
+    ].join("\n"),
+    conversationMessages,
+    skillId: BUILTIN_WRITING_SKILL_ID,
+    autoSelectMcp: true
+  };
+
+  return typeof toPlainIpcData === "function" ? toPlainIpcData(runRequest) : JSON.parse(JSON.stringify(runRequest));
 }
 
 function getWritingAssistantMaxOutputTokens(tabId, taskId) {
@@ -535,6 +705,11 @@ function cancelWritingAssistantRun() {
   const isOutlinePlanning = activeWritingOutlinePlannerJob.value?.status === "running";
 
   ui.marketplace.writing.outlinePlannerCancelRequested = true;
+  if (activeWritingAgentProgressEventId && desktopApi?.cancelAgentRun) {
+    desktopApi.cancelAgentRun(activeWritingAgentProgressEventId).catch((error) => {
+      console.warn("Failed to cancel writing agent request", error);
+    });
+  }
   if (activeWritingModelRequestId && desktopApi?.cancelModelText) {
     desktopApi.cancelModelText(activeWritingModelRequestId).catch((error) => {
       console.warn("Failed to cancel writing model request", error);
@@ -561,6 +736,606 @@ function createWritingAbortError() {
 
 function getWritingErrorMessage(error) {
   return error instanceof Error ? error.message : String(error ?? "未知错误");
+}
+
+function truncateWritingProgressText(value, maxLength = 120) {
+  const compact = String(value ?? "").replace(/\s+/g, " ").trim();
+
+  if (!compact) {
+    return "";
+  }
+
+  const chars = Array.from(compact);
+  return chars.length > maxLength ? `${chars.slice(0, maxLength).join("")}...` : compact;
+}
+
+function normalizeWritingAgentProgress(payload = {}) {
+  const now = new Date().toISOString();
+
+  return {
+    progressEventId: String(payload.progressEventId ?? ""),
+    phase: payload.phase ?? "running",
+    statusText: truncateWritingProgressText(payload.statusText || "Gordon 正在处理写作任务...", 180),
+    text: typeof payload.text === "string" ? payload.text : "",
+    profileLabel: payload.profileLabel ?? null,
+    model: payload.model ?? null,
+    skillName: payload.skillName ?? null,
+    autoSelectedMcp: Boolean(payload.autoSelectedMcp),
+    mcpServerName: payload.mcpServerName ?? null,
+    mcpToolName: payload.mcpToolName ?? null,
+    mcpResultText: payload.mcpResultText ?? null,
+    mcpCalls: Array.isArray(payload.mcpCalls) ? [...payload.mcpCalls] : [],
+    stopReason: payload.stopReason ?? "",
+    taskLedger: payload.taskLedger ?? null,
+    steps: Array.isArray(payload.steps) ? [...payload.steps] : [],
+    createdAt: payload.createdAt ?? now,
+    updatedAt: payload.updatedAt ?? now,
+    ...(payload.tone ? { tone: payload.tone } : {})
+  };
+}
+
+function resetWritingAgentProgress() {
+  ui.marketplace.writing.agentProgress = null;
+}
+
+function startWritingAgentProgress(progressEventId, book, task) {
+  const now = new Date().toISOString();
+
+  ui.marketplace.writing.agentProgress = normalizeWritingAgentProgress({
+    progressEventId,
+    phase: "running",
+    statusText: "Gordon 正在建立写作任务上下文...",
+    skillName: "writing",
+    steps: [
+      {
+        id: `writing_agent_started_${Date.now()}`,
+        type: "agent_selected",
+        title: "已交给 Gordon",
+        detail: `${book?.title ?? "当前书稿"} / ${task?.label ?? "写作任务"}`,
+        createdAt: now
+      }
+    ],
+    mcpCalls: [],
+    createdAt: now,
+    updatedAt: now
+  });
+}
+
+function finalizeWritingAgentProgress(phase, statusText, extra = {}) {
+  const current = ui.marketplace.writing.agentProgress;
+
+  if (!current?.progressEventId) {
+    return;
+  }
+
+  ui.marketplace.writing.agentProgress = normalizeWritingAgentProgress({
+    ...current,
+    ...extra,
+    phase,
+    statusText,
+    updatedAt: new Date().toISOString()
+  });
+}
+
+function handleWritingAgentRunProgress(payload) {
+  const progressEventId = String(payload?.progressEventId ?? "");
+  const currentProgressEventId = String(ui.marketplace.writing.agentProgress?.progressEventId ?? "");
+
+  if (
+    !progressEventId ||
+    (progressEventId !== activeWritingAgentProgressEventId && progressEventId !== currentProgressEventId)
+  ) {
+    return;
+  }
+
+  const normalizedProgress = normalizeWritingAgentProgress(payload);
+  ui.marketplace.writing.agentProgress = normalizedProgress;
+
+  if (normalizedProgress.phase === "running" && normalizedProgress.statusText) {
+    ui.marketplace.writing.aiFeedback = normalizedProgress.statusText;
+    ui.marketplace.writing.aiFeedbackTone = "neutral";
+  }
+}
+
+function getWritingAgentPermissionTag(steps = []) {
+  const types = new Set((Array.isArray(steps) ? steps : []).map((step) => step?.type));
+
+  if (types.has("workspace_permission_denied") || types.has("computer_use_permission_denied") || types.has("tool_permission_denied")) {
+    return "授权被拒绝";
+  }
+
+  if (types.has("workspace_permission_granted") || types.has("computer_use_permission_granted") || types.has("tool_permission_granted")) {
+    return "授权完成";
+  }
+
+  if (types.has("workspace_permission_requested") || types.has("computer_use_permission_requested") || types.has("tool_permission_requested")) {
+    return "等待授权";
+  }
+
+  return "";
+}
+
+function getWritingAgentPermissionTagObject(step) {
+  if (!step || !String(step.type ?? "").includes("_permission_")) {
+    return null;
+  }
+
+  const domain = String(step.type).startsWith("computer_use_")
+    ? "桌面控制"
+    : String(step.type).startsWith("tool_permission_")
+      ? "工具授权"
+      : "外部路径";
+  const detail = truncateWritingProgressText(step.detail, 120);
+
+  if (String(step.type).endsWith("_requested")) {
+    return { label: `${domain} · 待授权`, className: "is-waiting", detail, priority: 1 };
+  }
+
+  if (String(step.type).endsWith("_granted")) {
+    return { label: `${domain} · 已授权`, className: "is-done", detail, priority: 2 };
+  }
+
+  return { label: `${domain} · 已拒绝`, className: "is-error", detail, priority: 3 };
+}
+
+function getWritingAgentToolPermissionTags(steps, toolIndex = 0) {
+  const selectedToolSteps = steps.filter((step) => step?.type === "mcp_tool_selected");
+  const selectedStep = selectedToolSteps[toolIndex];
+
+  if (!selectedStep) {
+    return [];
+  }
+
+  const selectedStepIndex = steps.indexOf(selectedStep);
+  const nextSelectedStep = selectedToolSteps[toolIndex + 1];
+  const nextSelectedStepIndex = nextSelectedStep ? steps.indexOf(nextSelectedStep) : steps.length;
+  const latestByDomain = new Map();
+
+  for (const step of steps.slice(selectedStepIndex + 1, nextSelectedStepIndex)) {
+    const tag = getWritingAgentPermissionTagObject(step);
+
+    if (!tag) {
+      continue;
+    }
+
+    const domain = String(step.type).startsWith("computer_use_")
+      ? "desktop"
+      : String(step.type).startsWith("tool_permission_")
+        ? "tool"
+        : "workspace";
+    latestByDomain.set(domain, tag);
+  }
+
+  return Array.from(latestByDomain.values()).sort((left, right) => right.priority - left.priority);
+}
+
+function getWritingAgentToolTerminalStep(steps, toolIndex = 0) {
+  const selectedToolSteps = steps.filter((step) => step?.type === "mcp_tool_selected");
+  const selectedStep = selectedToolSteps[toolIndex];
+
+  if (!selectedStep) {
+    return null;
+  }
+
+  const selectedStepIndex = steps.indexOf(selectedStep);
+  const nextSelectedStep = selectedToolSteps[toolIndex + 1];
+  const nextSelectedStepIndex = nextSelectedStep ? steps.indexOf(nextSelectedStep) : steps.length;
+
+  return (
+    steps
+      .slice(selectedStepIndex + 1, nextSelectedStepIndex)
+      .reverse()
+      .find((step) => step?.type === "mcp_tool_called" || step?.type === "mcp_tool_failed") ?? null
+  );
+}
+
+function getWritingAgentToolNameFromStep(step) {
+  return String(step?.detail ?? "")
+    .split(" / 参数：")[0]
+    .trim();
+}
+
+function getWritingAgentToolArgumentsFromStep(step) {
+  return String(step?.detail ?? "")
+    .split(" / 参数：")[1]
+    ?.trim() ?? "";
+}
+
+function getWritingAgentServerNameFromStep(step) {
+  const detail = String(step?.detail ?? "").trim();
+  return detail.split("（")[0]?.trim() || detail.split("/")[0]?.trim() || "";
+}
+
+function normalizeWritingAgentTags(tags = []) {
+  return tags
+    .filter(Boolean)
+    .map((tag) => (typeof tag === "string" ? { label: tag, className: "", detail: "" } : tag))
+    .filter((tag) => String(tag?.label ?? "").trim());
+}
+
+function getWritingAgentStepTitle(step) {
+  const title = String(step?.title ?? "").trim();
+
+  if (title) {
+    return title;
+  }
+
+  return {
+    mcp_auto_planning: "规划下一步",
+    mcp_args_repaired: "修正工具参数",
+    mcp_retrying: "重试工具调用",
+    mcp_fallback_planned: "规划替代工具",
+    mcp_fallback_selected: "替代工具接管",
+    mcp_auto_stopped: "工具编排停止",
+    skill_handler_started: "执行 writing Skill",
+    skill_handler_completed: "writing Skill 完成",
+    skill_handler_failed: "writing Skill 失败"
+  }[step?.type] ?? "Gordon 过程";
+}
+
+function normalizeWritingAgentProgressItemSequence(items) {
+  let toolStepIndex = 0;
+
+  return items.map((item) => {
+    if (item?.sequenceMode === "tool") {
+      toolStepIndex += 1;
+
+      return {
+        ...item,
+        marker: String(toolStepIndex),
+        label: `${item.label || "执行"} · 步骤 ${toolStepIndex}`
+      };
+    }
+
+    return {
+      ...item,
+      marker: item.marker || "•"
+    };
+  });
+}
+
+function normalizeWritingAgentRunningState(items) {
+  const latestIndex = items.length - 1;
+
+  return items.map((item, index) => {
+    if (index === latestIndex || !String(item?.className ?? "").split(/\s+/u).includes("is-running")) {
+      return item;
+    }
+
+    return {
+      ...item,
+      className: String(item.className ?? "")
+        .split(/\s+/u)
+        .filter((token) => token && token !== "is-running")
+        .join(" ")
+    };
+  });
+}
+
+function getWritingAgentProgressItems(progress = ui.marketplace.writing.agentProgress) {
+  if (!progress || typeof progress !== "object") {
+    return [];
+  }
+
+  const steps = Array.isArray(progress.steps) ? progress.steps : [];
+  const calls = Array.isArray(progress.mcpCalls) ? progress.mcpCalls : [];
+  const phase = progress.phase ?? "running";
+  const isRunning = phase === "running";
+  const items = [];
+  const contextStep = steps.find((step) => step?.type === "agent_selected") ?? steps[0] ?? null;
+  const modelStep = steps.find((step) => step?.type === "model_selected");
+  const skillStep = steps.find((step) => step?.type === "skill_selected");
+  const authorizedStep = [...steps].reverse().find((step) => step?.type === "mcp_authorized");
+  const permissionTag = getWritingAgentPermissionTag(steps);
+  const selectedToolSteps = steps.filter((step) => step?.type === "mcp_tool_selected");
+  const hasWorkAfterContext = Boolean(
+    steps.some((step) =>
+      [
+        "mcp_auto_planning",
+        "mcp_args_repaired",
+        "mcp_retrying",
+        "mcp_fallback_planned",
+        "mcp_fallback_selected",
+        "mcp_auto_stopped",
+        "mcp_tool_selected",
+        "mcp_tool_called",
+        "mcp_tool_failed",
+        "skill_handler_started",
+        "skill_handler_completed",
+        "skill_handler_failed",
+        "model_invoked",
+        "completed"
+      ].includes(step?.type)
+    ) || calls.length || progress.text || phase !== "running"
+  );
+
+  items.push({
+    id: `writing_agent_context_${progress.progressEventId}`,
+    marker: "识",
+    label: "上下文",
+    title: "建立写作上下文",
+    detail: truncateWritingProgressText(
+      [
+        progress.profileLabel ? `Agent：${progress.profileLabel}` : contextStep?.detail,
+        progress.model || modelStep?.detail ? `模型：${progress.model || modelStep?.detail}` : "",
+        progress.skillName || skillStep?.detail ? `Skill：${progress.skillName || skillStep?.detail}` : "",
+        authorizedStep?.detail ? `工具：${authorizedStep.detail}` : ""
+      ]
+        .filter(Boolean)
+        .join(" / "),
+      150
+    ),
+    createdAt: progress.createdAt || contextStep?.createdAt || "",
+    className: hasWorkAfterContext ? "is-context is-completed" : "is-context is-running",
+    tags: normalizeWritingAgentTags(["Gordon", progress.skillName ? "writing Skill" : ""].filter(Boolean)),
+    sortIndex: -1
+  });
+
+  steps.forEach((step, index) => {
+    const detail = truncateWritingProgressText(step.detail || progress.statusText, 180);
+    const createdAt = step.createdAt || progress.updatedAt || "";
+
+    if (step.type === "mcp_auto_planning") {
+      items.push({
+        id: step.id ?? `writing_agent_plan_${progress.progressEventId}_${index}`,
+        marker: "判",
+        label: /主动验证/u.test(step.title ?? "") ? "验证规划" : "规划",
+        title: getWritingAgentStepTitle(step),
+        detail,
+        createdAt,
+        className: "is-plan is-running",
+        tags: normalizeWritingAgentTags(["Gordon 判断"]),
+        sortIndex: index
+      });
+      return;
+    }
+
+    if (step.type === "mcp_args_repaired") {
+      items.push({
+        id: step.id ?? `writing_agent_repair_${progress.progressEventId}_${index}`,
+        marker: "调",
+        label: "调整",
+        title: "修正工具参数",
+        detail,
+        createdAt,
+        className: "is-adjust is-running",
+        tags: normalizeWritingAgentTags(["参数修复"]),
+        sortIndex: index
+      });
+      return;
+    }
+
+    if (step.type === "mcp_retrying") {
+      items.push({
+        id: step.id ?? `writing_agent_retry_${progress.progressEventId}_${index}`,
+        marker: "重",
+        label: "重试",
+        title: "工具调用重试",
+        detail,
+        createdAt,
+        className: "is-adjust is-running",
+        tags: normalizeWritingAgentTags(["恢复"]),
+        sortIndex: index
+      });
+      return;
+    }
+
+    if (step.type === "mcp_fallback_planned" || step.type === "mcp_fallback_selected") {
+      items.push({
+        id: step.id ?? `writing_agent_fallback_${progress.progressEventId}_${index}`,
+        marker: "换",
+        label: "恢复策略",
+        title: getWritingAgentStepTitle(step),
+        detail,
+        createdAt,
+        className: "is-recover is-running",
+        tags: normalizeWritingAgentTags(["fallback"]),
+        sortIndex: index
+      });
+      return;
+    }
+
+    if (step.type === "mcp_auto_stopped") {
+      const hasFailure = /失败|停止|拒绝|重复|最大/u.test(`${step.title ?? ""} ${step.detail ?? ""}`);
+
+      if (!hasFailure && !calls.length) {
+        return;
+      }
+
+      items.push({
+        id: step.id ?? `writing_agent_stop_${progress.progressEventId}_${index}`,
+        marker: hasFailure ? "!" : "判",
+        label: hasFailure ? "复盘" : "继续判断",
+        title: getWritingAgentStepTitle(step),
+        detail,
+        createdAt,
+        className: hasFailure ? "is-reflect is-error" : "is-reflect",
+        tags: normalizeWritingAgentTags([hasFailure ? "需关注" : "判断完成"]),
+        sortIndex: index
+      });
+      return;
+    }
+
+    if (step.type === "skill_handler_started" || step.type === "skill_handler_completed" || step.type === "skill_handler_failed") {
+      const failed = step.type === "skill_handler_failed";
+      const started = step.type === "skill_handler_started";
+
+      items.push({
+        id: step.id ?? `writing_agent_skill_${progress.progressEventId}_${index}`,
+        marker: failed ? "!" : "执",
+        label: "执行 Skill",
+        title: getWritingAgentStepTitle(step),
+        detail,
+        createdAt,
+        className: `is-execute ${failed ? "is-error" : started ? "is-running" : "is-completed"}`,
+        tags: normalizeWritingAgentTags(["Skill"]),
+        sortIndex: index
+      });
+      return;
+    }
+
+    if (step.type === "model_invoked") {
+      items.push({
+        id: step.id ?? `writing_agent_model_${progress.progressEventId}_${index}`,
+        marker: "答",
+        label: "整理",
+        title: "整理最终答复",
+        detail: detail || "工具输出已经汇总，正在生成最终回复。",
+        createdAt,
+        className: "is-final is-running",
+        tags: normalizeWritingAgentTags(["输出"]),
+        sortIndex: index
+      });
+      return;
+    }
+
+    if (step.type === "completed") {
+      items.push({
+        id: step.id ?? `writing_agent_completed_${progress.progressEventId}_${index}`,
+        marker: "成",
+        label: "完成",
+        title: "本轮处理完成",
+        detail,
+        createdAt,
+        className: "is-final is-completed",
+        tags: normalizeWritingAgentTags(["完成"]),
+        sortIndex: index
+      });
+    }
+  });
+
+  calls.forEach((call, index) => {
+    const selectedStep = selectedToolSteps[index] ?? null;
+    const terminalStep = getWritingAgentToolTerminalStep(steps, index);
+    const tags = normalizeWritingAgentTags([
+      call.autoSelected ? "自动工具" : "",
+      call.repairReason ? "参数修复" : "",
+      call.recovered ? "已恢复" : "",
+      call.fallbackFromToolName ? "fallback" : "",
+      ...getWritingAgentToolPermissionTags(steps, index)
+    ]);
+    const detailParts = [];
+    const argumentText = getWritingAgentToolArgumentsFromStep(selectedStep);
+
+    if (argumentText) {
+      detailParts.push(`参数：${truncateWritingProgressText(argumentText, 180)}`);
+    }
+
+    if (call.expectedOutcome) {
+      detailParts.push(`预期：${truncateWritingProgressText(call.expectedOutcome, 120)}`);
+    }
+
+    if (call.failureReason) {
+      detailParts.push(truncateWritingProgressText(call.failureReason, 140));
+    }
+
+    items.push({
+      id: selectedStep?.id ? `${selectedStep.id}_writing_tool` : `writing_agent_tool_${progress.progressEventId}_${index}`,
+      sequenceMode: "tool",
+      marker: `${index + 1}`,
+      label: call.isError ? "执行失败" : "执行",
+      title: `${call.serverName || "工具服务"} / ${call.toolName || "工具"}`,
+      detail: detailParts.join(" · "),
+      output: truncateWritingProgressText(call.resultText, 260),
+      outputLabel: call.isError ? "错误输出" : "中间输出",
+      createdAt: terminalStep?.createdAt || call.createdAt || selectedStep?.createdAt || progress.updatedAt || "",
+      className: `is-tool ${call.isError ? "is-error" : index === calls.length - 1 && isRunning ? "is-running" : "is-completed"}`,
+      tags,
+      sortIndex: steps.indexOf(terminalStep ?? selectedStep ?? null)
+    });
+  });
+
+  if (selectedToolSteps.length > calls.length) {
+    const selectedStep = selectedToolSteps[selectedToolSteps.length - 1];
+    const selectedStepIndex = steps.indexOf(selectedStep);
+    const serverStep = steps
+      .slice(0, selectedStepIndex)
+      .reverse()
+      .find((step) => step?.type === "mcp_server_selected");
+    const tags = normalizeWritingAgentTags(getWritingAgentToolPermissionTags(steps, selectedToolSteps.length - 1));
+    const denied = tags.some((tag) => tag.className === "is-error");
+    items.push({
+      id: `${selectedStep?.id ?? "pending_tool"}_writing_pending_tool`,
+      sequenceMode: "tool",
+      marker: `${calls.length + 1}`,
+      label: denied ? "执行受阻" : "执行中",
+      title: `${getWritingAgentServerNameFromStep(serverStep) || "工具服务"} / ${getWritingAgentToolNameFromStep(selectedStep) || "工具"}`,
+      detail: getWritingAgentToolArgumentsFromStep(selectedStep)
+        ? `参数：${truncateWritingProgressText(getWritingAgentToolArgumentsFromStep(selectedStep), 180)}`
+        : "参数已确定，正在等待工具返回。",
+      output: denied ? "授权被拒绝，Gordon 会调整路线或停止当前工具调用。" : "工具正在运行，返回后会把中间输出接在这里。",
+      outputLabel: denied ? "授权状态" : "中间输出",
+      createdAt: selectedStep?.createdAt || progress.updatedAt || "",
+      className: denied ? "is-tool is-error" : "is-tool is-running",
+      tags,
+      sortIndex: selectedStepIndex
+    });
+  }
+
+  if (isRunning && items.length <= 1) {
+    items.push({
+      id: `writing_agent_waiting_${progress.progressEventId}`,
+      marker: "判",
+      label: "规划",
+      title: "等待 Gordon 推进",
+      detail: truncateWritingProgressText(progress.statusText, 150),
+      createdAt: progress.updatedAt || "",
+      className: "is-plan is-running",
+      tags: normalizeWritingAgentTags([permissionTag].filter(Boolean)),
+      sortIndex: 0
+    });
+  }
+
+  if (phase === "completed") {
+    items.push({
+      id: `writing_agent_final_${progress.progressEventId}`,
+      marker: "成",
+      label: "完成",
+      title: "整理输出",
+      detail: "结果已放入添香小筑输出区，等待你决定追加或替换。",
+      createdAt: progress.updatedAt || "",
+      className: "is-final is-completed",
+      tags: normalizeWritingAgentTags(["已完成"]),
+      sortIndex: steps.length + calls.length + 1
+    });
+  } else if (phase === "failed") {
+    items.push({
+      id: `writing_agent_failed_${progress.progressEventId}`,
+      marker: "!",
+      label: progress.tone === "warning" ? "停止" : "失败",
+      title: progress.tone === "warning" ? "运行已停止" : "运行失败",
+      detail: truncateWritingProgressText(progress.stopReason || progress.statusText, 150),
+      createdAt: progress.updatedAt || "",
+      className: progress.tone === "warning" ? "is-final is-warning" : "is-final is-error",
+      tags: normalizeWritingAgentTags([progress.tone === "warning" ? "已停止" : "失败"]),
+      sortIndex: steps.length + calls.length + 2
+    });
+  } else if (progress.text) {
+    items.push({
+      id: `writing_agent_stream_${progress.progressEventId}`,
+      marker: "答",
+      label: "整理",
+      title: "整理输出",
+      detail: truncateWritingProgressText(progress.statusText || "正在生成最终回复...", 150),
+      createdAt: progress.updatedAt || "",
+      className: "is-final is-running",
+      tags: normalizeWritingAgentTags(["输出中"]),
+      sortIndex: steps.length + calls.length + 1
+    });
+  }
+
+  const visibleItems = items.sort((left, right) => {
+    const leftSortIndex = left.sortIndex;
+    const rightSortIndex = right.sortIndex;
+
+    if (leftSortIndex >= 0 && rightSortIndex >= 0 && leftSortIndex !== rightSortIndex) {
+      return leftSortIndex - rightSortIndex;
+    }
+
+    return String(left.createdAt || "").localeCompare(String(right.createdAt || ""));
+  });
+
+  return normalizeWritingAgentProgressItemSequence(normalizeWritingAgentRunningState(visibleItems));
 }
 
 function isRetryableWritingAssistantError(error) {
@@ -784,11 +1559,11 @@ function getWritingAiRunButtonLabel() {
     return "继续规划";
   }
 
-  return activeWritingLongOutlineRequest.value ? "启动分批规划" : "生成建议";
+  return activeWritingLongOutlineRequest.value ? "启动分批规划" : "快速模式";
 }
 
 function getWritingBusyTitle() {
-  return activeWritingOutlinePlannerJob.value?.status === "running" ? "正在分批规划长篇目录" : "正在生成建议";
+  return activeWritingOutlinePlannerJob.value?.status === "running" ? "正在分批规划长篇目录" : "正在执行快速模式";
 }
 
 function getWritingBusyDescription() {
@@ -859,6 +1634,14 @@ function buildWritingRecentChapterContext(book, partIndex, beforeIndex, limit = 
 
 function buildWritingLongOutlineMasterPrompt(book, request) {
   const partLabel = request.partType === "volume" ? "卷" : "幕";
+  const task = WRITING_AI_TASKS.outline.find((entry) => entry.id === "structure");
+  const directorPlan = buildWritingDirectorPlan({
+    book,
+    tabId: "outline",
+    task,
+    instruction: request.instruction,
+    currentChapter: null
+  });
 
   return buildWritingLongOutlineMasterPromptFromAssets({
     appName: WRITING_APP_NAME,
@@ -868,6 +1651,10 @@ function buildWritingLongOutlineMasterPrompt(book, request) {
     targetContent: buildWritingLongOutlineTargetContent(request),
     introContent: buildWritingIntroContent(book) || "(空)",
     narrativeStateContent: typeof buildWritingNarrativeStateContent === "function" ? buildWritingNarrativeStateContent(book) : "",
+    directorPlanContent: buildWritingDirectorPlanContent(directorPlan),
+    eventGraphContent: buildWritingEventGraphContext({ book, chapters: getWritingChapters(book), currentChapter: null }),
+    genrePromptGuides: WRITING_GENRE_PROMPT_GUIDES,
+    genreProfileContent: typeof buildWritingGenreProfileContent === "function" ? buildWritingGenreProfileContent(book) : "",
     seedContent: buildWritingLongOutlineSeedContent(book, 36),
     promptAssets: writingPromptAssets
   });
@@ -875,6 +1662,14 @@ function buildWritingLongOutlineMasterPrompt(book, request) {
 
 function buildWritingLongOutlineBatchPrompt(book, request, part, batchStartIndex, batchEndIndex) {
   const partLabel = request.partType === "volume" ? "卷" : "幕";
+  const task = WRITING_AI_TASKS.outline.find((entry) => entry.id === "structure");
+  const directorPlan = buildWritingDirectorPlan({
+    book,
+    tabId: "outline",
+    task,
+    instruction: request.instruction,
+    currentChapter: null
+  });
 
   return buildWritingLongOutlineBatchPromptFromAssets({
     appName: WRITING_APP_NAME,
@@ -887,6 +1682,10 @@ function buildWritingLongOutlineBatchPrompt(book, request, part, batchStartIndex
     targetContent: buildWritingLongOutlineTargetContent(request),
     introContent: buildWritingIntroContent(book) || "(空)",
     narrativeStateContent: typeof buildWritingNarrativeStateContent === "function" ? buildWritingNarrativeStateContent(book) : "",
+    directorPlanContent: buildWritingDirectorPlanContent(directorPlan),
+    eventGraphContent: buildWritingEventGraphContext({ book, chapters: getWritingChapters(book), currentChapter: null }),
+    genrePromptGuides: WRITING_GENRE_PROMPT_GUIDES,
+    genreProfileContent: typeof buildWritingGenreProfileContent === "function" ? buildWritingGenreProfileContent(book) : "",
     partsContext: buildWritingPartsContext(book),
     partDisplayLabel: getWritingPartDisplayLabel(part),
     recentChapterContext: buildWritingRecentChapterContext(book, part.index, batchStartIndex),
@@ -946,7 +1745,8 @@ function getWritingMasterSystemPrompt() {
   return (
     writingPromptAssets.masterSystem ||
     [
-      `你是「${WRITING_APP_NAME}」里的大师级小说总编、故事架构师和文字教练。`,
+      `你是 Gordon 在「${WRITING_APP_NAME}」中调用 writing Skill 的写作执行模型。`,
+      "Gordon 负责目标判断、状态连续性和验证边界；你负责把本轮导演计划执行成高质量小说内容。",
       "输出必须可直接放进写作项目，不写寒暄，不解释你在做什么。"
     ].join("\n")
   );
@@ -957,13 +1757,26 @@ function buildWritingStoryMemoryUpdatePrompt(book, chapter, appliedOutput) {
   const chapterTitle = chapter
     ? getWritingChapterDisplayTitle(chapter, chapterIndex >= 0 ? chapterIndex : 0)
     : "当前章节";
+  const directorPlan = buildWritingDirectorPlan({
+    book,
+    tabId: "intro",
+    task: WRITING_AI_TASKS.intro.find((entry) => entry.id === "continuityMemory"),
+    instruction: "章节写入后的连续性资料更新",
+    currentChapter: chapter
+  });
 
   return [
-    `你正在为「${WRITING_APP_NAME}」执行连续性资料更新任务。`,
+    `Gordon 正在为「${WRITING_APP_NAME}」调用 writing Skill 的 story_memory / state_tracker 节点。`,
+    "这不是正文写作，而是章节写入后的状态提交。",
     "目标：从刚刚写入的章节正文中抽取后续必须遵守或可以回收的结构化故事资产。",
+    "",
+    "Writing Director Plan：",
+    buildWritingDirectorPlanContent(directorPlan),
     "",
     "只记录稳定事实，不收录一次性辞藻、普通动作或不会影响后续的细节。",
     "优先抽取会影响后续写作的工程化台账：人物状态变化、规则边界、资源消耗、伤痕/物件/账目等证据载体、信息差变化、对手反制、未兑现承诺、已埋伏笔与可回收位置。",
+    "每个新增事实都必须尽量写入 evidenceRefs；证据可以是 chapterIndex、chapterId、正文短 quote 和 note。不要只写抽象判断。",
+    "人物弧线需要单独沉淀到 characterArcs：want 是外在想要，need 是内在需要，currentStage 是当前阶段，nextPressure 是下一次要压迫它的事件，endpoint 是长线终点方向。",
     "如果本章只出现抽象情绪，没有形成可追踪事实，不要强行写入。",
     "连续性资料、设定账本、storyAssets 和 memoryNotes 是内部管理资料，不要把这些资料名扩写成作品主题、角色能力或世界观机制。",
     "如果没有新增内容，对应数组返回空数组。",
@@ -971,11 +1784,17 @@ function buildWritingStoryMemoryUpdatePrompt(book, chapter, appliedOutput) {
     `作品：${book.title}`,
     `类型：${book.genre || "未设定"}`,
     "",
+    "Genre Profile：",
+    typeof buildWritingGenreProfileContent === "function" ? buildWritingGenreProfileContent(book) : "(空)",
+    "",
     "已有结构化故事资产：",
     typeof buildWritingStoryAssetsContent === "function" ? buildWritingStoryAssetsContent(book) : "(空)",
     "",
     "已有 Narrative State：",
     typeof buildWritingNarrativeStateContent === "function" ? buildWritingNarrativeStateContent(book) : "(空)",
+    "",
+    "Event Graph：",
+    buildWritingEventGraphContext({ book, chapters: getWritingChapters(book), currentChapter: chapter }),
     "",
     "故事介绍与规划：",
     buildWritingIntroContent(book) || "(空)",
@@ -991,7 +1810,7 @@ function buildWritingStoryMemoryUpdatePrompt(book, chapter, appliedOutput) {
     truncateText(String(appliedOutput ?? ""), 9000),
     "",
     "输出 JSON 代码块，且只允许包含 storyAssets 与 narrativeState 字段：",
-    `{"storyAssets":{"premise":"","worldview":[{"title":"","detail":"","tags":[],"chapterIndex":${chapter?.index ?? 1}}],"characters":[{"name":"","role":"","goal":"","fear":"","secret":"","growthArc":"","relationships":[],"tags":[],"status":"active"}],"relationships":[{"title":"","detail":"","tags":[]}],"timeline":[{"title":"","detail":"","tags":[],"chapterIndex":${chapter?.index ?? 1}}],"foreshadows":[{"title":"","setup":"","payoff":"","status":"open","chapterIndex":${chapter?.index ?? 1},"tags":["证据载体","信息差","反制","待回收"]}],"rules":[{"title":"","detail":"","tags":[]}],"styleProfile":{"voice":"","pacing":"","genreSignals":[],"taboos":[],"proseDensity":"","dialogueRatio":"","narrationDistance":"","emotionalTemperature":"","pacingCurve":[]},"memoryNotes":[{"title":"","detail":"","tags":["证据载体","人物状态","资源消耗","信息差"],"chapterIndex":${chapter?.index ?? 1}}]},"narrativeState":{"characters":[{"label":"","summary":"","status":"active","introducedAtChapterIndex":${chapter?.index ?? 1},"evidenceChapterIds":["${chapter?.id ?? ""}"],"relatedNodeIds":[],"riskLevel":"low"}],"worldRules":[],"resources":[],"regions":[],"foreshadows":[],"arcs":[],"timelineEvents":[],"continuityWarnings":[],"planDriftNotes":[]}}`
+    `{"storyAssets":{"premise":"","worldview":[{"title":"","detail":"","tags":[],"chapterIndex":${chapter?.index ?? 1},"evidenceRefs":[{"chapterIndex":${chapter?.index ?? 1},"chapterId":"${chapter?.id ?? ""}","quote":"","note":""}],"impact":""}],"characters":[{"name":"","role":"","goal":"","fear":"","secret":"","growthArc":"","relationships":[],"tags":[],"status":"active","evidenceRefs":[{"chapterIndex":${chapter?.index ?? 1},"chapterId":"${chapter?.id ?? ""}","quote":"","note":""}],"impact":""}],"relationships":[{"title":"","detail":"","tags":[],"evidenceRefs":[],"impact":""}],"timeline":[{"title":"","detail":"","tags":[],"chapterIndex":${chapter?.index ?? 1},"evidenceRefs":[],"impact":""}],"foreshadows":[{"title":"","setup":"","payoff":"","status":"open","chapterIndex":${chapter?.index ?? 1},"tags":["证据载体","信息差","反制","待回收"],"evidenceRefs":[],"impact":""}],"rules":[{"title":"","detail":"","tags":[],"evidenceRefs":[],"impact":""}],"characterArcs":[{"characterName":"","want":"","need":"","currentStage":"","nextPressure":"","endpoint":"","evidenceRefs":[{"chapterIndex":${chapter?.index ?? 1},"chapterId":"${chapter?.id ?? ""}","quote":"","note":""}]}],"styleProfile":{"voice":"","pacing":"","genreSignals":[],"taboos":[],"proseDensity":"","dialogueRatio":"","narrationDistance":"","emotionalTemperature":"","pacingCurve":[]},"memoryNotes":[{"title":"","detail":"","tags":["证据载体","人物状态","资源消耗","信息差"],"chapterIndex":${chapter?.index ?? 1},"evidenceRefs":[],"impact":""}]},"narrativeState":{"characters":[{"label":"","summary":"","status":"active","introducedAtChapterIndex":${chapter?.index ?? 1},"evidenceChapterIds":["${chapter?.id ?? ""}"],"evidenceRefs":[{"chapterIndex":${chapter?.index ?? 1},"chapterId":"${chapter?.id ?? ""}","quote":"","note":""}],"relatedNodeIds":[],"riskLevel":"low","impact":""}],"worldRules":[],"resources":[],"regions":[],"foreshadows":[],"arcs":[],"timelineEvents":[],"continuityWarnings":[],"planDriftNotes":[]}}`
   ].join("\n");
 }
 
@@ -1042,6 +1861,7 @@ function parseWritingStoryMemoryPayload(value, book) {
       normalizedAssets.timeline?.length ||
       normalizedAssets.foreshadows?.length ||
       normalizedAssets.rules?.length ||
+      normalizedAssets.characterArcs?.length ||
       normalizedAssets.styleProfile?.voice ||
       normalizedAssets.styleProfile?.pacing ||
       normalizedAssets.styleProfile?.genreSignals?.length ||
@@ -1484,9 +2304,10 @@ async function generateWritingAssistantOutput() {
     ui.marketplace.writing.isAiRunning = true;
     ui.marketplace.writing.aiRunningBookId = book.id;
     ui.marketplace.writing.aiOutput = "";
+    resetWritingAgentProgress();
     setWritingAiTaskPickerOpen(false);
     setWritingFeedback("正在召唤主编和故事架构师...", "neutral");
-    setStatus(`${WRITING_APP_NAME}正在后台生成建议。`, "neutral");
+    setStatus(`${WRITING_APP_NAME}正在执行快速模式。`, "neutral");
 
     const result = await invokeWritingAssistantModel(
       prompt,
@@ -1502,8 +2323,8 @@ async function generateWritingAssistantOutput() {
       ui.marketplace.writing.activeTab === "chapter" && !WRITING_CHAPTER_SUMMARY_TASK_IDS.has(activeWritingTask.value?.id)
         ? normalizeWritingChapterDraftOutput(result?.text ?? "")
         : String(result?.text ?? "").trim();
-    setWritingFeedback(result?.profileLabel ? `已由 ${result.profileLabel} 生成。` : "AI 已生成建议。", "success");
-    setStatus(`${WRITING_APP_NAME}已生成建议。`, "success");
+    setWritingFeedback(result?.profileLabel ? `已由 ${result.profileLabel} 生成。` : "快速模式已完成。", "success");
+    setStatus(`${WRITING_APP_NAME}快速模式已完成。`, "success");
   } catch (error) {
     console.error("Failed to generate writing assistant output", error);
     if (isWritingAssistantAbortError(error) || ui.marketplace.writing.outlinePlannerCancelRequested) {
@@ -1518,6 +2339,106 @@ async function generateWritingAssistantOutput() {
     ui.marketplace.writing.isAiRunning = false;
     ui.marketplace.writing.aiRunningBookId = "";
     ui.marketplace.writing.outlinePlannerCancelRequested = false;
+  }
+}
+
+async function runWritingAgentTask() {
+  const book = activeWritingBook.value;
+
+  if (ui.marketplace.writing.isAiRunning) {
+    return;
+  }
+
+  if (!book || !desktopApi?.runAgent) {
+    setWritingFeedback("Gordon Agent 桥接未就绪。", "danger");
+    return;
+  }
+
+  const progressEventId = `writing_agent_progress_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const writeIntent =
+    isWritingWriteIntent(ui.marketplace.writing.aiInstruction) ||
+    isWritingWriteIntent(activeWritingTask.value?.label) ||
+    isWritingWriteIntent(activeWritingTask.value?.goal);
+  const runRequest = buildWritingAgentRunInput({
+    book,
+    tabId: ui.marketplace.writing.activeTab,
+    task: activeWritingTask.value,
+    instruction: ui.marketplace.writing.aiInstruction,
+    outputTarget: writeIntent
+      ? "作者明确要求写回 / 修改书稿资产；请完成写回并读回验证，结果同时摘要到添香小筑输出区。"
+      : "预览输出到添香小筑，不直接覆盖书稿；如需写回，优先 dryRun 预览。",
+    writeIntent
+  });
+
+  if (!runRequest) {
+    setWritingFeedback("当前书稿上下文不足，无法交给 Gordon 处理。", "warning");
+    return;
+  }
+
+  try {
+    ui.marketplace.writing.isAiRunning = true;
+    ui.marketplace.writing.aiRunningBookId = book.id;
+    ui.marketplace.writing.outlinePlannerCancelRequested = false;
+    ui.marketplace.writing.aiOutput = "";
+    activeWritingAgentProgressEventId = progressEventId;
+    startWritingAgentProgress(progressEventId, book, activeWritingTask.value);
+    setWritingAiTaskPickerOpen(false);
+    setWritingFeedback("Gordon 正在调用 writing Skill 处理...", "neutral");
+    setStatus(`${WRITING_APP_NAME}正在交给 Gordon 处理。`, "neutral");
+
+    const result = await desktopApi.runAgent({
+      ...runRequest,
+      progressEventId
+    });
+
+    if (ui.marketplace.writing.outlinePlannerCancelRequested) {
+      throw createWritingAbortError();
+    }
+
+    ui.marketplace.writing.aiOutput =
+      ui.marketplace.writing.activeTab === "chapter" && !WRITING_CHAPTER_SUMMARY_TASK_IDS.has(activeWritingTask.value?.id)
+        ? normalizeWritingChapterDraftOutput(result?.text ?? "")
+        : String(result?.text ?? "").trim();
+    if (typeof refreshWorkbenchSnapshot === "function" && didAgentMutateWorkbenchResources(result)) {
+      await refreshWorkbenchSnapshot();
+    }
+    finalizeWritingAgentProgress("completed", "Gordon 已完成处理。", {
+      text: String(result?.text ?? ""),
+      profileLabel: result?.profileLabel ?? ui.marketplace.writing.agentProgress?.profileLabel ?? null,
+      model: result?.model ?? ui.marketplace.writing.agentProgress?.model ?? null,
+      skillName: result?.skillName ?? ui.marketplace.writing.agentProgress?.skillName ?? "writing",
+      mcpResultText: result?.mcpResultText ?? ui.marketplace.writing.agentProgress?.mcpResultText ?? null,
+      mcpCalls: Array.isArray(result?.mcpCalls) ? result.mcpCalls : ui.marketplace.writing.agentProgress?.mcpCalls ?? [],
+      stopReason: result?.stopReason ?? ui.marketplace.writing.agentProgress?.stopReason ?? "",
+      taskLedger: result?.taskLedger ?? ui.marketplace.writing.agentProgress?.taskLedger ?? null,
+      steps: Array.isArray(result?.steps) ? result.steps : ui.marketplace.writing.agentProgress?.steps ?? [],
+      updatedAt: result?.updatedAt ?? new Date().toISOString()
+    });
+    setWritingFeedback("Gordon 处理完成，结果已放入输出区。", "success");
+    setStatus(`${WRITING_APP_NAME}Gordon 处理已完成。`, "success");
+  } catch (error) {
+    console.error("Failed to run writing agent task", error);
+    if (isWritingAssistantAbortError(error) || ui.marketplace.writing.outlinePlannerCancelRequested) {
+      finalizeWritingAgentProgress("failed", "Gordon 处理已停止。", {
+        tone: "warning",
+        stopReason: "用户停止了本轮 Gordon 处理。"
+      });
+      setWritingFeedback("Gordon 处理已停止。", "warning");
+      setStatus(`${WRITING_APP_NAME}Gordon 处理已停止。`, "warning");
+    } else {
+      const message = error instanceof Error ? error.message : "未知错误";
+      finalizeWritingAgentProgress("failed", `Gordon 处理失败：${message}`, {
+        tone: "danger",
+        stopReason: message
+      });
+      setWritingFeedback(`Gordon 处理失败：${message}`, "danger");
+      setStatus(`${WRITING_APP_NAME}Gordon 处理失败：${message}`, "danger");
+    }
+  } finally {
+    ui.marketplace.writing.isAiRunning = false;
+    ui.marketplace.writing.aiRunningBookId = "";
+    ui.marketplace.writing.outlinePlannerCancelRequested = false;
+    activeWritingAgentProgressEventId = "";
   }
 }
 
@@ -1548,18 +2469,20 @@ function normalizeWritingChapterPlanTitle(value) {
 }
 
 function normalizeWritingChapterPlanSummary(value) {
-  if (Array.isArray(value)) {
-    return value.map((entry) => String(entry ?? "").trim()).filter(Boolean).join("\n");
-  }
+  let summary = "";
 
-  if (value && typeof value === "object") {
-    return Object.entries(value)
+  if (Array.isArray(value)) {
+    summary = value.map((entry) => String(entry ?? "").trim()).filter(Boolean).join("\n");
+  } else if (value && typeof value === "object") {
+    summary = Object.entries(value)
       .map(([key, entryValue]) => `${key}：${String(entryValue ?? "").trim()}`)
       .filter((line) => !line.endsWith("："))
       .join("\n");
+  } else {
+    summary = String(value ?? "").trim();
   }
 
-  return String(value ?? "").trim();
+  return sanitizeWritingProductOutput(summary);
 }
 
 function normalizeWritingChapterPlanEntry(entry, fallbackIndex = 0) {
@@ -1849,6 +2772,14 @@ async function applyWritingChapterPlanOutput(book, output, mode = "append") {
     return false;
   }
 
+  if (
+    outlinePlan.parts.some((part) => hasWritingProductOutputMetaLeak(part.description)) ||
+    plans.some((plan) => hasWritingProductOutputMetaLeak(plan.summary))
+  ) {
+    setWritingFeedback("生成目录仍包含修改过程或讨论痕迹，请重新生成后再写入目录。", "warning");
+    return true;
+  }
+
   const existingChapters = getWritingChapters(book);
   const existingByTitle = new Map(
     existingChapters.map((chapter) => [normalizeWritingChapterTitleForMatch(chapter.title), chapter]).filter(([title]) => Boolean(title))
@@ -1940,7 +2871,14 @@ async function applyWritingAssistantOutput(mode = "append") {
     const chapter = activeWritingChapter.value ?? ensureWritingChapterSelection(book);
     if (WRITING_CHAPTER_SUMMARY_TASK_IDS.has(activeWritingTask.value?.id)) {
       const current = String(chapter?.summary ?? "").trim();
-      setWritingChapterSummary(chapter, mode === "replace" ? output : [current, output].filter(Boolean).join("\n\n"));
+      const cleanOutput = sanitizeWritingProductOutput(output);
+
+      if (!cleanOutput || hasWritingProductOutputMetaLeak(cleanOutput)) {
+        setWritingFeedback("AI 输出仍包含修改过程或讨论痕迹，请重新生成后再写入章节简介。", "warning");
+        return;
+      }
+
+      setWritingChapterSummary(chapter, mode === "replace" ? cleanOutput : [current, cleanOutput].filter(Boolean).join("\n\n"));
       appliedTargetLabel = "当前章节简介";
     } else {
       const current = String(chapter?.content ?? "").trim();
@@ -1954,11 +2892,25 @@ async function applyWritingAssistantOutput(mode = "append") {
 
     const chapter = activeWritingChapter.value ?? ensureWritingChapterSelection(book);
     const current = String(chapter?.summary ?? "").trim();
-    setWritingChapterSummary(chapter, mode === "replace" ? output : [current, output].filter(Boolean).join("\n\n"));
+    const cleanOutput = sanitizeWritingProductOutput(output);
+
+    if (!cleanOutput || hasWritingProductOutputMetaLeak(cleanOutput)) {
+      setWritingFeedback("AI 输出仍包含修改过程或讨论痕迹，请重新生成后再写入章节简介。", "warning");
+      return;
+    }
+
+    setWritingChapterSummary(chapter, mode === "replace" ? cleanOutput : [current, cleanOutput].filter(Boolean).join("\n\n"));
   } else {
     const targetKey = getWritingIntroOutputTargetKey(book, activeWritingTask.value?.id);
     const current = getWritingIntroFieldValue(book, targetKey).trim();
-    setWritingIntroField(book, targetKey, mode === "replace" ? output : [current, output].filter(Boolean).join("\n\n"));
+    const cleanOutput = sanitizeWritingProductOutput(output);
+
+    if (!cleanOutput || hasWritingProductOutputMetaLeak(cleanOutput)) {
+      setWritingFeedback("AI 输出仍包含修改过程或讨论痕迹，请重新生成后再写入作品设定。", "warning");
+      return;
+    }
+
+    setWritingIntroField(book, targetKey, mode === "replace" ? cleanOutput : [current, cleanOutput].filter(Boolean).join("\n\n"));
     appliedTargetLabel = getWritingIntroOutputTargetLabel(book, activeWritingTask.value?.id);
   }
 
@@ -1984,6 +2936,8 @@ async function applyWritingAssistantOutput(mode = "append") {
     activeWritingPromptPreview,
     applyWritingAssistantOutput,
     applyWritingChapterPlanOutput,
+    buildWritingAgentContext,
+    buildWritingAgentRunInput,
     buildWritingAssistantPrompt,
     buildWritingChapterFromPlan,
     buildWritingChapterMemoryLine,
@@ -2003,6 +2957,7 @@ async function applyWritingAssistantOutput(mode = "append") {
     generateWritingLongOutlinePlan,
     getLastCompletedWritingChapterIndex,
     getNextMissingWritingChapterIndex,
+    getWritingAgentProgressItems,
     getWritingAiRunButtonLabel,
     getWritingAssistantMaxOutputTokens,
     getWritingBusyDescription,
@@ -2018,6 +2973,7 @@ async function applyWritingAssistantOutput(mode = "append") {
     getWritingOutlinePlannerStatusLabel,
     getWritingRetryDelayMs,
     getWritingTaskPromptSpec,
+    handleWritingAgentRunProgress,
     invokeWritingAssistantModel,
     isRetryableWritingAssistantError,
     isSameWritingLongOutlineRequest,
@@ -2036,6 +2992,7 @@ async function applyWritingAssistantOutput(mode = "append") {
     parseWritingInstructionChapterRange,
     parseWritingInstructionPartCount,
     resumeWritingOutlinePlanningJob,
+    runWritingAgentTask,
     shouldIgnoreExistingWritingOutline,
     splitWritingChapterTitleAndSummary,
     updateWritingOutlinePlannerJob,

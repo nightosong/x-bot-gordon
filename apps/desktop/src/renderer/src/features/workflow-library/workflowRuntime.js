@@ -328,7 +328,142 @@ export function getWorkflowStepVisualRows(stepResult) {
 }
 
 export function getWorkflowCardCountLabel(entry) {
+  if (entry?.kind === "info-radar") {
+    const windows = entry?.infoWindows ?? [];
+    const itemCount = windows.reduce((sum, infoWindow) => sum + (infoWindow?.items?.length ?? 0), 0);
+    return `${windows.length} 个窗口 · ${itemCount} 条信息`;
+  }
+
   return `${entry?.records?.length ?? 0} 条记录`;
+}
+
+export function getInfoRadarSourceKindLabel(kind) {
+  if (kind === "rss") {
+    return "RSS";
+  }
+
+  if (kind === "web_page") {
+    return "网页";
+  }
+
+  if (kind === "search") {
+    return "搜索";
+  }
+
+  if (kind === "wechat") {
+    return "公众号";
+  }
+
+  if (kind === "manual") {
+    return "手工";
+  }
+
+  return "来源";
+}
+
+export function getInfoRadarCadenceLabel(cadence) {
+  if (cadence === "hourly") {
+    return "每小时";
+  }
+
+  if (cadence === "daily") {
+    return "每日";
+  }
+
+  if (cadence === "weekly") {
+    return "每周";
+  }
+
+  return "手动";
+}
+
+export function getInfoRadarRunStatusLabel(status) {
+  if (status === "success") {
+    return "成功";
+  }
+
+  if (status === "partial") {
+    return "部分完成";
+  }
+
+  return "失败";
+}
+
+export function getInfoRadarRunStatusTone(status) {
+  if (status === "success") {
+    return "is-success";
+  }
+
+  if (status === "partial") {
+    return "is-warning";
+  }
+
+  return "is-danger";
+}
+
+export function getInfoRadarItemStatusLabel(status) {
+  if (status === "saved") {
+    return "已收藏";
+  }
+
+  if (status === "ignored") {
+    return "已忽略";
+  }
+
+  return "新信息";
+}
+
+export function buildInfoRadarWindowFromDraft(draft, existingWindow = null, options = {}) {
+  const createLocalId = resolveCreateLocalId(options);
+  const now = new Date().toISOString();
+  const parseList = (value) => parseDelimitedValues(value);
+  const title = String(draft?.title ?? "").trim() || "未命名信息窗口";
+
+  return {
+    id: existingWindow?.id ?? createLocalId("info_window"),
+    title,
+    summary: String(draft?.summary ?? "").trim(),
+    category: String(draft?.category ?? "").trim() || "综合",
+    status: draft?.status === "paused" ? "paused" : "active",
+    cadence: ["hourly", "daily", "weekly"].includes(draft?.cadence) ? draft.cadence : "manual",
+    keywords: parseList(draft?.keywordsText),
+    negativeKeywords: parseList(draft?.negativeKeywordsText),
+    sources: (draft?.sources ?? [])
+      .map((source) => {
+        const kind = ["rss", "web_page", "search", "wechat", "manual"].includes(source?.kind) ? source.kind : "web_page";
+        const titleText = String(source?.title ?? "").trim();
+        const url = String(source?.url ?? "").trim();
+        const query = String(source?.query ?? "").trim();
+
+        if (!titleText && !url && !query) {
+          return null;
+        }
+
+        return {
+          id: source?.id && !String(source.id).includes("_draft") ? source.id : createLocalId("info_source"),
+          kind,
+          title: titleText || query || url || "未命名来源",
+          url,
+          query,
+          enabled: source?.enabled !== false,
+          tags: parseList(source?.tagsText),
+          notes: String(source?.notes ?? "").trim(),
+          updatedAt: now
+        };
+      })
+      .filter(Boolean),
+    digestPrompt: String(draft?.digestPrompt ?? "").trim(),
+    items: existingWindow?.items ?? [],
+    runHistory: existingWindow?.runHistory ?? [],
+    createdAt: existingWindow?.createdAt ?? now,
+    updatedAt: now,
+    ...(existingWindow?.lastRefreshedAt ? { lastRefreshedAt: existingWindow.lastRefreshedAt } : {})
+  };
+}
+
+export function getInfoRadarItemHref(item) {
+  const url = String(item?.url ?? "").trim();
+  return /^https?:\/\//i.test(url) ? url : "";
 }
 
 export function parseNumberInput(value, fallback) {

@@ -41,8 +41,38 @@
       </div>
     </div>
 
-    <div v-if="isImageTask" class="comic-ai-control-grid">
-      <div class="field comic-ai-control-field">
+    <div v-if="isImageTask || isStoryboardTask" class="comic-ai-control-grid">
+      <div v-if="isStoryboardTask" class="field comic-ai-control-field">
+        <span class="field-label">分镜数</span>
+        <div class="comic-ai-control-picker" :class="{ 'is-open': activeControlPicker === 'storyboardCount' }">
+          <button
+            type="button"
+            class="comic-ai-control-trigger"
+            :aria-expanded="activeControlPicker === 'storyboardCount' ? 'true' : 'false'"
+            aria-haspopup="listbox"
+            @click="toggleControlPicker('storyboardCount')"
+          >
+            <span>{{ state.aiStoryboardCount }} 条</span>
+            <GIcon name="chevronDown" />
+          </button>
+          <div v-if="activeControlPicker === 'storyboardCount'" class="comic-ai-control-menu" role="listbox">
+            <button
+              v-for="count in comicAiStoryboardCountOptions"
+              :key="count"
+              type="button"
+              class="comic-ai-control-item"
+              :class="{ 'is-active': Number(state.aiStoryboardCount) === count }"
+              role="option"
+              :aria-selected="Number(state.aiStoryboardCount) === count ? 'true' : 'false'"
+              @click="selectComicAiStoryboardCount(count)"
+            >
+              {{ count }} 条
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="isImageTask" class="field comic-ai-control-field">
         <span class="field-label">数量</span>
         <div class="comic-ai-control-picker" :class="{ 'is-open': activeControlPicker === 'count' }">
           <button
@@ -72,7 +102,7 @@
         </div>
       </div>
 
-      <div class="field comic-ai-control-field">
+      <div v-if="isImageTask" class="field comic-ai-control-field">
         <span class="field-label">尺寸</span>
         <div class="comic-ai-control-picker" :class="{ 'is-open': activeControlPicker === 'size' }">
           <button
@@ -103,7 +133,7 @@
         </div>
       </div>
 
-      <div class="field comic-ai-control-field">
+      <div v-if="isImageTask" class="field comic-ai-control-field">
         <span class="field-label">质量</span>
         <div class="comic-ai-control-picker" :class="{ 'is-open': activeControlPicker === 'quality' }">
           <button
@@ -172,23 +202,39 @@
       </div>
     </section>
 
-    <div class="writing-ai-run-row comic-ai-run-row">
-      <button type="button" class="model-action-secondary writing-ai-run" :disabled="state.isAiRunning" @click="generateComicAiOutput">
-        {{ getComicAiRunButtonLabel() }}
-      </button>
-    </div>
+    <GordonAgentProgress
+      :progress="comicAgentProgress"
+      :items="comicAgentProgressItems"
+      :progress-class="comicAgentProgressClass"
+      :progress-time="comicAgentProgressTime"
+      fallback-status="正在处理漫画任务"
+      :cancel-handler="cancelMarketplaceAgentRun"
+    />
 
     <div class="writing-ai-output comic-ai-output">
-      <div class="writing-ai-output-head">
-        <span class="field-label">生成结果</span>
-        <span v-if="state.aiFeedback" class="status-pill" :class="getComicAiFeedbackClass()">
-          {{ state.aiFeedback }}
-        </span>
-      </div>
+      <AiAssistantActionBar
+        label="生成结果"
+        :status-class="getComicAiFeedbackClass()"
+        :status-message="comicAiOutputStatusMessage"
+        :quick-disabled="state.isAiRunning"
+        :quick-label="state.isAiRunning ? getComicAiRunButtonLabel() : '快速模式'"
+        :agent-disabled="state.isAiRunning"
+        :on-quick-run="generateComicAiOutput"
+        :on-agent-run="() => runMarketplaceAgentTask('comic')"
+      />
 
       <div v-if="isImageTask && hasGeneratedImages" class="comic-ai-image-grid">
         <figure v-for="(image, index) in state.aiGeneratedImages" :key="image.id || index" class="comic-ai-image-card">
-          <img :src="image.src" :alt="image.title || `生成图片 ${index + 1}`" />
+          <img
+            :src="image.src"
+            :alt="image.title || `生成图片 ${index + 1}`"
+            role="button"
+            tabindex="0"
+            :title="`放大 ${image.title || `生成图片 ${index + 1}`}`"
+            @click="openComicAiImagePreview(image, index)"
+            @keydown.enter.prevent="openComicAiImagePreview(image, index)"
+            @keydown.space.prevent="openComicAiImagePreview(image, index)"
+          />
           <figcaption>
             <span>{{ image.title || `生成图片 ${index + 1}` }}</span>
             <small v-if="image.meta">{{ image.meta }}</small>
@@ -199,19 +245,19 @@
       <textarea
         :value="state.aiOutput"
         class="field-textarea writing-ai-output-textarea comic-ai-output-textarea"
-        :placeholder="isImageTask ? '生成结果、图片摘要或最终提示词会出现在这里。' : '大模型生成的漫画介绍、规划或目录会出现在这里。'"
+        :placeholder="isImageTask ? '生成结果、图片摘要或最终提示词会出现在这里。' : '大模型生成的漫画介绍、规划、目录或分镜会出现在这里。'"
         @input="setComicAiOutput($event.target.value)"
       ></textarea>
 
       <div v-if="!isReviewTask" class="model-section-actions comic-ai-output-actions">
         <button v-if="isImageTask" type="button" class="model-action-secondary" :disabled="state.isAiRunning" @click="applyComicAiOutput('prompt')">
-          写入生图提示词
+          写入当前分镜提示词
         </button>
         <button type="button" class="model-action-secondary" :disabled="state.isAiRunning || !canWriteContent" @click="applyComicAiOutput('append')">
-          {{ isImageTask ? "追加图片" : "追加" }}
+          {{ isImageTask ? "追加到当前分镜" : "追加" }}
         </button>
         <button type="button" class="model-action-secondary" :disabled="state.isAiRunning || !canWriteContent" @click="applyComicAiOutput('replace')">
-          {{ isImageTask ? "替换图片" : "替换" }}
+          {{ isImageTask ? "替换当前分镜图片" : "替换" }}
         </button>
       </div>
     </div>
@@ -221,6 +267,8 @@
 <script setup>
 import { computed, ref, watch } from "vue";
 import GIcon from "../../components/GIcon.vue";
+import AiAssistantActionBar from "./AiAssistantActionBar.vue";
+import GordonAgentProgress from "./GordonAgentProgress.vue";
 
 const props = defineProps({
   state: { type: Object, required: true },
@@ -237,21 +285,61 @@ const props = defineProps({
   setComicAiImageCount: { type: Function, required: true },
   setComicAiImageSize: { type: Function, required: true },
   setComicAiImageQuality: { type: Function, required: true },
+  setComicAiStoryboardCount: { type: Function, required: true },
   generateComicAiOutput: { type: Function, required: true },
+  getMarketplaceAgentProgress: { type: Function, required: true },
+  getMarketplaceAgentProgressItems: { type: Function, required: true },
   getComicAiRunButtonLabel: { type: Function, required: true },
   getComicAiFeedbackClass: { type: Function, required: true },
-  applyComicAiOutput: { type: Function, required: true }
+  applyComicAiOutput: { type: Function, required: true },
+  cancelMarketplaceAgentRun: { type: Function, required: true },
+  runMarketplaceAgentTask: { type: Function, required: true }
 });
 
 const isAiInstructionOpen = ref(Boolean(props.state.aiInstruction?.trim()));
 const activeControlPicker = ref("");
-const comicAiCountOptions = Array.from({ length: 10 }, (_, index) => index + 1);
+const comicAiCountOptions = Array.from({ length: 20 }, (_, index) => index + 1);
+const comicAiStoryboardCountOptions = [4, 6, 8, 10, 12, 16, 20, 24, 30, 36, 40];
 const hasAiInstruction = computed(() => Boolean(props.state.aiInstruction?.trim()));
 const isImageTask = computed(() => props.activeComicAiTask?.type === "image");
+const isStoryboardTask = computed(() => props.activeComicAiTask?.writeMode === "storyboards");
 const isReviewTask = computed(() => props.activeComicAiTask?.writeMode === "review");
 const activeComicTaskTarget = computed(() => String(props.activeComicAiTask?.target ?? ""));
 const hasGeneratedImages = computed(() => Array.isArray(props.state.aiGeneratedImages) && props.state.aiGeneratedImages.length > 0);
 const canWriteContent = computed(() => (isImageTask.value ? hasGeneratedImages.value : Boolean(props.state.aiOutput?.trim())));
+const comicAiOutputStatusMessage = computed(() => String(props.state.aiFeedback ?? "").trim() || (props.state.isAiRunning ? "正在执行 AI 任务" : "暂无执行状态"));
+const comicAgentProgress = computed(() => props.getMarketplaceAgentProgress("comic"));
+const comicAgentProgressItems = computed(() => props.getMarketplaceAgentProgressItems(comicAgentProgress.value));
+const comicAgentProgressClass = computed(() => {
+  const progress = comicAgentProgress.value;
+
+  if (!progress) {
+    return "";
+  }
+
+  if (progress.phase === "completed") {
+    return "is-completed";
+  }
+
+  if (progress.tone === "warning") {
+    return "is-warning";
+  }
+
+  if (progress.phase === "failed") {
+    return "is-error";
+  }
+
+  return "";
+});
+const comicAgentProgressTime = computed(() => {
+  const value = comicAgentProgress.value?.updatedAt ?? comicAgentProgress.value?.createdAt ?? "";
+
+  if (!value) {
+    return "";
+  }
+
+  return new Date(value).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+});
 const activeImageSizeLabel = computed(
   () => props.comicAiImageSizeOptions.find((option) => option.value === props.state.aiImageSize)?.label ?? props.state.aiImageSize
 );
@@ -276,6 +364,11 @@ function selectComicAiCount(count) {
   closeControlPicker();
 }
 
+function selectComicAiStoryboardCount(count) {
+  props.setComicAiStoryboardCount(count);
+  closeControlPicker();
+}
+
 function selectComicAiImageSize(value) {
   props.setComicAiImageSize(value);
   closeControlPicker();
@@ -284,6 +377,25 @@ function selectComicAiImageSize(value) {
 function selectComicAiImageQuality(value) {
   props.setComicAiImageQuality(value);
   closeControlPicker();
+}
+
+function openComicAiImagePreview(image, index) {
+  if (!image?.src) {
+    return;
+  }
+
+  const title = image.title || `生成图片 ${index + 1}`;
+
+  window.dispatchEvent(
+    new CustomEvent("gordon:image-preview:open", {
+      detail: {
+        src: image.src,
+        alt: title,
+        title,
+        downloadTitle: title
+      }
+    })
+  );
 }
 
 watch(

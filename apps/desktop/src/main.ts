@@ -1,9 +1,10 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell } from "electron";
 import { spawn } from "node:child_process";
-import { createHmac } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { createHmac, randomUUID } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { XMLParser } from "fast-xml-parser";
 import JSZip from "jszip";
 
 import { callToolOnMcpServer, listToolsFromMcpServer, runAgent } from "../../../packages/agent/src/index.js";
@@ -34,6 +35,7 @@ import {
   listWeeklyProgress,
   listVideoProjects,
   listWritingBooks,
+  listWorkflowLibrary,
   listModelSettings,
   reorderModelProfiles,
   saveWeeklyFeishuSettings,
@@ -57,10 +59,16 @@ import {
 } from "../../../packages/workbench/src/index.js";
 import type {
   AgentRunProgressEvent,
+  ApplicationCoverImageSaveRequest,
   CommandWorkshopMessageExportFormat,
   CommandWorkshopMessageExportRequest,
   ComicProjectExportFormat,
   ComicProjectExportRequest,
+  InfoRadarItem,
+  InfoRadarRefreshResult,
+  InfoRadarRefreshRun,
+  InfoRadarSource,
+  InfoRadarWindow,
   MusicProjectExportFormat,
   MusicProjectExportRequest,
   MusicProject,
@@ -192,6 +200,9 @@ type WorkflowActiveRunContext = {
 };
 
 const WORKFLOW_RUN_CANCELLED_MESSAGE = "执行已中断";
+const INFO_RADAR_FETCH_TIMEOUT_MS = 18_000;
+const INFO_RADAR_MAX_ITEMS_PER_SOURCE = 12;
+const INFO_RADAR_MAX_WINDOW_ITEMS = 160;
 const activeWorkflowRuns = new Map<string, WorkflowActiveRunContext>();
 const WRITING_BOOK_EXPORT_EXTENSIONS = new Set<WritingBookExportFormat>(["txt", "md"]);
 const COMIC_PROJECT_EXPORT_EXTENSIONS = new Set<ComicProjectExportFormat>(["md"]);
@@ -540,6 +551,87 @@ function sanitizeWritingBookExportFileName(value: unknown, format: WritingBookEx
     .replace(/[. ]+$/g, "")
     .trim();
   return `${baseName || "未命名书稿"}.${format}`;
+}
+
+function inferApplicationCoverImageMimeType(filePath: string): string {
+  const extension = path.extname(filePath).toLowerCase();
+  const mimeTypes: Record<string, string> = {
+    ".gif": "image/gif",
+    ".jpeg": "image/jpeg",
+    ".jpg": "image/jpeg",
+    ".png": "image/png",
+    ".svg": "image/svg+xml",
+    ".webp": "image/webp"
+  };
+
+  return mimeTypes[extension] ?? "image/png";
+}
+
+function inferApplicationCoverExtensionFromMimeType(mimeType: string): string {
+  const normalizedMimeType = String(mimeType ?? "").trim().toLowerCase().split(";")[0];
+  const extensions: Record<string, string> = {
+    "image/gif": "gif",
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/png": "png",
+    "image/svg+xml": "svg",
+    "image/webp": "webp"
+  };
+
+  return extensions[normalizedMimeType] ?? "png";
+}
+
+function sanitizeApplicationCoverImageFileName(value: unknown, extension = "png"): string {
+  const normalizedExtension = String(extension ?? "").trim().toLowerCase().replace(/^\./, "") || "png";
+  const baseName = String(value ?? "")
+    .replace(/\.[^.]+$/, "")
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
+    .replace(/\s+/g, " ")
+    .replace(/[. ]+$/g, "")
+    .trim();
+
+  return `${baseName || "未命名封面"}.${normalizedExtension}`;
+}
+
+async function readApplicationCoverImageSource(imageUrl: unknown): Promise<{ buffer: Buffer; extension: string; mimeType: string }> {
+  const source = String(imageUrl ?? "").trim();
+
+  if (!source) {
+    throw new Error("当前没有可下载的封面图片");
+  }
+
+  const dataUrlMatch = source.match(/^data:([^;,]+)?(?:;charset=[^;,]+)?;base64,(.+)$/i);
+
+  if (dataUrlMatch) {
+    const mimeType = dataUrlMatch[1] || "image/png";
+    return {
+      buffer: Buffer.from(dataUrlMatch[2], "base64"),
+      extension: inferApplicationCoverExtensionFromMimeType(mimeType),
+      mimeType
+    };
+  }
+
+  if (/^https?:\/\//i.test(source)) {
+    const response = await fetch(source);
+
+    if (!response.ok) {
+      throw new Error(`远端封面下载失败：HTTP ${response.status}`);
+    }
+
+    const mimeType = response.headers.get("content-type") || "image/png";
+    const urlExtension = path.extname(new URL(source).pathname).replace(/^\./, "").toLowerCase();
+    const extension = urlExtension && ["gif", "jpeg", "jpg", "png", "svg", "webp"].includes(urlExtension)
+      ? urlExtension
+      : inferApplicationCoverExtensionFromMimeType(mimeType);
+
+    return {
+      buffer: Buffer.from(await response.arrayBuffer()),
+      extension,
+      mimeType
+    };
+  }
+
+  throw new Error("只支持下载本地上传/生成的封面或 http(s) 图片 URL");
 }
 
 function resolveWritingBookExportPath(request: WritingBookExportRequest): {
@@ -1221,10 +1313,21 @@ function buildGordonConfirmWindowHtml(options: GordonConfirmWindowOptions, confi
   const tone = options.tone ?? "warning";
   const detailItems = (options.detailLines ?? [])
     .filter((line) => String(line ?? "").trim())
-    .map((line) => `<li>${escapeHtml(line)}</li>`)
+    .map((line) => {
+      const text = String(line ?? "").trim();
+      const separatorIndex = text.indexOf("：");
+
+      if (separatorIndex > 0 && separatorIndex < 8) {
+        return `<li><span class="detail-label">${escapeHtml(text.slice(0, separatorIndex))}</span><span class="detail-value">${escapeHtml(text.slice(separatorIndex + 1))}</span></li>`;
+      }
+
+      return `<li><span class="detail-label">信息</span><span class="detail-value">${escapeHtml(text)}</span></li>`;
+    })
     .join("");
   const escapedConfirmUrl = escapeHtml(confirmUrl);
   const escapedCancelUrl = escapeHtml(cancelUrl);
+  const toneLabel = tone === "danger" ? "High Risk" : tone === "warning" ? "Permission" : "Notice";
+  const safeEyebrow = options.eyebrow ?? "Gordon Confirm";
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -1238,14 +1341,18 @@ function buildGordonConfirmWindowHtml(options: GordonConfirmWindowOptions, confi
         --text: #f7f3eb;
         --text-soft: #98a9bf;
         --text-faint: rgba(247, 243, 235, 0.52);
-        --line: rgba(151, 182, 216, 0.14);
-        --panel: rgba(10, 19, 31, 0.92);
-        --panel-strong: rgba(8, 15, 24, 0.96);
+        --line: rgba(151, 182, 216, 0.16);
+        --panel: rgba(8, 17, 29, 0.94);
+        --window-bg: #08111d;
+        --panel-strong: rgba(5, 12, 21, 0.96);
         --panel-soft: rgba(255, 255, 255, 0.05);
         --accent: #5ce1c2;
         --accent-warm: #f5c86b;
         --accent-hot: #ff8d77;
-        --shadow: 0 24px 64px rgba(0, 0, 0, 0.36);
+        --tone: var(--accent-warm);
+        --tone-soft: rgba(245, 200, 107, 0.12);
+        --tone-line: rgba(245, 200, 107, 0.28);
+        --shadow: 0 26px 72px rgba(0, 0, 0, 0.42);
         font-family: "Avenir Next", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
       }
 
@@ -1253,159 +1360,331 @@ function buildGordonConfirmWindowHtml(options: GordonConfirmWindowOptions, confi
         box-sizing: border-box;
       }
 
+      html,
+      body {
+        width: 100%;
+        min-width: 100%;
+        min-height: 100%;
+        margin: 0;
+        background: var(--window-bg) !important;
+      }
+
+      html {
+        overflow: hidden;
+      }
+
       body {
         display: grid;
         place-items: center;
         min-height: 100vh;
-        margin: 0;
         color: var(--text);
-        background:
-          radial-gradient(circle at 18% 18%, rgba(92, 225, 194, 0.1), transparent 32%),
-          radial-gradient(circle at 84% 18%, rgba(245, 200, 107, 0.1), transparent 30%),
-          linear-gradient(180deg, #07111d 0%, #0a1320 100%);
+        padding: 0;
+        overflow: hidden;
       }
 
       .dialog {
-        width: min(420px, calc(100vw - 32px));
-        padding: 17px;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        width: 100vw;
+        height: 100vh;
+        min-height: 100vh;
+        padding: 18px 18px 22px;
+        overflow: hidden;
         border: 1px solid var(--line);
-        border-radius: 20px;
+        border-radius: 0;
         background:
-          linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.025)),
+          radial-gradient(circle at 14% 0%, var(--tone-soft), transparent 32%),
+          linear-gradient(180deg, rgba(255, 255, 255, 0.065), rgba(255, 255, 255, 0.022)),
           var(--panel);
-        box-shadow: var(--shadow);
+        box-shadow: none;
         backdrop-filter: blur(18px);
+        -webkit-app-region: drag;
+      }
+
+      .dialog::before {
+        content: "";
+        position: absolute;
+        inset: 0 0 auto;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, var(--tone), rgba(92, 225, 194, 0.58), transparent);
+        opacity: 0.86;
+      }
+
+      .dialog::after {
+        content: "";
+        position: absolute;
+        right: -72px;
+        top: -92px;
+        width: 190px;
+        height: 190px;
+        border-radius: 999px;
+        background: radial-gradient(circle, var(--tone-soft), transparent 64%);
+        pointer-events: none;
+      }
+
+      .dialog.is-danger {
+        --tone: var(--accent-hot);
+        --tone-soft: rgba(255, 141, 119, 0.13);
+        --tone-line: rgba(255, 141, 119, 0.3);
       }
 
       .head {
+        position: relative;
+        z-index: 1;
         display: grid;
         grid-template-columns: auto minmax(0, 1fr);
-        gap: 10px;
+        gap: 12px;
         align-items: center;
       }
 
       .mark {
+        position: relative;
         display: grid;
         place-items: center;
-        width: 32px;
-        height: 32px;
-        border-radius: 10px;
-        border: 1px solid rgba(92, 225, 194, 0.14);
-        background: rgba(92, 225, 194, 0.08);
-        color: #bcf8ea;
+        width: 42px;
+        height: 42px;
+        border-radius: 14px;
+        border: 1px solid var(--tone-line);
+        background:
+          linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent),
+          var(--tone-soft);
+        color: var(--tone);
+        box-shadow: inset 0 0 0 1px rgba(247, 243, 235, 0.035), 0 14px 30px rgba(0, 0, 0, 0.2);
       }
 
-      .dialog.is-warning .mark,
-      .dialog.is-danger .mark {
-        border-color: rgba(255, 141, 119, 0.18);
-        background: rgba(255, 141, 119, 0.09);
-        color: #ffc5b7;
+      .mark::after {
+        content: "";
+        position: absolute;
+        inset: -5px;
+        border: 1px solid var(--tone-line);
+        border-radius: 18px;
+        opacity: 0.26;
       }
 
       .mark svg {
-        width: 16px;
-        height: 16px;
+        width: 19px;
+        height: 19px;
       }
 
       .eyebrow {
         margin: 0 0 4px;
-        color: var(--text-faint);
+        color: var(--tone);
         font-size: 10px;
-        font-weight: 800;
-        letter-spacing: 0.12em;
+        font-weight: 900;
+        letter-spacing: 0.1em;
         text-transform: uppercase;
       }
 
       h1 {
         margin: 0;
-        font-size: 17px;
-        line-height: 1.22;
+        color: rgba(247, 243, 235, 0.96);
+        font-size: 18px;
+        line-height: 1.26;
+      }
+
+      .tone-pill {
+        position: absolute;
+        top: 18px;
+        right: 18px;
+        z-index: 2;
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        padding: 0 9px;
+        border: 1px solid var(--tone-line);
+        border-radius: 999px;
+        background: rgba(5, 12, 21, 0.36);
+        color: var(--tone);
+        font-size: 10px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
       }
 
       .message {
-        margin: 12px 0 0;
-        color: var(--text-soft);
+        position: relative;
+        z-index: 1;
+        margin: 14px 0 0;
+        color: rgba(247, 243, 235, 0.72);
         font-size: 12.5px;
-        line-height: 1.65;
+        font-weight: 600;
+        line-height: 1.66;
       }
 
       .detail {
+        position: relative;
+        z-index: 1;
         display: grid;
-        gap: 6px;
-        max-height: 112px;
-        margin: 12px 0 0;
+        gap: 7px;
+        flex: 1 1 auto;
+        min-height: 58px;
+        max-height: 118px;
+        margin: 13px 0 0;
         padding: 10px;
-        border: 1px solid var(--line);
-        border-radius: 13px;
-        background: var(--panel-soft);
-        color: var(--text-soft);
+        border: 1px solid rgba(151, 182, 216, 0.13);
+        border-radius: 15px;
+        background:
+          linear-gradient(135deg, rgba(92, 225, 194, 0.045), rgba(245, 200, 107, 0.035)),
+          rgba(3, 10, 18, 0.35);
         font-size: 11.5px;
-        line-height: 1.5;
+        line-height: 1.48;
         list-style: none;
         overflow: auto;
+        -webkit-app-region: no-drag;
       }
 
       .detail li {
+        display: grid;
+        grid-template-columns: 48px minmax(0, 1fr);
+        gap: 8px;
+        align-items: start;
         overflow-wrap: anywhere;
       }
 
+      .detail-label {
+        color: rgba(247, 243, 235, 0.48);
+        font-weight: 900;
+        white-space: nowrap;
+      }
+
+      .detail-value {
+        color: rgba(247, 243, 235, 0.76);
+        font-family: "SFMono-Regular", "Menlo", "Consolas", "PingFang SC", monospace;
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .scope-note {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        margin: 11px 0 0;
+        color: rgba(247, 243, 235, 0.52);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .scope-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        background: var(--tone);
+        box-shadow: 0 0 16px var(--tone);
+      }
+
       .actions {
+        position: relative;
+        z-index: 3;
+        flex: 0 0 auto;
         display: flex;
         justify-content: flex-end;
-        gap: 8px;
+        gap: 9px;
         margin-top: 14px;
+        padding-bottom: 2px;
+        -webkit-app-region: no-drag;
       }
 
       .dialog-action {
         display: inline-grid;
         place-items: center;
-        min-height: 34px;
-        padding: 0 12px;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 999px;
+        min-width: 102px;
+        min-height: 36px;
+        padding: 0 14px;
+        border: 1px solid rgba(247, 243, 235, 0.1);
+        border-radius: 12px;
         text-decoration: none;
         font: inherit;
-        font-weight: 700;
+        font-weight: 900;
         font-size: 12px;
         cursor: pointer;
+        transition: transform 150ms ease, border-color 150ms ease, background 150ms ease, color 150ms ease;
       }
 
       .secondary {
-        background: rgba(255, 255, 255, 0.06);
-        color: var(--text);
+        background: rgba(255, 255, 255, 0.045);
+        color: rgba(247, 243, 235, 0.72);
       }
 
       .primary {
-        border-color: rgba(92, 225, 194, 0.2);
-        background: rgba(92, 225, 194, 0.14);
-        color: #bcf8ea;
+        border-color: var(--tone-line);
+        background:
+          linear-gradient(135deg, color-mix(in srgb, var(--tone) 24%, transparent), rgba(255, 255, 255, 0.035)),
+          rgba(8, 15, 24, 0.72);
+        color: #fff1ca;
+        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
       }
 
-      .dialog.is-danger .primary,
-      .dialog.is-warning .primary {
-        border-color: rgba(255, 141, 119, 0.24);
-        background: rgba(255, 141, 119, 0.14);
+      .dialog.is-danger .primary {
         color: #ffd0c6;
+      }
+
+      .dialog-action:hover,
+      .dialog-action:focus-visible {
+        outline: none;
+        transform: translateY(-1px);
+      }
+
+      .secondary:hover,
+      .secondary:focus-visible {
+        border-color: rgba(247, 243, 235, 0.18);
+        background: rgba(255, 255, 255, 0.07);
+        color: rgba(247, 243, 235, 0.9);
+      }
+
+      .primary:hover,
+      .primary:focus-visible {
+        border-color: var(--tone);
+        background:
+          linear-gradient(135deg, color-mix(in srgb, var(--tone) 34%, transparent), rgba(255, 255, 255, 0.055)),
+          rgba(8, 15, 24, 0.78);
+      }
+
+      @supports not (color: color-mix(in srgb, red, transparent)) {
+        .primary {
+          background: rgba(245, 200, 107, 0.16);
+        }
+
+        .dialog.is-danger .primary {
+          background: rgba(255, 141, 119, 0.16);
+        }
+      }
+
+      ::-webkit-scrollbar {
+        width: 7px;
+      }
+
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      ::-webkit-scrollbar-thumb {
+        border-radius: 999px;
+        background: rgba(247, 243, 235, 0.16);
       }
     </style>
   </head>
   <body>
     <main class="dialog is-${escapeHtml(tone)}" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+      <span class="tone-pill">${escapeHtml(toneLabel)}</span>
       <div class="head">
         <div class="mark" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 9v4" />
-            <path d="M12 17h.01" />
-            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+            <path d="M12 3 5 6v5c0 4.6 2.9 8.6 7 10 4.1-1.4 7-5.4 7-10V6l-7-3Z" />
+            <path d="M12 8v5" />
+            <path d="M12 16h.01" />
           </svg>
         </div>
         <div>
-          <p class="eyebrow">${escapeHtml(options.eyebrow ?? "Gordon Confirm")}</p>
+          <p class="eyebrow">${escapeHtml(safeEyebrow)}</p>
           <h1 id="dialog-title">${escapeHtml(options.title)}</h1>
         </div>
       </div>
       <p class="message">${escapeHtml(options.message)}</p>
       ${detailItems ? `<ul class="detail">${detailItems}</ul>` : ""}
+      <div class="scope-note"><span class="scope-dot" aria-hidden="true"></span><span>仅本轮 Agent 运行生效，关闭或拒绝后不会继续执行该动作。</span></div>
       <div class="actions">
         <a class="dialog-action secondary" href="${escapedCancelUrl}" data-action="cancel">${escapeHtml(options.cancelText ?? "取消")}</a>
         <a class="dialog-action primary" href="${escapedConfirmUrl}" data-action="confirm" autofocus>${escapeHtml(options.confirmText ?? "确认")}</a>
@@ -1421,8 +1700,8 @@ function showGordonConfirmWindow(ownerWindow: BrowserWindow | null, options: Gor
     const confirmUrl = `gordon-confirm://${requestId}/confirm`;
     const cancelUrl = `gordon-confirm://${requestId}/cancel`;
     const confirmWindow = new BrowserWindow({
-      width: 460,
-      height: 320,
+      width: 540,
+      height: 374,
       parent: ownerWindow ?? undefined,
       modal: Boolean(ownerWindow),
       resizable: false,
@@ -1432,7 +1711,11 @@ function showGordonConfirmWindow(ownerWindow: BrowserWindow | null, options: Gor
       frame: false,
       show: false,
       title: options.title,
-      backgroundColor: "#07111d",
+      transparent: false,
+      backgroundColor: "#08111d",
+      hasShadow: false,
+      vibrancy: undefined,
+      visualEffectState: "inactive",
       autoHideMenuBar: true,
       webPreferences: {
         contextIsolation: true,
@@ -2215,6 +2498,520 @@ function cancelWorkflowRecordRun(progressEventId: unknown): { cancelled: boolean
   return { cancelled: true, progressEventId: runId };
 }
 
+type InfoRadarRefreshRequest = {
+  cardId?: string;
+  windowId?: string;
+};
+
+type InfoRadarSourceFetchResult = {
+  items: InfoRadarItem[];
+  message?: string;
+};
+
+const infoRadarXmlParser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: "@_",
+  textNodeName: "#text",
+  cdataPropName: "#cdata",
+  trimValues: true
+});
+
+function toArray<T>(value: T | T[] | null | undefined): T[] {
+  if (value === null || value === undefined) {
+    return [];
+  }
+
+  return Array.isArray(value) ? value : [value];
+}
+
+function decodeBasicHtmlEntities(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#39;/gi, "'")
+    .replace(/&#(\d+);/g, (_match, code) => {
+      const valueCode = Number(code);
+      return Number.isFinite(valueCode) ? String.fromCodePoint(valueCode) : "";
+    });
+}
+
+function stripHtml(value: unknown): string {
+  return decodeBasicHtmlEntities(
+    String(value ?? "")
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/p>/gi, "\n")
+      .replace(/<[^>]+>/g, " ")
+  )
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function truncateInfoRadarText(value: unknown, maxLength = 280): string {
+  const text = stripHtml(value);
+
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  return `${text.slice(0, maxLength - 1).trim()}…`;
+}
+
+function readXmlText(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(readXmlText).filter(Boolean).join(" ");
+  }
+
+  if (typeof value !== "object") {
+    return "";
+  }
+
+  const record = value as Record<string, unknown>;
+  return readXmlText(record["#cdata"] ?? record["#text"] ?? record.value ?? "");
+}
+
+function resolveInfoRadarUrl(value: unknown, baseUrl = ""): string {
+  const raw = String(value ?? "").trim();
+
+  if (!raw) {
+    return "";
+  }
+
+  try {
+    return baseUrl ? new URL(raw, baseUrl).toString() : new URL(raw).toString();
+  } catch {
+    return raw;
+  }
+}
+
+function readAtomLink(value: unknown, baseUrl = ""): string {
+  for (const link of toArray(value)) {
+    if (typeof link === "string") {
+      return resolveInfoRadarUrl(link, baseUrl);
+    }
+
+    if (!link || typeof link !== "object") {
+      continue;
+    }
+
+    const record = link as Record<string, unknown>;
+    const href = String(record["@_href"] ?? "").trim();
+    const rel = String(record["@_rel"] ?? "alternate").trim();
+
+    if (href && (!rel || rel === "alternate")) {
+      return resolveInfoRadarUrl(href, baseUrl);
+    }
+  }
+
+  return "";
+}
+
+function readRssItemLink(item: Record<string, unknown>, baseUrl = ""): string {
+  const link = item.link;
+
+  if (typeof link === "string") {
+    return resolveInfoRadarUrl(link, baseUrl);
+  }
+
+  if (link && typeof link === "object") {
+    const linkRecord = link as Record<string, unknown>;
+    const href = String(linkRecord["@_href"] ?? linkRecord.href ?? "").trim();
+
+    if (href) {
+      return resolveInfoRadarUrl(href, baseUrl);
+    }
+
+    const text = readXmlText(link);
+
+    if (text) {
+      return resolveInfoRadarUrl(text, baseUrl);
+    }
+  }
+
+  const guid = item.guid;
+
+  if (typeof guid === "string" && /^https?:\/\//i.test(guid)) {
+    return resolveInfoRadarUrl(guid, baseUrl);
+  }
+
+  return "";
+}
+
+function normalizeInfoRadarDate(value: unknown): string | undefined {
+  const text = readXmlText(value).trim();
+
+  if (!text) {
+    return undefined;
+  }
+
+  const timestamp = new Date(text).getTime();
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : text;
+}
+
+function buildInfoRadarItem(
+  source: InfoRadarSource,
+  rawItem: {
+    title?: unknown;
+    url?: unknown;
+    summary?: unknown;
+    author?: unknown;
+    publishedAt?: unknown;
+    tags?: unknown[];
+  },
+  baseUrl = ""
+): InfoRadarItem | null {
+  const title = truncateInfoRadarText(readXmlText(rawItem.title), 180);
+  const url = resolveInfoRadarUrl(rawItem.url, baseUrl);
+  const summary = truncateInfoRadarText(rawItem.summary, 320);
+
+  if (!title && !url) {
+    return null;
+  }
+
+  const fetchedAt = new Date().toISOString();
+  const stableKey = [source.id, url || title].join(":");
+
+  return {
+    id: `info_item_${Buffer.from(stableKey).toString("base64url").slice(0, 28)}_${randomUUID().slice(0, 8)}`,
+    sourceId: source.id,
+    sourceTitle: source.title,
+    sourceKind: source.kind,
+    title: title || url,
+    url,
+    summary,
+    ...(rawItem.author ? { author: truncateInfoRadarText(readXmlText(rawItem.author), 80) } : {}),
+    ...(rawItem.publishedAt ? { publishedAt: normalizeInfoRadarDate(rawItem.publishedAt) ?? readXmlText(rawItem.publishedAt) } : {}),
+    fetchedAt,
+    tags: [...(source.tags ?? []), ...(rawItem.tags ?? []).map((tag) => readXmlText(tag)).filter(Boolean)].slice(0, 8),
+    score: 0,
+    status: "new"
+  };
+}
+
+function parseInfoRadarFeed(xmlText: string, source: InfoRadarSource, baseUrl = ""): InfoRadarItem[] {
+  const parsed = infoRadarXmlParser.parse(xmlText) as Record<string, unknown>;
+  const rssChannel = (parsed.rss as Record<string, unknown> | undefined)?.channel as Record<string, unknown> | undefined;
+  const rdfChannel = (parsed["rdf:RDF"] ?? parsed.RDF) as Record<string, unknown> | undefined;
+  const atomFeed = parsed.feed as Record<string, unknown> | undefined;
+
+  const rssItems = toArray(rssChannel?.item ?? rdfChannel?.item).map((item) => item as Record<string, unknown>);
+  const atomEntries = toArray(atomFeed?.entry).map((entry) => entry as Record<string, unknown>);
+  const items: InfoRadarItem[] = [];
+
+  for (const item of rssItems) {
+    const normalized = buildInfoRadarItem(
+      source,
+      {
+        title: item.title,
+        url: readRssItemLink(item, baseUrl),
+        summary: item.description ?? item["content:encoded"] ?? item.summary,
+        author: item.author ?? item["dc:creator"],
+        publishedAt: item.pubDate ?? item.published ?? item.updated,
+        tags: toArray(item.category)
+      },
+      baseUrl
+    );
+
+    if (normalized) {
+      items.push(normalized);
+    }
+  }
+
+  for (const entry of atomEntries) {
+    const normalized = buildInfoRadarItem(
+      source,
+      {
+        title: entry.title,
+        url: readAtomLink(entry.link, baseUrl) || readXmlText(entry.id),
+        summary: entry.summary ?? entry.content,
+        author: (entry.author as Record<string, unknown> | undefined)?.name ?? entry.author,
+        publishedAt: entry.published ?? entry.updated,
+        tags: toArray(entry.category)
+      },
+      baseUrl
+    );
+
+    if (normalized) {
+      items.push(normalized);
+    }
+  }
+
+  return items;
+}
+
+function readHtmlMeta(htmlText: string, name: string): string {
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`<meta[^>]+(?:name|property)=["']${escapedName}["'][^>]+content=["']([^"']+)["'][^>]*>`, "i");
+  const reversePattern = new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:name|property)=["']${escapedName}["'][^>]*>`, "i");
+  return decodeBasicHtmlEntities(htmlText.match(pattern)?.[1] ?? htmlText.match(reversePattern)?.[1] ?? "").trim();
+}
+
+function parseInfoRadarWebPage(htmlText: string, source: InfoRadarSource, finalUrl = ""): InfoRadarItem[] {
+  const html = String(htmlText ?? "");
+  const title =
+    readHtmlMeta(html, "og:title") ||
+    stripHtml(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "") ||
+    source.title;
+  const summary =
+    readHtmlMeta(html, "description") ||
+    readHtmlMeta(html, "og:description") ||
+    truncateInfoRadarText(html.match(/<p[^>]*>([\s\S]*?)<\/p>/i)?.[1] ?? "", 320);
+  const item = buildInfoRadarItem(
+    source,
+    {
+      title,
+      url: finalUrl || source.url,
+      summary,
+      tags: source.tags
+    },
+    source.url
+  );
+
+  return item ? [item] : [];
+}
+
+async function fetchInfoRadarText(url: string, timeoutMs = INFO_RADAR_FETCH_TIMEOUT_MS): Promise<{ text: string; finalUrl: string }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, text/html;q=0.8, */*;q=0.5",
+        "user-agent": "Gordon Info Radar/1.0"
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    return {
+      text: await response.text(),
+      finalUrl: response.url || url
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function scoreInfoRadarItem(item: InfoRadarItem, radarWindow: InfoRadarWindow): InfoRadarItem | null {
+  const keywords = (radarWindow.keywords ?? []).map((keyword) => keyword.trim().toLowerCase()).filter(Boolean);
+  const negativeKeywords = (radarWindow.negativeKeywords ?? []).map((keyword) => keyword.trim().toLowerCase()).filter(Boolean);
+  const searchableText = [
+    item.title,
+    item.summary,
+    item.sourceTitle,
+    item.author,
+    item.tags?.join(" ")
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  if (negativeKeywords.some((keyword) => searchableText.includes(keyword))) {
+    return null;
+  }
+
+  const keywordMatches = keywords.filter((keyword) => searchableText.includes(keyword));
+
+  if (keywords.length && !keywordMatches.length) {
+    return null;
+  }
+
+  return {
+    ...item,
+    score: keywordMatches.length * 10 + (item.publishedAt ? 3 : 0) + (item.summary ? 2 : 0)
+  };
+}
+
+function getInfoRadarItemDedupeKey(item: InfoRadarItem): string {
+  const url = String(item.url ?? "").trim().toLowerCase().replace(/#.*$/, "").replace(/\/$/, "");
+  const title = String(item.title ?? "").trim().toLowerCase();
+  return url || `${item.sourceId}:${title}`;
+}
+
+function mergeInfoRadarItems(existingItems: InfoRadarItem[], fetchedItems: InfoRadarItem[]): InfoRadarItem[] {
+  const byKey = new Map<string, InfoRadarItem>();
+
+  for (const item of existingItems ?? []) {
+    const key = getInfoRadarItemDedupeKey(item);
+
+    if (key) {
+      byKey.set(key, item);
+    }
+  }
+
+  for (const item of fetchedItems) {
+    const key = getInfoRadarItemDedupeKey(item);
+    const existing = byKey.get(key);
+
+    byKey.set(key, {
+      ...item,
+      id: existing?.id ?? item.id,
+      status: existing?.status ?? item.status,
+      fetchedAt: item.fetchedAt || existing?.fetchedAt || new Date().toISOString()
+    });
+  }
+
+  return Array.from(byKey.values())
+    .sort((left, right) => {
+      const leftTime = new Date(left.publishedAt ?? left.fetchedAt ?? 0).getTime();
+      const rightTime = new Date(right.publishedAt ?? right.fetchedAt ?? 0).getTime();
+      const leftRank = Number.isFinite(leftTime) ? leftTime : 0;
+      const rightRank = Number.isFinite(rightTime) ? rightTime : 0;
+      return rightRank - leftRank || (right.score ?? 0) - (left.score ?? 0);
+    })
+    .slice(0, INFO_RADAR_MAX_WINDOW_ITEMS);
+}
+
+async function fetchInfoRadarSource(source: InfoRadarSource): Promise<InfoRadarSourceFetchResult> {
+  if (!source.enabled) {
+    return { items: [] };
+  }
+
+  if (source.kind === "search") {
+    return {
+      items: [],
+      message: `${source.title} 需要接入 Search Tools 后才能自动刷新`
+    };
+  }
+
+  if (source.kind === "wechat") {
+    return {
+      items: [],
+      message: `${source.title} 需要公众号专项采集能力，当前仅保存配置`
+    };
+  }
+
+  if (source.kind === "manual") {
+    return {
+      items: [],
+      message: `${source.title} 是手工来源，刷新时不会自动抓取`
+    };
+  }
+
+  if (!source.url) {
+    return {
+      items: [],
+      message: `${source.title} 缺少 URL`
+    };
+  }
+
+  const response = await fetchInfoRadarText(source.url);
+  const items =
+    source.kind === "rss"
+      ? parseInfoRadarFeed(response.text, source, response.finalUrl)
+      : parseInfoRadarWebPage(response.text, source, response.finalUrl);
+
+  return {
+    items: items.slice(0, INFO_RADAR_MAX_ITEMS_PER_SOURCE)
+  };
+}
+
+async function refreshInfoRadarWindow(request: InfoRadarRefreshRequest): Promise<InfoRadarRefreshResult> {
+  const cardId = String(request?.cardId ?? "").trim();
+  const windowId = String(request?.windowId ?? "").trim();
+  const library = await listWorkflowLibrary();
+  const card =
+    library.find((entry) => entry.id === cardId && entry.kind === "info-radar") ??
+    library.find((entry) => entry.kind === "info-radar");
+
+  if (!card) {
+    throw new Error("未找到信息雷达卡片");
+  }
+
+  const radarWindow =
+    (card.infoWindows ?? []).find((entry) => entry.id === windowId) ??
+    (card.infoWindows ?? [])[0];
+
+  if (!radarWindow) {
+    throw new Error("未找到信息窗口");
+  }
+
+  const startedAt = new Date().toISOString();
+  const enabledSources = (radarWindow.sources ?? []).filter((source) => source.enabled !== false);
+  const fetchedItems: InfoRadarItem[] = [];
+  const messages: string[] = [];
+
+  if (!enabledSources.length) {
+    messages.push("当前窗口没有启用的信息源");
+  }
+
+  for (const source of enabledSources) {
+    try {
+      const result = await fetchInfoRadarSource(source);
+      fetchedItems.push(
+        ...result.items
+          .map((item) => scoreInfoRadarItem(item, radarWindow))
+          .filter((item): item is InfoRadarItem => Boolean(item))
+      );
+
+      if (result.message) {
+        messages.push(result.message);
+      }
+    } catch (error) {
+      messages.push(`${source.title || source.url}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  const now = new Date().toISOString();
+  const status: InfoRadarRefreshRun["status"] =
+    messages.length && fetchedItems.length
+      ? "partial"
+      : messages.length
+        ? "failed"
+        : "success";
+  const run: InfoRadarRefreshRun = {
+    id: `info_run_${randomUUID()}`,
+    status,
+    startedAt,
+    finishedAt: now,
+    sourceCount: enabledSources.length,
+    itemCount: fetchedItems.length,
+    message:
+      messages.length > 0
+        ? messages.slice(0, 4).join("；")
+        : fetchedItems.length > 0
+          ? `刷新完成，获取 ${fetchedItems.length} 条信息`
+          : "刷新完成，暂无匹配的新信息"
+  };
+  const nextWindow: InfoRadarWindow = {
+    ...radarWindow,
+    items: mergeInfoRadarItems(radarWindow.items ?? [], fetchedItems),
+    runHistory: [run, ...(radarWindow.runHistory ?? [])].slice(0, 20),
+    lastRefreshedAt: now,
+    updatedAt: now
+  };
+  const nextCard = {
+    ...card,
+    updatedAt: now,
+    lastUsedAt: now,
+    infoWindows: (card.infoWindows ?? []).map((entry) => (entry.id === nextWindow.id ? nextWindow : entry))
+  };
+  const nextLibrary = await upsertWorkflowLibraryItem(nextCard);
+  const savedCard = nextLibrary.find((entry) => entry.id === nextCard.id) ?? nextCard;
+  const savedWindow = (savedCard.infoWindows ?? []).find((entry) => entry.id === nextWindow.id) ?? nextWindow;
+
+  return {
+    card: savedCard,
+    window: savedWindow,
+    run
+  };
+}
+
 async function createMainWindow(): Promise<void> {
   const window = new BrowserWindow({
     width: MAIN_WINDOW_MIN_WIDTH,
@@ -2456,6 +3253,25 @@ app.whenReady().then(async () => {
           }
 
           return granted;
+        },
+        onToolPermissionRequest: async (permissionRequest) => {
+          const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+          return showGordonConfirmWindow(ownerWindow, {
+            tone: permissionRequest.sideEffects === "destructive" ? "danger" : "warning",
+            eyebrow: "Tool Permission",
+            title: "Gordon 需要执行高风险工具",
+            message: "是否允许 Gordon 本次执行这个会改变本地状态的工具？授权只对当前参数生效。",
+            detailLines: [
+              `工具：${permissionRequest.serverName} / ${permissionRequest.toolName}`,
+              `风险：${permissionRequest.riskLevel}`,
+              `影响：${permissionRequest.sideEffects === "destructive" ? "可能删除或替换资产" : "会写入、生成或改变本地状态"}`,
+              `参数：${permissionRequest.argumentsPreview}`,
+              permissionRequest.expectedOutcome ? `预期：${permissionRequest.expectedOutcome}` : "",
+              permissionRequest.verificationMethod ? `验证：${permissionRequest.verificationMethod}` : ""
+            ].filter(Boolean),
+            confirmText: "允许本次执行",
+            cancelText: "拒绝"
+          });
         }
       });
 
@@ -2578,6 +3394,9 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("gordon:workflow-library:cancel-run", async (_event, progressEventId) =>
     cancelWorkflowRecordRun(progressEventId)
+  );
+  ipcMain.handle("gordon:workflow-library:refresh-info-window", async (_event, request: InfoRadarRefreshRequest) =>
+    toCloneableIpcValue(await refreshInfoRadarWindow(request))
   );
   ipcMain.handle("gordon:comic-projects:list", async () => listComicProjects());
   ipcMain.handle("gordon:comic-projects:upsert", async (_event, project) => upsertComicProject(project));
@@ -2702,6 +3521,77 @@ app.whenReady().then(async () => {
 
     return result.filePaths[0];
   });
+  const handleSelectApplicationCoverImage = async (event: Electron.IpcMainInvokeEvent) => {
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+    const openDialogOptions = {
+      title: "选择作品封面图片",
+      properties: ["openFile"],
+      filters: [
+        {
+          name: "图片文件",
+          extensions: ["png", "jpg", "jpeg", "webp", "gif", "svg"]
+        },
+        { name: "所有文件", extensions: ["*"] }
+      ]
+    } satisfies Electron.OpenDialogOptions;
+    const result = ownerWindow
+      ? await dialog.showOpenDialog(ownerWindow, openDialogOptions)
+      : await dialog.showOpenDialog(openDialogOptions);
+
+    if (result.canceled || !result.filePaths.length) {
+      return null;
+    }
+
+    const filePath = result.filePaths[0];
+    const buffer = await readFile(filePath);
+    return `data:${inferApplicationCoverImageMimeType(filePath)};base64,${buffer.toString("base64")}`;
+  };
+  const handleSaveApplicationCoverImage = async (
+    event: Electron.IpcMainInvokeEvent,
+    request: ApplicationCoverImageSaveRequest
+  ) => {
+    const imageSource = await readApplicationCoverImageSource(request?.imageUrl);
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+    const fileName = sanitizeApplicationCoverImageFileName(request?.title, imageSource.extension);
+    const saveDialogOptions = {
+      title: "下载作品封面",
+      defaultPath: path.join(app.getPath("documents"), fileName),
+      filters: [
+        {
+          name: "图片文件",
+          extensions: [imageSource.extension]
+        },
+        {
+          name: "所有文件",
+          extensions: ["*"]
+        }
+      ]
+    } satisfies Electron.SaveDialogOptions;
+    const dialogResult = ownerWindow
+      ? await dialog.showSaveDialog(ownerWindow, saveDialogOptions)
+      : await dialog.showSaveDialog(saveDialogOptions);
+
+    if (dialogResult.canceled || !dialogResult.filePath) {
+      return null;
+    }
+
+    const normalizedFilePath = path.extname(dialogResult.filePath)
+      ? dialogResult.filePath
+      : `${dialogResult.filePath}.${imageSource.extension}`;
+
+    await mkdir(path.dirname(normalizedFilePath), { recursive: true });
+    await writeFile(normalizedFilePath, imageSource.buffer);
+
+    return {
+      filePath: normalizedFilePath,
+      fileName: path.basename(normalizedFilePath),
+      writtenBytes: imageSource.buffer.byteLength
+    };
+  };
+  ipcMain.handle("gordon:application-cover:select-image", handleSelectApplicationCoverImage);
+  ipcMain.handle("gordon:application-cover:save-image", handleSaveApplicationCoverImage);
+  ipcMain.handle("gordon:writing-books:select-cover-image", handleSelectApplicationCoverImage);
+  ipcMain.handle("gordon:writing-books:save-cover-image", handleSaveApplicationCoverImage);
   ipcMain.handle("gordon:writing-books:export", async (_event, request: WritingBookExportRequest) => {
     const exportTarget = resolveWritingBookExportPath(request);
 

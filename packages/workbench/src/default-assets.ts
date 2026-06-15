@@ -17,6 +17,7 @@ export const BUILTIN_SELF_IMPROVEMENT_SKILL_ID = "builtin:skill:self-improvement
 export const BUILTIN_DEEP_RESEARCH_SKILL_ID = "builtin:skill:deep-research";
 export const BUILTIN_SKILL_CREATOR_SKILL_ID = "builtin:skill:skill-creator";
 export const BUILTIN_WRITING_SKILL_ID = "builtin:skill:writing";
+export const BUILTIN_COMIC_SKILL_ID = "builtin:skill:comic";
 
 const BUILTIN_UPDATED_AT = "2026-04-27T10:30:00.000Z";
 const BUILTIN_PLAN_SKILL_PATH = resolveFromRoot("skills", "plan");
@@ -27,6 +28,7 @@ const BUILTIN_SELF_IMPROVEMENT_SKILL_PATH = resolveFromRoot("skills", "self-impr
 const BUILTIN_DEEP_RESEARCH_SKILL_PATH = resolveFromRoot("skills", "deep-research");
 const BUILTIN_SKILL_CREATOR_SKILL_PATH = resolveFromRoot("skills", "skill-creator");
 const BUILTIN_WRITING_SKILL_PATH = resolveFromRoot("skills", "writing");
+const BUILTIN_COMIC_SKILL_PATH = resolveFromRoot("skills", "comic");
 const BUILTIN_PLAN_SKILL_PROMPT = readPromptAsset("builtinSkillPlanPrompt");
 const BUILTIN_CODE_SKILL_PROMPT = readPromptAsset("builtinSkillCodePrompt");
 const BUILTIN_REVIEW_SKILL_PROMPT = readPromptAsset("builtinSkillReviewPrompt");
@@ -35,6 +37,7 @@ const BUILTIN_SELF_IMPROVEMENT_SKILL_PROMPT = readPromptAsset("builtinSkillSelfI
 const BUILTIN_DEEP_RESEARCH_SKILL_PROMPT = readPromptAsset("builtinSkillDeepResearchPrompt");
 const BUILTIN_SKILL_CREATOR_SKILL_PROMPT = readPromptAsset("builtinSkillCreatorPrompt");
 const BUILTIN_WRITING_SKILL_PROMPT = readPromptAsset("builtinSkillWritingPrompt");
+const BUILTIN_COMIC_SKILL_PROMPT = readPromptAsset("builtinSkillComicPrompt");
 const BUILTIN_GORDON_AGENT_SYSTEM_PROMPT = readPromptAsset("builtinAgentGordonSystem");
 
 function shellEscape(value: string): string {
@@ -162,6 +165,20 @@ export function getBuiltinSkillDefinitions(): SkillDefinition[] {
       },
       enabled: true,
       updatedAt: BUILTIN_UPDATED_AT
+    },
+    {
+      id: BUILTIN_COMIC_SKILL_ID,
+      name: "comic",
+      description: "面向漫画项目创作的复合工作流 Skill，覆盖企划、素材库、章节分镜、镜头连续性、出图提示词、成图验收和连载状态维护。",
+      tags: ["comic", "storyboard", "image-generation", "workflow"],
+      kind: "prompt",
+      promptTemplate: BUILTIN_COMIC_SKILL_PROMPT,
+      source: {
+        type: "manual",
+        localPath: BUILTIN_COMIC_SKILL_PATH
+      },
+      enabled: true,
+      updatedAt: BUILTIN_UPDATED_AT
     }
   ];
 }
@@ -227,7 +244,7 @@ export function getBuiltinMcpServers(): McpServerConfig[] {
     {
       id: BUILTIN_APPLICATION_TOOLS_MCP_ID,
       name: "Application Tools",
-      description: "内置应用广场工具服务，把命令工坊 Agent 连接到墨笔生花等本地应用资产，支持按应用语义读取、检索、预览和写回。",
+      description: "内置应用广场工具服务，把命令工坊 Agent 连接到墨笔生花、丹青溢彩等本地应用资产，支持按应用语义读取、检索、预览和写回。",
       transport: "stdio",
       command: "builtin:application-tools",
       env: {},

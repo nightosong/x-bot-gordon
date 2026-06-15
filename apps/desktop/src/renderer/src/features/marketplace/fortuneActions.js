@@ -480,6 +480,7 @@ export function createFortuneActions({
     activeFortuneModeMeta,
     activeFortuneMethodLabels,
     backFortuneMarketplace,
+    addFortuneMessage,
     clearFortuneReading,
     formatFortuneTime,
     generateFortuneReading,

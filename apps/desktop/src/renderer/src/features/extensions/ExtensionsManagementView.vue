@@ -155,7 +155,7 @@
           </div>
         </section>
 
-        <section v-else-if="ui.extensions.listTab === 'skill'" class="model-section extension-section">
+        <section v-else-if="ui.extensions.listTab === 'skill'" class="model-section extension-section extension-section-skill">
           <div class="model-section-head">
             <div>
               <p class="feature-kicker">Skills</p>
@@ -690,10 +690,41 @@
                           <input v-model="provider.apiKey" class="field-input" type="password" placeholder="sk-..." />
                         </label>
 
-                        <label class="field field-full">
+                        <label v-if="!(ui.extensions.editor.values.name === 'video_gen' && provider.provider === 'seedance')" class="field field-full">
                           <span class="field-label">Base URL</span>
                           <input v-model="provider.baseUrl" class="field-input" placeholder="可选，自定义网关或供应商地址" />
                         </label>
+
+                        <div v-if="ui.extensions.editor.values.name === 'video_gen' && provider.provider === 'seedance'" class="field field-full tool-provider-protocol">
+                          <div class="tool-provider-protocol-row">
+                            <label class="field">
+                              <span class="field-label">提交接口</span>
+                              <input
+                                v-model="provider.submitUrl"
+                                class="field-input"
+                                placeholder="https://.../gpt-proxy/volengine/video/submit"
+                              />
+                            </label>
+                            <label class="field">
+                              <span class="field-label">taskId Path</span>
+                              <input v-model="provider.taskIdPath" class="field-input" placeholder="$.data.task_id" />
+                            </label>
+                          </div>
+                          <div class="tool-provider-protocol-row">
+                            <label class="field">
+                              <span class="field-label">轮询接口</span>
+                              <input
+                                v-model="provider.queryUrl"
+                                class="field-input"
+                                placeholder="https://.../gpt-proxy/volengine/video/task/{task_id}"
+                              />
+                            </label>
+                            <label class="field">
+                              <span class="field-label">结果 url</span>
+                              <input v-model="provider.resultUrlPath" class="field-input" placeholder="$.data.video_url" />
+                            </label>
+                          </div>
+                        </div>
 
                         <label class="field field-full">
                           <span class="field-label">备注</span>

@@ -84,7 +84,7 @@
 - 本地文件 / 代码：搜索定位 > 读取相关片段 > 沿调用链扩展 > 局部修改 > 差异检查 > 相关验证。
 - 网页 / 文档：用户给定目标页面 > 官方文档 > Search Tools 的 `web_research` > 搜索结果摘要；需要最新事实或来源证据时优先 `web_research`。
 - GitHub / 开源：优先 `github_search_repositories`，再读取关键仓库或文档。
-- 应用广场资产：优先 Application Tools 按应用语义读取、检索、预览和写回；若 Application Tools 不可用、没有覆盖目标操作或连续失败，可使用 Workspace Tools 读取和修改 `~/.gord/data/workbench` 下的应用数据文件。直接文件写入时必须先检查目录结构，按现有 `book.json / chapters.json / chapters/*.md` 等格式落盘，并用 `validate_json_file` 或等价检查确认 JSON 可解析。
+- 应用广场资产：优先 Application Tools 按应用语义读取、检索、预览和写回；墨笔生花使用 `writing_*` 工具维护小说书稿，丹青溢彩使用 `comic_*` 工具维护漫画项目、素材库、章节分镜和章节图片。若 Application Tools 不可用、没有覆盖目标操作或连续失败，可使用 Workspace Tools 读取和修改 `~/.gord/data/workbench` 下的应用数据文件。直接文件写入时必须先检查目录结构，按现有 `book.json / chapters.json / chapters/*.md`、`comic-projects.json / comic-images/*` 等格式落盘，并用 `validate_json_file` 或等价检查确认 JSON 可解析。
 - 图片、视频、音乐等生成：使用 Gordon Tools 中已启用的对应工具，并以工具返回结果为准。
 - 桌面应用、浏览器窗口、菜单、按钮、输入框或截图：使用 Computer Use；先观察，再操作。
 - 受限命令诊断：`run_shell_command` 只作为兜底诊断工具；读取、搜索、网页、差异和文件操作优先专用工具。

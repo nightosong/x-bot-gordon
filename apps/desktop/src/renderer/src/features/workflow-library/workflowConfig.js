@@ -19,6 +19,7 @@ export function createWorkflowState(createLocalId = createFallbackLocalId) {
     view: "library",
     activeCardId: null,
     activeRecordId: null,
+    activeInfoWindowId: null,
     copiedStepId: null,
     bodyStepId: null,
     bodyDraftText: "",
@@ -27,14 +28,20 @@ export function createWorkflowState(createLocalId = createFallbackLocalId) {
     bodyPanelCollapsed: false,
     apiKeyVisible: false,
     searchQuery: "",
+    infoSearchQuery: "",
+    infoRailCollapsed: false,
     editingRecordId: null,
+    editingInfoWindowId: null,
     isRunning: false,
     isCancelling: false,
+    isRefreshingInfoWindow: false,
     runResult: null,
     activeProgressEventId: null,
     expandedStepIds: [],
     isSavingRecord: false,
-    recordDraft: createWorkflowRecordDraft(createLocalId)
+    isSavingInfoWindow: false,
+    recordDraft: createWorkflowRecordDraft(createLocalId),
+    infoWindowDraft: createInfoRadarWindowDraft(createLocalId)
   };
 }
 
@@ -89,4 +96,49 @@ export function createWorkflowRecordDraft(createLocalId = createFallbackLocalId)
     steps: [createWorkflowStepDraft({}, createLocalId)],
     notes: ""
   };
+}
+
+export function createInfoRadarSourceDraft(overrides = {}, createLocalId = createFallbackLocalId) {
+  return {
+    id: overrides.id ?? createLocalId("info_source_draft"),
+    kind: overrides.kind ?? "rss",
+    title: overrides.title ?? "",
+    url: overrides.url ?? "",
+    query: overrides.query ?? "",
+    enabled: overrides.enabled !== false,
+    tagsText: Array.isArray(overrides.tags) ? overrides.tags.join("，") : overrides.tagsText ?? "",
+    notes: overrides.notes ?? ""
+  };
+}
+
+export function createInfoRadarWindowDraft(createLocalId = createFallbackLocalId, overrides = {}) {
+  return {
+    title: overrides.title ?? "",
+    summary: overrides.summary ?? "",
+    category: overrides.category ?? "技术",
+    status: overrides.status ?? "active",
+    cadence: overrides.cadence ?? "manual",
+    keywordsText: Array.isArray(overrides.keywords) ? overrides.keywords.join("，") : overrides.keywordsText ?? "",
+    negativeKeywordsText: Array.isArray(overrides.negativeKeywords)
+      ? overrides.negativeKeywords.join("，")
+      : overrides.negativeKeywordsText ?? "",
+    digestPrompt: overrides.digestPrompt ?? "",
+    sources: Array.isArray(overrides.sources)
+      ? overrides.sources.map((source) => createInfoRadarSourceDraft(source, createLocalId))
+      : [createInfoRadarSourceDraft({}, createLocalId)]
+  };
+}
+
+export function createInfoRadarWindowDraftFromWindow(window, createLocalId = createFallbackLocalId) {
+  return createInfoRadarWindowDraft(createLocalId, {
+    title: window?.title ?? "",
+    summary: window?.summary ?? "",
+    category: window?.category ?? "综合",
+    status: window?.status ?? "active",
+    cadence: window?.cadence ?? "manual",
+    keywords: window?.keywords ?? [],
+    negativeKeywords: window?.negativeKeywords ?? [],
+    digestPrompt: window?.digestPrompt ?? "",
+    sources: window?.sources ?? []
+  });
 }

@@ -184,7 +184,8 @@
             <GIcon name="delete" :size="12" />
           </button>
           <div class="music-album-cover music-project-cover" :class="`is-${project.coverTone}`" aria-hidden="true">
-            <span>{{ project.title.slice(0, 1) || "音" }}</span>
+            <img v-if="project.coverUrl" :src="project.coverUrl" :alt="`${project.title} 封面`" />
+            <span v-else>{{ project.title.slice(0, 1) || "音" }}</span>
           </div>
           <div class="writing-book-card-main">
             <div>
@@ -261,8 +262,20 @@
 
             <div v-if="!ui.marketplace.music.isProfileCollapsed" class="writing-rail-content music-rail-content">
               <div class="music-project-profile">
-                <div class="music-album-cover music-project-cover-large" :class="`is-${activeMusicProject.coverTone}`" aria-hidden="true">
-                  <span>{{ activeMusicProject.title.slice(0, 1) || "音" }}</span>
+                <div class="writing-cover-control">
+                  <div class="music-album-cover music-project-cover-large" :class="`is-${activeMusicProject.coverTone}`">
+                    <img v-if="activeMusicProject.coverUrl" :src="activeMusicProject.coverUrl" :alt="`${activeMusicProject.title} 封面`" />
+                    <span v-else>{{ activeMusicProject.title.slice(0, 1) || "音" }}</span>
+                  </div>
+                  <button
+                    type="button"
+                    class="model-icon-button writing-cover-edit-button"
+                    aria-label="上传或生成封面"
+                    title="上传或生成封面"
+                    @click="openApplicationCoverDialog('music', 'upload')"
+                  >
+                    <GIcon name="image" :size="14" />
+                  </button>
                 </div>
 
                 <label class="field writing-rail-title-field">
@@ -689,17 +702,14 @@
               </div>
             </div>
 
-            <div class="writing-ai-run-row music-ai-run-row">
-              <button
-                type="button"
-                class="model-action-secondary writing-ai-run"
-                :disabled="!activeMusicTrack || ui.marketplace.music.isGenerating || ui.marketplace.music.isCallingTool"
-                @click="generateMusicDraft"
-              >
-                <GIcon :name="ui.marketplace.music.isGenerating ? 'loading' : 'sparkles'" :spin="ui.marketplace.music.isGenerating" :size="14" />
-                {{ ui.marketplace.music.isGenerating ? "谱写中" : "生成草案" }}
-              </button>
-            </div>
+            <GordonAgentProgress
+              :progress="getMarketplaceAgentProgress('music')"
+              :items="getMarketplaceAgentProgressItems(getMarketplaceAgentProgress('music'))"
+              :progress-class="getMarketplaceAgentProgressClass('music')"
+              :progress-time="getMarketplaceAgentProgressTime('music')"
+              fallback-status="正在处理音乐任务"
+              :cancel-handler="cancelMarketplaceAgentRun"
+            />
 
             <div class="music-ai-tool-row">
               <button
@@ -722,12 +732,18 @@
             </div>
 
             <div class="writing-ai-output music-ai-output">
-              <div class="writing-ai-output-head">
-                <span class="field-label">当前曲目</span>
-                <span v-if="ui.marketplace.music.feedback" class="status-pill" :class="getMusicFeedbackClass()">
-                  {{ ui.marketplace.music.feedback }}
-                </span>
-              </div>
+              <AiAssistantActionBar
+                label="当前曲目"
+                :status-class="getMusicFeedbackClass()"
+                :status-message="musicAiOutputStatusMessage"
+                :quick-disabled="!activeMusicTrack || ui.marketplace.music.isGenerating || ui.marketplace.music.isCallingTool"
+                :quick-icon="ui.marketplace.music.isGenerating ? 'loading' : 'sparkles'"
+                :quick-spin="ui.marketplace.music.isGenerating"
+                :quick-label="ui.marketplace.music.isGenerating ? '谱写中' : '快速模式'"
+                :agent-disabled="!activeMusicTrack || ui.marketplace.music.isGenerating || ui.marketplace.music.isCallingTool"
+                :on-quick-run="generateMusicDraft"
+                :on-agent-run="() => runMarketplaceAgentTask('music')"
+              />
               <div class="music-ai-current">
                 <span class="status-pill">{{ activeMusicTrack ? getMusicTrackStatusLabel(activeMusicTrack.status) : "未选择" }}</span>
                 <p>
@@ -741,174 +757,7 @@
     </template>
 
     <template v-else-if="ui.marketplace.view === 'fortune'">
-      <section class="writing-detail-shell fortune-detail-shell">
-        <header class="writing-detail-head fortune-detail-head">
-          <button type="button" class="model-icon-button weekly-back-button" aria-label="返回应用广场" title="返回应用广场" @click="backFortuneMarketplace">
-            <GIcon name="return" />
-          </button>
-
-          <div class="writing-detail-title">
-            <p class="fortune-title-text">{{ FORTUNE_APP_NAME }}</p>
-          </div>
-
-          <div class="model-section-actions">
-            <span class="pill">{{ activeFortuneModeMeta.label }}</span>
-            <span class="pill pill-neutral">灵感参考</span>
-          </div>
-        </header>
-
-        <section class="fortune-workbench">
-          <aside class="fortune-rail">
-            <div class="fortune-mark-large" aria-hidden="true">
-              <span>灵</span>
-            </div>
-
-            <div class="fortune-mode-list" role="tablist" aria-label="灵犀照命解读类型">
-              <button
-                v-for="mode in FORTUNE_READING_MODES"
-                :key="mode.id"
-                type="button"
-                class="fortune-mode-button"
-                :class="{ 'is-active': ui.marketplace.fortune.activeMode === mode.id }"
-                :aria-selected="ui.marketplace.fortune.activeMode === mode.id ? 'true' : 'false'"
-                @click="setFortuneMode(mode.id)"
-              >
-                <span>{{ mode.kicker }}</span>
-                <strong>{{ mode.label }}</strong>
-              </button>
-            </div>
-
-          </aside>
-
-          <main class="fortune-main-stage fortune-chat-stage">
-            <article class="writing-editor-card fortune-chat-card">
-              <div class="fortune-chat-head">
-                <div>
-                  <p class="feature-kicker">{{ activeFortuneModeMeta.kicker }}</p>
-                  <p class="model-section-title">{{ activeFortuneModeMeta.label }}</p>
-                </div>
-                <div class="fortune-chat-tools">
-                  <div class="fortune-method-strip" aria-label="当前解读框架">
-                    <span v-for="method in activeFortuneMethodLabels" :key="method" class="fortune-method-chip">{{ method }}</span>
-                  </div>
-                  <button
-                    type="button"
-                    class="model-icon-button fortune-clear-button"
-                    title="清空对话"
-                    aria-label="清空对话"
-                    :disabled="ui.marketplace.fortune.isGenerating || !ui.marketplace.fortune.messages?.length"
-                    @click="clearFortuneReading"
-                  >
-                    <GIcon name="close" :size="15" />
-                  </button>
-                </div>
-              </div>
-
-              <div class="fortune-chat-scroll">
-                <div v-if="!ui.marketplace.fortune.messages?.length" class="fortune-chat-empty">
-                  <strong>先说出你想问的事。</strong>
-                  <span>可以直接问今天运势、事业财运、感情关系，也可以上传手相、面相、户型或工位照片。灵犀会先追问必要信息，再给卦名和解读。</span>
-                </div>
-
-                <div v-else class="fortune-message-stream">
-                  <article
-                    v-for="message in ui.marketplace.fortune.messages || []"
-                    :key="message.id"
-                    class="fortune-message"
-                    :class="[`is-${message.role}`, message.state ? `is-${message.state}` : '']"
-                  >
-                    <div class="fortune-message-meta">
-                      <span>{{ message.role === "user" ? "你" : FORTUNE_APP_NAME }}</span>
-                      <small>{{ message.modeLabel || activeFortuneModeMeta.label }} · {{ formatFortuneTime(message.createdAt) }}</small>
-                    </div>
-                    <div class="fortune-message-text command-rich-text fortune-rich-text" v-html="renderRichText(message.content)"></div>
-                    <div v-if="message.attachments?.length" class="fortune-message-attachments">
-                      <span
-                        v-for="attachment in message.attachments"
-                        :key="attachment.id"
-                        class="fortune-attachment-chip"
-                        :class="{ 'is-image': attachment.kind === 'image', 'is-error': attachment.readStatus === 'error' }"
-                      >
-                        {{ attachment.kind === "image" ? "图片" : "附件" }} · {{ attachment.name }}
-                      </span>
-                    </div>
-                  </article>
-
-                  <article v-if="ui.marketplace.fortune.isGenerating" class="fortune-message is-assistant is-pending">
-                    <div class="fortune-message-meta">
-                      <span>{{ FORTUNE_APP_NAME }}</span>
-                      <small>正在推演</small>
-                    </div>
-                    <p class="fortune-thinking">
-                      <span></span>
-                      <span></span>
-                      <span></span>
-                    </p>
-                  </article>
-                </div>
-              </div>
-
-              <p
-                v-if="ui.marketplace.fortune.feedback"
-                class="writing-export-feedback fortune-feedback"
-                :class="getFortuneFeedbackClass()"
-                role="status"
-              >
-                {{ ui.marketplace.fortune.feedback }}
-              </p>
-
-              <div class="fortune-composer">
-                <div v-if="ui.marketplace.fortune.chatAttachments?.length" class="fortune-attachment-tray">
-                  <span
-                    v-for="attachment in ui.marketplace.fortune.chatAttachments || []"
-                    :key="attachment.id"
-                    class="fortune-attachment-chip"
-                    :class="{ 'is-image': attachment.kind === 'image', 'is-error': attachment.readStatus === 'error' }"
-                  >
-                    <span class="fortune-attachment-name">{{ attachment.kind === "image" ? "图片" : "附件" }} · {{ attachment.name }}</span>
-                    <button type="button" class="fortune-attachment-remove" aria-label="移除附件" @click="removeFortuneAttachment(attachment.id)">
-                      <GIcon name="close" :size="12" />
-                    </button>
-                  </span>
-                </div>
-                <textarea
-                  :value="ui.marketplace.fortune.chatInput"
-                  class="field-textarea fortune-chat-input"
-                  :placeholder="`问${activeFortuneModeMeta.label}，或补充出生时间、数字、手相/面相、户型方位...`"
-                  :disabled="ui.marketplace.fortune.isGenerating"
-                  @input="setFortuneChatInput($event.target.value)"
-                  @keydown.enter.exact.prevent="sendFortuneMessage"
-                ></textarea>
-                <button
-                  type="button"
-                  class="model-icon-button fortune-attach-button"
-                  title="上传图片或资料"
-                  aria-label="上传图片或资料"
-                  :disabled="ui.marketplace.fortune.isGenerating"
-                  @click="selectFortuneAttachments"
-                >
-                  <GIcon name="image" :size="17" />
-                </button>
-                <button
-                  type="button"
-                  class="model-icon-button fortune-send-button"
-                  :title="ui.marketplace.fortune.isGenerating ? '推演中' : '发送'"
-                  :aria-label="ui.marketplace.fortune.isGenerating ? '推演中' : '发送'"
-                  :disabled="ui.marketplace.fortune.isGenerating || (!(ui.marketplace.fortune.chatInput || '').trim() && !(ui.marketplace.fortune.chatAttachments || []).length)"
-                  @click="sendFortuneMessage"
-                >
-                  <GIcon
-                    :name="ui.marketplace.fortune.isGenerating ? 'loading' : 'enter'"
-                    :spin="ui.marketplace.fortune.isGenerating"
-                    :size="18"
-                    :stroke-width="2.2"
-                  />
-                </button>
-              </div>
-            </article>
-          </main>
-        </section>
-      </section>
+      <FortuneWorkbench :context="context" />
     </template>
 
     <template v-else-if="ui.marketplace.view === 'videoShelf'">
@@ -955,8 +804,9 @@
           >
             <GIcon name="delete" :size="12" />
           </button>
-          <div class="video-project-cover" aria-hidden="true">
-            <span>{{ project.title.slice(0, 1) || "影" }}</span>
+          <div class="video-project-cover" :class="[`is-${project.coverTone}`, { 'has-cover-image': project.coverUrl }]" aria-hidden="true">
+            <img v-if="project.coverUrl" :src="project.coverUrl" :alt="`${project.title} 封面`" />
+            <span v-else>{{ project.title.slice(0, 1) || "影" }}</span>
           </div>
           <div class="writing-book-card-main">
             <div>
@@ -1018,8 +868,9 @@
           >
             <GIcon name="delete" :size="12" />
           </button>
-          <div class="comic-project-cover" aria-hidden="true">
-            <span>{{ project.title.slice(0, 1) || "漫" }}</span>
+          <div class="comic-project-cover" :class="`is-${project.coverTone}`" aria-hidden="true">
+            <img v-if="project.coverUrl" :src="project.coverUrl" :alt="`${project.title} 封面`" />
+            <span v-else>{{ project.title.slice(0, 1) || "漫" }}</span>
           </div>
           <div class="writing-book-card-main">
             <div>
@@ -1086,7 +937,8 @@
             <GIcon name="delete" :size="12" />
           </button>
           <div class="writing-book-cover" aria-hidden="true">
-            <span>{{ book.title.slice(0, 1) }}</span>
+            <img v-if="book.coverUrl" :src="book.coverUrl" :alt="`${book.title} 封面`" />
+            <span v-else>{{ book.title.slice(0, 1) }}</span>
           </div>
           <div class="writing-book-card-main">
             <div>
@@ -1147,10 +999,51 @@
               <GIcon :name="ui.marketplace.video.isProfileCollapsed ? 'chevronRight' : 'chevronLeft'" />
             </button>
 
+            <div
+              class="comic-rail-mode-tabs"
+              role="tablist"
+              aria-label="视频项目设定与素材库"
+            >
+              <button
+                type="button"
+                class="comic-rail-mode-tab"
+                :class="{ 'is-active': ui.marketplace.video.introMode !== 'assets' }"
+                :aria-selected="ui.marketplace.video.introMode !== 'assets' ? 'true' : 'false'"
+                aria-label="项目设定"
+                title="项目设定"
+                @click.stop.prevent="setVideoIntroMode('settings')"
+              >
+                <GIcon name="home" :size="14" />
+              </button>
+              <button
+                type="button"
+                class="comic-rail-mode-tab"
+                :class="{ 'is-active': ui.marketplace.video.introMode === 'assets' }"
+                :aria-selected="ui.marketplace.video.introMode === 'assets' ? 'true' : 'false'"
+                aria-label="素材库"
+                title="素材库"
+                @click.stop.prevent="setVideoIntroMode('assets')"
+              >
+                <GIcon name="image" :size="14" />
+              </button>
+            </div>
+
             <div v-if="!ui.marketplace.video.isProfileCollapsed" class="writing-rail-content video-rail-content">
               <div class="video-project-profile">
-                <div class="video-project-cover video-project-cover-large" :class="`is-${activeVideoProject.coverTone}`" aria-hidden="true">
-                  <span>{{ activeVideoProject.title.slice(0, 1) || "影" }}</span>
+                <div class="writing-cover-control">
+                  <div class="video-project-cover video-project-cover-large" :class="[`is-${activeVideoProject.coverTone}`, { 'has-cover-image': activeVideoProject.coverUrl }]">
+                    <img v-if="activeVideoProject.coverUrl" :src="activeVideoProject.coverUrl" :alt="`${activeVideoProject.title} 封面`" />
+                    <span v-else>{{ activeVideoProject.title.slice(0, 1) || "影" }}</span>
+                  </div>
+                  <button
+                    type="button"
+                    class="model-icon-button writing-cover-edit-button"
+                    aria-label="上传或生成封面"
+                    title="上传或生成封面"
+                    @click="openApplicationCoverDialog('video', 'upload')"
+                  >
+                    <GIcon name="image" :size="14" />
+                  </button>
                 </div>
 
                 <label class="field writing-rail-title-field">
@@ -1232,7 +1125,12 @@
           <main class="writing-main-stage video-main-stage">
             <section class="writing-editor-grid video-editor-grid">
               <div class="video-editor-surface">
-                <div v-if="ui.marketplace.video.activeTab === 'concept'" class="writing-intro-stack">
+                <div
+                  v-if="ui.marketplace.video.activeTab === 'concept'"
+                  class="writing-intro-stack"
+                  :class="{ 'comic-asset-stack': ui.marketplace.video.introMode === 'assets' }"
+                >
+                  <template v-if="ui.marketplace.video.introMode !== 'assets'">
                   <div class="field writing-intro-field">
                     <span class="field-label">主题与用途</span>
                     <FieldAiOptimizer
@@ -1295,9 +1193,285 @@
                       ></textarea>
                     </FieldAiOptimizer>
                   </div>
+                  </template>
+
+                  <div v-else class="comic-asset-library video-asset-library" :class="{ 'is-list-collapsed': ui.marketplace.video.isAssetRailCollapsed }">
+                    <section class="comic-asset-list-panel" :class="{ 'is-collapsed': ui.marketplace.video.isAssetRailCollapsed }">
+                      <div class="comic-asset-panel-head">
+                        <div v-if="!ui.marketplace.video.isAssetRailCollapsed">
+                          <p class="feature-kicker">Asset Library</p>
+                          <p class="writing-panel-title">{{ activeVideoAssets.length }} 个素材</p>
+                        </div>
+                        <button
+                          type="button"
+                          class="model-icon-button comic-asset-rail-toggle"
+                          :aria-label="ui.marketplace.video.isAssetRailCollapsed ? '展开素材列表' : '折叠素材列表'"
+                          :title="ui.marketplace.video.isAssetRailCollapsed ? '展开素材列表' : '折叠素材列表'"
+                          @click="toggleVideoAssetRail"
+                        >
+                          <GIcon :name="ui.marketplace.video.isAssetRailCollapsed ? 'chevronRight' : 'chevronLeft'" :size="14" />
+                        </button>
+                      </div>
+
+                      <div v-if="!ui.marketplace.video.isAssetRailCollapsed" class="comic-asset-toolbar">
+                        <div class="comic-asset-filter-tabs" role="tablist" aria-label="素材分类筛选">
+                          <button
+                            v-for="option in comicAssetFilterOptions"
+                            :key="option.value"
+                            type="button"
+                            class="comic-asset-filter-tab"
+                            :class="{ 'is-active': ui.marketplace.video.assetTypeFilter === option.value }"
+                            :aria-selected="ui.marketplace.video.assetTypeFilter === option.value ? 'true' : 'false'"
+                            @click="setVideoAssetTypeFilter(option.value)"
+                          >
+                            {{ option.label }}
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          class="comic-asset-create-button comic-asset-create-icon"
+                          aria-label="添加素材"
+                          title="添加素材"
+                          @click="createVideoAsset(ui.marketplace.video.assetTypeFilter)"
+                        >
+                          <GIcon name="add" :size="14" />
+                        </button>
+                      </div>
+
+                      <div v-if="!ui.marketplace.video.isAssetRailCollapsed" class="comic-asset-list" :class="{ 'is-empty': !filteredVideoAssets.length }">
+                        <button
+                          v-for="asset in filteredVideoAssets"
+                          :key="asset.id"
+                          type="button"
+                          class="comic-asset-list-item"
+                          :class="{ 'is-active': activeVideoAsset?.id === asset.id }"
+                          @click="selectVideoAsset(asset.id)"
+                        >
+                          <span class="comic-asset-list-main">
+                            <strong>{{ asset.name }}</strong>
+                            <small>{{ getVideoAssetTypeLabel(asset.type) }} / {{ getVideoAssetViewCountLabel(asset) }}</small>
+                          </span>
+                          <span v-if="getVideoAssetPreviewViews(asset).length" class="comic-asset-list-thumbs" aria-hidden="true">
+                            <img
+                              v-for="view in getVideoAssetPreviewViews(asset)"
+                              :key="view.id"
+                              :src="view.src"
+                              :alt="view.label"
+                            />
+                          </span>
+                        </button>
+                        <p v-if="!filteredVideoAssets.length" class="comic-asset-empty-text">
+                          {{ activeVideoAssets.length ? "当前分类暂无素材" : "暂无素材" }}
+                        </p>
+                      </div>
+                      <div v-else class="comic-asset-collapsed-count" aria-hidden="true">
+                        {{ activeVideoAssets.length }}
+                      </div>
+                    </section>
+
+                    <section v-if="activeVideoAsset && activeVideoAssetMatchesTypeFilter" class="comic-asset-detail-panel">
+                      <div class="comic-asset-detail-head">
+                        <div>
+                          <p class="feature-kicker">{{ getVideoAssetTypeLabel(activeVideoAsset.type) }}</p>
+                          <p class="writing-panel-title">{{ activeVideoAsset.name }}</p>
+                        </div>
+                        <button
+                          type="button"
+                          class="model-icon-button comic-asset-delete-button"
+                          aria-label="删除素材"
+                          title="删除素材"
+                          @click="deleteVideoAsset(activeVideoAsset.id)"
+                        >
+                          <GIcon name="delete" :size="14" />
+                        </button>
+                      </div>
+
+                      <div class="comic-asset-form-grid">
+                        <label class="field">
+                          <span class="field-label">唯一命名</span>
+                          <input
+                            :value="activeVideoAsset.name"
+                            class="field-input"
+                            @input="setVideoAssetName(activeVideoAsset.id, $event.target.value)"
+                          />
+                        </label>
+
+                        <label class="field">
+                          <span class="field-label">类型</span>
+                          <GCompactSelect
+                            :model-value="activeVideoAsset.type"
+                            class="writing-mini-select"
+                            aria-label="素材类型"
+                            :options="comicAssetTypeOptions"
+                            @update:model-value="(value) => setVideoAssetType(activeVideoAsset.id, value)"
+                          />
+                        </label>
+
+                        <label class="field field-full">
+                          <span class="field-label">描述</span>
+                          <textarea
+                            :value="activeVideoAsset.description"
+                            class="field-textarea writing-editor-textarea comic-asset-description-textarea"
+                            @input="setVideoAssetDescription(activeVideoAsset.id, $event.target.value)"
+                          ></textarea>
+                        </label>
+                      </div>
+
+                      <div class="comic-asset-views-head">
+                        <span class="field-label">视图图片</span>
+                        <button type="button" class="comic-asset-create-button" @click="addVideoAssetView(activeVideoAsset.id)">
+                          <GIcon name="add" :size="12" />
+                          添加视图
+                        </button>
+                      </div>
+
+                      <div class="comic-asset-view-list">
+                        <article
+                          v-for="view in activeVideoAsset.views"
+                          :key="view.id"
+                          class="comic-asset-view-card"
+                        >
+                          <div class="comic-asset-view-head">
+                            <GCompactSelect
+                              :model-value="view.kind"
+                              class="writing-mini-select"
+                              aria-label="素材视图类型"
+                              :options="comicAssetViewKindOptions"
+                              @update:model-value="(value) => setVideoAssetViewField(activeVideoAsset.id, view.id, 'kind', value)"
+                            />
+                            <input
+                              :value="view.label"
+                              class="field-input"
+                              :placeholder="getVideoAssetViewKindLabel(view.kind)"
+                              @input="setVideoAssetViewField(activeVideoAsset.id, view.id, 'label', $event.target.value)"
+                            />
+                            <button
+                              type="button"
+                              class="comic-asset-view-generate"
+                              :class="{ 'is-running': ui.marketplace.video.generatingAssetViewId === view.id }"
+                              :disabled="Boolean(ui.marketplace.video.generatingAssetViewId)"
+                              :aria-label="ui.marketplace.video.generatingAssetViewId === view.id ? '正在生成素材图' : '根据提示词生成素材图'"
+                              :title="ui.marketplace.video.generatingAssetViewId === view.id ? '正在生成素材图' : '根据提示词生成素材图'"
+                              @click="generateVideoAssetViewImage(activeVideoAsset.id, view.id)"
+                            >
+                              <GIcon
+                                :name="ui.marketplace.video.generatingAssetViewId === view.id ? 'loading' : 'sparkles'"
+                                :size="13"
+                                :spin="ui.marketplace.video.generatingAssetViewId === view.id"
+                              />
+                              <span>生成素材</span>
+                            </button>
+                            <button
+                              type="button"
+                              class="model-icon-button comic-asset-view-delete"
+                              aria-label="删除视图"
+                              title="删除视图"
+                              @click="removeVideoAssetView(activeVideoAsset.id, view.id)"
+                            >
+                              <GIcon name="delete" :size="13" />
+                            </button>
+                          </div>
+
+                          <div class="comic-asset-view-body">
+                            <div class="comic-asset-view-preview" :class="{ 'is-empty': !view.src }">
+                              <img v-if="view.src" :src="view.src" :alt="view.label || getVideoAssetViewKindLabel(view.kind)" />
+                              <div v-else class="comic-asset-view-placeholder" aria-hidden="true">
+                                <GIcon name="image" :size="18" />
+                              </div>
+                              <div v-if="view.src" class="comic-asset-view-tools" aria-label="素材图操作">
+                                <button
+                                  type="button"
+                                  class="model-icon-button comic-asset-view-tool"
+                                  aria-label="放大素材图"
+                                  title="放大素材图"
+                                  @click.stop="previewVideoAssetView(view.id)"
+                                >
+                                  <GIcon name="maximize" :size="13" />
+                                </button>
+                                <button
+                                  type="button"
+                                  class="model-icon-button comic-asset-view-tool"
+                                  aria-label="下载素材图"
+                                  title="下载素材图"
+                                  @click.stop="downloadVideoAssetViewImage(activeVideoAsset.id, view.id)"
+                                >
+                                  <GIcon name="download" :size="13" />
+                                </button>
+                              </div>
+                            </div>
+
+                            <div class="field comic-asset-reference-editor">
+                              <span class="comic-asset-reference-header">
+                                <span class="field-label">视图提示词</span>
+                                <span
+                                  v-if="getVideoAssetViewResolvedReferences(view).length"
+                                  class="comic-asset-reference-chips"
+                                  aria-label="已引用素材"
+                                >
+                                  <span
+                                    v-for="reference in getVideoAssetViewResolvedReferences(view)"
+                                    :key="reference.id"
+                                    class="comic-asset-reference-chip"
+                                  >
+                                    <img :src="reference.src" :alt="reference.label" />
+                                    <span>{{ reference.label }}</span>
+                                  </span>
+                                </span>
+                              </span>
+
+                              <FieldAiOptimizer
+                                :actions="fieldAiActions"
+                                :state="ui.marketplace.fieldAi"
+                                :field-id="`video-asset-view-prompt-${activeVideoAsset.id}-${view.id}`"
+                                :app-name="VIDEO_APP_NAME"
+                                label="视图提示词"
+                                :value="view.prompt"
+                                :context="buildVideoAssetViewFieldAiContext(activeVideoAsset, view, '视图提示词')"
+                                :set-value="(value) => setVideoAssetViewField(activeVideoAsset.id, view.id, 'prompt', value)"
+                              >
+                                <textarea
+                                  :value="view.prompt"
+                                  class="field-textarea writing-editor-textarea comic-asset-view-prompt"
+                                  @focus="updateVideoAssetReferencePickerFromInput(view.id, $event)"
+                                  @click="updateVideoAssetReferencePickerFromInput(view.id, $event)"
+                                  @keyup="updateVideoAssetReferencePickerFromInput(view.id, $event)"
+                                  @blur="closeVideoAssetReferencePickerSoon(view.id)"
+                                  @input="setVideoAssetViewPromptFromInput(activeVideoAsset.id, view.id, $event)"
+                                ></textarea>
+                                <div
+                                  v-if="activeVideoAssetReferencePickerViewId === view.id && getVideoAssetViewReferencePickerOptions(view.id).length"
+                                  class="comic-asset-reference-picker"
+                                >
+                                  <button
+                                    v-for="option in getVideoAssetViewReferencePickerOptions(view.id)"
+                                    :key="option.id"
+                                    type="button"
+                                    class="comic-asset-reference-option"
+                                    :class="{ 'is-current': option.isCurrentAsset }"
+                                    @mousedown.prevent="insertVideoAssetViewReference(activeVideoAsset.id, view, option, $event)"
+                                  >
+                                    <img :src="option.src" :alt="option.label" />
+                                    <span>
+                                      <strong>{{ option.assetName }}</strong>
+                                      <small>{{ option.viewLabel }}</small>
+                                    </span>
+                                  </button>
+                                </div>
+                              </FieldAiOptimizer>
+                            </div>
+                          </div>
+                        </article>
+                      </div>
+                    </section>
+
+                    <section v-else class="comic-asset-detail-empty">
+                      <GIcon name="image" :size="22" />
+                      <strong>创建素材后管理引用</strong>
+                    </section>
+                  </div>
                 </div>
 
-                <div v-else-if="ui.marketplace.video.activeTab === 'storyboard'" class="writing-outline-board">
+                <div v-else-if="ui.marketplace.video.activeTab === 'storyboard'" class="writing-outline-board video-storyboard-board">
                   <div class="writing-chapter-list-panel">
                     <div class="writing-chapter-panel-head">
                       <div>
@@ -1335,37 +1509,39 @@
                     </div>
                   </div>
 
-                  <div v-if="activeVideoShot" class="writing-chapter-summary-panel">
+                  <div v-if="activeVideoShot" class="writing-chapter-summary-panel video-shot-brief-panel">
                     <div class="writing-chapter-summary-head">
                       <div>
                         <p class="feature-kicker">Shot Brief</p>
-                        <p class="writing-panel-title">镜头说明</p>
+                        <p class="writing-panel-title">{{ getVideoShotDisplayTitle(activeVideoShot, activeVideoShotIndex) }}</p>
                       </div>
                       <span class="status-pill" :class="getVideoShotStatusClass(activeVideoShot.status)">
                         {{ getVideoShotStatusLabel(activeVideoShot.status) }}
                       </span>
                     </div>
 
-                    <label class="field">
-                      <span class="field-label">镜头标题</span>
-                      <input
-                        :value="activeVideoShot.title"
-                        class="field-input"
-                        @input="setVideoShotTitle(activeVideoShot, $event.target.value)"
-                      />
-                    </label>
+                    <div class="video-shot-brief-grid">
+                      <label class="field">
+                        <span class="field-label">镜头标题</span>
+                        <input
+                          :value="activeVideoShot.title"
+                          class="field-input"
+                          @input="setVideoShotTitle(activeVideoShot, $event.target.value)"
+                        />
+                      </label>
 
-                    <label class="field">
-                      <span class="field-label">时长</span>
-                      <input
-                        :value="activeVideoShot.durationSeconds"
-                        class="field-input"
-                        type="number"
-                        min="1"
-                        max="600"
-                        @input="setVideoShotDurationSeconds(activeVideoShot, $event.target.value)"
-                      />
-                    </label>
+                      <label class="field">
+                        <span class="field-label">时长</span>
+                        <input
+                          :value="activeVideoShot.durationSeconds"
+                          class="field-input"
+                          type="number"
+                          min="1"
+                          max="600"
+                          @input="setVideoShotDurationSeconds(activeVideoShot, $event.target.value)"
+                        />
+                      </label>
+                    </div>
 
                     <FieldAiOptimizer
                       :actions="fieldAiActions"
@@ -1385,6 +1561,17 @@
                       ></textarea>
                     </FieldAiOptimizer>
 
+                    <div class="video-shot-brief-notes">
+                      <article>
+                        <span>首帧 / 引用</span>
+                        <p>{{ activeVideoShot.reference || "暂无引用素材" }}</p>
+                      </article>
+                      <article>
+                        <span>生成提示词</span>
+                        <p>{{ activeVideoShot.prompt || "暂无正向提示词" }}</p>
+                      </article>
+                    </div>
+
                     <div class="model-section-actions writing-chapter-summary-actions">
                       <button type="button" class="model-action-secondary" @click="goVideoShot(activeVideoShot.id)">
                         进入生成
@@ -1393,7 +1580,7 @@
                   </div>
                 </div>
 
-                <div v-else class="writing-chapter-workbench">
+                <div v-else class="writing-chapter-workbench video-generation-workbench">
                   <div v-if="activeVideoShot" class="writing-chapter-commandbar">
                     <div class="writing-chapter-picker-row">
                       <div class="writing-chapter-picker">
@@ -1451,97 +1638,211 @@
                       {{ getVideoShotStatusLabel(activeVideoShot.status) }}
                     </span>
 
-                    <button type="button" class="model-action writing-chapter-submit" @click="submitVideoShot">
-                      提交
+                    <button
+                      type="button"
+                      class="model-action writing-chapter-submit"
+                      :disabled="ui.marketplace.video.isGenerating"
+                      @click="submitVideoShot"
+                    >
+                      <GIcon
+                        :name="ui.marketplace.video.isGenerating ? 'loading' : activeVideoShot.taskId ? 'refresh' : 'play'"
+                        :spin="ui.marketplace.video.isGenerating"
+                        :size="14"
+                      />
+                      {{ ui.marketplace.video.isGenerating ? "处理中" : activeVideoShot.taskId ? "查询结果" : "生成视频" }}
                     </button>
                   </div>
 
-                  <div v-if="activeVideoShot" class="writing-chapter-brief-strip">
-                    <strong>{{ getVideoShotDisplayTitle(activeVideoShot, activeVideoShotIndex) }}</strong>
-                    <p>{{ activeVideoShot.summary || "这个镜头还没有说明。" }}</p>
-                  </div>
+                  <div v-if="activeVideoShot" class="video-generation-layout">
+                    <section class="video-generation-stage">
+                      <div class="video-generation-stage-head">
+                        <div>
+                          <p class="feature-kicker">Preview</p>
+                          <h3>{{ getVideoShotDisplayTitle(activeVideoShot, activeVideoShotIndex) }}</h3>
+                        </div>
+                        <span class="status-pill" :class="getVideoShotStatusClass(activeVideoShot.status)">
+                          {{ getVideoShotStatusLabel(activeVideoShot.status) }}
+                        </span>
+                      </div>
 
-                  <div v-if="activeVideoShot" class="field writing-intro-field">
-                    <span class="field-label">参考素材 / 首帧说明</span>
-                    <FieldAiOptimizer
-                      :actions="fieldAiActions"
-                      :state="ui.marketplace.fieldAi"
-                      :field-id="`video-shot-reference-${activeVideoShot.id}`"
-                      :app-name="VIDEO_APP_NAME"
-                      label="参考素材 / 首帧说明"
-                      :value="activeVideoShot.reference"
-                      :context="buildVideoShotFieldAiContext(activeVideoShot, '参考素材 / 首帧说明')"
-                      :set-value="(value) => setVideoShotReference(activeVideoShot, value)"
-                    >
-                      <textarea
-                        class="field-textarea writing-editor-textarea video-reference-textarea"
-                        :value="activeVideoShot.reference"
-                        placeholder="可写素材路径、首帧图描述、参考图说明或连续性约束。"
-                        @input="setVideoShotReference(activeVideoShot, $event.target.value)"
-                      ></textarea>
-                    </FieldAiOptimizer>
-                  </div>
+                      <div v-if="activeVideoShot.videoUrl" class="video-shot-result-preview">
+                        <video :src="activeVideoShot.videoUrl" controls playsinline></video>
+                        <a :href="activeVideoShot.videoUrl" target="_blank" rel="noreferrer">打开视频</a>
+                      </div>
+                      <div v-else class="video-shot-empty-preview">
+                        <GIcon name="video" :size="26" />
+                        <strong>{{ activeVideoShot.summary || "这个镜头还没有生成视频" }}</strong>
+                      </div>
 
-                  <div v-if="activeVideoShot" class="field writing-intro-field">
-                    <span class="field-label">正向提示词</span>
-                    <FieldAiOptimizer
-                      :actions="fieldAiActions"
-                      :state="ui.marketplace.fieldAi"
-                      :field-id="`video-shot-prompt-${activeVideoShot.id}`"
-                      :app-name="VIDEO_APP_NAME"
-                      label="正向提示词"
-                      :value="activeVideoShot.prompt"
-                      :context="buildVideoShotFieldAiContext(activeVideoShot, '正向提示词')"
-                      :set-value="(value) => setVideoShotPrompt(activeVideoShot, value)"
-                    >
-                      <textarea
-                        class="field-textarea writing-editor-textarea video-prompt-textarea"
-                        :value="activeVideoShot.prompt"
-                        placeholder="主体、动作、镜头运动、光线、风格、画幅、时长和稳定性要求。"
-                        @input="setVideoShotPrompt(activeVideoShot, $event.target.value)"
-                      ></textarea>
-                    </FieldAiOptimizer>
-                  </div>
+                      <AiAssistantActionBar
+                        label="生成模式"
+                        bar-class="video-agent-mode-strip"
+                        :status-class="getVideoFeedbackClass()"
+                        :status-message="videoAiOutputStatusMessage"
+                        :quick-disabled="ui.marketplace.video.isGenerating"
+                        :quick-icon="ui.marketplace.video.isGenerating ? 'loading' : 'sparkles'"
+                        :quick-spin="ui.marketplace.video.isGenerating"
+                        :quick-label="ui.marketplace.video.isGenerating ? '生成中' : '快速模式'"
+                        :agent-disabled="ui.marketplace.video.isGenerating"
+                        :on-quick-run="generateVideoQuickMode"
+                        :on-agent-run="() => runMarketplaceAgentTask('video')"
+                      />
 
-                  <div v-if="activeVideoShot" class="field writing-intro-field">
-                    <span class="field-label">反向提示词</span>
-                    <FieldAiOptimizer
-                      :actions="fieldAiActions"
-                      :state="ui.marketplace.fieldAi"
-                      :field-id="`video-shot-negative-${activeVideoShot.id}`"
-                      :app-name="VIDEO_APP_NAME"
-                      label="反向提示词"
-                      :value="activeVideoShot.negativePrompt"
-                      :context="buildVideoShotFieldAiContext(activeVideoShot, '反向提示词')"
-                      :set-value="(value) => setVideoShotNegativePrompt(activeVideoShot, value)"
-                    >
-                      <textarea
-                        class="field-textarea writing-editor-textarea video-negative-textarea"
-                        :value="activeVideoShot.negativePrompt"
-                        placeholder="低清晰度、畸形、闪烁、水印、字幕、画面断裂、镜头失控等。"
-                        @input="setVideoShotNegativePrompt(activeVideoShot, $event.target.value)"
-                      ></textarea>
-                    </FieldAiOptimizer>
-                  </div>
+                      <GordonAgentProgress
+                        class="marketplace-agent-progress-inline"
+                        :progress="getMarketplaceAgentProgress('video')"
+                        :items="getMarketplaceAgentProgressItems(getMarketplaceAgentProgress('video'))"
+                        :progress-class="getMarketplaceAgentProgressClass('video')"
+                        :progress-time="getMarketplaceAgentProgressTime('video')"
+                        fallback-status="正在处理视频任务"
+                        :cancel-handler="cancelMarketplaceAgentRun"
+                      />
 
-                  <FieldAiOptimizer
-                    v-if="activeVideoShot"
-                    :actions="fieldAiActions"
-                    :state="ui.marketplace.fieldAi"
-                    :field-id="`video-shot-output-${activeVideoShot.id}`"
-                    :app-name="VIDEO_APP_NAME"
-                    label="生成结果"
-                    :value="activeVideoShot.output"
-                    :context="buildVideoShotFieldAiContext(activeVideoShot, '生成结果')"
-                    :set-value="(value) => setVideoShotOutput(activeVideoShot, value)"
-                  >
-                    <textarea
-                      class="field-textarea writing-editor-textarea writing-chapter-draft-textarea"
-                      :value="activeVideoShot.output"
-                      placeholder="这里沉淀生成结果、视频链接、参数记录或复跑笔记。"
-                      @input="setVideoShotOutput(activeVideoShot, $event.target.value)"
-                    ></textarea>
-                  </FieldAiOptimizer>
+                      <p
+                        v-if="ui.marketplace.video.feedback"
+                        class="writing-export-feedback video-feedback"
+                        :class="getVideoFeedbackClass()"
+                        role="status"
+                      >
+                        {{ ui.marketplace.video.feedback }}
+                      </p>
+                    </section>
+
+                    <aside class="video-generation-inspector">
+                      <div class="video-generation-inspector-head">
+                        <div>
+                          <p class="feature-kicker">Shot Editor</p>
+                          <h3>镜头参数</h3>
+                        </div>
+                        <span class="pill pill-neutral">{{ activeVideoShot.durationSeconds }} 秒</span>
+                      </div>
+
+                      <div class="field writing-intro-field comic-asset-reference-editor">
+                        <span class="field-label">参考素材 / 首帧说明</span>
+                        <FieldAiOptimizer
+                          :actions="fieldAiActions"
+                          :state="ui.marketplace.fieldAi"
+                          :field-id="`video-shot-reference-${activeVideoShot.id}`"
+                          :app-name="VIDEO_APP_NAME"
+                          label="参考素材 / 首帧说明"
+                          :value="activeVideoShot.reference"
+                          :context="buildVideoShotFieldAiContext(activeVideoShot, '参考素材 / 首帧说明')"
+                          :set-value="(value) => setVideoShotReference(activeVideoShot, value)"
+                        >
+                          <textarea
+                            class="field-textarea writing-editor-textarea video-reference-textarea"
+                            :value="activeVideoShot.reference"
+                            placeholder="输入 @ 可选择素材，或填写首帧图 URL / 连续性约束。"
+                            @focus="updateVideoShotReferencePickerFromInput(activeVideoShot.id, $event)"
+                            @click="updateVideoShotReferencePickerFromInput(activeVideoShot.id, $event)"
+                            @keyup="updateVideoShotReferencePickerFromInput(activeVideoShot.id, $event)"
+                            @blur="closeVideoAssetReferencePickerSoon(activeVideoShot.id)"
+                            @input="setVideoShotReferenceFromInput(activeVideoShot, $event)"
+                          ></textarea>
+                          <div
+                            v-if="activeVideoAssetReferencePickerViewId === activeVideoShot.id && getVideoShotReferencePickerOptions().length"
+                            class="comic-asset-reference-picker"
+                          >
+                            <button
+                              v-for="option in getVideoShotReferencePickerOptions()"
+                              :key="option.id"
+                              type="button"
+                              class="comic-asset-reference-option"
+                              @mousedown.prevent="insertVideoShotReference(activeVideoShot, option, $event)"
+                            >
+                              <img :src="option.src" :alt="option.label" />
+                              <span>
+                                <strong>{{ option.assetName }}</strong>
+                                <small>{{ option.viewLabel }}</small>
+                              </span>
+                            </button>
+                          </div>
+                        </FieldAiOptimizer>
+                      </div>
+
+                      <div class="field writing-intro-field comic-asset-reference-editor">
+                        <span class="field-label">正向提示词</span>
+                        <FieldAiOptimizer
+                          :actions="fieldAiActions"
+                          :state="ui.marketplace.fieldAi"
+                          :field-id="`video-shot-prompt-${activeVideoShot.id}`"
+                          :app-name="VIDEO_APP_NAME"
+                          label="正向提示词"
+                          :value="activeVideoShot.prompt"
+                          :context="buildVideoShotFieldAiContext(activeVideoShot, '正向提示词')"
+                          :set-value="(value) => setVideoShotPrompt(activeVideoShot, value)"
+                        >
+                          <textarea
+                            class="field-textarea writing-editor-textarea video-prompt-textarea"
+                            :value="activeVideoShot.prompt"
+                            placeholder="主体、动作、镜头运动、光线、风格、画幅、时长和稳定性要求。"
+                            @focus="updateVideoShotReferencePickerFromInput(`${activeVideoShot.id}:prompt`, $event)"
+                            @click="updateVideoShotReferencePickerFromInput(`${activeVideoShot.id}:prompt`, $event)"
+                            @keyup="updateVideoShotReferencePickerFromInput(`${activeVideoShot.id}:prompt`, $event)"
+                            @blur="closeVideoAssetReferencePickerSoon(`${activeVideoShot.id}:prompt`)"
+                            @input="setVideoShotPromptFromInput(activeVideoShot, $event)"
+                          ></textarea>
+                          <div
+                            v-if="activeVideoAssetReferencePickerViewId === `${activeVideoShot.id}:prompt` && getVideoShotReferencePickerOptions().length"
+                            class="comic-asset-reference-picker"
+                          >
+                            <button
+                              v-for="option in getVideoShotReferencePickerOptions()"
+                              :key="option.id"
+                              type="button"
+                              class="comic-asset-reference-option"
+                              @mousedown.prevent="insertVideoShotPromptReference(activeVideoShot, option, $event)"
+                            >
+                              <img :src="option.src" :alt="option.label" />
+                              <span>
+                                <strong>{{ option.assetName }}</strong>
+                                <small>{{ option.viewLabel }}</small>
+                              </span>
+                            </button>
+                          </div>
+                        </FieldAiOptimizer>
+                      </div>
+
+                      <div class="field writing-intro-field">
+                        <span class="field-label">反向提示词</span>
+                        <FieldAiOptimizer
+                          :actions="fieldAiActions"
+                          :state="ui.marketplace.fieldAi"
+                          :field-id="`video-shot-negative-${activeVideoShot.id}`"
+                          :app-name="VIDEO_APP_NAME"
+                          label="反向提示词"
+                          :value="activeVideoShot.negativePrompt"
+                          :context="buildVideoShotFieldAiContext(activeVideoShot, '反向提示词')"
+                          :set-value="(value) => setVideoShotNegativePrompt(activeVideoShot, value)"
+                        >
+                          <textarea
+                            class="field-textarea writing-editor-textarea video-negative-textarea"
+                            :value="activeVideoShot.negativePrompt"
+                            placeholder="低清晰度、畸形、闪烁、水印、字幕、画面断裂、镜头失控等。"
+                            @input="setVideoShotNegativePrompt(activeVideoShot, $event.target.value)"
+                          ></textarea>
+                        </FieldAiOptimizer>
+                      </div>
+
+                      <FieldAiOptimizer
+                        :actions="fieldAiActions"
+                        :state="ui.marketplace.fieldAi"
+                        :field-id="`video-shot-output-${activeVideoShot.id}`"
+                        :app-name="VIDEO_APP_NAME"
+                        label="生成结果"
+                        :value="activeVideoShot.output"
+                        :context="buildVideoShotFieldAiContext(activeVideoShot, '生成结果')"
+                        :set-value="(value) => setVideoShotOutput(activeVideoShot, value)"
+                      >
+                        <textarea
+                          class="field-textarea writing-editor-textarea writing-chapter-draft-textarea video-output-textarea"
+                          :value="activeVideoShot.output"
+                          placeholder="这里沉淀生成结果、视频链接、参数记录或复跑笔记。"
+                          @input="setVideoShotOutput(activeVideoShot, $event.target.value)"
+                        ></textarea>
+                      </FieldAiOptimizer>
+                    </aside>
+                  </div>
                 </div>
               </div>
             </section>
@@ -1606,10 +1907,51 @@
               <GIcon :name="ui.marketplace.comic.isProfileCollapsed ? 'chevronRight' : 'chevronLeft'" />
             </button>
 
+            <div
+              class="comic-rail-mode-tabs"
+              role="tablist"
+              aria-label="漫画项目设定与素材库"
+            >
+              <button
+                type="button"
+                class="comic-rail-mode-tab"
+                :class="{ 'is-active': ui.marketplace.comic.introMode !== 'assets' }"
+                :aria-selected="ui.marketplace.comic.introMode !== 'assets' ? 'true' : 'false'"
+                aria-label="项目设定"
+                title="项目设定"
+                @click.stop.prevent="setComicIntroMode('settings')"
+              >
+                <GIcon name="home" :size="14" />
+              </button>
+              <button
+                type="button"
+                class="comic-rail-mode-tab"
+                :class="{ 'is-active': ui.marketplace.comic.introMode === 'assets' }"
+                :aria-selected="ui.marketplace.comic.introMode === 'assets' ? 'true' : 'false'"
+                aria-label="素材库"
+                title="素材库"
+                @click.stop.prevent="setComicIntroMode('assets')"
+              >
+                <GIcon name="image" :size="14" />
+              </button>
+            </div>
+
             <div v-if="!ui.marketplace.comic.isProfileCollapsed" class="writing-rail-content comic-rail-content">
               <div class="comic-project-profile">
-                <div class="comic-project-cover comic-project-cover-large" :class="`is-${activeComicProject.coverTone}`" aria-hidden="true">
-                  <span>{{ activeComicProject.title.slice(0, 1) || "漫" }}</span>
+                <div class="writing-cover-control">
+                  <div class="comic-project-cover comic-project-cover-large" :class="`is-${activeComicProject.coverTone}`">
+                    <img v-if="activeComicProject.coverUrl" :src="activeComicProject.coverUrl" :alt="`${activeComicProject.title} 封面`" />
+                    <span v-else>{{ activeComicProject.title.slice(0, 1) || "漫" }}</span>
+                  </div>
+                  <button
+                    type="button"
+                    class="model-icon-button writing-cover-edit-button"
+                    aria-label="上传或生成封面"
+                    title="上传或生成封面"
+                    @click="openApplicationCoverDialog('comic', 'upload')"
+                  >
+                    <GIcon name="image" :size="14" />
+                  </button>
                 </div>
 
                 <label class="field writing-rail-title-field">
@@ -1697,25 +2039,6 @@
                   class="writing-intro-stack"
                   :class="{ 'comic-asset-stack': ui.marketplace.comic.introMode === 'assets' }"
                 >
-                  <div class="comic-intro-mode-actions comic-intro-mode-actions-inline">
-                    <button
-                      type="button"
-                      class="model-action-secondary comic-intro-mode-button"
-                      :class="{ 'is-active': ui.marketplace.comic.introMode !== 'assets' }"
-                      @click="setComicIntroMode('settings')"
-                    >
-                      项目设定
-                    </button>
-                    <button
-                      type="button"
-                      class="model-action-secondary comic-intro-mode-button"
-                      :class="{ 'is-active': ui.marketplace.comic.introMode === 'assets' }"
-                      @click="setComicIntroMode('assets')"
-                    >
-                      素材库
-                    </button>
-                  </div>
-
                   <template v-if="ui.marketplace.comic.introMode !== 'assets'">
                   <div class="field writing-intro-field">
                     <span class="field-label">故事与画面目标</span>
@@ -1730,7 +2053,7 @@
                       :set-value="setComicProjectSummary"
                     >
                       <textarea
-                        class="field-textarea writing-editor-textarea writing-intro-textarea"
+                        class="field-textarea writing-editor-textarea writing-intro-textarea comic-project-overview-textarea"
                         :value="activeComicProject.summary"
                         placeholder="主角、世界观、冲突、核心画面和这组漫画要留下的情绪。"
                         @input="setComicProjectSummary($event.target.value)"
@@ -1751,7 +2074,7 @@
                       :set-value="setComicProjectVisualStyle"
                     >
                       <textarea
-                        class="field-textarea writing-editor-textarea writing-intro-textarea is-large"
+                        class="field-textarea writing-editor-textarea writing-intro-textarea comic-project-overview-textarea is-large"
                         :value="activeComicProject.visualStyle"
                         placeholder="线条、色彩、构图、角色造型、分镜节奏和参考风格。"
                         @input="setComicProjectVisualStyle($event.target.value)"
@@ -1772,7 +2095,7 @@
                       :set-value="setComicProjectEpisodePlan"
                     >
                       <textarea
-                        class="field-textarea writing-editor-textarea writing-intro-textarea is-large"
+                        class="field-textarea writing-editor-textarea writing-intro-textarea comic-project-overview-textarea is-large"
                         :value="activeComicProject.episodePlan"
                         :placeholder="activeComicProject.format === 'serial' ? '按篇章写下主要剧情、角色成长、每话节奏和结尾钩子。' : '写下主体、背景、人物站位、文字区域和最终出图比例。'"
                         @input="setComicProjectEpisodePlan($event.target.value)"
@@ -1799,22 +2122,34 @@
                         </button>
                       </div>
 
-                      <div v-if="!ui.marketplace.comic.isAssetRailCollapsed" class="comic-asset-create-row">
+                      <div v-if="!ui.marketplace.comic.isAssetRailCollapsed" class="comic-asset-toolbar">
+                        <div class="comic-asset-filter-tabs" role="tablist" aria-label="素材分类筛选">
+                          <button
+                            v-for="option in comicAssetFilterOptions"
+                            :key="option.value"
+                            type="button"
+                            class="comic-asset-filter-tab"
+                            :class="{ 'is-active': ui.marketplace.comic.assetTypeFilter === option.value }"
+                            :aria-selected="ui.marketplace.comic.assetTypeFilter === option.value ? 'true' : 'false'"
+                            @click="setComicAssetTypeFilter(option.value)"
+                          >
+                            {{ option.label }}
+                          </button>
+                        </div>
                         <button
-                          v-for="option in comicAssetTypeOptions"
-                          :key="option.value"
                           type="button"
-                          class="comic-asset-create-button"
-                          @click="createComicAsset(option.value)"
+                          class="comic-asset-create-button comic-asset-create-icon"
+                          aria-label="添加素材"
+                          title="添加素材"
+                          @click="createComicAsset(ui.marketplace.comic.assetTypeFilter)"
                         >
-                          <GIcon name="add" :size="12" />
-                          {{ option.label }}
+                          <GIcon name="add" :size="14" />
                         </button>
                       </div>
 
-                      <div v-if="!ui.marketplace.comic.isAssetRailCollapsed" class="comic-asset-list" :class="{ 'is-empty': !activeComicAssets.length }">
+                      <div v-if="!ui.marketplace.comic.isAssetRailCollapsed" class="comic-asset-list" :class="{ 'is-empty': !filteredComicAssets.length }">
                         <button
-                          v-for="asset in activeComicAssets"
+                          v-for="asset in filteredComicAssets"
                           :key="asset.id"
                           type="button"
                           class="comic-asset-list-item"
@@ -1834,14 +2169,16 @@
                             />
                           </span>
                         </button>
-                        <p v-if="!activeComicAssets.length" class="comic-asset-empty-text">暂无素材</p>
+                        <p v-if="!filteredComicAssets.length" class="comic-asset-empty-text">
+                          {{ activeComicAssets.length ? "当前分类暂无素材" : "暂无素材" }}
+                        </p>
                       </div>
                       <div v-else class="comic-asset-collapsed-count" aria-hidden="true">
                         {{ activeComicAssets.length }}
                       </div>
                     </section>
 
-                    <section v-if="activeComicAsset" class="comic-asset-detail-panel">
+                    <section v-if="activeComicAsset && activeComicAssetMatchesTypeFilter" ref="comicAssetDetailPanelRef" class="comic-asset-detail-panel">
                       <div class="comic-asset-detail-head">
                         <div>
                           <p class="feature-kicker">{{ getComicAssetTypeLabel(activeComicAsset.type) }}</p>
@@ -1889,14 +2226,6 @@
                           ></textarea>
                         </label>
 
-                        <label class="field field-full">
-                          <span class="field-label">素材提示词</span>
-                          <textarea
-                            :value="activeComicAsset.prompt"
-                            class="field-textarea writing-editor-textarea comic-asset-prompt-textarea"
-                            @input="setComicAssetPrompt(activeComicAsset.id, $event.target.value)"
-                          ></textarea>
-                        </label>
                       </div>
 
                       <div class="comic-asset-views-head">
@@ -1929,6 +2258,22 @@
                             />
                             <button
                               type="button"
+                              class="comic-asset-view-generate"
+                              :class="{ 'is-running': ui.marketplace.comic.generatingAssetViewId === view.id }"
+                              :disabled="Boolean(ui.marketplace.comic.generatingAssetViewId)"
+                              :aria-label="ui.marketplace.comic.generatingAssetViewId === view.id ? '正在生成素材图' : '根据提示词生成素材图'"
+                              :title="ui.marketplace.comic.generatingAssetViewId === view.id ? '正在生成素材图' : '根据提示词生成素材图'"
+                              @click="generateComicAssetViewImage(activeComicAsset.id, view.id)"
+                            >
+                              <GIcon
+                                :name="ui.marketplace.comic.generatingAssetViewId === view.id ? 'loading' : 'sparkles'"
+                                :size="13"
+                                :spin="ui.marketplace.comic.generatingAssetViewId === view.id"
+                              />
+                              <span>生成素材</span>
+                            </button>
+                            <button
+                              type="button"
                               class="model-icon-button comic-asset-view-delete"
                               aria-label="删除视图"
                               title="删除视图"
@@ -1938,28 +2283,94 @@
                             </button>
                           </div>
 
-                          <label class="field">
-                            <span class="field-label">图片源</span>
-                            <input
-                              :value="view.src"
-                              class="field-input"
-                              placeholder="URL / data URL / base64"
-                              @input="setComicAssetViewField(activeComicAsset.id, view.id, 'src', $event.target.value)"
-                            />
-                          </label>
+                          <div class="comic-asset-view-body">
+                            <div class="comic-asset-view-preview" :class="{ 'is-empty': !view.src }">
+                              <img v-if="view.src" :src="view.src" :alt="view.label || getComicAssetViewKindLabel(view.kind)" />
+                              <div v-else class="comic-asset-view-placeholder" aria-hidden="true">
+                                <GIcon name="image" :size="18" />
+                              </div>
+                              <div v-if="view.src" class="comic-asset-view-tools" aria-label="素材图操作">
+                                <button
+                                  type="button"
+                                  class="model-icon-button comic-asset-view-tool"
+                                  aria-label="放大素材图"
+                                  title="放大素材图"
+                                  @click.stop="previewComicAssetView(view.id)"
+                                >
+                                  <GIcon name="maximize" :size="13" />
+                                </button>
+                                <button
+                                  type="button"
+                                  class="model-icon-button comic-asset-view-tool"
+                                  aria-label="下载素材图"
+                                  title="下载素材图"
+                                  @click.stop="downloadComicAssetViewImage(activeComicAsset.id, view.id)"
+                                >
+                                  <GIcon name="download" :size="13" />
+                                </button>
+                              </div>
+                            </div>
 
-                          <div v-if="view.src" class="comic-asset-view-preview">
-                            <img :src="view.src" :alt="view.label || getComicAssetViewKindLabel(view.kind)" />
+                            <div class="field comic-asset-reference-editor">
+                              <span class="comic-asset-reference-header">
+                                <span class="field-label">视图提示词</span>
+                                <span
+                                  v-if="getComicAssetViewResolvedReferences(view).length"
+                                  class="comic-asset-reference-chips"
+                                  aria-label="已引用素材"
+                                >
+                                  <span
+                                    v-for="reference in getComicAssetViewResolvedReferences(view)"
+                                    :key="reference.id"
+                                    class="comic-asset-reference-chip"
+                                  >
+                                    <img :src="reference.src" :alt="reference.label" />
+                                    <span>{{ reference.label }}</span>
+                                  </span>
+                                </span>
+                              </span>
+
+                              <FieldAiOptimizer
+                                :actions="fieldAiActions"
+                                :state="ui.marketplace.fieldAi"
+                                :field-id="`comic-asset-view-prompt-${activeComicAsset.id}-${view.id}`"
+                                :app-name="COMIC_APP_NAME"
+                                label="视图提示词"
+                                :value="view.prompt"
+                                :context="buildComicAssetViewFieldAiContext(activeComicAsset, view, '视图提示词')"
+                                :set-value="(value) => setComicAssetViewField(activeComicAsset.id, view.id, 'prompt', value)"
+                              >
+                                <textarea
+                                  :value="view.prompt"
+                                  class="field-textarea writing-editor-textarea comic-asset-view-prompt"
+                                  @focus="updateComicAssetReferencePickerFromInput(view.id, $event)"
+                                  @click="updateComicAssetReferencePickerFromInput(view.id, $event)"
+                                  @keyup="updateComicAssetReferencePickerFromInput(view.id, $event)"
+                                  @blur="closeComicAssetReferencePickerSoon(view.id)"
+                                  @input="setComicAssetViewPromptFromInput(activeComicAsset.id, view.id, $event)"
+                                ></textarea>
+                                <div
+                                  v-if="activeComicAssetReferencePickerViewId === view.id && getComicAssetViewReferencePickerOptions(view.id).length"
+                                  class="comic-asset-reference-picker"
+                                >
+                                  <button
+                                    v-for="option in getComicAssetViewReferencePickerOptions(view.id)"
+                                    :key="option.id"
+                                    type="button"
+                                    class="comic-asset-reference-option"
+                                    :class="{ 'is-current': option.isCurrentAsset }"
+                                    @mousedown.prevent="insertComicAssetViewReference(activeComicAsset.id, view, option, $event)"
+                                  >
+                                    <img :src="option.src" :alt="option.label" />
+                                    <span>
+                                      <strong>{{ option.assetName }}</strong>
+                                      <small>{{ option.viewLabel }}</small>
+                                    </span>
+                                  </button>
+                                </div>
+                              </FieldAiOptimizer>
+                            </div>
                           </div>
-
-                          <label class="field">
-                            <span class="field-label">视图提示词</span>
-                            <textarea
-                              :value="view.prompt"
-                              class="field-textarea writing-editor-textarea comic-asset-view-prompt"
-                              @input="setComicAssetViewField(activeComicAsset.id, view.id, 'prompt', $event.target.value)"
-                            ></textarea>
-                          </label>
                         </article>
                       </div>
                     </section>
@@ -1978,6 +2389,15 @@
                         <p class="feature-kicker">Chapter List</p>
                         <p class="writing-panel-title">{{ activeComicChapters.length }} 个章节</p>
                       </div>
+                      <button
+                        type="button"
+                        class="model-icon-button comic-chapter-head-add"
+                        aria-label="新增漫画章节"
+                        title="新增漫画章节"
+                        @click="createComicChapter"
+                      >
+                        <GIcon name="add" :size="15" />
+                      </button>
                     </div>
 
                     <div class="writing-chapter-list">
@@ -2000,49 +2420,142 @@
                           <span class="status-pill" :class="getComicChapterStatusClass(chapter.status)">
                             {{ getComicChapterStatusLabel(chapter.status) }}
                           </span>
-                          <span>{{ chapter.content.length }} 字</span>
+                          <span>正文 {{ chapter.content.length }} 字</span>
+                          <span>图片 {{ getComicChapterImages(chapter).length }} 张</span>
                         </span>
                       </button>
                     </div>
                   </div>
 
-                  <div v-if="activeComicChapter" class="writing-chapter-summary-panel">
+                  <div v-if="activeComicChapter" class="writing-chapter-summary-panel comic-outline-detail-panel">
                     <div class="writing-chapter-summary-head">
                       <div>
-                        <p class="feature-kicker">Chapter Brief</p>
-                        <p class="writing-panel-title">分镜简介</p>
+                        <p class="feature-kicker">Chapter Source</p>
+                        <input
+                          v-if="editingComicChapterTitleId === activeComicChapter.id"
+                          :value="activeComicChapter.title"
+                          class="comic-inline-title-input"
+                          aria-label="编辑章节标题"
+                          @input="setComicChapterTitle(activeComicChapter, $event.target.value)"
+                          @blur="finishComicChapterTitleEdit"
+                          @keydown.enter.prevent="finishComicChapterTitleEdit"
+                          @keydown.esc.prevent="finishComicChapterTitleEdit"
+                        />
+                        <button
+                          v-else
+                          type="button"
+                          class="comic-inline-title-button"
+                          title="编辑章节标题"
+                          @click="startComicChapterTitleEdit(activeComicChapter)"
+                        >
+                          <span>{{ getComicChapterDisplayTitle(activeComicChapter, activeComicChapterIndex) }}</span>
+                          <GIcon name="edit" :size="13" />
+                        </button>
                       </div>
                       <span class="status-pill" :class="getComicChapterStatusClass(activeComicChapter.status)">
                         {{ getComicChapterStatusLabel(activeComicChapter.status) }}
                       </span>
                     </div>
 
-                    <label class="field">
-                      <span class="field-label">章节标题</span>
-                      <input
-                        :value="activeComicChapter.title"
-                        class="field-input"
-                        @input="setComicChapterTitle(activeComicChapter, $event.target.value)"
-                      />
-                    </label>
+                    <div class="comic-source-ref-strip" :class="{ 'is-empty': !getComicChapterSourceRefs(activeComicChapter).length }">
+                      <span class="comic-source-ref-label">来源对照</span>
+                      <template v-if="getComicChapterSourceRefs(activeComicChapter).length">
+                        <a
+                          v-for="(sourceRef, sourceIndex) in getComicChapterSourceRefs(activeComicChapter).slice(0, 3)"
+                          :key="`${activeComicChapter.id}-outline-source-${sourceIndex}`"
+                          class="comic-source-ref-chip"
+                          :href="getComicSourceRefUrl(sourceRef) || undefined"
+                          target="_blank"
+                          rel="noreferrer"
+                          :title="getComicSourceRefUrl(sourceRef) || getComicSourceRefMeta(sourceRef)"
+                        >
+                          <span>{{ getComicSourceRefTitle(sourceRef, getComicChapterSourceLabel(activeComicChapter)) }}</span>
+                          <small>{{ getComicSourceRefMeta(sourceRef) }}</small>
+                        </a>
+                      </template>
+                      <span v-else class="comic-source-ref-empty">等待命令工坊逐章写入原文来源</span>
+                    </div>
 
-                    <FieldAiOptimizer
-                      :actions="fieldAiActions"
-                      :state="ui.marketplace.fieldAi"
-                      :field-id="`comic-chapter-summary-${activeComicChapter.id}`"
-                      :app-name="COMIC_APP_NAME"
-                      label="分镜简介"
-                      :value="activeComicChapter.summary"
-                      :context="buildComicChapterFieldAiContext(activeComicChapter, '分镜简介')"
-                      :set-value="(value) => setComicChapterSummary(activeComicChapter, value)"
-                    >
-                      <textarea
-                        class="field-textarea writing-editor-textarea writing-chapter-summary-textarea"
-                        :value="activeComicChapter.summary"
-                        placeholder="写下本章画面目标、分镜顺序、角色动作、对白密度和结尾画面。"
-                        @input="setComicChapterSummary(activeComicChapter, $event.target.value)"
-                      ></textarea>
-                    </FieldAiOptimizer>
+                    <details class="comic-inspector-fold comic-outline-fold" :open="ui.marketplace.comic.isOutlineChapterSummaryOpen">
+                      <summary @click.prevent="toggleComicOutlineChapterSummary">
+                        <GIcon name="chevronDown" />
+                        <span>章节内容简介</span>
+                        <small>{{ activeComicChapter.summary.length }} 字</small>
+                      </summary>
+                      <div class="comic-outline-fold-body">
+                        <FieldAiOptimizer
+                          :actions="fieldAiActions"
+                          :state="ui.marketplace.fieldAi"
+                          :field-id="`comic-chapter-summary-${activeComicChapter.id}`"
+                          :app-name="COMIC_APP_NAME"
+                          label="章节内容简介"
+                          :value="activeComicChapter.summary"
+                          :context="buildComicChapterFieldAiContext(activeComicChapter, '章节内容简介')"
+                          :set-value="(value) => setComicChapterSummary(activeComicChapter, value)"
+                        >
+                          <textarea
+                            class="field-textarea writing-editor-textarea comic-outline-textarea"
+                            :value="activeComicChapter.summary"
+                            placeholder="本章发生什么、角色目标是什么、冲突如何变化、结尾留下什么钩子。"
+                            @input="setComicChapterSummary(activeComicChapter, $event.target.value)"
+                          ></textarea>
+                        </FieldAiOptimizer>
+                      </div>
+                    </details>
+
+                    <details class="comic-inspector-fold comic-outline-fold" :open="ui.marketplace.comic.isOutlineChapterContentOpen">
+                      <summary @click.prevent="toggleComicOutlineChapterContent">
+                        <GIcon name="chevronDown" />
+                        <span>章节正文</span>
+                        <small>{{ activeComicChapter.content.length }} 字</small>
+                      </summary>
+                      <div class="comic-outline-fold-body">
+                        <FieldAiOptimizer
+                          :actions="fieldAiActions"
+                          :state="ui.marketplace.fieldAi"
+                          :field-id="`comic-chapter-content-${activeComicChapter.id}`"
+                          :app-name="COMIC_APP_NAME"
+                          label="章节正文"
+                          :value="activeComicChapter.content"
+                          :context="buildComicChapterFieldAiContext(activeComicChapter, '章节正文')"
+                          :set-value="(value) => setComicChapterContent(activeComicChapter, value)"
+                        >
+                          <textarea
+                            class="field-textarea writing-editor-textarea comic-outline-textarea"
+                            :value="activeComicChapter.content"
+                            placeholder="可选。这里可以粘贴小说章节、剧情正文或本章故事草稿；后续可基于它拆分分镜和图片提示词。"
+                            @input="setComicChapterContent(activeComicChapter, $event.target.value)"
+                          ></textarea>
+                        </FieldAiOptimizer>
+                      </div>
+                    </details>
+
+                    <details class="comic-inspector-fold comic-outline-fold" :open="ui.marketplace.comic.isOutlineChapterPromptOpen">
+                      <summary @click.prevent="toggleComicOutlineChapterPrompt">
+                        <GIcon name="chevronDown" />
+                        <span>分镜与出图提示</span>
+                        <small>{{ activeComicChapter.prompt.length }} 字</small>
+                      </summary>
+                      <div class="comic-outline-fold-body">
+                        <FieldAiOptimizer
+                          :actions="fieldAiActions"
+                          :state="ui.marketplace.fieldAi"
+                          :field-id="`comic-chapter-prompt-${activeComicChapter.id}`"
+                          :app-name="COMIC_APP_NAME"
+                          label="分镜与出图提示"
+                          :value="activeComicChapter.prompt"
+                          :context="buildComicChapterFieldAiContext(activeComicChapter, '分镜与出图提示')"
+                          :set-value="(value) => setComicChapterPrompt(activeComicChapter, value)"
+                        >
+                          <textarea
+                            class="field-textarea writing-editor-textarea comic-outline-textarea"
+                            :value="activeComicChapter.prompt"
+                            placeholder="基于章节简介/正文拆出画面数量、每张图或每格的动作节点、景别、构图、角色与场景一致性约束。"
+                            @input="setComicChapterPrompt(activeComicChapter, $event.target.value)"
+                          ></textarea>
+                        </FieldAiOptimizer>
+                      </div>
+                    </details>
 
                     <div class="model-section-actions writing-chapter-summary-actions">
                       <button type="button" class="model-action-secondary" @click="goComicChapter(activeComicChapter.id)">
@@ -2087,7 +2600,7 @@
                             >
                               <span>{{ entry.title }}</span>
                               <small>
-                                {{ getComicChapterStatusLabel(entry.chapter.status) }} / {{ entry.chapter.content.length }} 字
+                                {{ getComicChapterStatusLabel(entry.chapter.status) }} / 正文 {{ entry.chapter.content.length }} 字 / 图片 {{ getComicChapterImages(entry.chapter).length }} 张
                               </small>
                             </button>
                             <p v-if="!filteredComicChapterEntries.length" class="writing-chapter-dropdown-empty">没有匹配章节</p>
@@ -2117,16 +2630,85 @@
                     </button>
                   </div>
 
-                  <div v-if="activeComicChapter" class="comic-chapter-visual-workspace">
-                    <section
-                      class="comic-chapter-image-stage"
-                      :class="{ 'is-empty': !activeComicChapterImages.length }"
-                      aria-label="当前章节图片展示"
-                    >
+                  <div v-if="activeComicChapter" class="comic-storyboard-workspace">
+                    <aside class="comic-storyboard-rail" aria-label="章节分镜轨道">
+                      <div class="comic-storyboard-rail-head">
+                        <div>
+                          <p class="feature-kicker">Storyboard</p>
+                          <p class="writing-panel-title">{{ activeComicStoryboards.length }} 条分镜</p>
+                        </div>
+                        <button
+                          type="button"
+                          class="model-icon-button"
+                          aria-label="新增分镜"
+                          title="新增分镜"
+                          @click="createComicStoryboard('scene')"
+                        >
+                          <GIcon name="add" />
+                        </button>
+                      </div>
 
-                      <div v-if="activeComicChapterImages.length" class="comic-chapter-image-list">
+                      <div class="comic-storyboard-list">
+                        <button
+                          v-for="(storyboard, index) in activeComicStoryboards"
+                          :key="storyboard.id"
+                          type="button"
+                          class="comic-storyboard-card"
+                          :class="{ 'is-active': activeComicStoryboard?.id === storyboard.id }"
+                          :aria-label="`选择分镜 ${index + 1}：${storyboard.title || storyboard.beat || storyboard.prompt || '未填写画面'}`"
+                          :title="storyboard.title || storyboard.beat || storyboard.prompt || `分镜 ${index + 1}`"
+                          @click="selectComicStoryboard(storyboard.id)"
+                        >
+                          <span class="comic-storyboard-order">{{ index + 1 }}</span>
+                        </button>
+
+                        <section v-if="!activeComicStoryboards.length" class="comic-storyboard-empty">
+                          <GIcon name="image" />
+                          <strong>暂无分镜</strong>
+                          <button type="button" class="model-action-secondary" @click="createComicStoryboard('scene')">
+                            添加分镜
+                          </button>
+                        </section>
+                      </div>
+                    </aside>
+
+                    <section
+                      class="comic-storyboard-stage"
+                      :class="{ 'is-empty': !activeComicStoryboardImages.length }"
+                      aria-label="当前分镜图片展示"
+                    >
+                      <div class="comic-storyboard-stage-head">
+                        <div class="comic-storyboard-stage-copy">
+                          <p class="feature-kicker">Canvas</p>
+                          <h3>
+                            {{
+                              activeComicStoryboard
+                                ? activeComicStoryboard.title || `分镜 ${activeComicStoryboardIndex + 1}`
+                                : "未选择分镜"
+                            }}
+                          </h3>
+                        </div>
+                        <button
+                          type="button"
+                          class="model-action comic-storyboard-generate-button"
+                          :class="{ 'is-running': ui.marketplace.comic.isAiRunning && activeComicAiTask?.id === 'chapterImage' }"
+                          :disabled="ui.marketplace.comic.isAiRunning || !activeComicStoryboard"
+                          :aria-label="ui.marketplace.comic.isAiRunning && activeComicAiTask?.id === 'chapterImage' ? '正在生成单张漫画' : '生成单张漫画'"
+                          :title="activeComicStoryboard ? '生成单张漫画' : '请先选择分镜'"
+                          @click="generateCurrentComicStoryboardImage"
+                        >
+                          <GIcon
+                            :name="ui.marketplace.comic.isAiRunning && activeComicAiTask?.id === 'chapterImage' ? 'loading' : 'sparkles'"
+                            :spin="ui.marketplace.comic.isAiRunning && activeComicAiTask?.id === 'chapterImage'"
+                            :size="13"
+                          />
+                          <span>{{ ui.marketplace.comic.isAiRunning && activeComicAiTask?.id === 'chapterImage' ? "生成中" : "生成单张" }}</span>
+                        </button>
+                      </div>
+
+                      <div v-if="activeComicStoryboardImages.length" class="comic-chapter-image-list comic-storyboard-image-list">
                         <figure
-                          v-for="(image, index) in activeComicChapterImages"
+                          v-for="(image, index) in activeComicStoryboardImages"
                           :key="image.id || `${image.src}-${index}`"
                           class="comic-chapter-image-item"
                           :class="{ 'is-active': activeComicChapterImage?.id === image.id }"
@@ -2138,12 +2720,28 @@
                           @keydown.space.prevent="selectComicChapterImage(image.id)"
                         >
                           <div class="comic-chapter-image-frame">
-                            <img :src="image.src" :alt="image.alt || `漫画章节图片 ${index + 1}`" />
+                            <img :src="image.src" :alt="image.alt || `分镜图片 ${index + 1}`" />
+                            <div class="comic-chapter-image-tools" aria-label="章节图片操作">
+                              <button
+                                type="button"
+                                class="model-icon-button comic-asset-view-tool comic-chapter-image-tool"
+                                aria-label="放大章节图片"
+                                title="放大章节图片"
+                                @click.stop="previewComicChapterImage(activeComicChapter, image.id)"
+                              >
+                                <GIcon name="maximize" :size="13" />
+                              </button>
+                              <button
+                                type="button"
+                                class="model-icon-button comic-asset-view-tool comic-chapter-image-tool"
+                                aria-label="下载章节图片"
+                                title="下载章节图片"
+                                @click.stop="downloadComicChapterImage(activeComicChapter, image.id)"
+                              >
+                                <GIcon name="download" :size="13" />
+                              </button>
+                            </div>
                           </div>
-                          <figcaption>
-                            <span>{{ image.alt || `画面 ${index + 1}` }}</span>
-                            <small>{{ getComicChapterDisplayTitle(activeComicChapter, activeComicChapterIndex) }}</small>
-                          </figcaption>
                         </figure>
                       </div>
 
@@ -2151,12 +2749,196 @@
                         <div class="comic-chapter-image-empty-mark" aria-hidden="true">
                           <GIcon name="image" />
                         </div>
-                        <strong>暂无章节图片</strong>
-                        <p>通过右侧灵绘小筑生成图片并写入当前章节后，会在这里展示漫画画面。</p>
+                        <strong>{{ activeComicStoryboard ? "当前分镜暂无图片" : "暂无分镜" }}</strong>
                       </div>
                     </section>
 
-                    <aside class="comic-chapter-inspector" aria-label="当前章节图片信息">
+                    <aside class="comic-chapter-inspector comic-storyboard-inspector" aria-label="当前分镜信息">
+                      <section v-if="activeComicStoryboard" class="comic-storyboard-editor">
+                        <div class="comic-storyboard-editor-head">
+                          <div>
+                            <p class="feature-kicker">Shot Editor</p>
+                            <h3>分镜 {{ activeComicStoryboardIndex + 1 }}</h3>
+                            <p class="comic-storyboard-editor-subtitle">
+                              {{ activeComicStoryboard.title || "未命名分镜" }} / {{ getComicStoryboardKindLabel(activeComicStoryboard.kind) }}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            class="model-icon-button is-danger"
+                            aria-label="删除当前分镜"
+                            title="删除当前分镜"
+                            @click="deleteComicStoryboard(activeComicStoryboard.id)"
+                          >
+                            <GIcon name="delete" />
+                          </button>
+                        </div>
+
+                        <div class="comic-storyboard-editor-summary">
+                          <span>{{ getComicStoryboardImages(activeComicChapter, activeComicStoryboard).length }} 张图</span>
+                          <span>{{ activeComicStoryboard.dialogue ? "有对白" : "无对白" }}</span>
+                          <span>{{ activeComicStoryboard.camera ? "有镜头" : "无镜头" }}</span>
+                        </div>
+
+                        <div class="comic-storyboard-editor-grid">
+                          <label class="field">
+                            <span class="field-label">标题</span>
+                            <input
+                              :value="activeComicStoryboard.title"
+                              class="field-input comic-storyboard-title-input"
+                              @input="setComicStoryboardField(activeComicStoryboard, 'title', $event.target.value)"
+                            />
+                          </label>
+
+                          <label class="field">
+                            <span class="field-label">类型</span>
+                            <GCompactSelect
+                              :model-value="activeComicStoryboard.kind"
+                              class="writing-mini-select"
+                              aria-label="分镜类型"
+                              :options="comicStoryboardKindOptions"
+                              @update:model-value="(value) => setComicStoryboardField(activeComicStoryboard, 'kind', value)"
+                            />
+                          </label>
+                        </div>
+
+                        <label class="field comic-storyboard-editor-field">
+                          <span class="field-label">画面内容</span>
+                          <textarea
+                            :value="activeComicStoryboard.beat"
+                            class="field-textarea writing-editor-textarea comic-storyboard-textarea"
+                            placeholder="这一格/这一张图中发生的动作、情绪、场景变化。"
+                            @input="setComicStoryboardField(activeComicStoryboard, 'beat', $event.target.value)"
+                          ></textarea>
+                        </label>
+
+                        <label class="field comic-storyboard-editor-field">
+                          <span class="field-label">对白 / 旁白</span>
+                          <textarea
+                            :value="activeComicStoryboard.dialogue"
+                            class="field-textarea writing-editor-textarea comic-storyboard-textarea"
+                            placeholder="角色对白、旁白或需要留白的文字区域。"
+                            @input="setComicStoryboardField(activeComicStoryboard, 'dialogue', $event.target.value)"
+                          ></textarea>
+                        </label>
+
+                        <label class="field comic-storyboard-editor-field">
+                          <span class="field-label">镜头 / 构图</span>
+                          <textarea
+                            :value="activeComicStoryboard.camera"
+                            class="field-textarea writing-editor-textarea comic-storyboard-textarea"
+                            placeholder="远景、中景、近景、俯拍、运动方向、画面重心。"
+                            @input="setComicStoryboardField(activeComicStoryboard, 'camera', $event.target.value)"
+                          ></textarea>
+                        </label>
+
+                        <div class="field writing-intro-field comic-storyboard-editor-field">
+                          <span class="field-label">分镜生图提示词</span>
+                          <FieldAiOptimizer
+                            :actions="fieldAiActions"
+                            :state="ui.marketplace.fieldAi"
+                            :field-id="`comic-storyboard-prompt-${activeComicChapter.id}-${activeComicStoryboard.id}`"
+                            :app-name="COMIC_APP_NAME"
+                            label="分镜生图提示词"
+                            :value="activeComicStoryboard.prompt"
+                            :context="buildComicStoryboardFieldAiContext(activeComicChapter, activeComicStoryboard, '分镜生图提示词')"
+                            :set-value="(value) => setComicStoryboardField(activeComicStoryboard, 'prompt', value)"
+                          >
+                            <textarea
+                              class="field-textarea writing-editor-textarea comic-prompt-textarea"
+                              :value="activeComicStoryboard.prompt"
+                              placeholder="角色、动作、景别、构图、场景、光线、色彩和一致性约束。"
+                              @input="setComicStoryboardField(activeComicStoryboard, 'prompt', $event.target.value)"
+                            ></textarea>
+                          </FieldAiOptimizer>
+                        </div>
+                      </section>
+
+                      <details class="comic-inspector-fold comic-chapter-source-fold" :open="ui.marketplace.comic.isChapterStoryInputOpen">
+                        <summary @click.prevent="toggleComicChapterStoryInput">
+                          <span>
+                            故事输入
+                            <small>{{ activeComicChapter.content.length || activeComicChapter.summary.length }} 字</small>
+                            <small>{{ getComicChapterSourceCountLabel(activeComicChapter) }}</small>
+                          </span>
+                          <GIcon name="chevronDown" />
+                        </summary>
+                        <div class="comic-chapter-source-body">
+                          <div class="comic-source-ref-strip comic-source-ref-strip-compact" :class="{ 'is-empty': !getComicChapterSourceRefs(activeComicChapter).length }">
+                            <span class="comic-source-ref-label">来源</span>
+                            <template v-if="getComicChapterSourceRefs(activeComicChapter).length">
+                              <a
+                                v-for="(sourceRef, sourceIndex) in getComicChapterSourceRefs(activeComicChapter).slice(0, 3)"
+                                :key="`${activeComicChapter.id}-generate-source-${sourceIndex}`"
+                                class="comic-source-ref-chip"
+                                :href="getComicSourceRefUrl(sourceRef) || undefined"
+                                target="_blank"
+                                rel="noreferrer"
+                                :title="getComicSourceRefUrl(sourceRef) || getComicSourceRefMeta(sourceRef)"
+                              >
+                                <span>{{ getComicSourceRefTitle(sourceRef, getComicChapterSourceLabel(activeComicChapter)) }}</span>
+                                <small>{{ getComicSourceRefMeta(sourceRef) }}</small>
+                              </a>
+                            </template>
+                            <span v-else class="comic-source-ref-empty">未写入原文章节来源</span>
+                          </div>
+
+                          <FieldAiOptimizer
+                            :actions="fieldAiActions"
+                            :state="ui.marketplace.fieldAi"
+                            :field-id="`comic-generate-summary-${activeComicChapter.id}`"
+                            :app-name="COMIC_APP_NAME"
+                            label="章节内容简介"
+                            :value="activeComicChapter.summary"
+                            :context="buildComicChapterFieldAiContext(activeComicChapter, '章节内容简介')"
+                            :set-value="(value) => setComicChapterSummary(activeComicChapter, value)"
+                          >
+                            <textarea
+                              class="field-textarea writing-editor-textarea comic-compact-textarea"
+                              :value="activeComicChapter.summary"
+                              placeholder="本章故事事件、角色目标、冲突变化和结尾钩子。"
+                              @input="setComicChapterSummary(activeComicChapter, $event.target.value)"
+                            ></textarea>
+                          </FieldAiOptimizer>
+
+                          <FieldAiOptimizer
+                            :actions="fieldAiActions"
+                            :state="ui.marketplace.fieldAi"
+                            :field-id="`comic-generate-content-${activeComicChapter.id}`"
+                            :app-name="COMIC_APP_NAME"
+                            label="章节正文"
+                            :value="activeComicChapter.content"
+                            :context="buildComicChapterFieldAiContext(activeComicChapter, '章节正文')"
+                            :set-value="(value) => setComicChapterContent(activeComicChapter, value)"
+                          >
+                            <textarea
+                              class="field-textarea writing-editor-textarea comic-chapter-source-textarea"
+                              :value="activeComicChapter.content"
+                              placeholder="可选。粘贴小说正文、剧情草稿或本章故事内容，用作拆分分镜和出图提示词的依据。"
+                              @input="setComicChapterContent(activeComicChapter, $event.target.value)"
+                            ></textarea>
+                          </FieldAiOptimizer>
+
+                          <FieldAiOptimizer
+                            :actions="fieldAiActions"
+                            :state="ui.marketplace.fieldAi"
+                            :field-id="`comic-generate-prompt-${activeComicChapter.id}`"
+                            :app-name="COMIC_APP_NAME"
+                            label="分镜与出图提示"
+                            :value="activeComicChapter.prompt"
+                            :context="buildComicChapterFieldAiContext(activeComicChapter, '分镜与出图提示')"
+                            :set-value="(value) => setComicChapterPrompt(activeComicChapter, value)"
+                          >
+                            <textarea
+                              class="field-textarea writing-editor-textarea comic-chapter-storyboard-textarea"
+                              :value="activeComicChapter.prompt"
+                              placeholder="分镜拆解、图片数量建议、每张图/每格画面节点、镜头和一致性约束。"
+                              @input="setComicChapterPrompt(activeComicChapter, $event.target.value)"
+                            ></textarea>
+                          </FieldAiOptimizer>
+                        </div>
+                      </details>
+
                       <details class="comic-inspector-fold comic-asset-ref-fold" open>
                         <summary>
                           <span>引用素材 <small>{{ activeComicChapterAssets.length }} 个</small></span>
@@ -2174,6 +2956,8 @@
                             <span class="comic-asset-ref-copy">
                               <strong>{{ asset.name }}</strong>
                               <small>{{ getComicAssetTypeLabel(asset.type) }} / {{ getComicAssetViewCountLabel(asset) }}</small>
+                              <em v-if="getComicAssetMetaLine(asset)">{{ getComicAssetMetaLine(asset) }}</em>
+                              <em v-if="asset.prompt">{{ truncateText(asset.prompt, 58) }}</em>
                             </span>
                             <span v-if="getComicAssetPreviewViews(asset, 2).length" class="comic-asset-ref-thumbs" aria-hidden="true">
                               <img
@@ -2189,14 +2973,6 @@
                       </details>
 
                       <template v-if="activeComicChapterImage">
-                        <section class="comic-selected-image-panel">
-                          <div>
-                            <p class="feature-kicker">Selected Image</p>
-                            <h3>{{ activeComicChapterImage.alt || `画面 ${activeComicChapterImageIndex + 1}` }}</h3>
-                          </div>
-                          <span class="status-pill">{{ activeComicChapterImageIndex + 1 }} / {{ activeComicChapterImages.length }}</span>
-                        </section>
-
                         <details class="comic-inspector-fold" open>
                           <summary>
                             <span>图片参数</span>
@@ -2220,8 +2996,8 @@
                               <dd>{{ formatComicImageCreatedAt(activeComicChapterImage.createdAt) }}</dd>
                             </div>
                             <div>
-                              <dt>章节状态</dt>
-                              <dd>{{ getComicChapterStatusLabel(activeComicChapter.status) }}</dd>
+                              <dt>当前分镜</dt>
+                              <dd>{{ activeComicStoryboard?.title || "未关联" }}</dd>
                             </div>
                             <div>
                               <dt>引用素材</dt>
@@ -2256,14 +3032,6 @@
                           </div>
                         </details>
                       </template>
-
-                      <section v-else class="comic-selected-image-panel is-empty">
-                        <div>
-                          <p class="feature-kicker">Selected Image</p>
-                          <h3>暂无选中图片</h3>
-                        </div>
-                        <p>生成并写入图片后，右侧会按选中图片显示参数和生图提示词。</p>
-                      </section>
                     </aside>
                   </div>
                 </div>
@@ -2283,12 +3051,17 @@
                 :set-comic-ai-instruction="setComicAiInstruction"
                 :set-comic-ai-output="setComicAiOutput"
                 :set-comic-ai-image-count="setComicAiImageCount"
+                :set-comic-ai-storyboard-count="setComicAiStoryboardCount"
                 :set-comic-ai-image-size="setComicAiImageSize"
                 :set-comic-ai-image-quality="setComicAiImageQuality"
                 :generate-comic-ai-output="generateComicAiOutput"
+                :get-marketplace-agent-progress="getMarketplaceAgentProgress"
+                :get-marketplace-agent-progress-items="getMarketplaceAgentProgressItems"
                 :get-comic-ai-run-button-label="getComicAiRunButtonLabel"
                 :get-comic-ai-feedback-class="getComicAiFeedbackClass"
                 :apply-comic-ai-output="applyComicAiOutput"
+                :cancel-marketplace-agent-run="cancelMarketplaceAgentRun"
+                :run-marketplace-agent-task="runMarketplaceAgentTask"
               />
             </section>
           </main>
@@ -2356,8 +3129,21 @@
 
             <div v-if="!ui.marketplace.writing.isProfileCollapsed" class="writing-rail-content">
               <div class="writing-book-profile">
-                <div class="writing-book-cover writing-book-cover-large" :class="`is-${activeWritingBook.coverTone}`" aria-hidden="true">
-                  <span>{{ activeWritingBook.title.slice(0, 1) || "书" }}</span>
+                <div class="writing-cover-control">
+                  <div class="writing-book-cover writing-book-cover-large" :class="`is-${activeWritingBook.coverTone}`">
+                    <img v-if="activeWritingBook.coverUrl" :src="activeWritingBook.coverUrl" :alt="`${activeWritingBook.title} 封面`" />
+                    <span v-else>{{ activeWritingBook.title.slice(0, 1) || "书" }}</span>
+                  </div>
+                  <button
+                    type="button"
+                    class="model-icon-button writing-cover-edit-button"
+                    aria-label="上传或生成封面"
+                    title="上传或生成封面"
+                    :disabled="isActiveWritingBookAiRunning"
+                    @click="openApplicationCoverDialog('writing', 'upload')"
+                  >
+                    <GIcon name="image" :size="14" />
+                  </button>
                 </div>
                 <label class="field writing-rail-title-field">
                   <span class="field-label">书名</span>
@@ -2382,21 +3168,23 @@
                 </label>
                 <label class="field">
                   <span class="field-label">类型</span>
+                  <GCompactSelect
+                    :model-value="activeWritingBook.genreProfile.primaryGenre"
+                    class="writing-mini-select"
+                    aria-label="类型"
+                    :options="writingGenreProfileOptions"
+                    @update:model-value="setWritingGenreProfileField('primaryGenre', $event)"
+                  />
+                </label>
+                <label class="field">
+                  <span class="field-label">内容</span>
                   <input
                     :value="activeWritingBook.genre"
                     class="field-input writing-mini-input"
+                    aria-label="内容"
                     @input="setWritingBookGenre($event.target.value)"
                   />
                 </label>
-              </div>
-
-              <div class="writing-method-card">
-                <span class="field-label">篇幅策略</span>
-                <strong>{{ activeWritingLengthProfile.scope }}</strong>
-                <p>{{ activeWritingLengthProfile.method }}</p>
-                <div class="writing-method-card-foot">
-                  <span>{{ activeWritingDoneChapterCount }} 章已完成</span>
-                </div>
               </div>
 
               <div class="writing-stat-list">
@@ -2421,8 +3209,21 @@
             <section class="writing-editor-grid">
               <div class="writing-editor-surface">
                 <div v-if="ui.marketplace.writing.activeTab === 'intro'" class="writing-intro-stack">
-                  <section class="writing-intro-card writing-narrative-state-card">
+                  <section
+                    class="writing-intro-card writing-narrative-state-card"
+                    :class="{ 'is-collapsed': isWritingIntroSectionCollapsed('narrative-state', 'system') }"
+                  >
                     <div class="writing-intro-card-head">
+                      <button
+                        type="button"
+                        class="writing-intro-toggle"
+                        :aria-expanded="String(!isWritingIntroSectionCollapsed('narrative-state', 'system'))"
+                        :aria-label="isWritingIntroSectionCollapsed('narrative-state', 'system') ? '展开 Narrative State' : '折叠 Narrative State'"
+                        :title="isWritingIntroSectionCollapsed('narrative-state', 'system') ? '展开' : '折叠'"
+                        @click="toggleWritingIntroSectionCollapsed('narrative-state', 'system')"
+                      >
+                        <GIcon :name="isWritingIntroSectionCollapsed('narrative-state', 'system') ? 'chevronRight' : 'chevronDown'" />
+                      </button>
                       <div class="writing-intro-card-title">
                         <span class="field-label">Narrative State</span>
                       </div>
@@ -2437,7 +3238,7 @@
                       </div>
                     </div>
 
-                    <div class="writing-narrative-state-preview">
+                    <div v-if="!isWritingIntroSectionCollapsed('narrative-state', 'system')" class="writing-narrative-state-preview">
                       <article
                         v-for="node in getWritingNarrativeStatePreview(activeWritingBook)"
                         :key="node.id"
@@ -2447,6 +3248,9 @@
                         <span>{{ node.kindLabel }}</span>
                         <strong>{{ node.label }}</strong>
                         <p>{{ node.summary || node.status }}</p>
+                        <small v-if="node.evidenceLabel || node.impact" class="writing-narrative-state-evidence">
+                          {{ [node.evidenceLabel, node.impact ? `影响：${node.impact}` : ""].filter(Boolean).join(" / ") }}
+                        </small>
                       </article>
                       <p v-if="!getWritingNarrativeStatePreview(activeWritingBook).length" class="writing-narrative-state-empty">
                         暂无状态节点
@@ -2773,7 +3577,11 @@
                 :can-resume-writing-outline-planner="canResumeWritingOutlinePlanner"
                 :resume-writing-outline-planning-job="resumeWritingOutlinePlanningJob"
                 :get-writing-ai-run-button-label="getWritingAiRunButtonLabel"
+                :get-writing-agent-progress-items="getWritingAgentProgressItems"
+                :format-local-date-time="formatLocalDateTime"
                 :generate-writing-assistant-output="generateWritingAssistantOutput"
+                :cancel-writing-assistant-run="cancelWritingAssistantRun"
+                :run-writing-agent-task="runWritingAgentTask"
                 :apply-writing-assistant-output="applyWritingAssistantOutput"
               />
             </section>
@@ -3083,6 +3891,14 @@
   </div>
 </Transition>
 
+<ApplicationCoverDialog
+  :actions="applicationCoverActions"
+  :field-ai-state="ui.marketplace.fieldAi"
+  :item="activeApplicationCoverItem"
+  :meta="activeApplicationCoverMeta"
+  :state="ui.marketplace.cover"
+/>
+
 <Transition name="gordon-dialog-fade">
   <div
     v-if="ui.marketplace.writing.isExportDialogOpen"
@@ -3181,21 +3997,27 @@
 </template>
 
 <script setup>
+import { computed, nextTick, ref } from "vue";
+
+import ApplicationCoverDialog from "./ApplicationCoverDialog.vue";
 import ComicAiDrawer from "./ComicAiDrawer.vue";
+import AiAssistantActionBar from "./AiAssistantActionBar.vue";
 import FieldAiOptimizer from "./FieldAiOptimizer.vue";
+import FortuneWorkbench from "./FortuneWorkbench.vue";
+import GordonAgentProgress from "./GordonAgentProgress.vue";
 import GCompactSelect from "../../components/GCompactSelect.vue";
 import GIcon from "../../components/GIcon.vue";
 import WritingAiDrawer from "../writing/WritingAiDrawer.vue";
-import { renderRichText } from "../../lib/presenter.js";
 import {
   COMIC_APP_NAME,
   COMIC_APP_TABS,
+  COMIC_ASSET_FILTER_OPTIONS,
   COMIC_PROJECT_FORMAT_META,
   COMIC_PROJECT_PALETTE_META,
   COMIC_ASSET_TYPE_META,
   COMIC_ASSET_VIEW_KIND_META,
+  COMIC_STORYBOARD_KIND_META,
   FORTUNE_APP_NAME,
-  FORTUNE_READING_MODES,
   MARKETPLACE_APP_COUNT,
   MUSIC_APP_NAME,
   MUSIC_APP_TABS,
@@ -3219,13 +4041,20 @@ const props = defineProps({
   context: { type: Object, required: true }
 });
 
-const { comicActions, comicAiActions, fieldAiActions, fortuneActions, musicActions, refs, truncateText, ui, videoActions, writingActions, writingAiActions } =
+const { applicationCoverActions, comicActions, comicAiActions, fieldAiActions, formatLocalDateTime, fortuneActions, marketplaceAgentActions, musicActions, refs, truncateText, ui, videoActions, writingActions, writingAiActions } =
   props.context;
 const { comicChapterDropdownMenuRef, videoShotDropdownMenuRef, writingChapterDropdownMenuRef } = refs;
+const editingComicChapterTitleId = ref("");
+const comicChapterTitleEditBaseline = ref("");
+const comicAssetDetailPanelRef = ref(null);
+const activeComicAssetReferencePickerViewId = ref("");
+const activeVideoAssetReferencePickerViewId = ref("");
 
 const {
   activeComicAsset,
+  activeComicAssetMatchesTypeFilter,
   activeComicAssets,
+  filteredComicAssets,
   activeComicChapter,
   activeComicChapterAssets,
   activeComicChapterImage,
@@ -3236,6 +4065,10 @@ const {
   activeComicChapters,
   activeComicExportFileName,
   activeComicProject,
+  activeComicStoryboard,
+  activeComicStoryboardImages,
+  activeComicStoryboardIndex,
+  activeComicStoryboards,
   backComicMarketplace,
   backComicShelf,
   canExportActiveComicProject,
@@ -3243,25 +4076,44 @@ const {
   comicProjects,
   addComicAssetView,
   createComicAsset,
+  createComicChapter,
   createComicProject,
+  createComicStoryboard,
   deleteComicAsset,
+  downloadComicAssetViewImage,
+  downloadComicChapterImage,
   deleteComicProjectFromShelf,
+  deleteComicStoryboard,
   exportActiveComicProject,
   filteredComicChapterEntries,
   getComicAssetFilledViewCount,
   getComicAssetTypeLabel,
+  getComicAssetReferenceOptions,
   getComicAssetViewKindLabel,
+  getComicAssetViewReferenceOptions,
   getComicChapterDisplayTitle,
+  getComicChapterSourceCountLabel,
+  getComicChapterSourceLabel,
+  getComicChapterSourceRefs,
+  getComicChapterImages,
   getComicChapterReferencedAssets,
   getComicChapterStatusClass,
   getComicChapterStatusLabel,
+  getComicStoryboardImages,
+  getComicStoryboardKindLabel,
+  getComicSourceRefMeta,
+  getComicSourceRefTitle,
+  getComicSourceRefUrl,
   getComicProjectFormatLabel,
   getComicProjectPaletteLabel,
+  generateComicAssetViewImage,
   goComicChapter,
   isComicChapterAssetReferenced,
   openComicAppShelf,
   openComicExportDialog,
   openComicProject,
+  previewComicAssetView,
+  previewComicChapterImage,
   rememberComicAssetNameBaseline,
   rememberComicProjectTitleBaseline,
   removeComicAssetView,
@@ -3269,16 +4121,19 @@ const {
   selectComicChapter,
   selectComicChapterImage,
   selectComicChapterFromPicker,
+  selectComicStoryboard,
   selectComicExportDirectory,
   setComicAssetDescription,
   setComicAssetName,
-  setComicAssetPrompt,
   setComicAssetType,
   setComicAssetViewField,
+  setComicChapterContent,
   setComicChapterImagePrompt,
   setComicChapterPickerOpen,
+  setComicChapterPrompt,
   setComicChapterSummary,
   setComicChapterTitle,
+  setComicStoryboardField,
   setComicProjectEpisodePlan,
   setComicProjectFormat,
   setComicProjectGenre,
@@ -3287,11 +4142,16 @@ const {
   setComicProjectSummary,
   setComicProjectTitle,
   setComicProjectVisualStyle,
+  setComicAssetTypeFilter,
   setComicIntroMode,
   setComicTab,
   submitComicChapter,
   toggleComicAssetRail,
   toggleComicChapterAssetRef,
+  toggleComicChapterStoryInput,
+  toggleComicOutlineChapterContent,
+  toggleComicOutlineChapterPrompt,
+  toggleComicOutlineChapterSummary,
   toggleComicChapterPicker,
   toggleComicProfileRail
 } = comicActions;
@@ -3303,6 +4163,7 @@ const {
   applyComicAiOutput,
   comicAiImageSizeOptions,
   comicAiQualityOptions,
+  generateCurrentComicStoryboardImage,
   generateComicAiOutput,
   getComicAiFeedbackClass,
   getComicAiRunButtonLabel,
@@ -3313,6 +4174,7 @@ const {
   setComicAiImageSize,
   setComicAiInstruction,
   setComicAiOutput,
+  setComicAiStoryboardCount,
   toggleComicAiPromptPreview,
   toggleComicAiTaskPicker
 } = comicAiActions;
@@ -3321,7 +4183,12 @@ const comicAssetTypeOptions = Object.entries(COMIC_ASSET_TYPE_META).map(([value,
   value,
   label: meta.label
 }));
+const comicAssetFilterOptions = COMIC_ASSET_FILTER_OPTIONS;
 const comicAssetViewKindOptions = Object.entries(COMIC_ASSET_VIEW_KIND_META).map(([value, meta]) => ({
+  value,
+  label: meta.label
+}));
+const comicStoryboardKindOptions = Object.entries(COMIC_STORYBOARD_KIND_META).map(([value, meta]) => ({
   value,
   label: meta.label
 }));
@@ -3341,6 +4208,9 @@ const videoProjectAspectRatioOptions = Object.entries(VIDEO_PROJECT_ASPECT_RATIO
   value,
   label: meta.label
 }));
+const videoAiOutputStatusMessage = computed(() =>
+  String(ui.marketplace.video.feedback ?? "").trim() || (ui.marketplace.video.isGenerating ? "正在执行快速模式" : "暂无执行状态")
+);
 const musicTrackKindOptions = Object.entries(MUSIC_TRACK_KIND_META).map(([value, meta]) => ({
   value,
   label: meta.label
@@ -3349,6 +4219,9 @@ const musicTrackStatusOptions = Object.entries(MUSIC_TRACK_STATUS_META).map(([va
   value,
   label: meta.label
 }));
+const musicAiOutputStatusMessage = computed(() =>
+  String(ui.marketplace.music.feedback ?? "").trim() || (ui.marketplace.music.isGenerating ? "正在执行快速模式" : "暂无执行状态")
+);
 const musicGenerationProviderOptions = [
   { value: "default", label: "默认供应商" },
   { value: "mureka", label: MUSIC_PROVIDER_META.mureka.label },
@@ -3358,9 +4231,261 @@ const writingLengthOptions = Object.entries(WRITING_LENGTH_PROFILES).map(([value
   value,
   label: meta.label
 }));
+const {
+  activeCoverItem: activeApplicationCoverItem,
+  activeCoverMeta: activeApplicationCoverMeta,
+  openApplicationCoverDialog
+} = applicationCoverActions;
+
+async function startComicChapterTitleEdit(chapter) {
+  editingComicChapterTitleId.value = chapter?.id ?? "";
+  comicChapterTitleEditBaseline.value = chapter?.title ?? "";
+  await nextTick();
+  const input = document.querySelector(".comic-inline-title-input");
+  input?.focus?.();
+  input?.select?.();
+}
+
+function finishComicChapterTitleEdit() {
+  const chapter = activeComicChapter.value;
+
+  if (chapter?.id === editingComicChapterTitleId.value && !String(chapter.title ?? "").trim()) {
+    setComicChapterTitle(chapter, comicChapterTitleEditBaseline.value || getComicChapterDisplayTitle(chapter, activeComicChapterIndex.value));
+  }
+
+  editingComicChapterTitleId.value = "";
+  comicChapterTitleEditBaseline.value = "";
+}
+
+function setComicAssetViewPromptFromInput(assetId, viewId, event) {
+  const value = event?.target?.value ?? "";
+
+  setComicAssetViewField(assetId, viewId, "prompt", value);
+  updateComicAssetReferencePickerFromInput(viewId, event);
+}
+
+function shouldShowComicAssetReferencePicker(value, cursorPosition = String(value ?? "").length) {
+  const text = String(value ?? "");
+  const beforeCursor = text.slice(0, Math.max(0, cursorPosition));
+
+  return /@([^\s@，,。；;：:\n\r]*)$/u.test(beforeCursor);
+}
+
+function updateComicAssetReferencePickerFromInput(viewId, event) {
+  const textarea = event?.target ?? null;
+  const value = textarea?.value ?? "";
+  const cursorPosition = typeof textarea?.selectionStart === "number" ? textarea.selectionStart : String(value).length;
+
+  activeComicAssetReferencePickerViewId.value = shouldShowComicAssetReferencePicker(value, cursorPosition) ? viewId : "";
+}
+
+function getComicAssetViewReferencePickerOptions(viewId) {
+  return getComicAssetReferenceOptions(activeComicAsset.value?.id).filter((option) => option.viewId !== viewId);
+}
+
+function getComicAssetViewResolvedReferences(view) {
+  return getComicAssetViewReferenceOptions(activeComicAsset.value?.id, view);
+}
+
+function insertComicAssetViewReference(assetId, view, option, event) {
+  const textarea = event?.currentTarget?.closest?.(".comic-asset-reference-editor")?.querySelector?.("textarea");
+  const marker = option?.insertText || (option?.label ? `@${option.label}` : "");
+
+  if (!view || !marker) {
+    return;
+  }
+
+  const currentPrompt = String(view.prompt ?? "");
+  const selectionStart = typeof textarea?.selectionStart === "number" ? textarea.selectionStart : currentPrompt.length;
+  const selectionEnd = typeof textarea?.selectionEnd === "number" ? textarea.selectionEnd : selectionStart;
+  const beforeCursor = currentPrompt.slice(0, selectionStart);
+  const afterCursor = currentPrompt.slice(selectionEnd);
+  const activeMentionMatch = /@([^\s@，,。；;：:\n\r]*)$/u.exec(beforeCursor);
+  const insertValue = `${marker} `;
+  const nextPrompt = activeMentionMatch
+    ? `${beforeCursor.slice(0, activeMentionMatch.index)}${insertValue}${afterCursor}`
+    : `${currentPrompt}${currentPrompt && !/\s$/u.test(currentPrompt) ? " " : ""}${insertValue}`;
+
+  setComicAssetViewField(assetId, view.id, "prompt", nextPrompt);
+  activeComicAssetReferencePickerViewId.value = view.id;
+
+  void nextTick(() => {
+    if (!textarea) {
+      return;
+    }
+
+    const nextCursor = activeMentionMatch ? activeMentionMatch.index + insertValue.length : nextPrompt.length;
+    textarea.focus?.();
+    textarea.setSelectionRange?.(nextCursor, nextCursor);
+  });
+}
+
+function closeComicAssetReferencePickerSoon(viewId) {
+  window.setTimeout(() => {
+    if (activeComicAssetReferencePickerViewId.value === viewId) {
+      activeComicAssetReferencePickerViewId.value = "";
+    }
+  }, 120);
+}
+
+function setVideoAssetViewPromptFromInput(assetId, viewId, event) {
+  const value = event?.target?.value ?? "";
+
+  setVideoAssetViewField(assetId, viewId, "prompt", value);
+  updateVideoAssetReferencePickerFromInput(viewId, event);
+}
+
+function updateVideoAssetReferencePickerFromInput(viewId, event) {
+  const textarea = event?.target ?? null;
+  const value = textarea?.value ?? "";
+  const cursorPosition = typeof textarea?.selectionStart === "number" ? textarea.selectionStart : String(value).length;
+
+  activeVideoAssetReferencePickerViewId.value = shouldShowComicAssetReferencePicker(value, cursorPosition) ? viewId : "";
+}
+
+function getVideoAssetViewReferencePickerOptions(viewId) {
+  return getVideoAssetReferenceOptions(activeVideoAsset.value?.id).filter((option) => option.viewId !== viewId);
+}
+
+function getVideoAssetViewResolvedReferences(view) {
+  return getVideoAssetViewReferenceOptions(activeVideoAsset.value?.id, view);
+}
+
+function insertVideoAssetViewReference(assetId, view, option, event) {
+  const textarea = event?.currentTarget?.closest?.(".comic-asset-reference-editor")?.querySelector?.("textarea");
+  const marker = option?.insertText || (option?.label ? `@${option.label}` : "");
+
+  if (!view || !marker) {
+    return;
+  }
+
+  const currentPrompt = String(view.prompt ?? "");
+  const selectionStart = typeof textarea?.selectionStart === "number" ? textarea.selectionStart : currentPrompt.length;
+  const selectionEnd = typeof textarea?.selectionEnd === "number" ? textarea.selectionEnd : selectionStart;
+  const beforeCursor = currentPrompt.slice(0, selectionStart);
+  const afterCursor = currentPrompt.slice(selectionEnd);
+  const activeMentionMatch = /@([^\s@，,。；;：:\n\r]*)$/u.exec(beforeCursor);
+  const insertValue = `${marker} `;
+  const nextPrompt = activeMentionMatch
+    ? `${beforeCursor.slice(0, activeMentionMatch.index)}${insertValue}${afterCursor}`
+    : `${currentPrompt}${currentPrompt && !/\s$/u.test(currentPrompt) ? " " : ""}${insertValue}`;
+
+  setVideoAssetViewField(assetId, view.id, "prompt", nextPrompt);
+  activeVideoAssetReferencePickerViewId.value = view.id;
+
+  void nextTick(() => {
+    if (!textarea) {
+      return;
+    }
+
+    const nextCursor = activeMentionMatch ? activeMentionMatch.index + insertValue.length : nextPrompt.length;
+    textarea.focus?.();
+    textarea.setSelectionRange?.(nextCursor, nextCursor);
+  });
+}
+
+function closeVideoAssetReferencePickerSoon(viewId) {
+  window.setTimeout(() => {
+    if (activeVideoAssetReferencePickerViewId.value === viewId) {
+      activeVideoAssetReferencePickerViewId.value = "";
+    }
+  }, 120);
+}
+
+function getVideoShotReferencePickerOptions() {
+  return getVideoAssetReferenceOptions();
+}
+
+function setVideoShotReferenceFromInput(shot, event) {
+  const value = event?.target?.value ?? "";
+
+  setVideoShotReference(shot, value);
+  updateVideoShotReferencePickerFromInput(shot?.id, event);
+}
+
+function setVideoShotPromptFromInput(shot, event) {
+  const value = event?.target?.value ?? "";
+
+  setVideoShotPrompt(shot, value);
+  updateVideoShotReferencePickerFromInput(`${shot?.id}:prompt`, event);
+}
+
+function updateVideoShotReferencePickerFromInput(pickerId, event) {
+  const textarea = event?.target ?? null;
+  const value = textarea?.value ?? "";
+  const cursorPosition = typeof textarea?.selectionStart === "number" ? textarea.selectionStart : String(value).length;
+
+  activeVideoAssetReferencePickerViewId.value = shouldShowComicAssetReferencePicker(value, cursorPosition) ? pickerId : "";
+}
+
+function insertReferenceMarkerIntoTextarea(currentValue, marker, event) {
+  const textarea = event?.currentTarget?.closest?.(".comic-asset-reference-editor")?.querySelector?.("textarea");
+  const selectionStart = typeof textarea?.selectionStart === "number" ? textarea.selectionStart : String(currentValue ?? "").length;
+  const selectionEnd = typeof textarea?.selectionEnd === "number" ? textarea.selectionEnd : selectionStart;
+  const beforeCursor = String(currentValue ?? "").slice(0, selectionStart);
+  const afterCursor = String(currentValue ?? "").slice(selectionEnd);
+  const activeMentionMatch = /@([^\s@，,。；;：:\n\r]*)$/u.exec(beforeCursor);
+  const insertValue = `${marker} `;
+  const nextValue = activeMentionMatch
+    ? `${beforeCursor.slice(0, activeMentionMatch.index)}${insertValue}${afterCursor}`
+    : `${currentValue}${currentValue && !/\s$/u.test(String(currentValue)) ? " " : ""}${insertValue}`;
+
+  return { activeMentionMatch, insertValue, nextValue, textarea };
+}
+
+function focusAfterReferenceInsert(textarea, activeMentionMatch, insertValue, nextValue) {
+  void nextTick(() => {
+    if (!textarea) {
+      return;
+    }
+
+    const nextCursor = activeMentionMatch ? activeMentionMatch.index + insertValue.length : nextValue.length;
+    textarea.focus?.();
+    textarea.setSelectionRange?.(nextCursor, nextCursor);
+  });
+}
+
+function insertVideoShotReference(shot, option, event) {
+  const marker = option?.insertText || (option?.label ? `@${option.label}` : "");
+
+  if (!shot || !marker) {
+    return;
+  }
+
+  const result = insertReferenceMarkerIntoTextarea(String(shot.reference ?? ""), marker, event);
+
+  setVideoShotReference(shot, result.nextValue);
+  activeVideoAssetReferencePickerViewId.value = shot.id;
+  focusAfterReferenceInsert(result.textarea, result.activeMentionMatch, result.insertValue, result.nextValue);
+}
+
+function insertVideoShotPromptReference(shot, option, event) {
+  const marker = option?.insertText || (option?.label ? `@${option.label}` : "");
+
+  if (!shot || !marker) {
+    return;
+  }
+
+  const result = insertReferenceMarkerIntoTextarea(String(shot.prompt ?? ""), marker, event);
+
+  setVideoShotPrompt(shot, result.nextValue);
+  activeVideoAssetReferencePickerViewId.value = `${shot.id}:prompt`;
+  focusAfterReferenceInsert(result.textarea, result.activeMentionMatch, result.insertValue, result.nextValue);
+}
 
 const {
+  cancelMarketplaceAgentRun,
+  getMarketplaceAgentProgress,
+  getMarketplaceAgentProgressItems,
+  runMarketplaceAgentTask
+} = marketplaceAgentActions;
+
+const {
+  activeVideoAsset,
+  activeVideoAssetMatchesTypeFilter,
+  activeVideoAssets,
   activeVideoExportFileName,
+  activeVideoTabMeta,
   activeVideoProject,
   activeVideoShot,
   activeVideoShotIndex,
@@ -3369,11 +4494,24 @@ const {
   backVideoShelf,
   canExportActiveVideoProject,
   closeVideoExportDialog,
+  addVideoAssetView,
+  createVideoAsset,
   createVideoProject,
   createVideoShot,
+  deleteVideoAsset,
+  downloadVideoAssetViewImage,
   deleteVideoProjectFromShelf,
   exportActiveVideoProject,
+  filteredVideoAssets,
   filteredVideoShotEntries,
+  generateVideoAssetViewImage,
+  generateVideoQuickMode,
+  getVideoAssetFilledViewCount,
+  getVideoAssetReferenceOptions,
+  getVideoAssetTypeLabel,
+  getVideoAssetViewKindLabel,
+  getVideoAssetViewReferenceOptions,
+  getVideoFeedbackClass,
   getVideoProjectAspectRatioLabel,
   getVideoProjectModeLabel,
   getVideoShotDisplayTitle,
@@ -3384,9 +4522,18 @@ const {
   openVideoAppShelf,
   openVideoExportDialog,
   openVideoProject,
+  previewVideoAssetView,
+  removeVideoAssetView,
+  selectVideoAsset,
   selectVideoExportDirectory,
   selectVideoShot,
   selectVideoShotFromPicker,
+  setVideoAssetDescription,
+  setVideoAssetName,
+  setVideoAssetType,
+  setVideoAssetTypeFilter,
+  setVideoAssetViewField,
+  setVideoIntroMode,
   setVideoProjectAspectRatio,
   setVideoProjectDurationSeconds,
   setVideoProjectGenre,
@@ -3405,6 +4552,7 @@ const {
   setVideoShotTitle,
   setVideoTab,
   submitVideoShot,
+  toggleVideoAssetRail,
   toggleVideoProfileRail,
   toggleVideoShotPicker,
   videoProjects
@@ -3413,24 +4561,7 @@ const {
 const {
   activeFortuneMethodLabels,
   activeFortuneModeMeta,
-  backFortuneMarketplace,
-  clearFortuneReading,
-  formatFortuneTime,
-  generateFortuneReading,
-  getFortuneFeedbackClass,
-  openFortuneApp,
-  removeFortuneAttachment,
-  selectFortuneAttachments,
-  sendFortuneMessage,
-  setFortuneAppearanceInfo,
-  setFortuneBirthInfo,
-  setFortuneChatInput,
-  setFortuneContext,
-  setFortuneMode,
-  setFortuneNameInfo,
-  setFortuneProfileInfo,
-  setFortuneSpaceInfo,
-  setFortuneQuestion
+  openFortuneApp
 } = fortuneActions;
 
 const {
@@ -3532,6 +4663,7 @@ const {
   getWritingNarrativeStateSummary,
   getWritingNarrativeStatePreview,
   getWritingTabWordCount,
+  writingGenreProfileOptions,
   goWritingChapter,
   handleWritingBookUpload,
   isActiveWritingBookAiRunning,
@@ -3549,6 +4681,7 @@ const {
   selectWritingExportDirectory,
   setWritingAiDrawerOpen,
   setWritingBookGenre,
+  setWritingGenreProfileField,
   setWritingBookLength,
   setWritingBookTitle,
   setWritingChapterContent,
@@ -3578,6 +4711,7 @@ const {
   canResumeWritingOutlinePlanner,
   cancelWritingAssistantRun,
   generateWritingAssistantOutput,
+  getWritingAgentProgressItems,
   getWritingAiRunButtonLabel,
   getWritingBusyDescription,
   getWritingBusyTitle,
@@ -3587,7 +4721,8 @@ const {
   getWritingOutlinePlannerStatusClass,
   getWritingOutlinePlannerStatusLabel,
   isWritingOutlinePlannerRunning,
-  resumeWritingOutlinePlanningJob
+  resumeWritingOutlinePlanningJob,
+  runWritingAgentTask
 } = writingAiActions;
 
 function compactFieldAiContext(lines) {
@@ -3595,6 +4730,39 @@ function compactFieldAiContext(lines) {
     .map((line) => String(line ?? "").trim())
     .filter(Boolean)
     .join("\n");
+}
+
+function getMarketplaceAgentProgressClass(appId) {
+  const progress = getMarketplaceAgentProgress(appId);
+
+  if (!progress) {
+    return "";
+  }
+
+  if (progress.phase === "completed") {
+    return "is-completed";
+  }
+
+  if (progress.tone === "warning") {
+    return "is-warning";
+  }
+
+  if (progress.phase === "failed") {
+    return "is-error";
+  }
+
+  return "";
+}
+
+function getMarketplaceAgentProgressTime(appId) {
+  const progress = getMarketplaceAgentProgress(appId);
+  const value = progress?.updatedAt ?? progress?.createdAt ?? "";
+
+  if (!value) {
+    return "";
+  }
+
+  return new Date(value).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
 }
 
 function getComicAssetPreviewViews(asset, limit = 3) {
@@ -3605,6 +4773,30 @@ function getComicAssetViewCountLabel(asset) {
   const filledCount = getComicAssetFilledViewCount(asset);
   const totalCount = Array.isArray(asset?.views) ? asset.views.length : 0;
   return `${filledCount}/${totalCount} 图`;
+}
+
+function getVideoAssetPreviewViews(asset, limit = 3) {
+  return (Array.isArray(asset?.views) ? asset.views : []).filter((view) => String(view?.src ?? "").trim()).slice(0, limit);
+}
+
+function getVideoAssetViewCountLabel(asset) {
+  const filledCount = getVideoAssetFilledViewCount(asset);
+  const totalCount = Array.isArray(asset?.views) ? asset.views.length : 0;
+  return `${filledCount}/${totalCount} 图`;
+}
+
+function getComicAssetMetaLine(asset) {
+  const variant = String(asset?.variantLabel ?? "").trim();
+  const start = Number(asset?.chapterStartIndex);
+  const end = Number(asset?.chapterEndIndex);
+  const range =
+    Number.isFinite(start) && start > 0 && Number.isFinite(end) && end > 0
+      ? `第 ${start}-${end} 章`
+      : Number.isFinite(start) && start > 0
+        ? `第 ${start} 章起`
+        : "";
+
+  return [variant, range].filter(Boolean).join(" / ");
 }
 
 function getComicImageParamValue(value) {
@@ -3679,6 +4871,24 @@ function buildVideoShotFieldAiContext(shot, fieldLabel) {
   ]);
 }
 
+function buildVideoAssetViewFieldAiContext(asset, view, fieldLabel) {
+  const references = getVideoAssetViewResolvedReferences(view)
+    .map((reference) => reference.label)
+    .join("、");
+
+  return compactFieldAiContext([
+    buildVideoProjectFieldAiContext(fieldLabel),
+    `素材：${asset?.name ?? ""}`,
+    `素材类型：${getVideoAssetTypeLabel(asset?.type)}`,
+    `素材描述：${asset?.description ?? ""}`,
+    `素材总提示词：${asset?.prompt ?? ""}`,
+    `视图：${view?.label || getVideoAssetViewKindLabel(view?.kind)}`,
+    `视图类型：${getVideoAssetViewKindLabel(view?.kind)}`,
+    `已引用素材：${references || "暂无"}`,
+    fieldLabel === "视图提示词" ? "" : `视图提示词：${view?.prompt ?? ""}`
+  ]);
+}
+
 function buildComicProjectFieldAiContext(fieldLabel) {
   return compactFieldAiContext([
     `项目：${activeComicProject.value?.title ?? ""}`,
@@ -3692,30 +4902,97 @@ function buildComicProjectFieldAiContext(fieldLabel) {
   ]);
 }
 
+function buildComicAssetViewFieldAiContext(asset, view, fieldLabel) {
+  const references = getComicAssetViewResolvedReferences(view)
+    .map((reference) => reference.label)
+    .join("、");
+  const assetBrief = [asset?.name, asset?.description, asset?.prompt, view?.label, view?.prompt].join("\n");
+  const isGroupAsset = /多人|群体|组合|队伍|导师团|老师群|群像|阵列|并排展示|五位|四位|三位|二位|二人|两位|两人|一家|搭档|同伴|character lineup|group reference|multiple characters|team lineup|mentor lineup/i.test(assetBrief);
+  const isRelationshipAsset = /关系图|关系设定|关系参考|坐骑|伙伴|伴随|同行|站在.+旁|与.+旁边|蓝龙|莎莉|standing beside|relationship reference|relationship concept|mount|blue dragon|dragon sally/i.test(assetBrief);
+  const isStageReference = /状态参考|阶段版本|重伤|濒死|战后状态|形态|版本/i.test(assetBrief);
+
+  return compactFieldAiContext([
+    buildComicProjectFieldAiContext(fieldLabel),
+    `素材：${asset?.name ?? ""}`,
+    `素材类型：${getComicAssetTypeLabel(asset?.type)}`,
+    `素材描述：${asset?.description ?? ""}`,
+    `素材级提示词：${asset?.prompt ?? ""}`,
+    `素材版本：${asset?.variantLabel ?? ""}`,
+    `适用章节：${asset?.chapterStartIndex || ""}${asset?.chapterEndIndex ? `-${asset.chapterEndIndex}` : ""}`,
+    `当前视图：${view?.label || getComicAssetViewKindLabel(view?.kind)}`,
+    `视图类型：${getComicAssetViewKindLabel(view?.kind)}`,
+    `已引用素材：${references || "暂无"}`,
+    fieldLabel === "视图提示词" ? "" : `视图提示词：${view?.prompt ?? ""}`,
+    "输出要求：必须使用中文自然语言，不要输出英文 tag 串；必须忠于原著/用户描述，不自动添加未出现的服装、盔甲、披风、武器或装饰。",
+    isGroupAsset ? "多人/群像素材约束：不要写成单人三视图；应写成多人角色阵列设定图，完整展示所有成员，并保持每个成员的身份、轮廓和材质差异。" : "",
+    isRelationshipAsset ? "关系型素材约束：不要写成单人三视图；应写成角色与坐骑/伙伴/关联对象的关系设定图，完整展示双方比例、站位和识别点。" : "",
+    isStageReference ? "阶段/状态素材约束：如果是同一角色或生物的后续状态，不要改成新角色；应保留原始身份识别点，并突出当前阶段变化。" : "",
+    "如果素材是赵乾坤的金刚骷髅形态，必须明确暗金色骨骼本体、三视图、红色眼眶/骨缝微光，并禁止盔甲衣服。"
+  ]);
+}
+
 function buildComicChapterFieldAiContext(chapter, fieldLabel) {
-  const referencedAssets = getComicChapterReferencedAssets(chapter)
+  const sourceRefs = getComicChapterSourceRefs(chapter);
+  const referencedAssets = getComicChapterReferencedAssets(chapter);
+  const referencedAssetNames = referencedAssets
     .map((asset) => `${getComicAssetTypeLabel(asset.type)}「${asset.name}」`)
     .join("、");
+  const referencedAssetPrompts = referencedAssets
+    .slice(0, 8)
+    .map((asset) => {
+      const meta = getComicAssetMetaLine(asset);
+      const prompt = String(asset?.prompt ?? "").trim();
+      return `${asset.name}${meta ? `（${meta}）` : ""}：${prompt || asset.description || "暂无提示词"}`;
+    })
+    .join("\n");
+  const sourceLines = sourceRefs
+    .slice(0, 5)
+    .map((ref, index) => `${index + 1}. ${getComicSourceRefTitle(ref, "来源")} / ${getComicSourceRefUrl(ref) || getComicSourceRefMeta(ref)}`)
+    .join("\n");
 
   return compactFieldAiContext([
     `项目：${activeComicProject.value?.title ?? ""}`,
     `总介绍：${activeComicProject.value?.summary ?? ""}`,
     `画风与镜头：${activeComicProject.value?.visualStyle ?? ""}`,
     `章节：${chapter ? getComicChapterDisplayTitle(chapter, activeComicChapterIndex.value) : ""}`,
-    `引用素材：${referencedAssets || "暂无"}`,
-    fieldLabel === "分镜简介" ? "" : `分镜简介：${chapter?.summary ?? ""}`,
-    fieldLabel === "生成提示词" ? "" : `生成提示词：${chapter?.prompt ?? ""}`
+    `来源对照：${sourceLines || "暂无；如果正在从小说改编，必须先逐章读取来源并写入 sourceRefs/content 后再生成分镜。"}`,
+    `分镜数量：${Array.isArray(chapter?.storyboards) ? chapter.storyboards.length : 0}`,
+    `引用素材：${referencedAssetNames || "暂无"}`,
+    referencedAssetPrompts ? `素材提示词摘要：\n${referencedAssetPrompts}` : "",
+    fieldLabel === "章节内容简介" ? "" : `章节内容简介：${chapter?.summary ?? ""}`,
+    fieldLabel === "章节正文" ? "" : `章节正文/故事内容：${chapter?.content ?? ""}`,
+    fieldLabel === "分镜与出图提示" || fieldLabel === "生图提示词" ? "" : `分镜与出图提示：${chapter?.prompt ?? ""}`,
+    "输出约束：只使用中文；完全尊重原著当前章节和来源对照；不要输出英文 tag 串；不要写修改说明、保留取舍或工作计划；不要添加原文未出现的人物、装备、服饰、盔甲、武器、场景或剧情结果。",
+    "如果来源不可读或章节正文不足，应说明无法补全，不能编造分镜提示词。"
   ]);
 }
 
 function buildComicChapterImageFieldAiContext(chapter, image, fieldLabel) {
   return compactFieldAiContext([
     buildComicChapterFieldAiContext(chapter, fieldLabel),
+    activeComicStoryboard.value ? buildComicStoryboardFieldAiContext(chapter, activeComicStoryboard.value, fieldLabel) : "",
     `当前图片：${image?.alt || "未命名画面"}`,
     `图片序号：${activeComicChapterImageIndex.value + 1} / ${activeComicChapterImages.value.length}`,
     `图片尺寸：${getComicImageParamValue(image?.size)}`,
     `图片质量：${getComicImageParamValue(image?.quality)}`,
     fieldLabel === "生图提示词" ? "" : `生图提示词：${image?.prompt ?? ""}`
+  ]);
+}
+
+function buildComicStoryboardFieldAiContext(chapter, storyboard, fieldLabel) {
+  const imageCount = getComicStoryboardImages(chapter, storyboard).length;
+
+  return compactFieldAiContext([
+    buildComicChapterFieldAiContext(chapter, fieldLabel),
+    `当前分镜：${storyboard?.title || "未命名分镜"}`,
+    `分镜序号：${activeComicStoryboardIndex.value + 1} / ${activeComicStoryboards.value.length}`,
+    `分镜类型：${getComicStoryboardKindLabel(storyboard?.kind)}`,
+    `已生成图片：${imageCount} 张`,
+    fieldLabel === "画面内容" ? "" : `画面内容：${storyboard?.beat ?? ""}`,
+    fieldLabel === "对白 / 旁白" ? "" : `对白/旁白：${storyboard?.dialogue ?? ""}`,
+    fieldLabel === "镜头 / 构图" ? "" : `镜头/构图：${storyboard?.camera ?? ""}`,
+    fieldLabel === "分镜生图提示词" ? "" : `分镜生图提示词：${storyboard?.prompt ?? ""}`,
+    "分镜输出要求：每条分镜必须推进一个明确原文故事节点；对白只能来自原文或忠实改写；生图提示词要包含角色、动作、场景、景别、构图、光线、画风和素材一致性约束。"
   ]);
 }
 

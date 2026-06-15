@@ -1,4 +1,6 @@
 export const WRITING_PROMPT_ASSET_IDS = [
+  "builtinAgentGordonSystem",
+  "builtinSkillWritingPrompt",
   "writingMasterSystem",
   "writingNarrativeCraftGuide",
   "writingSelfReviewGuide",
@@ -12,8 +14,57 @@ const FALLBACK_TASK_SPEC = {
   output: "输出可直接放进当前写作项目的内容，不写寒暄。"
 };
 
+const FALLBACK_GENRE_PROMPT_GUIDE =
+  "题材驱动：先识别当前作品真正的 storyEngine，再让冲突、人物变化、证据载体和章节节奏服从该题材；不要把所有作品强行写成探险升级流、到站悟招流、真相揭露流、掌权统一流或天下第一流。";
+
+const WRITING_PRODUCT_PURITY_PROTOCOL = [
+  "作品成品纯净协议：",
+  "- 书籍介绍、大纲指导、补充设定、章节简介、章节目录和正文必须是作品世界内部成立的成品文本，不是修改记录、审稿报告或讨论纪要。",
+  "- 可以在内部吸收作者聊天、旧版设定、review 建议、资产盘点和取舍判断；最终写入作品字段时，只留下成品设定、成品目录或成品正文。",
+  "- 成品中不得出现“根据你的要求、上一版、这一版、旧版、新版、本次调整、修改建议、review 建议、讨论上下文、用户明确要求”等元叙述。",
+  "- 成品中不得出现“保留、融合、降级、删除、取舍判断、资产盘点、风险残留、待审备注、不要、不写、不再使用、必须删除、必须降级”等内部处理语言。",
+  "- 需要表达边界时，转成正向作品设定：例如把“不写宫廷斗争”写成“王朝以军镇、关牒、粮道、供奉院等制度力量影响江湖”；把“不加入妖鬼”写成“奇异感来自自然风物、民俗传闻、旧路与人心”。",
+  "- 审稿报告和内部计划可以出现修改建议；但只要输出目标是 intro / outlineGuide / extraIntroSections / chapters.summary / storyAssets / narrativeState，就必须先内化为纯净成品。"
+].join("\n");
+
 function normalizeText(value) {
   return String(value ?? "").trim();
+}
+
+function truncatePromptText(value, maxLength = 1600) {
+  const text = normalizeText(value);
+
+  return text.length > maxLength ? `${text.slice(0, maxLength)}\n...（已压缩，完整规则来自内置提示词资产）` : text;
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function extractMarkdownSection(markdown, heading, maxLength = 1600) {
+  const lines = normalizeText(markdown).split(/\r?\n/g);
+  const headingPattern = new RegExp(`^(#{1,6})\\s+${escapeRegExp(heading)}\\s*$`);
+  const startIndex = lines.findIndex((line) => headingPattern.test(line.trim()));
+
+  if (startIndex < 0) {
+    return "";
+  }
+
+  const level = lines[startIndex].match(/^(#{1,6})/)?.[1]?.length ?? 1;
+  const collected = [lines[startIndex]];
+
+  for (let index = startIndex + 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    const nextHeading = line.match(/^(#{1,6})\s+/);
+
+    if (nextHeading && nextHeading[1].length <= level) {
+      break;
+    }
+
+    collected.push(line);
+  }
+
+  return truncatePromptText(collected.join("\n"), maxLength);
 }
 
 function parseMarkdownList(value) {
@@ -54,12 +105,56 @@ function buildStorySettingRewriteProtocol(task, instruction) {
     "- 作者明确排除的元素及同义变体必须从新稿中消失；不要把被排除元素改名后保留为背景、伏笔、势力动机或隐藏主线。",
     "- 如需保留旧设定，只能保留不违背作者要求的书名意象、人物动机、武力规则、地理氛围或冒险资源，并自然写进新设定。",
     "- 如果作者要求纯粹类型体验，冲突必须围绕该类型的正面承诺展开，避免转向朝堂、阴谋、权谋、悬疑真相、文明反思或项目管理语言。",
+    "- 结局方向必须优先自然收束人物、关系、技艺、路线、地方余波和价值选择，不要把新方向又写回揭阴谋、掌权、统一天下或天下第一。",
     "- 输出开头直接写作品设定小标题，例如“## 故事核心定位”；不要写“以下是”“保留”“删除”“调整为”等说明性开场。"
   ].join("\n");
 }
 
+function normalizeStringList(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item ?? "").trim()).filter(Boolean);
+  }
+
+  return String(value ?? "")
+    .split(/[,\n，、/]+/g)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function normalizeStoryEngineLabel(value) {
+  const label = normalizeText(value);
+  return label === "成长升级" ? "成长沉淀" : label;
+}
+
+function getGenrePromptGuide(genreGuides = {}, genreProfile = {}, fallbackGenre = "") {
+  const primaryGenre = normalizeText(genreProfile.primaryGenre || fallbackGenre);
+  const storyEngine = normalizeStoryEngineLabel(genreProfile.storyEngine);
+  const candidates = [primaryGenre, ...normalizeStringList(genreProfile.subGenres), fallbackGenre]
+    .map((item) => item.replace(/\s+/g, ""))
+    .filter(Boolean);
+  const guideKey = Object.keys(genreGuides ?? {}).find((key) => candidates.some((candidate) => candidate.includes(key) || key.includes(candidate)));
+  const guide = guideKey ? genreGuides[guideKey] : null;
+  const profileLines = [
+    `- primaryGenre：${primaryGenre || "未设定"}`,
+    normalizeStringList(genreProfile.subGenres).length ? `- subGenres：${normalizeStringList(genreProfile.subGenres).join("、")}` : "",
+    storyEngine ? `- storyEngine：${storyEngine}` : "",
+    genreProfile.audience ? `- audience：${genreProfile.audience}` : "",
+    genreProfile.tone ? `- tone：${genreProfile.tone}` : ""
+  ].filter(Boolean);
+
+  return [
+    "Genre Profile（题材画像）：",
+    profileLines.join("\n") || "- primaryGenre：未设定",
+    "",
+    guide?.guide || FALLBACK_GENRE_PROMPT_GUIDE,
+    guide?.engine || storyEngine ? `推荐 storyEngine：${storyEngine || guide?.engine}` : ""
+  ].filter(Boolean).join("\n");
+}
+
 export function createWritingPromptAssets() {
   return {
+    gordonSystem: "",
+    writingSkill: "",
     masterSystem: "",
     narrativeCraftGuide: "",
     selfReviewGuide: "",
@@ -70,12 +165,48 @@ export function createWritingPromptAssets() {
 
 export function normalizeWritingPromptAssets(rawAssets = {}) {
   return {
+    gordonSystem: normalizeText(rawAssets.builtinAgentGordonSystem),
+    writingSkill: normalizeText(rawAssets.builtinSkillWritingPrompt),
     masterSystem: normalizeText(rawAssets.writingMasterSystem),
     narrativeCraftGuide: normalizeText(rawAssets.writingNarrativeCraftGuide),
     selfReviewGuide: normalizeText(rawAssets.writingSelfReviewGuide),
     chapterOutputDefaults: parseMarkdownList(rawAssets.writingChapterOutputDefaults),
     taskPrompts: parseTaskPrompts(rawAssets.writingAiTaskPrompts)
   };
+}
+
+function buildGordonRuntimeDigest(promptAssets = {}) {
+  const source = promptAssets?.gordonSystem ?? "";
+  const sections = [
+    extractMarkdownSection(source, "Agent Identity", 900),
+    extractMarkdownSection(source, "Runtime Loop", 1200),
+    extractMarkdownSection(source, "Verification Rules", 900),
+    extractMarkdownSection(source, "Code And Asset Discipline", 700)
+  ].filter(Boolean);
+
+  return [
+    "Gordon Agent Runtime（应用统一执行协议）：",
+    "本轮由 Gordon 作为导演层调度 writing Skill 和写作提示词；用户目标、证据化状态、验证边界和写回纪律高于单次生成惯性。",
+    sections.length ? sections.join("\n\n") : "（Gordon 系统提示词资产尚未加载；按观察、计划、执行、验证、状态更新的 Agent loop 推进。）"
+  ].join("\n");
+}
+
+function buildWritingSkillRuntimeDigest(promptAssets = {}) {
+  const source = promptAssets?.writingSkill ?? "";
+  const sections = [
+    extractMarkdownSection(source, "何时使用", 900),
+    extractMarkdownSection(source, "全局状态协议", 1400),
+    extractMarkdownSection(source, "探险故事先写渴望，不先写谜题", 900),
+    extractMarkdownSection(source, "结局不是揭穿阴谋或登顶奖杯", 1100),
+    extractMarkdownSection(source, "技艺领悟不是关卡奖励", 1300),
+    extractMarkdownSection(source, "已有书稿调整必须先盘点再融合", 800)
+  ].filter(Boolean);
+
+  return [
+    "Writing Skill Runtime（当前启用技能：writing）：",
+    "墨笔生花不是独立 one-shot 生成器；它是 Gordon 调用 writing Skill 的应用化工作区。以下为本轮必须吸收的 Skill 核心技巧。",
+    sections.length ? sections.join("\n\n") : "（writing Skill 资产尚未加载；按题材画像、故事资产、Narrative State、章节事实、证据化写回和连续性审核推进。）"
+  ].join("\n");
 }
 
 export async function loadWritingPromptAssets(desktopApi) {
@@ -108,6 +239,12 @@ export function buildWritingAssistantPrompt({
   instruction,
   promptAssets,
   chapterOutputDefaults,
+  genrePromptGuides,
+  genreProfileContent,
+  gordonRuntimeContent,
+  writingSkillRuntimeContent,
+  directorPlanContent,
+  eventGraphContent,
   longOutlineContent,
   storyMemoryContent,
   narrativeStateContent,
@@ -126,6 +263,7 @@ export function buildWritingAssistantPrompt({
   const craftGuide = promptAssets?.narrativeCraftGuide || "(写作知识资产尚未加载。)";
   const selfReviewGuide = promptAssets?.selfReviewGuide || "(自评知识资产尚未加载。)";
   const storySettingRewriteProtocol = buildStorySettingRewriteProtocol(task, instruction);
+  const genreGuideContent = getGenrePromptGuide(genrePromptGuides, book.genreProfile, book.genre);
 
   return [
     `你正在执行「${appName}」的一次写作辅助任务。通用标准：大师级小说总编 + 故事架构师 + 文字教练。`,
@@ -133,15 +271,27 @@ export function buildWritingAssistantPrompt({
     `作品：${book.title}`,
     `篇幅：${lengthProfile.label}（${lengthProfile.scope}）`,
     `类型：${book.genre || "未设定"}`,
+    genreProfileContent || genreGuideContent,
     `当前模块：${tabTitle}`,
     `大师思路：${lengthProfile.method}`,
     `本次任务：${task?.label ?? "综合辅助"} - ${task?.goal ?? "提升当前内容"}`,
     `本任务设计者：${taskSpec.role}`,
     instruction ? `作者额外要求：${instruction}` : "作者额外要求：无",
     "",
+    "Gordon 调度协议：",
+    gordonRuntimeContent || buildGordonRuntimeDigest(promptAssets),
+    "",
+    "writing Skill 技巧协议：",
+    writingSkillRuntimeContent || buildWritingSkillRuntimeDigest(promptAssets),
+    "",
+    "Writing Director Plan（Gordon 本轮写作导演决策）：",
+    directorPlanContent || "(暂无导演计划；按当前任务和作品状态执行。)",
+    "",
     "任务专属提示词：",
     taskSpec.strategy,
     storySettingRewriteProtocol ? "\n" + storySettingRewriteProtocol : "",
+    "",
+    WRITING_PRODUCT_PURITY_PROTOCOL,
     "",
     "创作知识内核：",
     craftGuide,
@@ -151,11 +301,20 @@ export function buildWritingAssistantPrompt({
     "",
     "输出要求：",
     taskSpec.output,
+    WRITING_PRODUCT_PURITY_PROTOCOL,
     chapterOutputContent,
     longOutlineContent ? "\n长篇扩展模式：\n" + longOutlineContent : "",
     "",
     "连续性资料与一致性上下文：",
     storyMemoryContent,
+    "",
+    "Event Graph（轻量因果事件图）：",
+    eventGraphContent || "(暂无 Event Graph；本轮必须从现有状态中临时判断因果。)",
+    "",
+    "证据化写回规则：",
+    "- 新增或更新 storyAssets、Narrative State、人物弧线时，必须能追溯到正文、设定或作者要求；每个长期事实优先写 evidenceRefs（chapterIndex/chapterId/quote/note）和 impact。",
+    "- 不要写“主角成长了”“关系变复杂了”这种不可验证资产；要写成具体事实、证据载体和后续影响。",
+    "- 人物弧线必须区分 want（外在想要）、need（内在需要）、currentStage（当前阶段）、nextPressure（下一压力）和 endpoint（终点方向）。",
     "",
     "Narrative Runtime（生成前必须遵守的统一故事状态）：",
     narrativeStateContent || "(暂无 Narrative State。)",
@@ -176,6 +335,7 @@ export function buildWritingAssistantPrompt({
     "- 不要寒暄，不要解释提示词。",
     "- 保留并强化人物动机、因果链、伏笔和冲突。",
     "- 生成前先读取 Narrative Runtime：人物状态、关系债务、资源/伤势、区域变化、世界规则、时间线和未回收伏笔必须延续；不得让下一章自动清零。",
+    "- 生成前先读取 Genre Profile：题材、子类型和 storyEngine 决定冲突组织方式；只有探险/开荒类才默认强调地图扩展，言情/都市/悬疑/历史等题材必须使用各自的关系、证据、时代或现实压力推进。",
     "- 如果发现战力、伤势、时间线、资源、关系或伏笔冲突，优先在输出中规避；审阅类任务必须点名冲突来源和修复顺序。",
     "- 每个章节必须推进至少一条 Story Arc：主角弧、关系弧、世界弧、资源弧或伏笔弧；避免只有局部爽点没有长期推进。",
     "- 长篇修改后必须留意 Plan Drift：后续章节、伏笔、人物动机、卷级目标受影响时要明确指出。",
@@ -195,6 +355,8 @@ export function buildWritingAssistantPrompt({
     "- 如果是书籍介绍生成，默认基于已经稳定的故事设定进行读者向包装；优先写清核心命题、主角处境、主要矛盾和读者钩子，不要把简介写成设定清单。",
     "- 连续性资料、设定账本、storyAssets 和 memoryNotes 是内部写作资料，不是作品主题；除非作者明确要求或当前项目已写明，不要默认把“记忆、失忆、遗忘、档案”设为核心设定。",
     "- 新建或扩展故事介绍时，优先为当前作品选择区别于已有项目的核心机制；书名意象可保留为氛围，不要自动扩展成同质世界观。",
+    "- 如果 Writing Director Plan 与任务按钮存在轻微冲突，优先服从作者要求和 Gordon 的导演计划；任务按钮只表示本轮入口，不等于唯一创作目标。",
+    "- 如果本轮是正文生成，最终输出保持作品正文纯净，不夹带 state_delta、JSON、审稿说明或 Skill 节点名；稳定事实由写入后的连续性更新处理。",
     "",
     "当前模块原文：",
     currentModuleContent || "(空)"
@@ -209,6 +371,12 @@ export function buildWritingLongOutlineMasterPrompt({
   targetContent,
   introContent,
   narrativeStateContent,
+  gordonRuntimeContent,
+  writingSkillRuntimeContent,
+  directorPlanContent,
+  eventGraphContent,
+  genrePromptGuides,
+  genreProfileContent,
   seedContent,
   promptAssets
 }) {
@@ -218,6 +386,7 @@ export function buildWritingLongOutlineMasterPrompt({
     "",
     `作品：${book.title}`,
     `类型：${book.genre || "未设定"}`,
+    genreProfileContent || getGenrePromptGuide(genrePromptGuides, book.genreProfile, book.genre),
     `作者要求：${request.instruction || "无"}`,
     "",
     "长篇目标：",
@@ -225,6 +394,17 @@ export function buildWritingLongOutlineMasterPrompt({
     "",
     "创作知识内核：",
     promptAssets?.narrativeCraftGuide || "(写作知识资产尚未加载。)",
+    "",
+    WRITING_PRODUCT_PURITY_PROTOCOL,
+    "",
+    "Gordon 调度协议：",
+    gordonRuntimeContent || buildGordonRuntimeDigest(promptAssets),
+    "",
+    "writing Skill 技巧协议：",
+    writingSkillRuntimeContent || buildWritingSkillRuntimeDigest(promptAssets),
+    "",
+    "Writing Director Plan（Gordon 本轮写作导演决策）：",
+    directorPlanContent || "(暂无导演计划；按长篇总体规划执行。)",
     "",
     "自我评判内核：",
     promptAssets?.selfReviewGuide || "(自评知识资产尚未加载。)",
@@ -234,6 +414,9 @@ export function buildWritingLongOutlineMasterPrompt({
     "",
     "Narrative Runtime：",
     narrativeStateContent || "(暂无 Narrative State。)",
+    "",
+    "Event Graph：",
+    eventGraphContent || "(暂无 Event Graph。)",
     "",
     "现有目录种子：",
     seedContent,
@@ -256,6 +439,12 @@ export function buildWritingLongOutlineBatchPrompt({
   targetContent,
   introContent,
   narrativeStateContent,
+  gordonRuntimeContent,
+  writingSkillRuntimeContent,
+  directorPlanContent,
+  eventGraphContent,
+  genrePromptGuides,
+  genreProfileContent,
   partsContext,
   partDisplayLabel,
   recentChapterContext,
@@ -269,6 +458,7 @@ export function buildWritingLongOutlineBatchPrompt({
     "",
     `作品：${book.title}`,
     `类型：${book.genre || "未设定"}`,
+    genreProfileContent || getGenrePromptGuide(genrePromptGuides, book.genreProfile, book.genre),
     `作者要求：${request.instruction || "无"}`,
     "",
     "全书目标：",
@@ -276,6 +466,17 @@ export function buildWritingLongOutlineBatchPrompt({
     "",
     "创作知识内核：",
     promptAssets?.narrativeCraftGuide || "(写作知识资产尚未加载。)",
+    "",
+    WRITING_PRODUCT_PURITY_PROTOCOL,
+    "",
+    "Gordon 调度协议：",
+    gordonRuntimeContent || buildGordonRuntimeDigest(promptAssets),
+    "",
+    "writing Skill 技巧协议：",
+    writingSkillRuntimeContent || buildWritingSkillRuntimeDigest(promptAssets),
+    "",
+    "Writing Director Plan（Gordon 本轮写作导演决策）：",
+    directorPlanContent || "(暂无导演计划；按当前批次上下文执行。)",
     "",
     "自我评判内核：",
     promptAssets?.selfReviewGuide || "(自评知识资产尚未加载。)",
@@ -285,6 +486,9 @@ export function buildWritingLongOutlineBatchPrompt({
     "",
     "Narrative Runtime：",
     narrativeStateContent || "(暂无 Narrative State。)",
+    "",
+    "Event Graph：",
+    eventGraphContent || "(暂无 Event Graph。)",
     "",
     "幕/卷总规划：",
     partsContext,

@@ -6,8 +6,94 @@ export interface McpErrorClassification {
   failureKind: AgentMcpCallRecord["failureKind"];
 }
 
+function stripHtmlForErrorMessage(text: string): string {
+  return text
+    .replace(/<script[\s\S]*?<\/script>/giu, " ")
+    .replace(/<style[\s\S]*?<\/style>/giu, " ")
+    .replace(/<[^>]+>/gu, " ")
+    .replace(/&nbsp;/giu, " ")
+    .replace(/&lt;/giu, "<")
+    .replace(/&gt;/giu, ">")
+    .replace(/&amp;/giu, "&")
+    .replace(/&quot;/giu, "\"")
+    .replace(/&#39;/giu, "'")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function normalizeMcpErrorMessage(message: string): string {
+  const text = String(message ?? "").trim();
+  const httpMatch = text.match(/HTTP\s+(\d{3})[：:]\s*([\s\S]*)/iu);
+
+  if (!httpMatch) {
+    return /<!doctype\s+html|<html[\s>]|<body[\s>]|<head[\s>]/iu.test(text)
+      ? stripHtmlForErrorMessage(text) || "上游服务返回了无法直接展示的 HTML 错误页"
+      : text;
+  }
+
+  const status = Number(httpMatch[1]);
+  const rawDetail = httpMatch[2] ?? "";
+  const detail = /<!doctype\s+html|<html[\s>]|<body[\s>]|<head[\s>]/iu.test(rawDetail)
+    ? stripHtmlForErrorMessage(rawDetail)
+    : rawDetail.replace(/\s+/gu, " ").trim();
+  const suffix = detail ? `。上游摘要：${detail.slice(0, 500)}` : "";
+
+  if (status === 429) {
+    return `上游服务请求过于频繁（HTTP 429）：请稍后重试${suffix}`;
+  }
+
+  if (status === 502) {
+    return `上游服务网关异常（HTTP 502）：请稍后重试${suffix}`;
+  }
+
+  if (status === 503) {
+    return `上游服务暂时不可用（HTTP 503）：服务网关或上游接口临时过载，请稍后重试${suffix}`;
+  }
+
+  if (status === 504) {
+    return `上游服务响应超时（HTTP 504）：请稍后查询或重试${suffix}`;
+  }
+
+  if (status >= 500) {
+    return `上游服务内部错误（HTTP ${status}）：请稍后重试${suffix}`;
+  }
+
+  return `HTTP ${status}：${detail || "上游未返回错误详情"}`;
+}
+
 export function classifyMcpMessage(message: string): McpErrorClassification {
-  const normalized = message.toLowerCase();
+  const cleanMessage = normalizeMcpErrorMessage(message);
+  const normalized = cleanMessage.toLowerCase();
+
+  const networkTimeoutPatterns = [
+    "network_timeout",
+    "网络连接超时",
+    "网络请求超时",
+    "连接超时",
+    "请求超时",
+    "connection timed out",
+    "connect timeout",
+    "connect timed out",
+    "connection timeout",
+    "operation timed out",
+    "timeout was reached",
+    "curl: (28)",
+    "exit 28",
+    "etimedout",
+    "und_err_connect_timeout",
+    "eai_again",
+    "enotfound",
+    "econnreset",
+    "econnrefused",
+    "fetch failed"
+  ];
+
+  const nonRetryableSubmissionUnknownPatterns = [
+    "video_gen 提交状态未知",
+    "不能安全自动重试",
+    "以免重复生成",
+    "重复扣费"
+  ];
 
   const retryablePatterns = [
     "http 408",
@@ -44,6 +130,9 @@ export function classifyMcpMessage(message: string): McpErrorClassification {
     "must be",
     "should be",
     "invalid type",
+    "invalidparameter",
+    "badrequest",
+    "bad request",
     "参数",
     "字段",
     "必填",
@@ -142,10 +231,26 @@ export function classifyMcpMessage(message: string): McpErrorClassification {
     "没有这个"
   ];
 
+  if (nonRetryableSubmissionUnknownPatterns.some((pattern) => normalized.includes(pattern.toLowerCase()))) {
+    return {
+      category: "non_retryable",
+      message: cleanMessage,
+      failureKind: "tool_execution"
+    };
+  }
+
+  if (networkTimeoutPatterns.some((pattern) => normalized.includes(pattern))) {
+    return {
+      category: "retryable",
+      message: cleanMessage,
+      failureKind: "network_timeout"
+    };
+  }
+
   if (retryablePatterns.some((pattern) => normalized.includes(pattern))) {
     return {
       category: "retryable",
-      message,
+      message: cleanMessage,
       failureKind: "unknown"
     };
   }
@@ -153,7 +258,7 @@ export function classifyMcpMessage(message: string): McpErrorClassification {
   if (permissionDeniedPatterns.some((pattern) => normalized.includes(pattern))) {
     return {
       category: "non_retryable",
-      message,
+      message: cleanMessage,
       failureKind: "permission_denied"
     };
   }
@@ -161,7 +266,7 @@ export function classifyMcpMessage(message: string): McpErrorClassification {
   if (schemaMismatchPatterns.some((pattern) => normalized.includes(pattern))) {
     return {
       category: "non_retryable",
-      message,
+      message: cleanMessage,
       failureKind: "schema_mismatch"
     };
   }
@@ -169,7 +274,7 @@ export function classifyMcpMessage(message: string): McpErrorClassification {
   if (actionTooEarlyPatterns.some((pattern) => normalized.includes(pattern))) {
     return {
       category: "retryable",
-      message,
+      message: cleanMessage,
       failureKind: "action_too_early"
     };
   }
@@ -177,7 +282,7 @@ export function classifyMcpMessage(message: string): McpErrorClassification {
   if (environmentStatePatterns.some((pattern) => normalized.includes(pattern))) {
     return {
       category: "non_retryable",
-      message,
+      message: cleanMessage,
       failureKind: "environment_state"
     };
   }
@@ -185,7 +290,7 @@ export function classifyMcpMessage(message: string): McpErrorClassification {
   if (wrongToolPatterns.some((pattern) => normalized.includes(pattern))) {
     return {
       category: "non_retryable",
-      message,
+      message: cleanMessage,
       failureKind: "wrong_tool"
     };
   }
@@ -193,7 +298,7 @@ export function classifyMcpMessage(message: string): McpErrorClassification {
   if (nonexistentEntityPatterns.some((pattern) => normalized.includes(pattern))) {
     return {
       category: "non_retryable",
-      message,
+      message: cleanMessage,
       failureKind: "nonexistent_entity"
     };
   }
@@ -201,7 +306,7 @@ export function classifyMcpMessage(message: string): McpErrorClassification {
   if (toolUnavailablePatterns.some((pattern) => normalized.includes(pattern))) {
     return {
       category: "non_retryable",
-      message,
+      message: cleanMessage,
       failureKind: "tool_unavailable"
     };
   }
@@ -209,14 +314,14 @@ export function classifyMcpMessage(message: string): McpErrorClassification {
   if (toolExecutionPatterns.some((pattern) => normalized.includes(pattern))) {
     return {
       category: "non_retryable",
-      message,
+      message: cleanMessage,
       failureKind: "tool_execution"
     };
   }
 
   return {
     category: "non_retryable",
-    message,
+    message: cleanMessage,
     failureKind: "unknown"
   };
 }

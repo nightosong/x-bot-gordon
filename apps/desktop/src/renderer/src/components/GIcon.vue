@@ -23,15 +23,19 @@ import {
   CircleAlert,
   CornerDownLeft,
   Copy,
+  Download,
   Edit3,
   ExternalLink,
   Eye,
   EyeOff,
   FileText,
   GripVertical,
+  Home,
   Image,
   LoaderCircle,
+  Maximize2,
   MessageSquarePlus,
+  Minus,
   MoreHorizontal,
   Music,
   PanelRightClose,
@@ -45,6 +49,7 @@ import {
   Square,
   Trash2,
   Upload,
+  Video,
   X
 } from "lucide-vue-next";
 
@@ -79,6 +84,7 @@ const ICONS = {
   close: X,
   copy: Copy,
   delete: Trash2,
+  download: Download,
   edit: Edit3,
   enter: CornerDownLeft,
   eye: Eye,
@@ -86,10 +92,13 @@ const ICONS = {
   fileText: FileText,
   gear: Settings,
   grip: GripVertical,
+  home: Home,
   image: Image,
   jump: ExternalLink,
   loading: LoaderCircle,
+  maximize: Maximize2,
   messagePlus: MessageSquarePlus,
+  minus: Minus,
   more: MoreHorizontal,
   music: Music,
   panelRightClose: PanelRightClose,
@@ -104,6 +113,7 @@ const ICONS = {
   stats: BarChart3,
   trash: Trash2,
   upload: Upload,
+  video: Video,
   stop: Square
 };
 

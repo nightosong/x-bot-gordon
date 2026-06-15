@@ -16,12 +16,16 @@ export type ProviderKind =
   | "openai_like";
 export type WeeklyProgressStatus = "active" | "archived";
 export type WeeklyProgressItemStatus = "planned" | "in_progress" | "completed" | "blocked";
-export type WorkflowLibraryItemKind = "api-test";
+export type WorkflowLibraryItemKind = "api-test" | "info-radar";
 export type WorkflowLibraryItemStatus = "active" | "draft";
 export type WorkflowEnvironmentId = "dev" | "test" | "pre" | "prod" | string;
 export type WorkflowVariableSource = "manual" | "response";
 export type WorkflowProtocolMode = "single" | "sequential" | "polling";
 export type WorkflowStepExecutionMode = "once" | "polling";
+export type InfoRadarSourceKind = "rss" | "web_page" | "search" | "wechat" | "manual";
+export type InfoRadarWindowStatus = "active" | "paused";
+export type InfoRadarRefreshCadence = "manual" | "hourly" | "daily" | "weekly";
+export type InfoRadarRefreshStatus = "success" | "partial" | "failed";
 export type ModelModality =
   | "text"
   | "vision"
@@ -57,6 +61,12 @@ export type WritingBookPartType = "act" | "volume";
 export type WritingChapterStatus = "todo" | "inProgress" | "done";
 export type WritingOutlinePlannerStatus = "idle" | "running" | "completed" | "failed" | "cancelled";
 export type AgentRunStepType =
+  | "run_received"
+  | "context_prepared"
+  | "runtime_initializing"
+  | "runtime_config_loaded"
+  | "tool_discovery_started"
+  | "tool_discovery_completed"
   | "agent_selected"
   | "model_selected"
   | "skill_selected"
@@ -75,17 +85,22 @@ export type AgentRunStepType =
   | "computer_use_permission_requested"
   | "computer_use_permission_granted"
   | "computer_use_permission_denied"
+  | "tool_permission_requested"
+  | "tool_permission_granted"
+  | "tool_permission_denied"
   | "mcp_server_selected"
   | "mcp_tool_selected"
   | "mcp_tool_called"
   | "mcp_tool_failed"
   | "mcp_retrying"
   | "mcp_auto_stopped"
+  | "model_response_started"
   | "model_invoked"
   | "completed";
 
 export type McpErrorCategory = "retryable" | "non_retryable";
 export type McpFailureKind =
+  | "network_timeout"
   | "schema_mismatch"
   | "tool_unavailable"
   | "tool_execution"
@@ -399,6 +414,68 @@ export interface WorkflowRecord {
   protocol: WorkflowProtocolDefinition;
 }
 
+export interface InfoRadarSource {
+  id: string;
+  kind: InfoRadarSourceKind;
+  title: string;
+  url: string;
+  query: string;
+  enabled: boolean;
+  tags: string[];
+  notes: string;
+  updatedAt: string;
+}
+
+export interface InfoRadarItem {
+  id: string;
+  sourceId: string;
+  sourceTitle: string;
+  sourceKind: InfoRadarSourceKind;
+  title: string;
+  url: string;
+  summary: string;
+  author?: string;
+  publishedAt?: string;
+  fetchedAt: string;
+  tags: string[];
+  score: number;
+  status: "new" | "saved" | "ignored";
+}
+
+export interface InfoRadarRefreshRun {
+  id: string;
+  status: InfoRadarRefreshStatus;
+  startedAt: string;
+  finishedAt: string;
+  sourceCount: number;
+  itemCount: number;
+  message: string;
+}
+
+export interface InfoRadarWindow {
+  id: string;
+  title: string;
+  summary: string;
+  category: string;
+  status: InfoRadarWindowStatus;
+  cadence: InfoRadarRefreshCadence;
+  keywords: string[];
+  negativeKeywords: string[];
+  sources: InfoRadarSource[];
+  digestPrompt: string;
+  items: InfoRadarItem[];
+  runHistory: InfoRadarRefreshRun[];
+  createdAt: string;
+  updatedAt: string;
+  lastRefreshedAt?: string;
+}
+
+export interface InfoRadarRefreshResult {
+  card: WorkflowLibraryItem;
+  window: InfoRadarWindow;
+  run: InfoRadarRefreshRun;
+}
+
 export interface WorkflowLibraryItem {
   id: string;
   kind: WorkflowLibraryItemKind;
@@ -412,6 +489,7 @@ export interface WorkflowLibraryItem {
   updatedAt: string;
   lastUsedAt?: string;
   records: WorkflowRecord[];
+  infoWindows?: InfoRadarWindow[];
 }
 
 export interface ModelProfile {
@@ -549,6 +627,10 @@ export interface ToolProviderConfig {
   model: string;
   apiKey: string;
   baseUrl?: string;
+  submitUrl?: string;
+  queryUrl?: string;
+  taskIdPath?: string;
+  resultUrlPath?: string;
   enabled: boolean;
   notes?: string;
   runtime?: ToolProviderRuntimeConfig;
@@ -679,6 +761,7 @@ export interface AgentRunProgressEvent {
 }
 
 export interface CommandWorkshopMessageArtifact {
+  isLive?: boolean;
   profileLabel: string;
   model: string;
   skillName: string | null;
@@ -765,6 +848,23 @@ export interface WritingBookIntroSection {
   updatedAt: string;
 }
 
+export interface WritingGenreProfile {
+  primaryGenre: string;
+  subGenres: string[];
+  storyEngine: string;
+  audience?: string;
+  tone?: string;
+  updatedAt: string;
+}
+
+export interface WritingEvidenceRef {
+  id: string;
+  chapterIndex?: number;
+  chapterId?: string;
+  quote?: string;
+  note: string;
+}
+
 export interface WritingStoryAssetEntry {
   id: string;
   title: string;
@@ -772,6 +872,8 @@ export interface WritingStoryAssetEntry {
   tags: string[];
   chapterIndex?: number;
   status?: string;
+  evidenceRefs: WritingEvidenceRef[];
+  impact?: string;
   updatedAt: string;
 }
 
@@ -786,6 +888,8 @@ export interface WritingCharacterAsset {
   relationships: string[];
   tags: string[];
   status: string;
+  evidenceRefs: WritingEvidenceRef[];
+  impact?: string;
   updatedAt: string;
 }
 
@@ -798,6 +902,20 @@ export interface WritingForeshadowAsset {
   chapterIndex?: number;
   payoffChapterIndex?: number;
   tags: string[];
+  evidenceRefs: WritingEvidenceRef[];
+  impact?: string;
+  updatedAt: string;
+}
+
+export interface WritingCharacterArc {
+  id: string;
+  characterName: string;
+  want: string;
+  need: string;
+  currentStage: string;
+  nextPressure: string;
+  endpoint: string;
+  evidenceRefs: WritingEvidenceRef[];
   updatedAt: string;
 }
 
@@ -823,6 +941,7 @@ export interface WritingStoryAssets {
   timeline: WritingStoryAssetEntry[];
   foreshadows: WritingForeshadowAsset[];
   rules: WritingStoryAssetEntry[];
+  characterArcs: WritingCharacterArc[];
   styleProfile: WritingStyleProfile;
   memoryNotes: WritingStoryAssetEntry[];
   updatedAt: string;
@@ -851,6 +970,8 @@ export interface WritingNarrativeStateNode {
   payoffDeadlineChapterIndex?: number;
   resolvedAtChapterIndex?: number;
   evidenceChapterIds: string[];
+  evidenceRefs: WritingEvidenceRef[];
+  impact?: string;
   relatedNodeIds: string[];
   riskLevel: WritingNarrativeRiskLevel;
   updatedAt: string;
@@ -912,9 +1033,13 @@ export interface WritingBook {
   author: string;
   length: WritingBookLength;
   genre: string;
+  genreProfile: WritingGenreProfile;
   status: string;
   updatedAt: string;
   coverTone: string;
+  coverUrl?: string;
+  coverPrompt?: string;
+  coverShouldShowTitle?: boolean;
   intro: string;
   outlineGuide: string;
   seriesPlan: string;
@@ -931,11 +1056,46 @@ export interface WritingBookSaveOptions {
   mergeChapters?: boolean;
 }
 
+export interface WritingBookCoverImageSaveRequest {
+  title?: string;
+  imageUrl: string;
+}
+
+export interface WritingBookCoverImageSaveResult {
+  filePath: string;
+  fileName: string;
+  writtenBytes: number;
+}
+
+export type ApplicationCoverImageSaveRequest = WritingBookCoverImageSaveRequest;
+export type ApplicationCoverImageSaveResult = WritingBookCoverImageSaveResult;
+
 export type ComicProjectFormat = "poster" | "serial";
 export type ComicProjectPalette = "monochrome" | "color";
 export type ComicChapterStatus = "todo" | "inProgress" | "done";
+export type ComicStoryboardKind = "dialogue" | "scene" | "action" | "transition" | "emotion" | "other";
 export type ComicAssetType = "character" | "prop" | "scene";
 export type ComicAssetViewKind = "turnaround" | "front" | "side" | "back" | "angle" | "wide" | "detail";
+
+export interface ComicSourceRef {
+  sourceType: "web" | "novel" | "chapter" | "file" | "manual";
+  sourceUrl?: string;
+  sourceTitle?: string;
+  chapterIndex?: number;
+  chapterTitle?: string;
+  note?: string;
+}
+
+export interface ComicSourceMeta {
+  sourceType: "web" | "novel" | "file" | "manual";
+  sourceUrl?: string;
+  sourceTitle?: string;
+  importedAt?: string;
+  importedBy?: string;
+  chapterCount?: number;
+  extractionStatus?: "planned" | "partial" | "complete" | "blocked";
+  notes?: string;
+}
 
 export interface ComicAssetView {
   id: string;
@@ -945,25 +1105,57 @@ export interface ComicAssetView {
   prompt?: string;
 }
 
+export interface ComicAssetVariant {
+  id: string;
+  label: string;
+  chapterStartIndex?: number;
+  chapterEndIndex?: number;
+  description?: string;
+  prompt?: string;
+  views: ComicAssetView[];
+  sourceRefs?: ComicSourceRef[];
+  updatedAt: string;
+}
+
 export interface ComicAsset {
   id: string;
   name: string;
   type: ComicAssetType;
   description: string;
   prompt: string;
+  variantLabel?: string;
+  chapterStartIndex?: number;
+  chapterEndIndex?: number;
+  sourceRefs?: ComicSourceRef[];
   views: ComicAssetView[];
+  variants?: ComicAssetVariant[];
   createdAt: string;
   updatedAt: string;
 }
 
 export interface ComicChapterImage {
   id: string;
+  storyboardId?: string;
   alt: string;
   src: string;
   prompt: string;
   size: string;
   quality: string;
   createdAt: string;
+}
+
+export interface ComicStoryboardShot {
+  id: string;
+  index: number;
+  kind: ComicStoryboardKind;
+  title: string;
+  beat: string;
+  dialogue: string;
+  camera: string;
+  prompt: string;
+  status: ComicChapterStatus;
+  imageIds: string[];
+  updatedAt: string;
 }
 
 export interface ComicChapter {
@@ -973,6 +1165,8 @@ export interface ComicChapter {
   summary: string;
   prompt: string;
   content: string;
+  sourceRefs?: ComicSourceRef[];
+  storyboards: ComicStoryboardShot[];
   images: ComicChapterImage[];
   status: ComicChapterStatus;
   assetRefs: string[];
@@ -991,6 +1185,10 @@ export interface ComicProject {
   episodePlan: string;
   pageCount: number;
   coverTone: string;
+  coverUrl?: string;
+  coverPrompt?: string;
+  coverShouldShowTitle?: boolean;
+  source?: ComicSourceMeta;
   assets: ComicAsset[];
   chapters: ComicChapter[];
   createdAt: string;
@@ -1042,6 +1240,12 @@ export interface VideoShot {
   negativePrompt: string;
   reference: string;
   output: string;
+  taskId?: string;
+  videoUrl?: string;
+  lastFrameUrl?: string;
+  provider?: string;
+  model?: string;
+  rawResult?: Record<string, unknown>;
   status: VideoShotStatus;
   durationSeconds: number;
   updatedAt: string;
@@ -1059,6 +1263,10 @@ export interface VideoProject {
   storyboardPlan: string;
   durationSeconds: number;
   coverTone: string;
+  coverUrl?: string;
+  coverPrompt?: string;
+  coverShouldShowTitle?: boolean;
+  assets?: ComicAsset[];
   shots: VideoShot[];
   createdAt: string;
   updatedAt: string;
@@ -1116,6 +1324,9 @@ export interface MusicProject {
   status: string;
   summary: string;
   coverTone: string;
+  coverUrl?: string;
+  coverPrompt?: string;
+  coverShouldShowTitle?: boolean;
   tracks: MusicTrack[];
   createdAt: string;
   updatedAt: string;

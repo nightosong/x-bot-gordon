@@ -1,6 +1,7 @@
 <template>
   <div class="workspace-stage robot-stage">
     <div class="robot-frame">
+      <FallingStarsBackground class="robot-stars" color="#ffffff" :count="180" :speed="0.7" />
       <canvas ref="robotCanvasRef" class="robot-canvas" aria-label="Gordon robot"></canvas>
     </div>
   </div>
@@ -10,6 +11,7 @@
 import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 
 import robotSceneUrl from "../../../assets/spline-backups/home-robot-scene.splinecode?url";
+import FallingStarsBackground from "./FallingStarsBackground.vue";
 
 const props = defineProps({
   setStatus: { type: Function, required: true }

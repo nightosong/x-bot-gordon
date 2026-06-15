@@ -159,7 +159,7 @@ export const COMIC_ASSET_TYPE_META = {
     label: "人物",
     defaultName: "人物素材",
     defaultDescription: "固定角色的外貌、服饰、体态、表情气质和关键识别点。",
-    defaultPrompt: "保持人物五官、发型、服饰、年龄感、体态比例和标志性细节一致；三视图使用 16:9 横图，把正面、侧面、背面放在同一张图里。",
+    defaultPrompt: "保持人物五官、发型、服饰、年龄感、体态比例和标志性细节一致；三视图使用 16:9 横图，把正面、侧面、背面三个完整全身立姿放在同一张图里，不能裁切头顶、脚部、衣摆或武器。",
     defaultViews: [
       { kind: "turnaround", label: "三视图" }
     ]
@@ -168,7 +168,7 @@ export const COMIC_ASSET_TYPE_META = {
     label: "物品",
     defaultName: "物品素材",
     defaultDescription: "固定物品的造型、材质、尺寸感、纹样和使用方式。",
-    defaultPrompt: "保持物品轮廓、材质、颜色、比例、纹样和磨损细节一致；三视图使用 16:9 横图，把正面、侧面、背面放在同一张图里。",
+    defaultPrompt: "保持物品轮廓、材质、颜色、比例、纹样和磨损细节一致；三视图使用 16:9 横图，把正面、侧面、背面三个完整视角放在同一张图里，不能裁切主体轮廓。",
     defaultViews: [
       { kind: "turnaround", label: "三视图" }
     ]
@@ -196,12 +196,20 @@ export const COMIC_ASSET_VIEW_KIND_META = {
   detail: { label: "细节" }
 };
 
+export const COMIC_ASSET_FILTER_OPTIONS = [
+  { value: "all", label: "全部" },
+  { value: "character", label: "人物" },
+  { value: "prop", label: "物品" },
+  { value: "scene", label: "场景" }
+];
+
 export const VIDEO_PROJECT_MODE_META = {
   textToVideo: { label: "文生视频", defaultDuration: 5 },
   imageToVideo: { label: "图生视频", defaultDuration: 6 }
 };
 
 export const VIDEO_PROJECT_ASPECT_RATIO_META = {
+  adaptive: { label: "自适应" },
   "16:9": { label: "横屏 16:9" },
   "9:16": { label: "竖屏 9:16" },
   "1:1": { label: "方屏 1:1" }
@@ -240,6 +248,15 @@ export const COMIC_CHAPTER_STATUS_META = {
   done: { label: "已完成", className: "is-success" }
 };
 
+export const COMIC_STORYBOARD_KIND_META = {
+  dialogue: { label: "对话" },
+  scene: { label: "场景" },
+  action: { label: "打斗" },
+  transition: { label: "过渡" },
+  emotion: { label: "情绪" },
+  other: { label: "其他" }
+};
+
 export const VIDEO_APP_TABS = [
   { id: "concept", label: "项目设定", kicker: "Concept", fieldLabel: "视频生成设定" },
   { id: "storyboard", label: "镜头规划", kicker: "Storyboard", fieldLabel: "镜头列表与分镜" },
@@ -269,16 +286,38 @@ export function createMarketplaceState() {
       isGenerating: false,
       requestId: ""
     },
+    agent: {
+      activeAppId: "",
+      activeProgressEventId: "",
+      progress: null
+    },
+    cover: {
+      isDialogOpen: false,
+      appId: "",
+      itemId: "",
+      dialogMode: "upload",
+      urlInput: "",
+      promptInput: "",
+      shouldShowTitle: true,
+      feedback: "",
+      feedbackTone: "neutral",
+      draftUrl: "",
+      previewUrl: "",
+      isGenerating: false
+    },
     comic: {
       projects: [],
       activeProjectId: null,
       activeTab: "intro",
       activeChapterId: "",
+      activeStoryboardId: "",
       activeChapterImageId: "",
       introMode: "settings",
       activeAssetId: "",
+      assetTypeFilter: "all",
       isAssetRailCollapsed: false,
-      aiTaskId: "chapterImage",
+      previewAssetViewId: "",
+      aiTaskId: "splitStoryboards",
       aiInstruction: "",
       aiOutput: "",
       aiFeedback: "",
@@ -287,15 +326,21 @@ export function createMarketplaceState() {
       aiGeneratedImages: [],
       aiImageSize: "1024x1536",
       aiImageCount: 1,
+      aiStoryboardCount: 8,
       aiQuality: "medium",
       aiRequestId: "",
       isAiRunning: false,
+      generatingAssetViewId: "",
       isAiDrawerOpen: false,
       isAiTaskPickerOpen: false,
       isPromptPreviewOpen: false,
       isProfileCollapsed: false,
       isChapterPickerOpen: false,
       chapterSearchQuery: "",
+      isOutlineChapterSummaryOpen: true,
+      isOutlineChapterContentOpen: true,
+      isOutlineChapterPromptOpen: true,
+      isChapterStoryInputOpen: false,
       isExportDialogOpen: false,
       exportDirectory: "",
       exportFeedback: "",
@@ -307,6 +352,15 @@ export function createMarketplaceState() {
       activeProjectId: null,
       activeTab: "concept",
       activeShotId: "",
+      introMode: "settings",
+      activeAssetId: "",
+      assetTypeFilter: "all",
+      isAssetRailCollapsed: false,
+      previewAssetViewId: "",
+      generatingAssetViewId: "",
+      feedback: "",
+      feedbackTone: "neutral",
+      isGenerating: false,
       isProfileCollapsed: false,
       isShotPickerOpen: false,
       shotSearchQuery: "",
@@ -371,6 +425,7 @@ export function createMarketplaceState() {
       aiFeedback: "",
       aiFeedbackTone: "neutral",
       isAiRunning: false,
+      agentProgress: null,
       aiRunningBookId: "",
       outlinePlannerCancelRequested: false,
       uploadFeedback: "",
@@ -378,6 +433,16 @@ export function createMarketplaceState() {
       isAiDrawerOpen: false,
       isAiTaskPickerOpen: false,
       isPromptPreviewOpen: false,
+      isCoverDialogOpen: false,
+      coverDialogMode: "upload",
+      coverUrlInput: "",
+      coverPromptInput: "",
+      coverShouldShowTitle: true,
+      coverFeedback: "",
+      coverFeedbackTone: "neutral",
+      coverDraftUrl: "",
+      coverPreviewUrl: "",
+      isCoverGenerating: false,
       collapsedIntroSectionIds: [],
       isChapterPickerOpen: false,
       chapterSearchQuery: "",

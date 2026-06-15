@@ -8,6 +8,8 @@
 
       <section class="right-column">
         <section class="workspace-panel" :class="{ 'workspace-panel-flush': isWorkspaceImmersive }">
+          <div id="workspace-panel-dialog-root" class="workspace-panel-dialog-root"></div>
+
           <template v-if="activeFeature === FEATURE_HOME">
             <HomeRobotStage :set-status="setStatus" />
           </template>
@@ -107,6 +109,10 @@
               :ui="ui"
               :workflow-library-cards="workflowLibraryCards"
               :workflow-detail-title="workflowDetailTitle"
+              :active-info-window="activeInfoWindow"
+              :active-info-windows="activeInfoWindows"
+              :filtered-info-radar-items="filteredInfoRadarItems"
+              :info-radar-metrics="infoRadarMetrics"
               :filtered-workflow-records="filteredWorkflowRecords"
               :active-workflow-record="activeWorkflowRecord"
               :active-workflow-metrics="activeWorkflowMetrics"
@@ -120,14 +126,22 @@
               :workflow-run-status-label="workflowRunStatusLabel"
               :workflow-run-status-tone="workflowRunStatusTone"
               :active-workflow-steps="activeWorkflowSteps"
+              :add-info-radar-source-draft="addInfoRadarSourceDraft"
               :add-workflow-draft-environment="addWorkflowDraftEnvironment"
               :add-workflow-draft-step="addWorkflowDraftStep"
               :add-workflow-step-output="addWorkflowStepOutput"
               :cancel-active-workflow-run="cancelActiveWorkflowRun"
+              :delete-info-radar-window="deleteInfoRadarWindow"
               :delete-workflow-record="deleteWorkflowRecord"
               :duplicate-workflow-record="duplicateWorkflowRecord"
               :format-duration-ms="formatDurationMs"
               :format-local-date-time="formatLocalDateTime"
+              :get-info-radar-cadence-label="getInfoRadarCadenceLabel"
+              :get-info-radar-item-href="getInfoRadarItemHref"
+              :get-info-radar-item-status-label="getInfoRadarItemStatusLabel"
+              :get-info-radar-run-status-label="getInfoRadarRunStatusLabel"
+              :get-info-radar-run-status-tone="getInfoRadarRunStatusTone"
+              :get-info-radar-source-kind-label="getInfoRadarSourceKindLabel"
               :get-workflow-card-count-label="getWorkflowCardCountLabel"
               :get-workflow-run-completed-count="getWorkflowRunCompletedCount"
               :get-workflow-run-duration-label="getWorkflowRunDurationLabel"
@@ -144,6 +158,8 @@
               :handle-workflow-body-step-select="handleWorkflowBodyStepSelect"
               :handle-workflow-curl-copy="handleWorkflowCurlCopy"
               :is-workflow-step-expanded="isWorkflowStepExpanded"
+              :open-info-radar-window="openInfoRadarWindow"
+              :open-info-radar-window-editor="openInfoRadarWindowEditor"
               :open-workflow-card="openWorkflowCard"
               :open-workflow-record="openWorkflowRecord"
               :open-workflow-record-editor="openWorkflowRecordEditor"
@@ -152,8 +168,11 @@
               :remove-workflow-draft-environment="removeWorkflowDraftEnvironment"
               :remove-workflow-draft-step="removeWorkflowDraftStep"
               :remove-workflow-step-output="removeWorkflowStepOutput"
+              :remove-info-radar-source-draft="removeInfoRadarSourceDraft"
               :repair-workflow-body-draft="repairWorkflowBodyDraft"
+              :refresh-active-info-radar-window="refreshActiveInfoRadarWindow"
               :run-active-workflow-record="runActiveWorkflowRecord"
+              :save-info-radar-window="saveInfoRadarWindow"
               :save-workflow-record="saveWorkflowRecord"
               :select-workflow-environment="selectWorkflowEnvironment"
               :sync-workflow-body-draft-from-active-step="syncWorkflowBodyDraftFromActiveStep"
@@ -168,6 +187,7 @@
               :workbench="workbench"
               :active-command-session="activeCommandSession"
               :active-command-messages="activeCommandMessages"
+              :pending-command-guidance-messages="pendingCommandGuidanceMessages"
               :command-chat-title="commandChatTitle"
               :command-settings-summary="commandSettingsSummary"
               :enabled-agent-profiles="enabledAgentProfiles"
@@ -178,8 +198,10 @@
               :back-to-command-list="backToCommandList"
               :begin-new-command-session="beginNewCommandSession"
               :get-command-artifact-products="getCommandArtifactProducts"
+              :get-command-live-activity-item="getCommandLiveActivityItem"
               :get-command-response-process-items="getCommandResponseProcessItems"
               :get-command-live-status-text="getCommandLiveStatusText"
+              :get-command-queue-item-summary="getCommandQueueItemSummary"
               :get-skill-option-label="getSkillOptionLabel"
               :handle-command-agent-change="handleCommandAgentChange"
               :handle-command-attachment-select="handleCommandAttachmentSelect"
@@ -189,10 +211,14 @@
               :handle-command-load-mcp-tools="handleCommandLoadMcpTools"
               :handle-command-message-copy="handleCommandMessageCopy"
               :handle-command-message-export="handleCommandMessageExport"
+              :handle-command-queue-item-delete="handleCommandQueueItemDelete"
+              :handle-command-queue-item-edit="handleCommandQueueItemEdit"
+              :handle-command-queue-item-guide="handleCommandQueueItemGuide"
               :handle-command-run-cancel="handleCommandRunCancel"
               :handle-command-server-change="handleCommandServerChange"
               :handle-command-session-delete="handleCommandSessionDelete"
               :handle-command-submit="handleCommandSubmit"
+              :has-command-draft-content="hasCommandDraftContent"
               :handle-rich-text-click="handleRichTextClick"
               :open-command-session="openCommandSession"
               :remove-command-attachment="removeCommandAttachment"
@@ -259,23 +285,38 @@
       @resolve="resolveGordonDialog"
     />
 
+    <ImageLightbox
+      :image="imageLightbox.image"
+      :zoom="imageLightbox.zoom"
+      :is-downloading="imageLightbox.isDownloading"
+      @close="closeImageLightbox"
+      @download="downloadImageLightboxImage"
+      @zoom-in="zoomImageLightboxIn"
+      @zoom-out="zoomImageLightboxOut"
+      @zoom-wheel="handleImageLightboxWheel"
+    />
+
   </div>
 </template>
 
 <script setup>
-import { computed, nextTick, reactive, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 
 import GordonDialog from "./components/GordonDialog.vue";
+import ImageLightbox from "./components/ImageLightbox.vue";
 import { useGordonDialog } from "./composables/useGordonDialog.js";
 import { createCommandWorkshopActions } from "./features/command-workshop/commandWorkshopActions.js";
 import { createCommandWorkshopState } from "./features/command-workshop/commandWorkshopState.js";
 import CommandWorkshopView from "./features/command-workshop/CommandWorkshopView.vue";
 import { createExtensionsActions, createExtensionsState } from "./features/extensions/extensionsActions.js";
 import ExtensionsManagementView from "./features/extensions/ExtensionsManagementView.vue";
+import { createApplicationCoverActions } from "./features/marketplace/applicationCoverActions.js";
 import { createComicAiActions } from "./features/marketplace/comicAiActions.js";
 import { createComicActions } from "./features/marketplace/comicActions.js";
 import { createMarketplaceFieldAiActions } from "./features/marketplace/fieldAiActions.js";
 import { createFortuneActions } from "./features/marketplace/fortuneActions.js";
+import { createMarketplaceAgentActions } from "./features/marketplace/marketplaceAgentActions.js";
+import { createMarketplaceAgentContextProviders } from "./features/marketplace/marketplaceAgentContext.js";
 import { createMarketplaceViewContext } from "./features/marketplace/marketplaceContext.js";
 import MarketplaceView from "./features/marketplace/MarketplaceView.vue";
 import { createMarketplaceState } from "./features/marketplace/marketplaceConfig.js";
@@ -343,6 +384,12 @@ const weeklyTaskRewriteIds = ref([]);
 const status = reactive({
   text: "正在加载工作台...",
   tone: "neutral"
+});
+
+const imageLightbox = reactive({
+  image: null,
+  zoom: 1,
+  isDownloading: false
 });
 
 const workbench = reactive({
@@ -464,10 +511,15 @@ const comicAiActions = createComicAiActions({
   activeComicChapterAssets: comicActions.activeComicChapterAssets,
   activeComicChapterImage: comicActions.activeComicChapterImage,
   activeComicChapterIndex: comicActions.activeComicChapterIndex,
+  activeComicStoryboard: comicActions.activeComicStoryboard,
+  activeComicStoryboardImages: comicActions.activeComicStoryboardImages,
+  activeComicStoryboardIndex: comicActions.activeComicStoryboardIndex,
+  activeComicStoryboards: comicActions.activeComicStoryboards,
   activeComicProject: comicActions.activeComicProject,
   activeComicTabMeta: comicActions.activeComicTabMeta,
   appendComicChapterImages: comicActions.appendComicChapterImages,
   applyComicChaptersFromAi: comicActions.applyComicChaptersFromAi,
+  applyComicStoryboardsFromAi: comicActions.applyComicStoryboardsFromAi,
   createLocalId,
   desktopApi,
   getComicChapterDisplayTitle: comicActions.getComicChapterDisplayTitle,
@@ -476,6 +528,7 @@ const comicAiActions = createComicAiActions({
   setComicChapterImagePrompt: comicActions.setComicChapterImagePrompt,
   setComicChapterImages: comicActions.setComicChapterImages,
   setComicChapterPrompt: comicActions.setComicChapterPrompt,
+  setComicStoryboardField: comicActions.setComicStoryboardField,
   setComicProjectEpisodePlan: comicActions.setComicProjectEpisodePlan,
   setComicProjectSummary: comicActions.setComicProjectSummary,
   setComicProjectVisualStyle: comicActions.setComicProjectVisualStyle,
@@ -558,6 +611,7 @@ const {
   buildWritingNarrativeStateContent,
   buildWritingOutlineContent,
   buildWritingStoryAssetsContent,
+  buildWritingGenreProfileContent,
   clearWritingAutosaveTimer,
   ensureWritingChapterSelection,
   getPreferredWritingChapter,
@@ -602,6 +656,7 @@ const writingAiActions = createWritingAiActions({
   activeWritingLengthProfile,
   activeWritingOutlinePlannerJob,
   activeWritingTask,
+  buildWritingGenreProfileContent,
   buildWritingNarrativeStateContent,
   buildWritingStoryAssetsContent,
   buildWritingIntroContent,
@@ -632,6 +687,7 @@ const writingAiActions = createWritingAiActions({
   normalizeWritingStoryAssetsForUi,
   parseWritingChapterIndex,
   persistWritingBookById,
+  refreshWorkbenchSnapshot,
   selectWritingChapter,
   setStatus,
   setWritingAiTaskPickerOpen,
@@ -642,6 +698,7 @@ const writingAiActions = createWritingAiActions({
   splitWritingBookPartTitlePrefix,
   splitWritingChapterTitlePrefix,
   touchWritingBook,
+  toPlainIpcData,
   truncateText,
   ui,
   writingPromptAssets
@@ -654,12 +711,149 @@ const fieldAiActions = createMarketplaceFieldAiActions({
   ui
 });
 
+const applicationCoverActions = createApplicationCoverActions({
+  activeAdapters: {
+    writing: {
+      getItem: () => writingActions.activeWritingBook.value,
+      isDisabled: () => writingActions.isActiveWritingBookAiRunning.value,
+      applyCover: async (book, cover) => {
+        book.coverUrl = cover.coverUrl;
+        book.coverPrompt = cover.coverPrompt;
+        book.coverShouldShowTitle = cover.coverShouldShowTitle;
+        writingActions.touchWritingBook(book, { persist: false });
+        await writingActions.persistWritingBookById(book.id, { silent: true, keepLocal: true, mergeChapters: true });
+      }
+    },
+    comic: {
+      getItem: () => comicActions.activeComicProject.value,
+      applyCover: async (project, cover) => {
+        project.coverUrl = cover.coverUrl;
+        project.coverPrompt = cover.coverPrompt;
+        project.coverShouldShowTitle = cover.coverShouldShowTitle;
+        comicActions.touchComicProject(project, { persist: false });
+        await comicActions.persistComicProjectById(project.id, { silent: true });
+      }
+    },
+    video: {
+      getItem: () => videoActions.activeVideoProject.value,
+      applyCover: async (project, cover) => {
+        project.coverUrl = cover.coverUrl;
+        project.coverPrompt = cover.coverPrompt;
+        project.coverShouldShowTitle = cover.coverShouldShowTitle;
+        videoActions.touchVideoProject(project, { persist: false });
+        await videoActions.persistVideoProjectById(project.id, { silent: true });
+      }
+    },
+    music: {
+      getItem: () => musicActions.activeMusicProject.value,
+      applyCover: async (project, cover) => {
+        project.coverUrl = cover.coverUrl;
+        project.coverPrompt = cover.coverPrompt;
+        project.coverShouldShowTitle = cover.coverShouldShowTitle;
+        musicActions.touchMusicProject(project, { persist: false });
+        await musicActions.persistMusicProjectById(project.id, { silent: true });
+      }
+    }
+  },
+  desktopApi,
+  fieldAiActions,
+  setStatus,
+  ui
+});
+
+const marketplaceAgentContextProviders = createMarketplaceAgentContextProviders({
+  comicActions,
+  comicAiActions,
+  fortuneActions,
+  musicActions,
+  truncateText,
+  ui,
+  videoActions
+});
+
+const marketplaceAgentActions = createMarketplaceAgentActions({
+  appContextProviders: marketplaceAgentContextProviders,
+  createLocalId,
+  desktopApi,
+  refreshWorkbenchSnapshot,
+  resultHandlers: {
+    comic: ({ result, output, artifacts }) => {
+      ui.marketplace.comic.aiOutput = output;
+      const images = artifacts
+        .map((artifact, index) => marketplaceAgentActions.normalizeAgentImageArtifact(artifact, index))
+        .filter(Boolean);
+      if (images.length) {
+        ui.marketplace.comic.aiGeneratedImages = images;
+      }
+
+    },
+    video: ({ output }) => {
+      const shot = videoActions.activeVideoShot.value;
+      if (shot) {
+        videoActions.setVideoShotOutput(shot, output);
+      }
+    },
+    music: ({ result, output, artifacts }) => {
+      const track = musicActions.activeMusicTrack.value;
+      if (!track) {
+        return;
+      }
+
+      const audio = artifacts.map((artifact) => marketplaceAgentActions.normalizeAgentAudioArtifact(artifact)).find(Boolean);
+      musicActions.setMusicTrackField(track, "notes", output);
+      if (audio) {
+        musicActions.setMusicTrackField(track, "audioUrl", audio.url);
+        if (audio.provider) {
+          musicActions.setMusicTrackField(track, "provider", audio.provider);
+        }
+        if (audio.model) {
+          musicActions.setMusicTrackField(track, "model", audio.model);
+        }
+        musicActions.setMusicTrackField(track, "status", "finished");
+      }
+      const taskId = marketplaceAgentActions.findLatestMusicTaskId(result);
+      if (taskId) {
+        musicActions.setMusicTrackField(track, "taskId", taskId);
+      }
+    },
+    fortune: ({ output }) => {
+      const pendingInput = String(ui.marketplace.fortune.chatInput ?? "").trim();
+      const pendingAttachments = Array.isArray(ui.marketplace.fortune.chatAttachments)
+        ? [...ui.marketplace.fortune.chatAttachments]
+        : [];
+
+      if (pendingInput || pendingAttachments.length) {
+        fortuneActions.addFortuneMessage?.({
+          role: "user",
+          content: pendingInput || "我上传了一些参考资料，请先判断还需要我补充什么。",
+          attachments: pendingAttachments
+        });
+      }
+
+      fortuneActions.addFortuneMessage?.({
+        role: "assistant",
+        content: output,
+        state: "completed"
+      });
+      ui.marketplace.fortune.output = output;
+      ui.marketplace.fortune.chatInput = "";
+      ui.marketplace.fortune.chatAttachments = [];
+    }
+  },
+  setStatus,
+  toPlainIpcData,
+  ui
+});
+
 const marketplaceViewContext = createMarketplaceViewContext({
+  applicationCoverActions,
   comicActions,
   comicAiActions,
   comicChapterDropdownMenuRef,
   fieldAiActions,
+  formatLocalDateTime,
   fortuneActions,
+  marketplaceAgentActions,
   musicActions,
   truncateText,
   ui,
@@ -672,7 +866,15 @@ const marketplaceViewContext = createMarketplaceViewContext({
 const activeWeeklyRecord = computed(() =>
   workbench.weeklyProgress.find((record) => record.id === ui.weekly.activeRecordId) ?? null
 );
+
+function handleRootAgentRunProgress(payload) {
+  handleAgentRunProgress(payload);
+  writingAiActions.handleWritingAgentRunProgress(payload);
+  marketplaceAgentActions.handleMarketplaceAgentRunProgress(payload);
+}
 const {
+  activeInfoWindow,
+  activeInfoWindows,
   activeWorkflowApiKeyInputType,
   activeWorkflowBodyStepOptions,
   activeWorkflowEnvironment,
@@ -680,14 +882,23 @@ const {
   activeWorkflowMetrics,
   activeWorkflowRecord,
   activeWorkflowSteps,
+  addInfoRadarSourceDraft,
   addWorkflowDraftEnvironment,
   addWorkflowDraftStep,
   addWorkflowStepOutput,
   cancelActiveWorkflowRun,
+  deleteInfoRadarWindow,
   deleteWorkflowRecord,
   duplicateWorkflowRecord,
+  filteredInfoRadarItems,
   filteredWorkflowRecords,
   formatDurationMs,
+  getInfoRadarCadenceLabel,
+  getInfoRadarItemHref,
+  getInfoRadarItemStatusLabel,
+  getInfoRadarRunStatusLabel,
+  getInfoRadarRunStatusTone,
+  getInfoRadarSourceKindLabel,
   getWorkflowCardCountLabel,
   getWorkflowRunCompletedCount,
   getWorkflowRunDurationLabel,
@@ -705,6 +916,9 @@ const {
   handleWorkflowCurlCopy,
   handleWorkflowRunProgress,
   isWorkflowStepExpanded,
+  infoRadarMetrics,
+  openInfoRadarWindow,
+  openInfoRadarWindowEditor,
   openWorkflowCard,
   openWorkflowRecord,
   openWorkflowRecordEditor,
@@ -713,8 +927,11 @@ const {
   removeWorkflowDraftEnvironment,
   removeWorkflowDraftStep,
   removeWorkflowStepOutput,
+  removeInfoRadarSourceDraft,
   repairWorkflowBodyDraft,
+  refreshActiveInfoRadarWindow,
   runActiveWorkflowRecord,
+  saveInfoRadarWindow,
   saveWorkflowRecord,
   selectWorkflowEnvironment,
   syncWorkflowBodyDraftFromActiveStep,
@@ -754,8 +971,10 @@ const {
   commandToolOptions,
   focusCommandInput,
   getCommandArtifactProducts,
+  getCommandLiveActivityItem,
   getCommandResponseProcessItems,
   getCommandLiveStatusText,
+  getCommandQueueItemSummary,
   handleAgentRunProgress,
   handleCommandAgentChange,
   handleCommandAttachmentSelect,
@@ -765,13 +984,18 @@ const {
   handleCommandLoadMcpTools,
   handleCommandMessageCopy,
   handleCommandMessageExport,
+  handleCommandQueueItemDelete,
+  handleCommandQueueItemEdit,
+  handleCommandQueueItemGuide,
   handleCommandRunCancel,
   handleCommandServerChange,
   handleCommandSessionDelete,
   handleCommandSubmit,
+  hasCommandDraftContent,
   normalizeCommandWorkshopConfig,
   normalizeCommandWorkshopSessions,
   openCommandSession,
+  pendingCommandGuidanceMessages,
   removeCommandAttachment,
   scrollCommandToBottom
 } = createCommandWorkshopActions({
@@ -845,6 +1069,124 @@ function setStatus(text, tone = "neutral") {
   status.tone = tone;
 }
 
+function normalizeImageLightboxPayload(payload) {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const src = String(payload.src ?? payload.url ?? "").trim();
+
+  if (!src) {
+    return null;
+  }
+
+  const title = String(payload.title ?? payload.alt ?? "图片预览").trim();
+
+  return {
+    src,
+    title,
+    alt: String(payload.alt ?? title).trim(),
+    downloadTitle: String(payload.downloadTitle ?? title).trim() || "图片预览"
+  };
+}
+
+function clampImageLightboxZoom(value) {
+  const normalizedValue = Number(value);
+
+  if (!Number.isFinite(normalizedValue)) {
+    return 1;
+  }
+
+  return Math.min(4, Math.max(0.25, Math.round(normalizedValue * 100) / 100));
+}
+
+function openImageLightbox(payload) {
+  const image = normalizeImageLightboxPayload(payload);
+
+  if (!image) {
+    setStatus("当前没有可放大的图片。", "warning");
+    return;
+  }
+
+  imageLightbox.image = image;
+  imageLightbox.zoom = 1;
+  imageLightbox.isDownloading = false;
+}
+
+function closeImageLightbox() {
+  imageLightbox.image = null;
+  imageLightbox.zoom = 1;
+  imageLightbox.isDownloading = false;
+}
+
+function zoomImageLightboxIn() {
+  imageLightbox.zoom = clampImageLightboxZoom(imageLightbox.zoom + 0.1);
+}
+
+function zoomImageLightboxOut() {
+  imageLightbox.zoom = clampImageLightboxZoom(imageLightbox.zoom - 0.1);
+}
+
+function handleImageLightboxWheel(direction) {
+  if (direction === "in") {
+    zoomImageLightboxIn();
+    return;
+  }
+
+  zoomImageLightboxOut();
+}
+
+async function downloadImageLightboxImage() {
+  const image = imageLightbox.image;
+  const saveImage = desktopApi?.saveApplicationCoverImage ?? desktopApi?.saveWritingBookCoverImage;
+
+  if (!image?.src) {
+    setStatus("当前没有可下载的图片。", "warning");
+    return;
+  }
+
+  if (!saveImage) {
+    setStatus("图片下载桥接未就绪。", "danger");
+    return;
+  }
+
+  imageLightbox.isDownloading = true;
+
+  try {
+    const result = await saveImage({
+      title: image.downloadTitle || image.title || "图片预览",
+      imageUrl: image.src
+    });
+
+    if (result?.fileName) {
+      setStatus(`图片已下载：${result.fileName}`, "success");
+    } else {
+      setStatus("图片下载已取消。", "neutral");
+    }
+  } catch (error) {
+    console.error("Failed to download lightbox image", error);
+    setStatus(`下载图片失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+  } finally {
+    imageLightbox.isDownloading = false;
+  }
+}
+
+function handleImageLightboxOpenEvent(event) {
+  openImageLightbox(event?.detail ?? null);
+}
+
+function handleImageLightboxKeydown(event) {
+  if (!imageLightbox.image?.src) {
+    return;
+  }
+
+  if (event.key === "Escape") {
+    event.preventDefault();
+    event.stopPropagation();
+    closeImageLightbox();
+  }
+}
+
 function resolveBoundModelName(modelProfileId) {
   if (!modelProfileId) {
     return "未绑定模型";
@@ -885,8 +1227,29 @@ function getAuthorizedMcpServersForAgent(agentId) {
   return workbench.mcpServers.filter((server) => agent.allowedMcpServerIds.includes(server.id) && server.enabled);
 }
 
+function restoreCommandWorkshopEntryState() {
+  ui.command.form = normalizeCommandWorkshopConfig(ui.command.form);
+  ui.command.composerView = "input";
+
+  if (ui.command.isRunning || ui.command.liveProgress || ui.command.activeProgressEventId) {
+    ui.command.view = "chat";
+    return;
+  }
+
+  if (ui.command.view === "chat" || (ui.command.view === "list" && workbench.commandSessions.length)) {
+    return;
+  }
+
+  ui.command.view = workbench.commandSessions.length ? "list" : "chat";
+}
+
 function setActiveFeature(featureId) {
+  const previousFeatureId = activeFeature.value;
   activeFeature.value = featureId;
+
+  if (featureId !== FEATURE_HOME && previousFeatureId === FEATURE_COMMAND_WORKSHOP) {
+    void refreshWorkbenchSnapshot();
+  }
 
   if (featureId === FEATURE_MODEL_MANAGEMENT) {
     backModelManagement();
@@ -906,9 +1269,7 @@ function setActiveFeature(featureId) {
   }
 
   if (featureId === FEATURE_COMMAND_WORKSHOP) {
-    ui.command.form = normalizeCommandWorkshopConfig(ui.command.form);
-    ui.command.view = workbench.commandSessions.length ? "list" : "chat";
-    ui.command.composerView = "input";
+    restoreCommandWorkshopEntryState();
   }
 
   if (featureId === FEATURE_EXTENSIONS_MANAGEMENT) {
@@ -1005,6 +1366,16 @@ workbenchRuntime = createWorkbenchRuntime({
 
 const handleRichTextClick = createRichTextClickHandler({ setStatus });
 
+onMounted(() => {
+  window.addEventListener("gordon:image-preview:open", handleImageLightboxOpenEvent);
+  window.addEventListener("keydown", handleImageLightboxKeydown, true);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("gordon:image-preview:open", handleImageLightboxOpenEvent);
+  window.removeEventListener("keydown", handleImageLightboxKeydown, true);
+});
+
 setupRootWatchers({
   activeCommandMessages,
   activeFeature,
@@ -1018,7 +1389,7 @@ setupRootWatchers({
   featureCommandWorkshopId: FEATURE_COMMAND_WORKSHOP,
   focusCommandInput,
   getWeeklyDraftSnapshot,
-  handleAgentRunProgress,
+  handleAgentRunProgress: handleRootAgentRunProgress,
   handleGordonDialogKeydown,
   handleWeeklyDraftSnapshotChange,
   handleWeeklySelectedReportTemplateIdChange,

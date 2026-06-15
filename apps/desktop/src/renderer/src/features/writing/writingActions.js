@@ -1,5 +1,6 @@
 import { computed } from "vue";
 
+import { BUILTIN_GORDON_TOOLS_MCP_ID } from "../../lib/presenter.js";
 import {
   WRITING_AI_PHASES,
   WRITING_AI_TASKS,
@@ -8,6 +9,7 @@ import {
   WRITING_BOOK_EXPORT_FORMATS,
   WRITING_CHAPTER_PREFIX_PATTERN,
   WRITING_CHAPTER_STATUS_META,
+  WRITING_GENRE_PROFILE_OPTIONS,
   WRITING_INTRO_SECTION_DEFINITIONS,
   WRITING_LENGTH_PROFILES,
   WRITING_LONG_OUTLINE_BATCH_SIZE,
@@ -24,6 +26,8 @@ const BEIJING_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
   hourCycle: "h23"
 });
 const EMPTY_TITLE_RESTORE_DELAY = 10000;
+const DEFAULT_WRITING_COVER_PROMPT =
+  "竖版小说封面，主体明确，留出书名题字空间，画面有东方文学质感，细腻光影，构图克制，适合长篇小说封面";
 
 function writeRef(target, value) {
   if (target && typeof target === "object" && "value" in target) {
@@ -127,6 +131,26 @@ function getWritingLengthLabel(length) {
 
 function normalizeWritingBookLengthForUi(value) {
   return WRITING_LENGTH_PROFILES[value] ? value : "long";
+}
+
+function normalizeWritingStoryEngineForUi(value) {
+  const label = String(value ?? "").trim();
+  return label === "成长升级" ? "成长沉淀" : label;
+}
+
+function normalizeWritingGenreProfileForUi(profile = {}, fallbackGenre = "") {
+  const source = profile && typeof profile === "object" ? profile : {};
+  const fallbackParts = normalizeStringList(fallbackGenre);
+  const primaryGenre = String(source.primaryGenre ?? source.genre ?? fallbackParts[0] ?? fallbackGenre ?? "").trim();
+
+  return {
+    primaryGenre: primaryGenre || "小说",
+    subGenres: uniqueStringList(normalizeStringList(source.subGenres ?? source.subgenres ?? fallbackParts.slice(1))),
+    storyEngine: normalizeWritingStoryEngineForUi(source.storyEngine ?? source.engine),
+    ...(source.audience ? { audience: String(source.audience).trim() } : {}),
+    ...(source.tone ? { tone: String(source.tone).trim() } : {}),
+    updatedAt: String(source.updatedAt ?? new Date().toISOString())
+  };
 }
 
 function normalizeWritingChapterStatusForUi(value) {
@@ -266,6 +290,58 @@ function normalizeStringList(value) {
     .filter(Boolean);
 }
 
+function normalizeText(value) {
+  return String(value ?? "").trim();
+}
+
+function clipText(value, maxLength = 1600) {
+  const text = normalizeText(value);
+
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  return `${text.slice(0, maxLength)}...`;
+}
+
+function getImageSource(artifact = {}) {
+  return (
+    normalizeText(artifact.src) ||
+    normalizeText(artifact.url) ||
+    normalizeText(artifact.dataUrl) ||
+    normalizeText(artifact.base64) ||
+    normalizeText(artifact.imageUrl)
+  );
+}
+
+function normalizeWritingCoverImageArtifact(artifact, index = 0) {
+  if (!artifact || typeof artifact !== "object") {
+    return null;
+  }
+
+  const kind = normalizeText(artifact.kind);
+  const src = getImageSource(artifact);
+
+  if (kind !== "image" || !src) {
+    return null;
+  }
+
+  return {
+    id: normalizeText(artifact.id) || `writing_cover_${index + 1}`,
+    title: normalizeText(artifact.title) || `封面 ${index + 1}`,
+    src,
+    provider: normalizeText(artifact.provider),
+    model: normalizeText(artifact.model),
+    prompt: normalizeText(artifact.prompt),
+    meta: [normalizeText(artifact.provider), normalizeText(artifact.model)].filter(Boolean).join(" / ")
+  };
+}
+
+function extractWritingCoverImageArtifacts(toolResult) {
+  const rawArtifacts = Array.isArray(toolResult?.structuredContent?.artifacts) ? toolResult.structuredContent.artifacts : [];
+  return rawArtifacts.map((artifact, index) => normalizeWritingCoverImageArtifact(artifact, index)).filter(Boolean);
+}
+
 function uniqueStringList(...lists) {
   const seen = new Set();
   const result = [];
@@ -323,6 +399,57 @@ function normalizeOptionalStoryChapterIndex(value) {
   return value === null || value === undefined || value === "" ? undefined : normalizeWritingChapterIndex(value, 0);
 }
 
+function normalizeWritingEvidenceRef(entry, index = 0, bookId = "writing_book") {
+  const source = entry && typeof entry === "object" ? entry : { note: entry };
+  const note = String(source.note ?? source.summary ?? source.detail ?? source.evidence ?? "").trim();
+  const quote = String(source.quote ?? source.text ?? "").trim();
+  const chapterIndex = normalizeOptionalStoryChapterIndex(source.chapterIndex ?? source.chapter);
+  const chapterId = String(source.chapterId ?? "").trim();
+
+  if (!note && !quote && !chapterIndex && !chapterId) {
+    return null;
+  }
+
+  return {
+    id: String(source.id ?? "").trim() || `${bookId}_evidence_${index + 1}`,
+    ...(chapterIndex ? { chapterIndex } : {}),
+    ...(chapterId ? { chapterId } : {}),
+    ...(quote ? { quote } : {}),
+    note: note || quote || (chapterIndex ? `第${chapterIndex}章证据` : "证据")
+  };
+}
+
+function normalizeWritingEvidenceRefs(value, bookId = "writing_book") {
+  if (Array.isArray(value)) {
+    return value.map((entry, index) => normalizeWritingEvidenceRef(entry, index, bookId)).filter(Boolean);
+  }
+
+  const normalized = normalizeWritingEvidenceRef(value, 0, bookId);
+  return normalized ? [normalized] : [];
+}
+
+function normalizeWritingEvidenceRefsFromSource(source = {}, bookId = "writing_book") {
+  const explicit = normalizeWritingEvidenceRefs(source.evidenceRefs, bookId);
+  const legacyEvidence = normalizeWritingEvidenceRefs(source.evidence ?? source.evidenceText, bookId);
+  const chapterIndex = normalizeOptionalStoryChapterIndex(source.chapterIndex ?? source.chapter);
+  const chapterId = String(source.chapterId ?? "").trim();
+
+  if (!chapterIndex && !chapterId) {
+    return [...explicit, ...legacyEvidence];
+  }
+
+  return [
+    ...explicit,
+    ...legacyEvidence,
+    {
+      id: `${bookId}_chapter_evidence_${chapterId || chapterIndex || explicit.length + legacyEvidence.length + 1}`,
+      ...(chapterIndex ? { chapterIndex } : {}),
+      ...(chapterId ? { chapterId } : {}),
+      note: chapterIndex ? `第${chapterIndex}章出现或更新` : "章节证据"
+    }
+  ];
+}
+
 function normalizeWritingStoryAssetEntry(entry, index = 0, bookId = "writing_book", group = "asset") {
   const source = entry && typeof entry === "object" ? entry : {};
   const title = String(source.title ?? source.name ?? source.key ?? "").trim();
@@ -340,6 +467,8 @@ function normalizeWritingStoryAssetEntry(entry, index = 0, bookId = "writing_boo
     tags: normalizeStringList(source.tags),
     ...(chapterIndex ? { chapterIndex } : {}),
     ...(source.status ? { status: String(source.status) } : {}),
+    evidenceRefs: normalizeWritingEvidenceRefsFromSource(source, bookId),
+    ...(source.impact ? { impact: String(source.impact).trim() } : {}),
     updatedAt: String(source.updatedAt ?? new Date().toISOString())
   };
 }
@@ -378,6 +507,8 @@ function normalizeWritingCharacterAsset(entry, index = 0, bookId = "writing_book
     relationships: normalizeStringList(source.relationships),
     tags: normalizeStringList(source.tags),
     status: String(source.status ?? "active"),
+    evidenceRefs: normalizeWritingEvidenceRefsFromSource(source, bookId),
+    ...(source.impact ? { impact: String(source.impact).trim() } : {}),
     updatedAt: String(source.updatedAt ?? new Date().toISOString())
   };
 }
@@ -409,6 +540,8 @@ function normalizeWritingForeshadowAsset(entry, index = 0, bookId = "writing_boo
     ...(chapterIndex ? { chapterIndex } : {}),
     ...(payoffChapterIndex ? { payoffChapterIndex } : {}),
     tags: normalizeStringList(source.tags),
+    evidenceRefs: normalizeWritingEvidenceRefsFromSource(source, bookId),
+    ...(source.impact ? { impact: String(source.impact).trim() } : {}),
     updatedAt: String(source.updatedAt ?? new Date().toISOString())
   };
 }
@@ -438,6 +571,38 @@ function normalizeWritingStyleProfileForUi(profile = {}) {
   };
 }
 
+function normalizeWritingCharacterArc(entry, index = 0, bookId = "writing_book") {
+  const source = entry && typeof entry === "object" ? entry : {};
+  const characterName = String(source.characterName ?? source.name ?? source.title ?? "").trim();
+  const want = String(source.want ?? source.goal ?? "").trim();
+  const need = String(source.need ?? "").trim();
+  const currentStage = String(source.currentStage ?? source.stage ?? "").trim();
+  const nextPressure = String(source.nextPressure ?? source.pressure ?? "").trim();
+  const endpoint = String(source.endpoint ?? source.endState ?? source.payoff ?? "").trim();
+
+  if (!characterName && !want && !need && !currentStage && !nextPressure && !endpoint) {
+    return null;
+  }
+
+  return {
+    id: String(source.id ?? "").trim() || `${bookId}_character_arc_${index + 1}`,
+    characterName: characterName || `未命名人物 ${index + 1}`,
+    want,
+    need,
+    currentStage,
+    nextPressure,
+    endpoint,
+    evidenceRefs: normalizeWritingEvidenceRefsFromSource(source, bookId),
+    updatedAt: String(source.updatedAt ?? new Date().toISOString())
+  };
+}
+
+function normalizeWritingCharacterArcs(entries = [], bookId = "writing_book") {
+  return (Array.isArray(entries) ? entries : [])
+    .map((entry, index) => normalizeWritingCharacterArc(entry, index, bookId))
+    .filter(Boolean);
+}
+
 function normalizeWritingStoryAssetsForUi(assets = {}, bookId = "writing_book") {
   const source = assets && typeof assets === "object" ? assets : {};
 
@@ -449,6 +614,7 @@ function normalizeWritingStoryAssetsForUi(assets = {}, bookId = "writing_book") 
     timeline: normalizeWritingStoryAssetEntries(source.timeline, bookId, "timeline"),
     foreshadows: normalizeWritingForeshadowAssets(source.foreshadows, bookId),
     rules: normalizeWritingStoryAssetEntries(source.rules, bookId, "rule"),
+    characterArcs: normalizeWritingCharacterArcs(source.characterArcs, bookId),
     styleProfile: normalizeWritingStyleProfileForUi(source.styleProfile),
     memoryNotes: normalizeWritingStoryAssetEntries(source.memoryNotes, bookId, "memory"),
     updatedAt: String(source.updatedAt ?? new Date().toISOString())
@@ -500,6 +666,8 @@ function normalizeWritingNarrativeStateNode(entry, index = 0, bookId = "writing_
     ...(payoffDeadlineChapterIndex ? { payoffDeadlineChapterIndex } : {}),
     ...(resolvedAtChapterIndex ? { resolvedAtChapterIndex } : {}),
     evidenceChapterIds: normalizeStringList(source.evidenceChapterIds),
+    evidenceRefs: normalizeWritingEvidenceRefsFromSource(source, bookId),
+    ...(source.impact ? { impact: String(source.impact).trim() } : {}),
     relatedNodeIds: normalizeStringList(source.relatedNodeIds),
     riskLevel: normalizeWritingNarrativeRiskLevel(source.riskLevel),
     updatedAt: String(source.updatedAt ?? new Date().toISOString())
@@ -561,6 +729,8 @@ function deriveWritingNarrativeStateFromStoryAssets(assets = {}, bookId = "writi
     ...(options.payoffDeadlineChapterIndex ? { payoffDeadlineChapterIndex: options.payoffDeadlineChapterIndex } : {}),
     ...(options.resolvedAtChapterIndex ? { resolvedAtChapterIndex: options.resolvedAtChapterIndex } : {}),
     evidenceChapterIds: normalizeStringList(options.evidenceChapterIds),
+    evidenceRefs: normalizeWritingEvidenceRefs(options.evidenceRefs, bookId),
+    ...(options.impact ? { impact: String(options.impact).trim() } : {}),
     relatedNodeIds: normalizeStringList(options.relatedNodeIds),
     riskLevel: normalizeWritingNarrativeRiskLevel(options.riskLevel),
     updatedAt: String(options.updatedAt ?? now)
@@ -581,7 +751,7 @@ function deriveWritingNarrativeStateFromStoryAssets(assets = {}, bookId = "writi
           character.relationships?.length ? `关系：${character.relationships.join("；")}` : ""
         ].filter(Boolean).join(" / "),
         index,
-        { id: character.id, status: character.status, updatedAt: character.updatedAt }
+        { id: character.id, status: character.status, evidenceRefs: character.evidenceRefs, impact: character.impact, updatedAt: character.updatedAt }
       )
     ),
     worldRules: [...normalizedAssets.rules, ...normalizedAssets.worldview].map((entry, index) =>
@@ -589,6 +759,8 @@ function deriveWritingNarrativeStateFromStoryAssets(assets = {}, bookId = "writi
         id: entry.id,
         status: entry.status ?? "active",
         introducedAtChapterIndex: entry.chapterIndex,
+        evidenceRefs: entry.evidenceRefs,
+        impact: entry.impact,
         updatedAt: entry.updatedAt
       })
     ),
@@ -599,6 +771,8 @@ function deriveWritingNarrativeStateFromStoryAssets(assets = {}, bookId = "writi
           id: entry.id,
           status: entry.status ?? "active",
           introducedAtChapterIndex: entry.chapterIndex,
+          evidenceRefs: entry.evidenceRefs,
+          impact: entry.impact,
           updatedAt: entry.updatedAt
         })
       ),
@@ -609,6 +783,8 @@ function deriveWritingNarrativeStateFromStoryAssets(assets = {}, bookId = "writi
           id: `${entry.id}_region`,
           status: entry.status ?? "active",
           introducedAtChapterIndex: entry.chapterIndex,
+          evidenceRefs: entry.evidenceRefs,
+          impact: entry.impact,
           updatedAt: entry.updatedAt
         })
       ),
@@ -618,25 +794,53 @@ function deriveWritingNarrativeStateFromStoryAssets(assets = {}, bookId = "writi
         status: entry.status,
         introducedAtChapterIndex: entry.chapterIndex,
         payoffDeadlineChapterIndex: entry.payoffChapterIndex,
+        evidenceRefs: entry.evidenceRefs,
+        impact: entry.impact,
         riskLevel: entry.status === "open" ? "medium" : "low",
         updatedAt: entry.updatedAt
       })
     ),
-    arcs: normalizedAssets.characters
+    arcs: [
+      ...normalizedAssets.characterArcs.map((arc, index) =>
+        makeNode(
+          "arc",
+          `${arc.characterName}：人物弧线`,
+          [
+            arc.want ? `Want：${arc.want}` : "",
+            arc.need ? `Need：${arc.need}` : "",
+            arc.currentStage ? `阶段：${arc.currentStage}` : "",
+            arc.nextPressure ? `下一压力：${arc.nextPressure}` : "",
+            arc.endpoint ? `终点：${arc.endpoint}` : ""
+          ].filter(Boolean).join(" / "),
+          index,
+          {
+            id: arc.id,
+            relatedNodeIds: normalizedAssets.characters.filter((character) => character.name === arc.characterName).map((character) => character.id),
+            evidenceRefs: arc.evidenceRefs,
+            updatedAt: arc.updatedAt
+          }
+        )
+      ),
+      ...normalizedAssets.characters
       .filter((character) => character.growthArc)
       .map((character, index) =>
         makeNode("arc", `${character.name}：成长弧`, character.growthArc, index, {
           id: `${character.id}_arc`,
           relatedNodeIds: [character.id],
           status: character.status,
+          evidenceRefs: character.evidenceRefs,
+          impact: character.impact,
           updatedAt: character.updatedAt
         })
-      ),
+      )
+    ],
     timelineEvents: normalizedAssets.timeline.map((entry, index) =>
       makeNode("timelineEvent", entry.title, entry.detail, index, {
         id: entry.id,
         status: entry.status ?? "active",
         introducedAtChapterIndex: entry.chapterIndex,
+        evidenceRefs: entry.evidenceRefs,
+        impact: entry.impact,
         updatedAt: entry.updatedAt
       })
     ),
@@ -737,15 +941,20 @@ function normalizeWritingBookForUi(book, index = 0) {
   const bookId = String(book?.id ?? "").trim() || createLocalId("writing_book");
   const legacyDetailedOutline = String(book?.seriesPlan ?? "").trim();
   const storyAssets = normalizeWritingStoryAssetsForUi(book?.storyAssets, bookId);
+  const genre = String(book?.genre ?? "小说 / 待定类型");
   const normalized = {
     id: bookId,
     title: String(book?.title ?? "").trim() || "未命名故事",
     author: String(book?.author ?? "Song"),
     length: normalizeWritingBookLengthForUi(book?.length),
-    genre: String(book?.genre ?? "小说 / 待定类型"),
+    genre,
+    genreProfile: normalizeWritingGenreProfileForUi(book?.genreProfile, genre),
     status: String(book?.status ?? "新建"),
     updatedAt: String(book?.updatedAt ?? now),
     coverTone: String(book?.coverTone ?? (index % 3 === 0 ? "teal" : index % 3 === 1 ? "coral" : "gold")),
+    coverUrl: String(book?.coverUrl ?? "").trim(),
+    coverPrompt: String(book?.coverPrompt ?? ""),
+    coverShouldShowTitle: book?.coverShouldShowTitle !== false,
     intro: String(book?.intro ?? ""),
     outlineGuide: legacyDetailedOutline || String(book?.outlineGuide ?? ""),
     seriesPlan: "",
@@ -1053,6 +1262,35 @@ function setWritingBookGenre(value) {
   }
 
   book.genre = String(value ?? "");
+  book.genreProfile = normalizeWritingGenreProfileForUi(book.genreProfile, book.genre);
+  touchWritingBook(book);
+}
+
+function setWritingGenreProfileField(field, value) {
+  const book = activeWritingBook.value;
+
+  if (!book || !["primaryGenre", "subGenres", "storyEngine", "audience", "tone"].includes(field)) {
+    return;
+  }
+
+  const profile = normalizeWritingGenreProfileForUi(book.genreProfile, book.genre);
+  const nextValue =
+    field === "subGenres"
+      ? normalizeStringList(value)
+      : field === "storyEngine"
+        ? normalizeWritingStoryEngineForUi(value)
+        : String(value ?? "").trim();
+
+  book.genreProfile = {
+    ...profile,
+    [field]: nextValue,
+    updatedAt: new Date().toISOString()
+  };
+
+  if (field === "primaryGenre" && !String(book.genre ?? "").trim()) {
+    book.genre = String(nextValue || "小说");
+  }
+
   touchWritingBook(book);
 }
 
@@ -1254,9 +1492,39 @@ function buildWritingIntroContent(book) {
   return [...baseSections, ...extraSections].join("\n\n");
 }
 
+function buildWritingGenreProfileContent(book) {
+  const profile = normalizeWritingGenreProfileForUi(book?.genreProfile, book?.genre ?? "");
+  const lines = [
+    `- primaryGenre：${profile.primaryGenre}`,
+    profile.subGenres.length ? `- subGenres：${profile.subGenres.join("、")}` : "",
+    profile.storyEngine ? `- storyEngine：${profile.storyEngine}` : "",
+    profile.audience ? `- audience：${profile.audience}` : "",
+    profile.tone ? `- tone：${profile.tone}` : ""
+  ].filter(Boolean);
+
+  return lines.join("\n");
+}
+
 function truncateWritingStoryAssetText(value, maxLength = 240) {
   const text = String(value ?? "").replace(/\s+/g, " ").trim();
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+function buildWritingEvidenceRefText(ref) {
+  if (!ref) {
+    return "";
+  }
+
+  const chapter = ref.chapterIndex ? `第${ref.chapterIndex}章` : "";
+  const quote = ref.quote ? `「${truncateWritingStoryAssetText(ref.quote, 40)}」` : "";
+  return [chapter, quote, ref.note].filter(Boolean).join(" / ");
+}
+
+function buildWritingEvidenceSuffix(entry) {
+  const refs = normalizeWritingEvidenceRefs(entry?.evidenceRefs, entry?.id ?? "writing_book");
+  const evidence = refs.slice(0, 2).map(buildWritingEvidenceRefText).filter(Boolean).join("；");
+  const impact = entry?.impact ? `影响：${truncateWritingStoryAssetText(entry.impact, 80)}` : "";
+  return [evidence ? `证据：${evidence}` : "", impact].filter(Boolean).join(" / ");
 }
 
 function buildWritingStoryAssetEntryLines(entries = []) {
@@ -1266,7 +1534,8 @@ function buildWritingStoryAssetEntryLines(entries = []) {
       const status = entry.status ? ` / ${entry.status}` : "";
       const chapter = entry.chapterIndex ? ` / 第${entry.chapterIndex}章` : "";
       const detail = truncateWritingStoryAssetText(entry.detail);
-      return `- ${entry.title}${chapter}${status}${tags}${detail ? `：${detail}` : ""}`;
+      const evidence = buildWritingEvidenceSuffix(entry);
+      return `- ${entry.title}${chapter}${status}${tags}${detail ? `：${detail}` : ""}${evidence ? `\n  ${evidence}` : ""}`;
     })
     .join("\n");
 }
@@ -1280,9 +1549,26 @@ function buildWritingCharacterAssetLines(characters = []) {
         character.fear ? `恐惧：${character.fear}` : "",
         character.secret ? `秘密：${character.secret}` : "",
         character.growthArc ? `成长线：${character.growthArc}` : "",
-        character.relationships?.length ? `关系：${character.relationships.join("；")}` : ""
+        character.relationships?.length ? `关系：${character.relationships.join("；")}` : "",
+        buildWritingEvidenceSuffix(character)
       ].filter(Boolean);
       return `- ${character.name}${facts.length ? ` / ${facts.join(" / ")}` : ""}`;
+    })
+    .join("\n");
+}
+
+function buildWritingCharacterArcLines(characterArcs = []) {
+  return characterArcs
+    .map((arc) => {
+      const facts = [
+        arc.want ? `Want：${arc.want}` : "",
+        arc.need ? `Need：${arc.need}` : "",
+        arc.currentStage ? `当前阶段：${arc.currentStage}` : "",
+        arc.nextPressure ? `下一压力：${arc.nextPressure}` : "",
+        arc.endpoint ? `终点：${arc.endpoint}` : "",
+        buildWritingEvidenceSuffix(arc)
+      ].filter(Boolean);
+      return `- ${arc.characterName}${facts.length ? ` / ${facts.join(" / ")}` : ""}`;
     })
     .join("\n");
 }
@@ -1295,7 +1581,8 @@ function buildWritingForeshadowAssetLines(foreshadows = []) {
       return [
         `- ${foreshadow.title}${setupChapter}${payoffChapter} / ${foreshadow.status}`,
         foreshadow.setup ? `  setup：${truncateWritingStoryAssetText(foreshadow.setup)}` : "",
-        foreshadow.payoff ? `  payoff：${truncateWritingStoryAssetText(foreshadow.payoff)}` : ""
+        foreshadow.payoff ? `  payoff：${truncateWritingStoryAssetText(foreshadow.payoff)}` : "",
+        buildWritingEvidenceSuffix(foreshadow) ? `  ${buildWritingEvidenceSuffix(foreshadow)}` : ""
       ]
         .filter(Boolean)
         .join("\n");
@@ -1328,6 +1615,7 @@ function buildWritingStoryAssetsContent(book) {
     assets.worldview.length ? `【世界观资产】\n${buildWritingStoryAssetEntryLines(assets.worldview)}` : "",
     assets.rules.length ? `【规则边界】\n${buildWritingStoryAssetEntryLines(assets.rules)}` : "",
     assets.characters.length ? `【人物资产】\n${buildWritingCharacterAssetLines(assets.characters)}` : "",
+    assets.characterArcs.length ? `【人物弧线】\n${buildWritingCharacterArcLines(assets.characterArcs)}` : "",
     assets.relationships.length ? `【关系资产】\n${buildWritingStoryAssetEntryLines(assets.relationships)}` : "",
     assets.timeline.length ? `【时间线】\n${buildWritingStoryAssetEntryLines(assets.timeline)}` : "",
     assets.foreshadows.length ? `【伏笔账本】\n${buildWritingForeshadowAssetLines(assets.foreshadows)}` : "",
@@ -1351,7 +1639,8 @@ function buildWritingNarrativeStateNodeLines(nodes = [], maxCount = 8) {
       const resolved = node.resolvedAtChapterIndex ? ` / 已回收第${node.resolvedAtChapterIndex}章` : "";
       const risk = node.riskLevel && node.riskLevel !== "low" ? ` / ${node.riskLevel}` : "";
       const status = node.status ? ` / ${node.status}` : "";
-      return `- ${node.label}${chapter}${deadline}${resolved}${status}${risk}${node.summary ? `：${truncateWritingStoryAssetText(node.summary)}` : ""}`;
+      const evidence = buildWritingEvidenceSuffix(node);
+      return `- ${node.label}${chapter}${deadline}${resolved}${status}${risk}${node.summary ? `：${truncateWritingStoryAssetText(node.summary)}` : ""}${evidence ? `\n  ${evidence}` : ""}`;
     })
     .join("\n");
 }
@@ -1421,7 +1710,13 @@ function getWritingNarrativeStatePreview(book, limit = 5) {
     .map((node) => ({
       ...node,
       kindLabel: getWritingNarrativeNodeKindLabel(node.kind),
-      summary: truncateWritingStoryAssetText(node.summary, 96)
+      summary: truncateWritingStoryAssetText(node.summary, 96),
+      evidenceLabel: normalizeWritingEvidenceRefs(node.evidenceRefs, node.id)
+        .slice(0, 1)
+        .map(buildWritingEvidenceRefText)
+        .filter(Boolean)
+        .join(""),
+      impact: node.impact ? truncateWritingStoryAssetText(node.impact, 64) : ""
     }));
 }
 
@@ -1450,6 +1745,8 @@ function mergeWritingStoryAssetEntries(existingEntries = [], incomingEntries = [
       tags: uniqueStringList(current.tags, entry.tags),
       chapterIndex: entry.chapterIndex ?? current.chapterIndex,
       status: entry.status || current.status,
+      evidenceRefs: mergeWritingEvidenceRefs(current.evidenceRefs, entry.evidenceRefs, bookId),
+      impact: entry.impact || current.impact,
       updatedAt: new Date().toISOString()
     });
   });
@@ -1485,6 +1782,8 @@ function mergeWritingCharacterAssets(existingEntries = [], incomingEntries = [],
       relationships: uniqueStringList(current.relationships, entry.relationships),
       tags: uniqueStringList(current.tags, entry.tags),
       status: entry.status || current.status,
+      evidenceRefs: mergeWritingEvidenceRefs(current.evidenceRefs, entry.evidenceRefs, bookId),
+      impact: entry.impact || current.impact,
       updatedAt: new Date().toISOString()
     });
   });
@@ -1519,6 +1818,61 @@ function mergeWritingForeshadowAssets(existingEntries = [], incomingEntries = []
       chapterIndex: entry.chapterIndex ?? current.chapterIndex,
       payoffChapterIndex: entry.payoffChapterIndex ?? current.payoffChapterIndex,
       tags: uniqueStringList(current.tags, entry.tags),
+      evidenceRefs: mergeWritingEvidenceRefs(current.evidenceRefs, entry.evidenceRefs, bookId),
+      impact: entry.impact || current.impact,
+      updatedAt: new Date().toISOString()
+    });
+  });
+
+  return Array.from(existingByKey.values());
+}
+
+function mergeWritingEvidenceRefs(existingRefs = [], incomingRefs = [], bookId = "writing_book") {
+  const refsByKey = new Map();
+
+  [...normalizeWritingEvidenceRefs(existingRefs, bookId), ...normalizeWritingEvidenceRefs(incomingRefs, bookId)].forEach((ref) => {
+    const key = normalizeWritingStoryAssetKey(ref.id || `${ref.chapterId || ""}:${ref.chapterIndex || ""}:${ref.quote || ""}:${ref.note || ""}`);
+
+    if (!key) {
+      return;
+    }
+
+    refsByKey.set(key, {
+      ...refsByKey.get(key),
+      ...ref,
+      note: ref.note || refsByKey.get(key)?.note || "证据"
+    });
+  });
+
+  return Array.from(refsByKey.values());
+}
+
+function mergeWritingCharacterArcs(existingEntries = [], incomingEntries = [], bookId = "writing_book") {
+  const existing = normalizeWritingCharacterArcs(existingEntries, bookId);
+  const incoming = normalizeWritingCharacterArcs(incomingEntries, bookId);
+  const existingByKey = new Map(existing.map((entry) => [normalizeWritingStoryAssetKey(entry.characterName), entry]));
+
+  incoming.forEach((entry) => {
+    const key = normalizeWritingStoryAssetKey(entry.characterName);
+    const current = existingByKey.get(key);
+
+    if (!key) {
+      return;
+    }
+
+    if (!current) {
+      existingByKey.set(key, entry);
+      return;
+    }
+
+    existingByKey.set(key, {
+      ...current,
+      want: entry.want || current.want,
+      need: entry.need || current.need,
+      currentStage: entry.currentStage || current.currentStage,
+      nextPressure: entry.nextPressure || current.nextPressure,
+      endpoint: entry.endpoint || current.endpoint,
+      evidenceRefs: mergeWritingEvidenceRefs(current.evidenceRefs, entry.evidenceRefs, bookId),
       updatedAt: new Date().toISOString()
     });
   });
@@ -1573,6 +1927,8 @@ function mergeWritingNarrativeStateNodes(existingNodes = [], incomingNodes = [],
       payoffDeadlineChapterIndex: node.payoffDeadlineChapterIndex ?? current.payoffDeadlineChapterIndex,
       resolvedAtChapterIndex: node.resolvedAtChapterIndex ?? current.resolvedAtChapterIndex,
       evidenceChapterIds: uniqueStringList(current.evidenceChapterIds, node.evidenceChapterIds),
+      evidenceRefs: mergeWritingEvidenceRefs(current.evidenceRefs, node.evidenceRefs, bookId),
+      impact: node.impact || current.impact,
       relatedNodeIds: uniqueStringList(current.relatedNodeIds, node.relatedNodeIds),
       riskLevel: normalizeWritingNarrativeRiskLevel(node.riskLevel || current.riskLevel),
       updatedAt: new Date().toISOString()
@@ -1625,6 +1981,7 @@ function mergeWritingStoryAssets(book, incomingAssets = {}) {
     timeline: mergeWritingStoryAssetEntries(current.timeline, incoming.timeline, bookId, "timeline"),
     foreshadows: mergeWritingForeshadowAssets(current.foreshadows, incoming.foreshadows, bookId),
     rules: mergeWritingStoryAssetEntries(current.rules, incoming.rules, bookId, "rule"),
+    characterArcs: mergeWritingCharacterArcs(current.characterArcs, incoming.characterArcs, bookId),
     styleProfile: mergeWritingStyleProfile(current.styleProfile, incoming.styleProfile),
     memoryNotes: mergeWritingStoryAssetEntries(current.memoryNotes, incoming.memoryNotes, bookId, "memory"),
     updatedAt: new Date().toISOString()
@@ -2268,6 +2625,276 @@ function setWritingAiDrawerOpen(isOpen) {
   }
 }
 
+function setWritingCoverFeedback(text, tone = "neutral") {
+  const message = String(text ?? "").trim();
+  ui.marketplace.writing.coverFeedback = message;
+  ui.marketplace.writing.coverFeedbackTone = tone;
+
+  if (message) {
+    setStatus(message, tone);
+  }
+}
+
+function getWritingCoverPromptFallback(book = activeWritingBook.value) {
+  const title = normalizeText(book?.title);
+  const genre = normalizeText(book?.genre);
+  const intro = normalizeText(book?.intro);
+  return [
+    "竖版小说封面",
+    ui.marketplace.writing.coverShouldShowTitle ? `封面文字包含书名《${title || "未命名故事"}》，题字清晰端正，不要乱码` : "封面不出现书名文字，只保留干净画面",
+    genre ? `题材：${genre}` : "",
+    intro ? `故事气质：${clipText(intro, 260)}` : "",
+    "主体明确，留出书名题字区域，画面有文学感和辨识度，细腻光影，构图克制，避免水印、logo、乱码文字"
+  ]
+    .filter(Boolean)
+    .join("，");
+}
+
+function isWritingCoverDataUrl(value) {
+  return normalizeText(value).startsWith("data:image/");
+}
+
+function setWritingCoverDraftUrl(value) {
+  const coverUrl = normalizeText(value);
+  ui.marketplace.writing.coverDraftUrl = coverUrl;
+  ui.marketplace.writing.coverPreviewUrl = coverUrl;
+}
+
+function openWritingCoverDialog(mode = "upload") {
+  const book = activeWritingBook.value;
+
+  if (!book || isActiveWritingBookAiRunning.value) {
+    return;
+  }
+
+  const coverUrl = normalizeText(book.coverUrl);
+  ui.marketplace.writing.coverDialogMode = mode === "generate" ? "generate" : "upload";
+  ui.marketplace.writing.coverUrlInput = isWritingCoverDataUrl(coverUrl) ? "" : coverUrl;
+  ui.marketplace.writing.coverShouldShowTitle = book.coverShouldShowTitle !== false;
+  ui.marketplace.writing.coverPromptInput = normalizeText(book.coverPrompt) || getWritingCoverPromptFallback(book);
+  setWritingCoverDraftUrl(coverUrl);
+  setWritingCoverFeedback("", "neutral");
+  ui.marketplace.writing.isCoverDialogOpen = true;
+}
+
+function closeWritingCoverDialog() {
+  if (ui.marketplace.writing.isCoverGenerating) {
+    return;
+  }
+
+  ui.marketplace.writing.isCoverDialogOpen = false;
+  ui.marketplace.writing.coverDraftUrl = "";
+  ui.marketplace.writing.coverPreviewUrl = "";
+  setWritingCoverFeedback("", "neutral");
+}
+
+function setWritingCoverDialogMode(mode) {
+  ui.marketplace.writing.coverDialogMode = mode === "generate" ? "generate" : "upload";
+}
+
+function setWritingCoverUrlInput(value) {
+  ui.marketplace.writing.coverUrlInput = String(value ?? "");
+}
+
+function setWritingCoverPromptInput(value) {
+  ui.marketplace.writing.coverPromptInput = String(value ?? "");
+}
+
+function setWritingCoverShouldShowTitle(value) {
+  ui.marketplace.writing.coverShouldShowTitle = Boolean(value);
+}
+
+function getWritingCoverGenerationPrompt(book, prompt) {
+  const title = normalizeText(book?.title);
+  const titleInstruction = ui.marketplace.writing.coverShouldShowTitle
+    ? `封面上必须包含清晰可读的中文书名《${title || "未命名故事"}》，书名字体与画面风格协调，避免乱码、错字、额外水印或 logo。`
+    : "封面上不要出现书名、文字、水印或 logo，只生成纯画面构图。";
+
+  return [prompt, titleInstruction].filter(Boolean).join("\n\n");
+}
+
+async function applyWritingCoverUrl(value, options = {}) {
+  const book = activeWritingBook.value;
+  const coverUrl = normalizeText(value);
+
+  if (!book) {
+    setWritingCoverFeedback("请先打开一本书。", "warning");
+    return;
+  }
+
+  if (!coverUrl && !options.allowEmpty) {
+    setWritingCoverFeedback("请先填写或选择一张封面。", "warning");
+    return;
+  }
+
+  book.coverUrl = coverUrl;
+  book.coverPrompt = String(ui.marketplace.writing.coverPromptInput ?? book.coverPrompt ?? "");
+  book.coverShouldShowTitle = Boolean(ui.marketplace.writing.coverShouldShowTitle);
+  ui.marketplace.writing.coverPreviewUrl = coverUrl;
+  touchWritingBook(book, { persist: false });
+  await persistWritingBookById(book.id, { silent: true, keepLocal: true, mergeChapters: true });
+  setWritingCoverFeedback(options.message ?? "封面已写入当前书籍。", "success");
+}
+
+function applyWritingCoverUrlInput() {
+  const coverUrl = normalizeText(ui.marketplace.writing.coverUrlInput);
+
+  if (!coverUrl) {
+    setWritingCoverFeedback("请先填写图片 URL。", "warning");
+    return;
+  }
+
+  setWritingCoverDraftUrl(coverUrl);
+  setWritingCoverFeedback("已加载远端封面预览，确认后写入书籍。", "success");
+}
+
+async function selectWritingCoverLocalImage() {
+  if (!desktopApi?.selectWritingBookCoverImage) {
+    setWritingCoverFeedback("本地图片选择桥接未就绪。", "danger");
+    return;
+  }
+
+  try {
+    const dataUrl = await desktopApi.selectWritingBookCoverImage();
+
+    if (!dataUrl) {
+      return;
+    }
+
+    setWritingCoverDraftUrl(dataUrl);
+    ui.marketplace.writing.coverUrlInput = "";
+    setWritingCoverFeedback("已加载本地封面预览，确认后写入书籍。", "success");
+  } catch (error) {
+    console.error("Failed to select writing cover image", error);
+    setWritingCoverFeedback(`选择封面失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+  }
+}
+
+async function generateWritingCoverImage() {
+  const book = activeWritingBook.value;
+  const prompt = normalizeText(ui.marketplace.writing.coverPromptInput) || getWritingCoverPromptFallback(book);
+  const generationPrompt = getWritingCoverGenerationPrompt(book, prompt);
+
+  if (!book) {
+    setWritingCoverFeedback("请先打开一本书。", "warning");
+    return;
+  }
+
+  if (!desktopApi?.callMcpServerTool) {
+    setWritingCoverFeedback("Gordon Tools 桥接未就绪。", "danger");
+    return;
+  }
+
+  if (!prompt) {
+    setWritingCoverFeedback("请先填写封面生成提示词。", "warning");
+    return;
+  }
+
+  ui.marketplace.writing.isCoverGenerating = true;
+  setWritingCoverFeedback("正在调用 image_gen 生成封面...", "neutral");
+
+  try {
+    const toolResult = await desktopApi.callMcpServerTool({
+      serverId: BUILTIN_GORDON_TOOLS_MCP_ID,
+      toolName: "image_gen",
+      arguments: {
+        prompt: generationPrompt,
+        size: "1024x1536",
+        n: 1,
+        quality: "medium"
+      }
+    });
+
+    if (toolResult?.isError) {
+      throw new Error(normalizeText(toolResult.contentText) || "image_gen 调用失败");
+    }
+
+    const images = extractWritingCoverImageArtifacts(toolResult);
+    const firstImage = images[0] ?? null;
+
+    if (!firstImage?.src) {
+      setWritingCoverFeedback("工具没有返回可展示封面。", "warning");
+      return;
+    }
+
+    ui.marketplace.writing.coverPromptInput = firstImage.prompt || prompt;
+    setWritingCoverDraftUrl(firstImage.src);
+    ui.marketplace.writing.coverUrlInput = "";
+    setWritingCoverFeedback(firstImage.meta ? `封面已生成：${firstImage.meta}` : "封面已生成，确认后写入书籍。", "success");
+  } catch (error) {
+    console.error("Failed to generate writing cover", error);
+    setWritingCoverFeedback(`生成封面失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+  } finally {
+    ui.marketplace.writing.isCoverGenerating = false;
+  }
+}
+
+async function downloadWritingCoverImage() {
+  const book = activeWritingBook.value;
+  const imageUrl = normalizeText(ui.marketplace.writing.coverPreviewUrl);
+
+  if (!book) {
+    setWritingCoverFeedback("请先打开一本书。", "warning");
+    return;
+  }
+
+  if (!imageUrl) {
+    setWritingCoverFeedback("当前没有可下载的封面。", "warning");
+    return;
+  }
+
+  if (!desktopApi?.saveWritingBookCoverImage) {
+    setWritingCoverFeedback("封面下载桥接未就绪。", "danger");
+    return;
+  }
+
+  try {
+    const result = await desktopApi.saveWritingBookCoverImage({
+      title: book.title || "未命名封面",
+      imageUrl
+    });
+
+    if (!result) {
+      return;
+    }
+
+    setWritingCoverFeedback(`封面已下载：${result.fileName}`, "success");
+  } catch (error) {
+    console.error("Failed to download writing cover image", error);
+    setWritingCoverFeedback(`下载封面失败：${error instanceof Error ? error.message : "未知错误"}`, "danger");
+  }
+}
+
+function clearWritingCoverImage() {
+  const book = activeWritingBook.value;
+
+  if (!book) {
+    return;
+  }
+
+  ui.marketplace.writing.coverUrlInput = "";
+  setWritingCoverDraftUrl("");
+  setWritingCoverFeedback("已清空封面预览，确认后写入书籍。", "success");
+}
+
+async function confirmWritingCoverDialog() {
+  if (ui.marketplace.writing.isCoverGenerating) {
+    return;
+  }
+
+  await applyWritingCoverUrl(ui.marketplace.writing.coverDraftUrl, {
+    allowEmpty: true,
+    message: "封面已写入当前书籍。"
+  });
+
+  if (ui.marketplace.writing.coverFeedbackTone === "success") {
+    ui.marketplace.writing.isCoverDialogOpen = false;
+    ui.marketplace.writing.coverDraftUrl = "";
+    ui.marketplace.writing.coverPreviewUrl = "";
+    setWritingCoverFeedback("", "neutral");
+  }
+}
+
 function setWritingAiTaskPickerOpen(isOpen) {
   ui.marketplace.writing.isAiTaskPickerOpen = Boolean(isOpen);
 }
@@ -2377,9 +3004,12 @@ async function createWritingBook() {
     author: "Song",
     length: "medium",
     genre: "小说 / 待定类型",
+    genreProfile: normalizeWritingGenreProfileForUi({}, "小说 / 待定类型"),
     status: "新建",
     updatedAt: now,
     coverTone: writingBooks.value.length % 2 === 0 ? "gold" : "teal",
+    coverUrl: "",
+    coverPrompt: DEFAULT_WRITING_COVER_PROMPT,
     intro: "在这里写下故事的核心命题、世界观、人物关系和主要矛盾。",
     outlineGuide: "把故事拆成开始、失控、反转和收束四个阶段，每个阶段都要写清冲突升级和人物变化。",
     seriesPlan: "",
@@ -2424,9 +3054,12 @@ async function handleWritingBookUpload(event) {
       author: "Song",
       length: "long",
       genre: "上传书稿",
+      genreProfile: normalizeWritingGenreProfileForUi({}, "上传书稿"),
       status: "导入",
       updatedAt: new Date().toISOString(),
       coverTone: "ink",
+      coverUrl: "",
+      coverPrompt: DEFAULT_WRITING_COVER_PROMPT,
       intro: `从「${file.name}」导入。建议先让 AI 帮你整理故事简介、人物关系和世界观。`,
       outlineGuide: "待整理目录。可以在目录 Tab 里使用「章节规划」生成结构。",
       seriesPlan: "",
@@ -2505,18 +3138,24 @@ function setWritingTab(tabId) {
     backWritingMarketplace,
     backWritingShelf,
     buildWritingBookExportContent,
+    buildWritingGenreProfileContent,
     buildWritingIntroContent,
     buildWritingNarrativeStateContent,
     buildWritingOutlineContent,
     buildWritingStoryAssetsContent,
     canExportActiveWritingBook,
+    applyWritingCoverUrlInput,
     clearWritingAutosaveTimer,
     clearWritingChapterSubmitConfirmation,
+    clearWritingCoverImage,
+    closeWritingCoverDialog,
     closeWritingExportDialog,
+    confirmWritingCoverDialog,
     addWritingExtraIntroSection,
     createWritingBook,
     createWritingChapter,
     deleteWritingBookFromShelf,
+    downloadWritingCoverImage,
     ensureWritingChapterSelection,
     exportActiveWritingBook,
     filteredWritingChapterEntries,
@@ -2547,6 +3186,7 @@ function setWritingTab(tabId) {
     getWritingTabWordCount,
     goWritingChapter,
     handleWritingBookUpload,
+    generateWritingCoverImage,
     isWritingIntroSectionCollapsed,
     isActiveWritingBookAiRunning,
     isWritingChapterSubmitConfirmed,
@@ -2562,11 +3202,13 @@ function setWritingTab(tabId) {
     normalizeWritingChapterIndex,
     normalizeWritingChapterStatusForUi,
     normalizeWritingExportFormat,
+    normalizeWritingGenreProfileForUi,
     normalizeWritingOutlinePlannerJobForUi,
     normalizeWritingNarrativeStateForUi,
     normalizeWritingStoryAssetsForUi,
     openWritingAppShelf,
     openWritingBook,
+    openWritingCoverDialog,
     openWritingExportDialog,
     parseWritingChapterIndex,
     persistWritingBookById,
@@ -2576,18 +3218,24 @@ function setWritingTab(tabId) {
     selectWritingChapter,
     selectWritingChapterFromPicker,
     selectWritingExportDirectory,
+    selectWritingCoverLocalImage,
     selectWritingAiTask,
     selectWritingAiPhase,
     setWritingAiDrawerOpen,
     setWritingAiTaskPickerOpen,
     setWritingBookContent,
     setWritingBookGenre,
+    setWritingGenreProfileField,
     setWritingBookLength,
     setWritingBookTitle,
     setWritingChapterContent,
     setWritingChapterPickerOpen,
     setWritingChapterSummary,
     setWritingChapterTitle,
+    setWritingCoverDialogMode,
+    setWritingCoverPromptInput,
+    setWritingCoverShouldShowTitle,
+    setWritingCoverUrlInput,
     setWritingExtraIntroSectionContent,
     setWritingExtraIntroSectionTitle,
     setWritingExportFormat,
@@ -2605,6 +3253,7 @@ function setWritingTab(tabId) {
     toggleWritingProfileRail,
     toggleWritingPromptPreview,
     touchWritingBook,
+    writingGenreProfileOptions: WRITING_GENRE_PROFILE_OPTIONS,
     writingBooks
   };
 }

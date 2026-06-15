@@ -12,6 +12,7 @@ const PROMPT_ASSET_PATHS = {
   builtinSkillDeepResearchPrompt: ["skills", "deep-research", "SKILL.md"],
   builtinSkillCreatorPrompt: ["skills", "skill-creator", "SKILL.md"],
   builtinSkillWritingPrompt: ["skills", "writing", "SKILL.md"],
+  builtinSkillComicPrompt: ["skills", "comic", "SKILL.md"],
   weeklyRewriteItemSystem: ["prompts", "workbench", "weekly", "rewrite-item.system.md"],
   weeklyDailyReportGenerateSystem: ["prompts", "workbench", "weekly", "daily-report-generate.system.md"],
   weeklyReportGenerateSystem: ["prompts", "workbench", "weekly", "report-generate.system.md"],
