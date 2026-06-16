@@ -318,6 +318,13 @@ export interface WeeklyFeishuSettings {
   webhookUrl: string;
   secret: string;
   titlePrefix: string;
+  autoDailyReportEnabled: boolean;
+  autoDailyReportTime: string;
+  autoDailyReportTimezone: string;
+  autoDailyReportLastRunDate: string;
+  autoDailyReportLastRunAt: string;
+  autoDailyReportLastStatus: "idle" | "success" | "failed" | "skipped";
+  autoDailyReportLastMessage: string;
   updatedAt: string;
 }
 

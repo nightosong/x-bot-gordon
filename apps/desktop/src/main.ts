@@ -76,6 +76,9 @@ import type {
   WeeklyDailyReportFeishuSendRequest,
   WeeklyDailyReportFeishuSendResult,
   WeeklyFeishuSettings,
+  WeeklyProgressProjectItem,
+  WeeklyProgressRecord,
+  WeeklyProgressTaskItem,
   VideoProjectExportFormat,
   VideoProjectExportRequest,
   WritingBookExportFormat,
@@ -105,8 +108,13 @@ const MAIN_WINDOW_MIN_WIDTH = 1180;
 const MAIN_WINDOW_MIN_HEIGHT = 760;
 const MODEL_BALANCE_POLL_INTERVAL_MS = 60 * 60 * 1000;
 const MODEL_BALANCE_INITIAL_POLL_DELAY_MS = 60 * 1000;
+const WEEKLY_AUTO_DAILY_REPORT_CHECK_INTERVAL_MS = 60 * 1000;
+const WEEKLY_AUTO_DAILY_REPORT_DEFAULT_TIME = "18:30";
+const WEEKLY_AUTO_DAILY_REPORT_TIMEZONE = "Asia/Shanghai";
 let modelBalancePollingTimer: NodeJS.Timeout | null = null;
 let modelBalancePollingInFlight = false;
+let weeklyAutoDailyReportTimer: NodeJS.Timeout | null = null;
+let weeklyAutoDailyReportInFlight = false;
 const FEISHU_DAILY_REPORT_CONTENT_LIMIT = 15000;
 const FEISHU_DAILY_REPORT_MARKDOWN_TEXT_SIZE = "normal_v2";
 
@@ -726,6 +734,371 @@ async function sendWeeklyDailyReportToFeishu(
     statusCode: responseCode ?? response.status,
     responseMessage
   };
+}
+
+type BeijingDateTimeParts = {
+  dateKey: string;
+  hour: string;
+  minute: string;
+  weekday: string;
+};
+
+type WeeklyAutoDailyReportStatus = WeeklyFeishuSettings["autoDailyReportLastStatus"];
+
+const WEEKLY_PROGRESS_TASK_STATUS_LABELS: Record<string, string> = {
+  planned: "待开始",
+  in_progress: "进行中",
+  completed: "已完成",
+  blocked: "受阻"
+};
+
+function getBeijingDateTimeParts(referenceDate = new Date()): BeijingDateTimeParts {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: WEEKLY_AUTO_DAILY_REPORT_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    weekday: "short",
+    hour12: false
+  }).formatToParts(referenceDate);
+  const pick = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+
+  return {
+    dateKey: `${pick("year")}-${pick("month")}-${pick("day")}`,
+    hour: pick("hour"),
+    minute: pick("minute"),
+    weekday: pick("weekday")
+  };
+}
+
+function isBeijingWorkday(parts: BeijingDateTimeParts): boolean {
+  return !["Sat", "Sun"].includes(parts.weekday);
+}
+
+function getBeijingDailyReportDateTitle(referenceDate = new Date()): string {
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: WEEKLY_AUTO_DAILY_REPORT_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short"
+  }).format(referenceDate);
+}
+
+function getWeeklyProgressTaskStatusLabel(status: unknown): string {
+  return WEEKLY_PROGRESS_TASK_STATUS_LABELS[String(status ?? "").trim()] ?? WEEKLY_PROGRESS_TASK_STATUS_LABELS.planned;
+}
+
+function getTaskChildren(task: WeeklyProgressTaskItem | null | undefined): WeeklyProgressTaskItem[] {
+  return Array.isArray(task?.children) ? task.children : [];
+}
+
+function getTaskLocalDateKey(value: unknown): string {
+  const date = value instanceof Date ? value : new Date(String(value ?? ""));
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: WEEKLY_AUTO_DAILY_REPORT_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  const pick = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+
+  return `${pick("year")}-${pick("month")}-${pick("day")}`;
+}
+
+function filterTasksToUpdatedBranches(tasks: WeeklyProgressTaskItem[] = [], todayKey: string): WeeklyProgressTaskItem[] {
+  const filtered: WeeklyProgressTaskItem[] = [];
+
+  for (const task of Array.isArray(tasks) ? tasks : []) {
+    const children = getTaskChildren(task);
+    const filteredChildren = filterTasksToUpdatedBranches(children, todayKey);
+    const title = String(task.title ?? "").trim();
+    const isUpdatedLeaf = !children.length && Boolean(title) && getTaskLocalDateKey(task.updatedAt) === todayKey;
+
+    if (!children.length && !isUpdatedLeaf) {
+      continue;
+    }
+
+    if (children.length && !filteredChildren.length) {
+      continue;
+    }
+
+    filtered.push({
+      ...task,
+      title,
+      detail: String(task.detail ?? "").trim(),
+      children: filteredChildren
+    });
+  }
+
+  return filtered;
+}
+
+function collectUpdatedLeafTaskCount(projects: WeeklyProgressProjectItem[] = [], todayKey: string): number {
+  let count = 0;
+
+  const visit = (tasks: WeeklyProgressTaskItem[] = []) => {
+    for (const task of Array.isArray(tasks) ? tasks : []) {
+      const children = getTaskChildren(task);
+
+      if (children.length) {
+        visit(children);
+        continue;
+      }
+
+      if (String(task.title ?? "").trim() && getTaskLocalDateKey(task.updatedAt) === todayKey) {
+        count += 1;
+      }
+    }
+  };
+
+  for (const project of Array.isArray(projects) ? projects : []) {
+    visit(project.tasks);
+  }
+
+  return count;
+}
+
+function serializeDailyReportTaskLines(tasks: WeeklyProgressTaskItem[] = [], depth = 1): string[] {
+  const lines: string[] = [];
+
+  for (const task of Array.isArray(tasks) ? tasks : []) {
+    const indent = "    ".repeat(depth);
+    const title = String(task.title ?? "").trim() || "未命名任务";
+    const children = getTaskChildren(task);
+
+    if (children.length) {
+      lines.push(`${indent}* ${title}`);
+      lines.push(...serializeDailyReportTaskLines(children, depth + 1));
+      continue;
+    }
+
+    lines.push(`${indent}* ${title}（${getWeeklyProgressTaskStatusLabel(task.status)}）`);
+  }
+
+  return lines;
+}
+
+function buildAutoDailyReportSourceMarkdown(record: WeeklyProgressRecord, todayKey: string): { count: number; markdown: string } {
+  const count = collectUpdatedLeafTaskCount(record.projects, todayKey);
+
+  if (!count) {
+    return { count, markdown: "" };
+  }
+
+  const lines: string[] = [];
+
+  for (const project of Array.isArray(record.projects) ? record.projects : []) {
+    const filteredTasks = filterTasksToUpdatedBranches(project.tasks, todayKey);
+
+    if (!filteredTasks.length) {
+      continue;
+    }
+
+    lines.push(`* ${String(project.title ?? "").trim() || "未命名项目"}`);
+
+    if (String(project.note ?? "").trim()) {
+      lines.push(...String(project.note).split("\n").map((line) => `    * 项目备注：${line.trim()}`).filter((line) => line.trim()));
+    }
+
+    lines.push(...serializeDailyReportTaskLines(filteredTasks, 1));
+    lines.push("");
+  }
+
+  return {
+    count,
+    markdown: lines.join("\n").trim()
+  };
+}
+
+function hasMatchingMarkdownHierarchy(sourceMarkdown: string, candidateMarkdown: string): boolean {
+  const getSignature = (value: string) =>
+    String(value ?? "")
+      .replace(/\r\n?/g, "\n")
+      .split("\n")
+      .map((line) => {
+        const match = line.match(/^([ \t]*)(?:[*+-]|\d+[.)])\s+\S/);
+        return match ? Math.round(match[1].replace(/\t/g, "    ").length / 4) : null;
+      })
+      .filter((item): item is number => item !== null)
+      .join(",");
+
+  return getSignature(sourceMarkdown) === getSignature(candidateMarkdown);
+}
+
+function normalizeAutoDailyReportMarkdown(value: string): string {
+  return String(value ?? "")
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+$/g, ""))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function selectAutoDailyReportRecord(records: WeeklyProgressRecord[]): WeeklyProgressRecord | null {
+  return (
+    records.find((record) => record.status === "active") ??
+    records.find((record) => Array.isArray(record.projects) && record.projects.length > 0) ??
+    records[0] ??
+    null
+  );
+}
+
+function buildWeeklyAutoDailyReportSettingsPatch(
+  settings: WeeklyFeishuSettings,
+  status: WeeklyAutoDailyReportStatus,
+  message: string,
+  dateKey: string,
+  timestamp = new Date().toISOString()
+): WeeklyFeishuSettings {
+  return {
+    ...settings,
+    autoDailyReportLastRunDate: dateKey,
+    autoDailyReportLastRunAt: timestamp,
+    autoDailyReportLastStatus: status,
+    autoDailyReportLastMessage: String(message ?? "").trim()
+  };
+}
+
+async function recordWeeklyAutoDailyReportResult(
+  settings: WeeklyFeishuSettings,
+  status: WeeklyAutoDailyReportStatus,
+  message: string,
+  dateKey: string
+): Promise<WeeklyFeishuSettings> {
+  return saveWeeklyFeishuSettings(buildWeeklyAutoDailyReportSettingsPatch(settings, status, message, dateKey));
+}
+
+async function runWeeklyAutoDailyReport(referenceDate = new Date()): Promise<void> {
+  if (weeklyAutoDailyReportInFlight) {
+    return;
+  }
+
+  weeklyAutoDailyReportInFlight = true;
+
+  try {
+    const settings = await getWeeklyFeishuSettings();
+    const beijingParts = getBeijingDateTimeParts(referenceDate);
+
+    if (!settings.autoDailyReportEnabled) {
+      return;
+    }
+
+    if (settings.autoDailyReportLastRunDate === beijingParts.dateKey) {
+      return;
+    }
+
+    if (!String(settings.webhookUrl ?? "").trim()) {
+      await recordWeeklyAutoDailyReportResult(settings, "failed", "飞书群机器人 Webhook 未配置。", beijingParts.dateKey);
+      return;
+    }
+
+    const records = await listWeeklyProgress();
+    const record = selectAutoDailyReportRecord(records);
+
+    if (!record) {
+      await recordWeeklyAutoDailyReportResult(settings, "skipped", "没有可用于生成日报的任务笔记。", beijingParts.dateKey);
+      return;
+    }
+
+    const { count, markdown } = buildAutoDailyReportSourceMarkdown(record, beijingParts.dateKey);
+
+    if (!count || !markdown) {
+      await recordWeeklyAutoDailyReportResult(settings, "skipped", "今天没有检测到更新的子任务记录。", beijingParts.dateKey);
+      return;
+    }
+
+    const baseMarkdown = normalizeAutoDailyReportMarkdown(markdown);
+    const dateTitle = getBeijingDailyReportDateTitle(referenceDate);
+    let finalMarkdown = baseMarkdown;
+
+    try {
+      const result = await generateDailyProgressReport({
+        dateTitle,
+        weekTitle: record.title,
+        content: baseMarkdown
+      });
+      const optimizedMarkdown = normalizeAutoDailyReportMarkdown(result.text);
+
+      if (optimizedMarkdown && hasMatchingMarkdownHierarchy(baseMarkdown, optimizedMarkdown)) {
+        finalMarkdown = optimizedMarkdown;
+      }
+    } catch (error) {
+      console.warn("Weekly auto daily report optimization failed, fallback to base markdown", error);
+    }
+
+    await sendWeeklyDailyReportToFeishu({
+      title: `${dateTitle} 日报`,
+      weekTitle: record.title,
+      content: finalMarkdown
+    });
+
+    await saveWeeklyProgress({
+      ...record,
+      generatedDailyReport: finalMarkdown
+    });
+    await recordWeeklyAutoDailyReportResult(settings, "success", `已自动发送 ${count} 条任务日报。`, beijingParts.dateKey);
+  } catch (error) {
+    try {
+      const settings = await getWeeklyFeishuSettings();
+      const beijingParts = getBeijingDateTimeParts(referenceDate);
+      await recordWeeklyAutoDailyReportResult(
+        settings,
+        "failed",
+        error instanceof Error ? error.message : "自动日报执行失败。",
+        beijingParts.dateKey
+      );
+    } catch (recordError) {
+      console.error("Failed to record weekly auto daily report result", recordError);
+    }
+
+    console.error("Weekly auto daily report failed", error);
+  } finally {
+    weeklyAutoDailyReportInFlight = false;
+  }
+}
+
+async function checkWeeklyAutoDailyReportSchedule(referenceDate = new Date()): Promise<void> {
+  const settings = await getWeeklyFeishuSettings();
+
+  if (!settings.autoDailyReportEnabled) {
+    return;
+  }
+
+  const beijingParts = getBeijingDateTimeParts(referenceDate);
+  const [targetHour = "18", targetMinute = "30"] = String(
+    settings.autoDailyReportTime || WEEKLY_AUTO_DAILY_REPORT_DEFAULT_TIME
+  )
+    .split(":")
+    .map((item) => item.padStart(2, "0"));
+
+  if (
+    isBeijingWorkday(beijingParts) &&
+    beijingParts.hour === targetHour &&
+    beijingParts.minute === targetMinute &&
+    settings.autoDailyReportLastRunDate !== beijingParts.dateKey
+  ) {
+    await runWeeklyAutoDailyReport(referenceDate);
+  }
+}
+
+function startWeeklyAutoDailyReportScheduler(): void {
+  if (weeklyAutoDailyReportTimer) {
+    clearInterval(weeklyAutoDailyReportTimer);
+  }
+
+  weeklyAutoDailyReportTimer = setInterval(() => {
+    void checkWeeklyAutoDailyReportSchedule();
+  }, WEEKLY_AUTO_DAILY_REPORT_CHECK_INTERVAL_MS);
+  void checkWeeklyAutoDailyReportSchedule();
 }
 
 function normalizeWritingBookExportFormat(value: unknown): WritingBookExportFormat {
@@ -4476,6 +4849,7 @@ app.whenReady().then(async () => {
 
   await createMainWindow();
   startModelBalanceUsagePolling();
+  startWeeklyAutoDailyReportScheduler();
 
   app.on("activate", async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -4488,6 +4862,11 @@ app.on("before-quit", () => {
   if (modelBalancePollingTimer) {
     clearInterval(modelBalancePollingTimer);
     modelBalancePollingTimer = null;
+  }
+
+  if (weeklyAutoDailyReportTimer) {
+    clearInterval(weeklyAutoDailyReportTimer);
+    weeklyAutoDailyReportTimer = null;
   }
 });
 

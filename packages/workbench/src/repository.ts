@@ -119,6 +119,13 @@ function getDefaultWeeklyFeishuSettings(): WeeklyFeishuSettings {
     webhookUrl: "",
     secret: "",
     titlePrefix: "Gordon 日报",
+    autoDailyReportEnabled: false,
+    autoDailyReportTime: "18:30",
+    autoDailyReportTimezone: "Asia/Shanghai",
+    autoDailyReportLastRunDate: "",
+    autoDailyReportLastRunAt: "",
+    autoDailyReportLastStatus: "idle",
+    autoDailyReportLastMessage: "",
     updatedAt: ""
   };
 }
@@ -133,6 +140,21 @@ function normalizeWeeklyFeishuSettings(
     webhookUrl: String(settings?.webhookUrl ?? fallback.webhookUrl).trim(),
     secret: String(settings?.secret ?? fallback.secret).trim(),
     titlePrefix: String(settings?.titlePrefix ?? fallback.titlePrefix).trim() || fallback.titlePrefix,
+    autoDailyReportEnabled: Boolean(settings?.autoDailyReportEnabled ?? fallback.autoDailyReportEnabled),
+    autoDailyReportTime:
+      /^\d{2}:\d{2}$/.test(String(settings?.autoDailyReportTime ?? "").trim())
+        ? String(settings?.autoDailyReportTime ?? "").trim()
+        : fallback.autoDailyReportTime,
+    autoDailyReportTimezone:
+      String(settings?.autoDailyReportTimezone ?? fallback.autoDailyReportTimezone).trim() || fallback.autoDailyReportTimezone,
+    autoDailyReportLastRunDate: String(settings?.autoDailyReportLastRunDate ?? fallback.autoDailyReportLastRunDate).trim(),
+    autoDailyReportLastRunAt: String(settings?.autoDailyReportLastRunAt ?? fallback.autoDailyReportLastRunAt).trim(),
+    autoDailyReportLastStatus: ["idle", "success", "failed", "skipped"].includes(
+      String(settings?.autoDailyReportLastStatus ?? "")
+    )
+      ? (settings?.autoDailyReportLastStatus as WeeklyFeishuSettings["autoDailyReportLastStatus"])
+      : fallback.autoDailyReportLastStatus,
+    autoDailyReportLastMessage: String(settings?.autoDailyReportLastMessage ?? fallback.autoDailyReportLastMessage).trim(),
     updatedAt: options.touch ? new Date().toISOString() : String(settings?.updatedAt ?? fallback.updatedAt).trim()
   };
 }
