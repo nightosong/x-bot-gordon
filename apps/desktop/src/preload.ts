@@ -48,6 +48,7 @@ import type {
 let progressListenerIdSeed = 0;
 const agentRunProgressListeners = new Map<string, (_event: Electron.IpcRendererEvent, payload: AgentRunProgressEvent) => void>();
 const workflowRunProgressListeners = new Map<string, (_event: Electron.IpcRendererEvent, payload: unknown) => void>();
+const infoRadarReaderListeners = new Map<string, (_event: Electron.IpcRendererEvent, payload: unknown) => void>();
 
 function toPlainIpcData<T>(value: T): T {
   const visited = new WeakSet<object>();
@@ -150,6 +151,8 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
   toggleAgentProfileStatus: (profileId: string) => ipcRenderer.invoke("gordon:agent-profiles:toggle-status", profileId),
   deleteAgentProfile: (profileId: string) => ipcRenderer.invoke("gordon:agent-profiles:delete", profileId),
   runAgent: (request: AgentRunRequest) => ipcRenderer.invoke("gordon:agent:run", toPlainIpcData(request)),
+  addAgentRunGuidance: (progressEventId: string, guidance: string) =>
+    ipcRenderer.invoke("gordon:agent:add-guidance", progressEventId, guidance),
   cancelAgentRun: (progressEventId: string) => ipcRenderer.invoke("gordon:agent:cancel-run", progressEventId),
   onAgentRunProgress: (listener: (payload: AgentRunProgressEvent) => void): string => {
     const listenerId = `agent_progress_listener_${Date.now()}_${progressListenerIdSeed++}`;
@@ -186,6 +189,32 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
     ipcRenderer.invoke("gordon:workflow-library:cancel-run", progressEventId),
   refreshInfoRadarWindow: (request: { cardId: string; windowId: string }): Promise<InfoRadarRefreshResult> =>
     ipcRenderer.invoke("gordon:workflow-library:refresh-info-window", toPlainIpcData(request)),
+  resolveInfoRadarWechatItemUrl: (request: { cardId: string; windowId: string; itemId: string }) =>
+    ipcRenderer.invoke("gordon:workflow-library:resolve-wechat-item-url", toPlainIpcData(request)),
+  openExternalUrl: (url: string): Promise<boolean> =>
+    ipcRenderer.invoke("gordon:workflow-library:open-external-url", url),
+  openInfoRadarReader: (request: { url: string; bounds: { x: number; y: number; width: number; height: number } }) =>
+    ipcRenderer.invoke("gordon:workflow-library:info-reader:open", toPlainIpcData(request)),
+  setInfoRadarReaderBounds: (bounds: { x: number; y: number; width: number; height: number }) =>
+    ipcRenderer.invoke("gordon:workflow-library:info-reader:set-bounds", toPlainIpcData(bounds)),
+  closeInfoRadarReader: () => ipcRenderer.invoke("gordon:workflow-library:info-reader:close"),
+  onInfoRadarReaderEvent: (listener: (payload: unknown) => void): string => {
+    const listenerId = `info_reader_listener_${Date.now()}_${progressListenerIdSeed++}`;
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload);
+    infoRadarReaderListeners.set(listenerId, wrapped);
+    ipcRenderer.on("gordon:workflow-library:info-reader", wrapped);
+    return listenerId;
+  },
+  offInfoRadarReaderEvent: (listenerId: string): void => {
+    const wrapped = infoRadarReaderListeners.get(listenerId);
+
+    if (!wrapped) {
+      return;
+    }
+
+    ipcRenderer.removeListener("gordon:workflow-library:info-reader", wrapped);
+    infoRadarReaderListeners.delete(listenerId);
+  },
   onWorkflowRunProgress: (listener: (payload: unknown) => void): string => {
     const listenerId = `workflow_progress_listener_${Date.now()}_${progressListenerIdSeed++}`;
     const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload);

@@ -107,12 +107,16 @@
           <template v-else-if="activeFeature === FEATURE_WORKFLOW_LIBRARY">
             <WorkflowLibraryView
               :ui="ui"
+              :workbench="workbench"
               :workflow-library-cards="workflowLibraryCards"
               :workflow-detail-title="workflowDetailTitle"
+              :active-info-reader-item="activeInfoReaderItem"
               :active-info-window="activeInfoWindow"
               :active-info-windows="activeInfoWindows"
               :filtered-info-radar-items="filteredInfoRadarItems"
               :info-radar-metrics="infoRadarMetrics"
+              :info-radar-source-filter-options="infoRadarSourceFilterOptions"
+              :info-radar-topic-filter-options="infoRadarTopicFilterOptions"
               :filtered-workflow-records="filteredWorkflowRecords"
               :active-workflow-record="activeWorkflowRecord"
               :active-workflow-metrics="activeWorkflowMetrics"
@@ -136,12 +140,16 @@
               :duplicate-workflow-record="duplicateWorkflowRecord"
               :format-duration-ms="formatDurationMs"
               :format-local-date-time="formatLocalDateTime"
+              :can-open-info-radar-item="canOpenInfoRadarItem"
               :get-info-radar-cadence-label="getInfoRadarCadenceLabel"
               :get-info-radar-item-href="getInfoRadarItemHref"
+              :get-info-radar-item-summary-text="getInfoRadarItemSummaryText"
               :get-info-radar-item-status-label="getInfoRadarItemStatusLabel"
               :get-info-radar-run-status-label="getInfoRadarRunStatusLabel"
               :get-info-radar-run-status-tone="getInfoRadarRunStatusTone"
+              :get-info-radar-score-percent="getInfoRadarScorePercent"
               :get-info-radar-source-kind-label="getInfoRadarSourceKindLabel"
+              :get-info-radar-source-tone="getInfoRadarSourceTone"
               :get-workflow-card-count-label="getWorkflowCardCountLabel"
               :get-workflow-run-completed-count="getWorkflowRunCompletedCount"
               :get-workflow-run-duration-label="getWorkflowRunDurationLabel"
@@ -157,9 +165,13 @@
               :handle-workflow-body-draft-input="handleWorkflowBodyDraftInput"
               :handle-workflow-body-step-select="handleWorkflowBodyStepSelect"
               :handle-workflow-curl-copy="handleWorkflowCurlCopy"
+              :handle-info-radar-reader-loading-end="handleInfoRadarReaderLoadingEnd"
+              :handle-info-radar-reader-loading-start="handleInfoRadarReaderLoadingStart"
               :is-workflow-step-expanded="isWorkflowStepExpanded"
               :open-info-radar-window="openInfoRadarWindow"
               :open-info-radar-window-editor="openInfoRadarWindowEditor"
+              :open-info-radar-item-external="openInfoRadarItemExternal"
+              :open-info-radar-item-reader="openInfoRadarItemReader"
               :open-workflow-card="openWorkflowCard"
               :open-workflow-record="openWorkflowRecord"
               :open-workflow-record-editor="openWorkflowRecordEditor"
@@ -882,6 +894,7 @@ const {
   activeWorkflowMetrics,
   activeWorkflowRecord,
   activeWorkflowSteps,
+  activeInfoReaderItem,
   addInfoRadarSourceDraft,
   addWorkflowDraftEnvironment,
   addWorkflowDraftStep,
@@ -893,12 +906,16 @@ const {
   filteredInfoRadarItems,
   filteredWorkflowRecords,
   formatDurationMs,
+  canOpenInfoRadarItem,
   getInfoRadarCadenceLabel,
   getInfoRadarItemHref,
+  getInfoRadarItemSummaryText,
   getInfoRadarItemStatusLabel,
   getInfoRadarRunStatusLabel,
   getInfoRadarRunStatusTone,
+  getInfoRadarScorePercent,
   getInfoRadarSourceKindLabel,
+  getInfoRadarSourceTone,
   getWorkflowCardCountLabel,
   getWorkflowRunCompletedCount,
   getWorkflowRunDurationLabel,
@@ -909,6 +926,8 @@ const {
   getWorkflowStepStatusLabel,
   getWorkflowStepStatusTone,
   getWorkflowStepVisualRows,
+  handleInfoRadarReaderLoadingEnd,
+  handleInfoRadarReaderLoadingStart,
   handleWorkflowApiKeyInput,
   handleWorkflowBack,
   handleWorkflowBodyDraftInput,
@@ -917,8 +936,12 @@ const {
   handleWorkflowRunProgress,
   isWorkflowStepExpanded,
   infoRadarMetrics,
+  infoRadarSourceFilterOptions,
+  infoRadarTopicFilterOptions,
   openInfoRadarWindow,
   openInfoRadarWindowEditor,
+  openInfoRadarItemExternal,
+  openInfoRadarItemReader,
   openWorkflowCard,
   openWorkflowRecord,
   openWorkflowRecordEditor,

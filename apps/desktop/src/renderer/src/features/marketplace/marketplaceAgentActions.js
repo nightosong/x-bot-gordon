@@ -400,6 +400,14 @@ function normalizeProgressRunningState(items) {
   });
 }
 
+function isBenignActiveVerificationStop(step) {
+  if (step?.type !== "mcp_auto_stopped") {
+    return false;
+  }
+
+  return /主动验证规划(?:超时|失败)|主动验证规划超过/u.test(`${step.title ?? ""} ${step.detail ?? ""}`);
+}
+
 export function createMarketplaceAgentActions({
   appContextProviders = {},
   createLocalId,
@@ -655,6 +663,10 @@ export function createMarketplaceAgentActions({
       }
 
       if (step.type === "mcp_auto_stopped") {
+        if (isBenignActiveVerificationStop(step)) {
+          return;
+        }
+
         const hasFailure = /失败|停止|拒绝|重复|最大/u.test(`${step.title ?? ""} ${step.detail ?? ""}`);
 
         if (!hasFailure && !calls.length) {

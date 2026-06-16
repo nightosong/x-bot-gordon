@@ -20,6 +20,7 @@ export function createWorkflowState(createLocalId = createFallbackLocalId) {
     activeCardId: null,
     activeRecordId: null,
     activeInfoWindowId: null,
+    activeInfoReaderItemId: null,
     copiedStepId: null,
     bodyStepId: null,
     bodyDraftText: "",
@@ -29,12 +30,17 @@ export function createWorkflowState(createLocalId = createFallbackLocalId) {
     apiKeyVisible: false,
     searchQuery: "",
     infoSearchQuery: "",
+    infoSourceFilter: "",
+    infoTopicFilter: "",
     infoRailCollapsed: false,
     editingRecordId: null,
     editingInfoWindowId: null,
     isRunning: false,
     isCancelling: false,
     isRefreshingInfoWindow: false,
+    isInfoReaderLoading: false,
+    infoReaderError: "",
+    infoReaderResolvedUrl: "",
     runResult: null,
     activeProgressEventId: null,
     expandedStepIds: [],
@@ -107,7 +113,8 @@ export function createInfoRadarSourceDraft(overrides = {}, createLocalId = creat
     query: overrides.query ?? "",
     enabled: overrides.enabled !== false,
     tagsText: Array.isArray(overrides.tags) ? overrides.tags.join("，") : overrides.tagsText ?? "",
-    notes: overrides.notes ?? ""
+    notes: overrides.notes ?? "",
+    lastDiscoveredAt: overrides.lastDiscoveredAt ?? ""
   };
 }
 

@@ -7,6 +7,7 @@ import {
   evaluateActiveVerificationResult,
   getActiveVerificationCriteria,
   getPendingSuccessCriteria,
+  shouldPlanActiveVerification,
   verifyCriteriaFromToolHistory,
   verifyCriterionFromToolHistory
 } from "./verifier.js";
@@ -117,6 +118,83 @@ test("buildActiveVerificationStrategyContext provides typed verification guidanc
   assert.ok(strategies[0]?.argumentHints.some((hint) => hint.includes("read the file")));
   assert.deepEqual(strategies[1]?.preferredExecutionDomains, ["desktop"]);
   assert.ok(strategies[1]?.evidenceRequirements.some((requirement) => requirement.includes("activeApp")));
+});
+
+test("shouldPlanActiveVerification skips weak leftover tool and artifact criteria", () => {
+  const calls = [
+    createCallRecord({
+      serverName: "Gordon Tools",
+      toolName: "image_gen",
+      resultText: "generation completed",
+      artifacts: [
+        {
+          id: "artifact_1",
+          kind: "image",
+          title: "poster",
+          url: "https://cdn.example.com/poster.png"
+        }
+      ]
+    })
+  ];
+
+  assert.equal(
+    shouldPlanActiveVerification(
+      [
+        {
+          type: "tool_result",
+          expected: "工具返回可用结果",
+          status: "unknown"
+        },
+        {
+          type: "artifact_exists",
+          expected: "生成产物可引用",
+          status: "pending"
+        }
+      ],
+      calls
+    ),
+    false
+  );
+});
+
+test("shouldPlanActiveVerification plans only actionable deterministic criteria", () => {
+  assert.equal(
+    shouldPlanActiveVerification(
+      [
+        {
+          type: "file_exists",
+          target: "packages/agent/src/runtime.ts",
+          expected: "packages/agent/src/runtime.ts",
+          status: "unknown"
+        }
+      ],
+      [
+        createCallRecord({
+          toolName: "write_file",
+          resultText: "updated runtime"
+        })
+      ]
+    ),
+    true
+  );
+  assert.equal(
+    shouldPlanActiveVerification(
+      [
+        {
+          type: "file_exists",
+          expected: "",
+          status: "unknown"
+        }
+      ],
+      [
+        createCallRecord({
+          toolName: "write_file",
+          resultText: "updated runtime"
+        })
+      ]
+    ),
+    false
+  );
 });
 
 test("evaluateActiveVerificationResult scores direct low-risk evidence", () => {

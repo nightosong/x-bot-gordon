@@ -46,6 +46,13 @@ const DEFAULT_WEEKLY_FEISHU_SETTINGS = {
   webhookUrl: "",
   secret: "",
   titlePrefix: "Gordon 日报",
+  autoDailyReportEnabled: false,
+  autoDailyReportTime: "18:30",
+  autoDailyReportTimezone: "Asia/Shanghai",
+  autoDailyReportLastRunDate: "",
+  autoDailyReportLastRunAt: "",
+  autoDailyReportLastStatus: "idle",
+  autoDailyReportLastMessage: "",
   updatedAt: ""
 };
 
@@ -58,6 +65,28 @@ function normalizeWeeklyFeishuSettings(settings = {}) {
     webhookUrl: String(settings?.webhookUrl ?? "").trim(),
     secret: String(settings?.secret ?? "").trim(),
     titlePrefix: String(settings?.titlePrefix ?? DEFAULT_WEEKLY_FEISHU_SETTINGS.titlePrefix).trim() || DEFAULT_WEEKLY_FEISHU_SETTINGS.titlePrefix,
+    autoDailyReportEnabled: Boolean(settings?.autoDailyReportEnabled ?? DEFAULT_WEEKLY_FEISHU_SETTINGS.autoDailyReportEnabled),
+    autoDailyReportTime:
+      /^\d{2}:\d{2}$/.test(String(settings?.autoDailyReportTime ?? "").trim())
+        ? String(settings?.autoDailyReportTime ?? "").trim()
+        : DEFAULT_WEEKLY_FEISHU_SETTINGS.autoDailyReportTime,
+    autoDailyReportTimezone:
+      String(settings?.autoDailyReportTimezone ?? DEFAULT_WEEKLY_FEISHU_SETTINGS.autoDailyReportTimezone).trim() ||
+      DEFAULT_WEEKLY_FEISHU_SETTINGS.autoDailyReportTimezone,
+    autoDailyReportLastRunDate: String(
+      settings?.autoDailyReportLastRunDate ?? DEFAULT_WEEKLY_FEISHU_SETTINGS.autoDailyReportLastRunDate
+    ).trim(),
+    autoDailyReportLastRunAt: String(
+      settings?.autoDailyReportLastRunAt ?? DEFAULT_WEEKLY_FEISHU_SETTINGS.autoDailyReportLastRunAt
+    ).trim(),
+    autoDailyReportLastStatus: ["idle", "success", "failed", "skipped"].includes(
+      String(settings?.autoDailyReportLastStatus ?? "")
+    )
+      ? String(settings?.autoDailyReportLastStatus ?? "")
+      : DEFAULT_WEEKLY_FEISHU_SETTINGS.autoDailyReportLastStatus,
+    autoDailyReportLastMessage: String(
+      settings?.autoDailyReportLastMessage ?? DEFAULT_WEEKLY_FEISHU_SETTINGS.autoDailyReportLastMessage
+    ).trim(),
     updatedAt: String(settings?.updatedAt ?? "").trim()
   };
 }
@@ -299,7 +328,7 @@ export function createWeeklyActions({
     const draft = normalizeWeeklyFeishuSettings(ui.weekly.feishuSettingsDraft);
     ui.weekly.feishuSettingsDraft = {
       ...draft,
-      [field]: String(value ?? "")
+      [field]: field === "autoDailyReportEnabled" ? Boolean(value) : String(value ?? "")
     };
     setWeeklyFeishuSettingsFeedback("", "neutral");
   }

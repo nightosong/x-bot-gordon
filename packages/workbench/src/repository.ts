@@ -119,6 +119,13 @@ function getDefaultWeeklyFeishuSettings(): WeeklyFeishuSettings {
     webhookUrl: "",
     secret: "",
     titlePrefix: "Gordon 日报",
+    autoDailyReportEnabled: false,
+    autoDailyReportTime: "18:30",
+    autoDailyReportTimezone: "Asia/Shanghai",
+    autoDailyReportLastRunDate: "",
+    autoDailyReportLastRunAt: "",
+    autoDailyReportLastStatus: "idle",
+    autoDailyReportLastMessage: "",
     updatedAt: ""
   };
 }
@@ -133,6 +140,21 @@ function normalizeWeeklyFeishuSettings(
     webhookUrl: String(settings?.webhookUrl ?? fallback.webhookUrl).trim(),
     secret: String(settings?.secret ?? fallback.secret).trim(),
     titlePrefix: String(settings?.titlePrefix ?? fallback.titlePrefix).trim() || fallback.titlePrefix,
+    autoDailyReportEnabled: Boolean(settings?.autoDailyReportEnabled ?? fallback.autoDailyReportEnabled),
+    autoDailyReportTime:
+      /^\d{2}:\d{2}$/.test(String(settings?.autoDailyReportTime ?? "").trim())
+        ? String(settings?.autoDailyReportTime ?? "").trim()
+        : fallback.autoDailyReportTime,
+    autoDailyReportTimezone:
+      String(settings?.autoDailyReportTimezone ?? fallback.autoDailyReportTimezone).trim() || fallback.autoDailyReportTimezone,
+    autoDailyReportLastRunDate: String(settings?.autoDailyReportLastRunDate ?? fallback.autoDailyReportLastRunDate).trim(),
+    autoDailyReportLastRunAt: String(settings?.autoDailyReportLastRunAt ?? fallback.autoDailyReportLastRunAt).trim(),
+    autoDailyReportLastStatus: ["idle", "success", "failed", "skipped"].includes(
+      String(settings?.autoDailyReportLastStatus ?? "")
+    )
+      ? (settings?.autoDailyReportLastStatus as WeeklyFeishuSettings["autoDailyReportLastStatus"])
+      : fallback.autoDailyReportLastStatus,
+    autoDailyReportLastMessage: String(settings?.autoDailyReportLastMessage ?? fallback.autoDailyReportLastMessage).trim(),
     updatedAt: options.touch ? new Date().toISOString() : String(settings?.updatedAt ?? fallback.updatedAt).trim()
   };
 }
@@ -4548,6 +4570,25 @@ function normalizeInfoRadarSourceKind(value: unknown): InfoRadarSourceKind {
   return INFO_RADAR_SOURCE_KINDS.has(kind as InfoRadarSourceKind) ? (kind as InfoRadarSourceKind) : "web_page";
 }
 
+function isWechatTemporaryArticleUrl(value: unknown): boolean {
+  const url = String(value ?? "").trim();
+
+  if (!url) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(url);
+    return (
+      /(?:^|\.)mp\.weixin\.qq\.com$/i.test(parsed.hostname) &&
+      parsed.pathname === "/s" &&
+      (parsed.searchParams.has("signature") || parsed.searchParams.has("timestamp") || parsed.searchParams.has("src"))
+    );
+  } catch {
+    return false;
+  }
+}
+
 function normalizeInfoRadarSource(input: Partial<InfoRadarSource> | null | undefined, windowId = ""): InfoRadarSource | null {
   if (!input || typeof input !== "object") {
     return null;
@@ -4574,7 +4615,8 @@ function normalizeInfoRadarSource(input: Partial<InfoRadarSource> | null | undef
     enabled: input.enabled !== false,
     tags: normalizeStringArray(input.tags),
     notes: String(input.notes ?? "").trim(),
-    updatedAt: timestamp
+    updatedAt: timestamp,
+    ...(String(input.lastDiscoveredAt ?? "").trim() ? { lastDiscoveredAt: String(input.lastDiscoveredAt).trim() } : {})
   };
 }
 
@@ -4591,6 +4633,10 @@ function normalizeInfoRadarItem(input: Partial<InfoRadarItem> | null | undefined
   }
 
   const sourceKind = normalizeInfoRadarSourceKind(input.sourceKind);
+  const normalizedUrl = sourceKind === "wechat" && isWechatTemporaryArticleUrl(url) ? "" : url;
+  const resolvedUrl = String(input.resolvedUrl ?? "").trim();
+  const normalizedResolvedUrl =
+    sourceKind === "wechat" && isWechatTemporaryArticleUrl(resolvedUrl) ? "" : resolvedUrl;
   const fetchedAt = String(input.fetchedAt ?? "").trim() || new Date().toISOString();
   const status = input.status === "saved" || input.status === "ignored" ? input.status : "new";
 
@@ -4599,13 +4645,16 @@ function normalizeInfoRadarItem(input: Partial<InfoRadarItem> | null | undefined
     sourceId: String(input.sourceId ?? "").trim(),
     sourceTitle: String(input.sourceTitle ?? "").trim() || "未知来源",
     sourceKind,
-    title: title || url,
-    url,
+    title: title || normalizedUrl,
+    url: normalizedUrl,
+    ...(normalizedResolvedUrl ? { resolvedUrl: normalizedResolvedUrl } : {}),
     summary: String(input.summary ?? "").trim(),
     ...(input.author ? { author: String(input.author).trim() } : {}),
     ...(input.publishedAt ? { publishedAt: String(input.publishedAt).trim() } : {}),
+    ...(input.imageUrl ? { imageUrl: String(input.imageUrl).trim() } : {}),
     fetchedAt,
     tags: normalizeStringArray(input.tags),
+    matchedKeywords: normalizeStringArray(input.matchedKeywords),
     score: Number.isFinite(Number(input.score)) ? Number(input.score) : 0,
     status
   };
@@ -4691,75 +4740,7 @@ function createDefaultInfoRadarCard(): WorkflowLibraryItem {
     createdAt: now,
     updatedAt: now,
     records: [],
-    infoWindows: [
-      {
-        id: "info_window_tech_radar",
-        title: "技术与 Agent 趋势",
-        summary: "跟踪 AI、Agent、模型发布、开源工具和工程实践。",
-        category: "技术",
-        status: "active",
-        cadence: "manual",
-        keywords: ["AI", "Agent", "模型", "开源", "工程"],
-        negativeKeywords: [],
-        digestPrompt: "按重要性归纳：重大变化、可行动线索、需要继续深挖的问题。",
-        sources: [
-          {
-            id: "info_source_openai_blog",
-            kind: "rss",
-            title: "OpenAI Blog",
-            url: "https://openai.com/news/rss.xml",
-            query: "",
-            enabled: true,
-            tags: ["AI", "官方"],
-            notes: "官方发布源",
-            updatedAt: now
-          },
-          {
-            id: "info_source_hn_frontpage",
-            kind: "rss",
-            title: "Hacker News",
-            url: "https://hnrss.org/frontpage",
-            query: "",
-            enabled: true,
-            tags: ["技术", "社区"],
-            notes: "",
-            updatedAt: now
-          }
-        ],
-        items: [],
-        runHistory: [],
-        createdAt: now,
-        updatedAt: now
-      },
-      {
-        id: "info_window_research_radar",
-        title: "科研论文观察",
-        summary: "关注 arXiv、实验室博客和研究动态，保留后续接论文工具的入口。",
-        category: "科研",
-        status: "active",
-        cadence: "manual",
-        keywords: ["paper", "research", "benchmark", "agent"],
-        negativeKeywords: [],
-        digestPrompt: "提取论文问题、方法、证据强度、潜在复现实验和与现有项目的关系。",
-        sources: [
-          {
-            id: "info_source_arxiv_ai",
-            kind: "rss",
-            title: "arXiv cs.AI",
-            url: "https://export.arxiv.org/rss/cs.AI",
-            query: "",
-            enabled: true,
-            tags: ["论文", "AI"],
-            notes: "",
-            updatedAt: now
-          }
-        ],
-        items: [],
-        runHistory: [],
-        createdAt: now,
-        updatedAt: now
-      }
-    ]
+    infoWindows: []
   };
 }
 

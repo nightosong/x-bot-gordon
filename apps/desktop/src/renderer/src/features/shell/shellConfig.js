@@ -32,6 +32,7 @@ export const BRAND_RANDOM_TEXTS = [
   "DOMINATE",
   "LEGEND",
   "VICTORY",
+  "GROOT",
   "HOLMES",
   "OPTIMUS",
   "ARAGORN",
@@ -52,7 +53,9 @@ export const BRAND_RANDOM_TEXTS = [
   "VALKYRIE",
   "ALCHEMIST",
   "ECLIPSE",
-  "OBSIDIAN"
+  "OBSIDIAN",
+  "SPACEX",
+  "NVIDIA"
 ];
 
 export const FEATURE_ENTRIES = [

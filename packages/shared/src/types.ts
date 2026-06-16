@@ -318,6 +318,13 @@ export interface WeeklyFeishuSettings {
   webhookUrl: string;
   secret: string;
   titlePrefix: string;
+  autoDailyReportEnabled: boolean;
+  autoDailyReportTime: string;
+  autoDailyReportTimezone: string;
+  autoDailyReportLastRunDate: string;
+  autoDailyReportLastRunAt: string;
+  autoDailyReportLastStatus: "idle" | "success" | "failed" | "skipped";
+  autoDailyReportLastMessage: string;
   updatedAt: string;
 }
 
@@ -424,6 +431,7 @@ export interface InfoRadarSource {
   tags: string[];
   notes: string;
   updatedAt: string;
+  lastDiscoveredAt?: string;
 }
 
 export interface InfoRadarItem {
@@ -433,11 +441,14 @@ export interface InfoRadarItem {
   sourceKind: InfoRadarSourceKind;
   title: string;
   url: string;
+  resolvedUrl?: string;
   summary: string;
   author?: string;
   publishedAt?: string;
+  imageUrl?: string;
   fetchedAt: string;
   tags: string[];
+  matchedKeywords?: string[];
   score: number;
   status: "new" | "saved" | "ignored";
 }
@@ -670,17 +681,26 @@ export interface AgentProfile {
   updatedAt: string;
 }
 
+export type AgentPermissionMode = "on_demand" | "auto";
+
 export interface AgentRunRequest {
   agentProfileId: string;
   userInput: string;
   conversationMessages?: ModelMessage[];
   taskLedger?: AgentTaskLedger | null;
+  permissionMode?: AgentPermissionMode;
   skillId?: string;
   autoSelectMcp?: boolean;
   mcpServerId?: string;
   mcpToolName?: string;
   mcpArguments?: Record<string, unknown>;
   progressEventId?: string;
+}
+
+export interface AgentRuntimeGuidance {
+  id: string;
+  content: string;
+  createdAt: string;
 }
 
 export interface AgentRunStep {

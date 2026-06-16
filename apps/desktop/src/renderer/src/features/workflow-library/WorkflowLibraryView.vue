@@ -66,7 +66,10 @@
           </button>
         </div>
 
-        <div class="workflow-library-detail-head-center">
+        <div
+          class="workflow-library-detail-head-center"
+          :class="{ 'workflow-library-detail-head-reader': ui.workflow.view === 'info-reader' }"
+        >
           <p class="workflow-library-detail-title">{{ workflowDetailTitle }}</p>
         </div>
 
@@ -147,10 +150,28 @@
               <GIcon :name="workflowRunControlIcon" :spin="ui.workflow.isCancelling" />
             </button>
           </template>
+          <template v-else-if="ui.workflow.view === 'info-reader' && activeInfoReaderItem">
+            <button
+              v-if="canOpenInfoRadarItem(activeInfoReaderItem)"
+              type="button"
+              class="model-action-secondary workflow-info-reader-external"
+              title="在浏览器打开"
+              aria-label="在浏览器打开"
+              @click="openInfoRadarItemExternal(activeInfoReaderItem, ui.workflow.infoReaderResolvedUrl)"
+            >
+              <GIcon name="jump" />
+            </button>
+          </template>
         </div>
       </section>
 
-      <section class="workflow-library-main-stage">
+      <section
+        class="workflow-library-main-stage"
+        :class="{
+          'workflow-library-main-stage-info': ui.workflow.view === 'info',
+          'workflow-library-main-stage-reader': ui.workflow.view === 'info-reader'
+        }"
+      >
         <template v-if="ui.workflow.view === 'info'">
           <section
             class="workflow-info-stage"
@@ -213,119 +234,128 @@
             </aside>
 
             <section v-if="activeInfoWindow" class="workflow-info-feed-panel">
-              <div class="workflow-info-feed-head">
-                <div class="workflow-info-feed-title-block">
-                  <div class="workflow-info-feed-title-row">
-                    <p class="workflow-info-feed-title">{{ activeInfoWindow.title }}</p>
-                    <span
-                      v-if="activeInfoWindow.status === 'paused'"
-                      class="status-pill is-warning workflow-info-title-status"
+              <section class="workflow-info-compact-console">
+                <div class="workflow-info-compact-head">
+                  <div class="workflow-info-feed-title-block">
+                    <div class="workflow-info-feed-title-row">
+                      <p class="workflow-info-feed-title">{{ activeInfoWindow.title }}</p>
+                      <span
+                        v-if="activeInfoWindow.status === 'paused'"
+                        class="status-pill is-warning workflow-info-title-status"
+                      >
+                        已暂停
+                      </span>
+                    </div>
+                    <p v-if="activeInfoWindow.summary" class="workflow-info-feed-summary">{{ activeInfoWindow.summary }}</p>
+                  </div>
+
+                  <div class="workflow-info-compact-metrics" aria-label="信息雷达统计">
+                    <span><strong>{{ activeInfoWindow.items?.length ?? 0 }}</strong>条</span>
+                    <span><strong>{{ activeInfoWindow.sources?.length ?? 0 }}</strong>源</span>
+                    <span><strong>{{ infoRadarMetrics.highScoreCount ?? 0 }}</strong>高相关</span>
+                    <span><strong>{{ infoRadarMetrics.newItemCount ?? 0 }}</strong>新</span>
+                    <span>{{ activeInfoWindow.lastRefreshedAt ? `刷新 ${formatLocalDateTime(activeInfoWindow.lastRefreshedAt)}` : "未刷新" }}</span>
+                  </div>
+                </div>
+
+                <div class="workflow-info-compact-bar">
+                  <div class="workflow-info-compact-tools">
+                    <label class="workflow-info-compact-search">
+                      <span>筛选</span>
+                      <input
+                        v-model="ui.workflow.infoSearchQuery"
+                        placeholder="标题、摘要、来源或标签"
+                      />
+                    </label>
+                    <button type="button" class="model-icon-button" aria-label="配置信息窗口" title="配置" @click="openInfoRadarWindowEditor(activeInfoWindow)">
+                      <GIcon name="settings" />
+                    </button>
+                    <button
+                      type="button"
+                      class="model-icon-button workflow-info-refresh-icon"
+                      :disabled="ui.workflow.isRefreshingInfoWindow"
+                      :aria-label="ui.workflow.isRefreshingInfoWindow ? '刷新中' : '刷新'"
+                      :title="ui.workflow.isRefreshingInfoWindow ? '刷新中' : '刷新'"
+                      @click="refreshActiveInfoRadarWindow"
                     >
-                      已暂停
-                    </span>
+                      <GIcon name="refresh" :spin="ui.workflow.isRefreshingInfoWindow" />
+                    </button>
+                    <GCompactSelect
+                      v-model="ui.workflow.infoSourceFilter"
+                      class="workflow-info-filter-select"
+                      aria-label="来源筛选"
+                      :options="infoRadarSourceFilterOptions"
+                    />
+                    <GCompactSelect
+                      v-model="ui.workflow.infoTopicFilter"
+                      class="workflow-info-filter-select workflow-info-topic-select"
+                      aria-label="标签筛选"
+                      :options="infoRadarTopicFilterOptions"
+                    />
                   </div>
-                  <p v-if="activeInfoWindow.summary" class="workflow-info-feed-summary">{{ activeInfoWindow.summary }}</p>
-                </div>
-
-                <div class="workflow-info-feed-metrics">
-                  <div class="workflow-info-feed-metric">
-                    <strong>{{ activeInfoWindow.items?.length ?? 0 }}</strong>
-                    <span>条目</span>
-                  </div>
-                  <div class="workflow-info-feed-metric">
-                    <strong>{{ activeInfoWindow.sources?.length ?? 0 }}</strong>
-                    <span>来源</span>
-                  </div>
-                  <p class="workflow-info-feed-refresh">
-                    {{ activeInfoWindow.lastRefreshedAt ? `刷新 ${formatLocalDateTime(activeInfoWindow.lastRefreshedAt)}` : "未刷新" }}
-                  </p>
-                </div>
-              </div>
-
-              <div class="workflow-info-source-strip">
-                <span
-                  v-for="source in activeInfoWindow.sources"
-                  :key="source.id"
-                  class="workflow-info-source-chip"
-                  :class="{ 'is-disabled': source.enabled === false }"
-                  :title="source.url || source.query || source.notes"
-                >
-                  {{ getInfoRadarSourceKindLabel(source.kind) }} · {{ source.title }}
-                </span>
-              </div>
-
-              <div
-                v-if="activeInfoWindow.runHistory?.[0]"
-                class="workflow-info-run-note"
-                :class="getInfoRadarRunStatusTone(activeInfoWindow.runHistory[0].status)"
-              >
-                <span>{{ getInfoRadarRunStatusLabel(activeInfoWindow.runHistory[0].status) }}</span>
-                <p>{{ activeInfoWindow.runHistory[0].message }}</p>
-              </div>
-
-              <section class="workflow-library-main-card workflow-info-toolbar">
-                <label class="field workflow-library-search-field">
-                  <span class="field-label">快速筛选</span>
-                  <input
-                    v-model="ui.workflow.infoSearchQuery"
-                    class="field-input"
-                    placeholder="搜索标题、摘要、来源或标签"
-                  />
-                </label>
-                <div class="model-section-actions">
-                  <button type="button" class="model-action-secondary" @click="openInfoRadarWindowEditor(activeInfoWindow)">
-                    <GIcon name="settings" />
-                    配置
-                  </button>
-                  <button
-                    type="button"
-                    class="model-action"
-                    :disabled="ui.workflow.isRefreshingInfoWindow"
-                    @click="refreshActiveInfoRadarWindow"
-                  >
-                    <GIcon name="refresh" :spin="ui.workflow.isRefreshingInfoWindow" />
-                    {{ ui.workflow.isRefreshingInfoWindow ? "刷新中" : "刷新" }}
-                  </button>
                 </div>
               </section>
 
-              <div v-if="filteredInfoRadarItems.length" class="workflow-info-feed-list">
-                <article
-                  v-for="item in filteredInfoRadarItems"
-                  :key="item.id"
-                  class="workflow-info-item"
-                >
-                  <div class="workflow-info-item-head">
-                    <div class="workflow-info-item-title-block">
-                      <p class="workflow-info-item-title">{{ item.title }}</p>
-                      <p class="workflow-info-item-meta">
-                        {{ item.sourceTitle }} · {{ getInfoRadarSourceKindLabel(item.sourceKind) }}
-                        <span v-if="item.publishedAt"> · {{ formatLocalDateTime(item.publishedAt) }}</span>
-                      </p>
+              <div v-if="filteredInfoRadarItems.length" class="workflow-info-feed-canvas">
+                <div class="workflow-info-feed-list">
+                  <article
+                    v-for="item in filteredInfoRadarItems"
+                    :key="item.id"
+                    class="workflow-info-item"
+                    :class="getInfoRadarSourceTone(item.sourceKind)"
+                  >
+                    <div class="workflow-info-item-score" aria-hidden="true">
+                      <span :style="{ width: `${getInfoRadarScorePercent(item)}%` }"></span>
                     </div>
-                  </div>
-                  <p v-if="item.summary" class="workflow-info-item-summary">{{ item.summary }}</p>
-                  <div class="workflow-info-item-footer">
-                    <div class="extension-tag-row workflow-info-item-tags">
-                      <span
-                        v-for="tag in item.tags?.slice(0, 4)"
-                        :key="tag"
-                        class="pill pill-neutral workflow-info-item-tag"
-                      >
-                        {{ tag }}
-                      </span>
+                    <div class="workflow-info-item-visual" aria-hidden="true">
+                      <img v-if="item.imageUrl" :src="item.imageUrl" alt="" loading="lazy" />
+                      <span v-else>{{ String(item.sourceTitle || item.title || "I").slice(0, 1) }}</span>
                     </div>
-                    <a
-                      v-if="getInfoRadarItemHref(item)"
+                    <div class="workflow-info-item-main">
+                      <div class="workflow-info-item-head">
+                        <div class="workflow-info-item-title-block">
+                          <div class="workflow-info-item-kicker-row">
+                            <span class="workflow-info-kicker-cluster workflow-info-kicker-source">
+                              <span class="workflow-info-kind-badge" :class="getInfoRadarSourceTone(item.sourceKind)">
+                                {{ getInfoRadarSourceKindLabel(item.sourceKind) }}
+                              </span>
+                              <span class="workflow-info-source-name">{{ item.sourceTitle }}</span>
+                              <span v-if="item.score" class="workflow-info-score-chip">相关 {{ item.score }}</span>
+                            </span>
+                            <span class="workflow-info-kicker-cluster workflow-info-kicker-byline">
+                              <span>{{ item.author || "未知作者" }}</span>
+                              <span v-if="item.publishedAt">{{ formatLocalDateTime(item.publishedAt) }}</span>
+                              <span v-else-if="item.fetchedAt">抓取 {{ formatLocalDateTime(item.fetchedAt) }}</span>
+                            </span>
+                          </div>
+                          <p class="workflow-info-item-title" :title="getInfoRadarItemSummaryText(item) || item.title">{{ item.title }}</p>
+                        </div>
+                      </div>
+                      <div class="workflow-info-item-footer">
+                        <div class="extension-tag-row workflow-info-item-tags">
+                          <span
+                            v-for="tag in (item.matchedKeywords?.length ? item.matchedKeywords : item.tags)?.slice(0, 4)"
+                            :key="tag"
+                            class="pill pill-neutral workflow-info-item-tag"
+                          >
+                            {{ tag }}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      v-if="canOpenInfoRadarItem(item)"
+                      type="button"
                       class="workflow-info-item-link"
-                      :href="getInfoRadarItemHref(item)"
-                      target="_blank"
-                      rel="noreferrer"
+                      :aria-label="`打开来源：${item.title}`"
+                      title="打开来源"
+                      @click="openInfoRadarItemReader(item)"
                     >
-                      打开来源
-                    </a>
-                  </div>
-                </article>
+                      <span>打开</span>
+                      <GIcon name="jump" :size="12" />
+                    </button>
+                  </article>
+                </div>
               </div>
 
               <div v-else class="workflow-info-empty workflow-info-feed-empty">
@@ -342,6 +372,36 @@
             </section>
           </section>
         </template>
+
+        <section v-else-if="ui.workflow.view === 'info-reader'" class="workflow-info-reader-stage">
+          <template v-if="activeInfoReaderItem && canOpenInfoRadarItem(activeInfoReaderItem)">
+            <div ref="infoReaderFrameRef" class="workflow-info-reader-frame">
+              <div v-if="ui.workflow.isInfoReaderLoading" class="workflow-info-reader-loading" role="status" aria-live="polite">
+                <span class="workflow-info-reader-spinner" aria-hidden="true"></span>
+                <span>正在加载来源页面</span>
+              </div>
+              <div v-else-if="ui.workflow.infoReaderError" class="workflow-info-reader-fallback" role="status">
+                <p>{{ ui.workflow.infoReaderError }}</p>
+                <button
+                  type="button"
+                  class="model-action-secondary"
+                  @click="openInfoRadarItemExternal(activeInfoReaderItem, ui.workflow.infoReaderResolvedUrl)"
+                >
+                  <GIcon name="jump" />
+                  外部打开
+                </button>
+              </div>
+            </div>
+          </template>
+
+          <div v-else class="workflow-info-empty workflow-info-reader-empty">
+            <p>当前信息没有可打开的来源链接。</p>
+            <button type="button" class="model-action-secondary" @click="handleWorkflowBack">
+              <GIcon name="return" />
+              返回列表
+            </button>
+          </div>
+        </section>
 
         <form
           v-else-if="ui.workflow.view === 'info-editor'"
@@ -366,7 +426,7 @@
           <div class="model-form workflow-library-compose-form workflow-info-editor-form">
             <label class="field">
               <span class="field-label">窗口名称</span>
-              <input v-model="ui.workflow.infoWindowDraft.title" class="field-input" placeholder="例如：技术与 Agent 趋势" />
+              <input v-model="ui.workflow.infoWindowDraft.title" class="field-input" placeholder="例如：金融市场观察" />
             </label>
 
             <label class="field">
@@ -428,12 +488,22 @@
               <div class="workflow-library-inline-head">
                 <div>
                   <span class="field-label">信息来源</span>
-                  <p class="workflow-library-inline-copy">RSS 和普通网页可直接刷新；搜索与公众号先保存配置，后续接入专项能力。</p>
+                  <p class="workflow-library-inline-copy">RSS、网页、公开搜索和公众号线索均可刷新；公众号依赖公开搜索页，遇到限流会在刷新记录里提示。</p>
                 </div>
                 <button type="button" class="model-action-secondary" @click="addInfoRadarSourceDraft">
                   <GIcon name="add" />
                   添加来源
                 </button>
+              </div>
+
+              <div class="workflow-info-source-editor-header" aria-hidden="true">
+                <span></span>
+                <span>类型</span>
+                <span>名称</span>
+                <span>URL</span>
+                <span>查询</span>
+                <span>标签</span>
+                <span></span>
               </div>
 
               <div class="workflow-info-source-editor-list">
@@ -446,7 +516,6 @@
                     <input v-model="source.enabled" type="checkbox" aria-label="启用来源" />
                   </label>
                   <div class="field workflow-info-source-kind-field">
-                    <span class="field-label">类型</span>
                     <GCompactSelect
                       v-model="source.kind"
                       class="workflow-library-config-select workflow-info-source-kind-select"
@@ -455,20 +524,16 @@
                     />
                   </div>
                   <label class="field workflow-info-source-title-field">
-                    <span class="field-label">名称</span>
-                    <input v-model="source.title" class="field-input" placeholder="OpenAI Blog" />
+                    <input v-model="source.title" class="field-input" placeholder="OpenAI Blog" aria-label="来源名称" />
                   </label>
                   <label class="field workflow-info-source-url-field">
-                    <span class="field-label">URL</span>
-                    <input v-model="source.url" class="field-input" placeholder="https://example.com/rss.xml" />
+                    <input v-model="source.url" class="field-input" placeholder="https://example.com/rss.xml" aria-label="来源 URL" />
                   </label>
                   <label class="field workflow-info-source-query-field">
-                    <span class="field-label">查询</span>
-                    <input v-model="source.query" class="field-input" placeholder="用于搜索/公众号关键词" />
+                    <input v-model="source.query" class="field-input" placeholder="用于搜索/公众号关键词" aria-label="来源查询关键词" />
                   </label>
                   <label class="field workflow-info-source-tags-field">
-                    <span class="field-label">标签</span>
-                    <input v-model="source.tagsText" class="field-input" placeholder="AI，官方" />
+                    <input v-model="source.tagsText" class="field-input" placeholder="AI，官方" aria-label="来源标签" />
                   </label>
                   <button
                     type="button"
@@ -1111,6 +1176,8 @@
 </template>
 
 <script setup>
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+
 import GCompactSelect from "../../components/GCompactSelect.vue";
 import GIcon from "../../components/GIcon.vue";
 
@@ -1154,14 +1221,18 @@ function getWorkflowBodyStepSelectOptions(entries = []) {
   }));
 }
 
-defineProps({
+const props = defineProps({
   ui: { type: Object, required: true },
+  workbench: { type: Object, required: true },
   workflowLibraryCards: { type: Array, default: () => [] },
   workflowDetailTitle: { type: String, default: "流程中心" },
+  activeInfoReaderItem: { type: Object, default: null },
   activeInfoWindow: { type: Object, default: null },
   activeInfoWindows: { type: Array, default: () => [] },
   filteredInfoRadarItems: { type: Array, default: () => [] },
   infoRadarMetrics: { type: Object, default: () => ({ windowCount: 0, itemCount: 0, sourceCount: 0, activeSourceCount: 0, activeItemCount: 0 }) },
+  infoRadarSourceFilterOptions: { type: Array, default: () => [] },
+  infoRadarTopicFilterOptions: { type: Array, default: () => [] },
   filteredWorkflowRecords: { type: Array, default: () => [] },
   activeWorkflowRecord: { type: Object, default: null },
   activeWorkflowMetrics: { type: Object, default: () => ({ timeoutMs: 0 }) },
@@ -1183,14 +1254,18 @@ defineProps({
   deleteInfoRadarWindow: { type: Function, required: true },
   deleteWorkflowRecord: { type: Function, required: true },
   duplicateWorkflowRecord: { type: Function, required: true },
+  canOpenInfoRadarItem: { type: Function, required: true },
   formatDurationMs: { type: Function, required: true },
   formatLocalDateTime: { type: Function, required: true },
   getInfoRadarCadenceLabel: { type: Function, required: true },
   getInfoRadarItemHref: { type: Function, required: true },
+  getInfoRadarItemSummaryText: { type: Function, required: true },
   getInfoRadarItemStatusLabel: { type: Function, required: true },
   getInfoRadarRunStatusLabel: { type: Function, required: true },
   getInfoRadarRunStatusTone: { type: Function, required: true },
+  getInfoRadarScorePercent: { type: Function, required: true },
   getInfoRadarSourceKindLabel: { type: Function, required: true },
+  getInfoRadarSourceTone: { type: Function, required: true },
   getWorkflowCardCountLabel: { type: Function, required: true },
   getWorkflowRunCompletedCount: { type: Function, required: true },
   getWorkflowRunDurationLabel: { type: Function, required: true },
@@ -1206,9 +1281,13 @@ defineProps({
   handleWorkflowBodyDraftInput: { type: Function, required: true },
   handleWorkflowBodyStepSelect: { type: Function, required: true },
   handleWorkflowCurlCopy: { type: Function, required: true },
+  handleInfoRadarReaderLoadingEnd: { type: Function, required: true },
+  handleInfoRadarReaderLoadingStart: { type: Function, required: true },
   isWorkflowStepExpanded: { type: Function, required: true },
   openInfoRadarWindow: { type: Function, required: true },
   openInfoRadarWindowEditor: { type: Function, required: true },
+  openInfoRadarItemExternal: { type: Function, required: true },
+  openInfoRadarItemReader: { type: Function, required: true },
   openWorkflowCard: { type: Function, required: true },
   openWorkflowRecord: { type: Function, required: true },
   openWorkflowRecordEditor: { type: Function, required: true },
@@ -1227,4 +1306,245 @@ defineProps({
   syncWorkflowBodyDraftFromActiveStep: { type: Function, required: true },
   toggleWorkflowStepExpanded: { type: Function, required: true }
 });
+
+const infoReaderFrameRef = ref(null);
+const desktopApi = window.gordonDesktop ?? null;
+let infoReaderResizeObserver = null;
+let infoReaderEventListenerId = null;
+let infoReaderBoundsAnimationFrame = 0;
+let infoReaderBoundsRetryTimer = 0;
+
+function isInfoReaderBoundsReady(bounds) {
+  return Boolean(bounds && bounds.width >= 120 && bounds.height >= 120);
+}
+
+function clearInfoReaderBoundsRetry() {
+  if (!infoReaderBoundsRetryTimer) {
+    return;
+  }
+
+  window.clearTimeout(infoReaderBoundsRetryTimer);
+  infoReaderBoundsRetryTimer = 0;
+}
+
+function getInfoReaderBounds() {
+  const frame = infoReaderFrameRef.value;
+
+  if (!frame) {
+    return null;
+  }
+
+  const rect = frame.getBoundingClientRect();
+
+  return {
+    x: Math.max(0, Math.round(rect.x)),
+    y: Math.max(0, Math.round(rect.y)),
+    width: Math.max(0, Math.round(rect.width)),
+    height: Math.max(0, Math.round(rect.height))
+  };
+}
+
+function syncInfoReaderBounds() {
+  const bounds = getInfoReaderBounds();
+
+  if (!isInfoReaderBoundsReady(bounds) || !desktopApi?.setInfoRadarReaderBounds) {
+    return;
+  }
+
+  void desktopApi.setInfoRadarReaderBounds(bounds);
+}
+
+function scheduleInfoReaderBoundsSync() {
+  if (infoReaderBoundsAnimationFrame) {
+    cancelAnimationFrame(infoReaderBoundsAnimationFrame);
+  }
+
+  infoReaderBoundsAnimationFrame = requestAnimationFrame(() => {
+    infoReaderBoundsAnimationFrame = 0;
+    syncInfoReaderBounds();
+  });
+}
+
+async function waitForInfoReaderBounds() {
+  await nextTick();
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const bounds = getInfoReaderBounds();
+
+    if (isInfoReaderBoundsReady(bounds)) {
+      return bounds;
+    }
+
+    await new Promise((resolve) => {
+      requestAnimationFrame(resolve);
+    });
+  }
+
+  return null;
+}
+
+async function openNativeInfoReader() {
+  let url = props.ui.workflow.infoReaderResolvedUrl || (props.activeInfoReaderItem ? props.getInfoRadarItemHref(props.activeInfoReaderItem) : "");
+  const bounds = await waitForInfoReaderBounds();
+
+  if (props.activeInfoReaderItem?.sourceKind === "wechat") {
+    if (!props.ui.workflow.infoReaderResolvedUrl) {
+      const cardId = props.ui.workflow.activeCardId;
+      const windowId = props.ui.workflow.activeInfoWindowId;
+      const itemId = props.activeInfoReaderItem.id;
+
+      if (!desktopApi?.resolveInfoRadarWechatItemUrl || !cardId || !windowId || !itemId) {
+        props.handleInfoRadarReaderLoadingEnd();
+        props.ui.workflow.infoReaderError = "公众号链接需要重新检索，但当前桥接未就绪。";
+        return;
+      }
+
+      props.handleInfoRadarReaderLoadingStart();
+
+      try {
+        const result = await desktopApi.resolveInfoRadarWechatItemUrl({ cardId, windowId, itemId });
+        const nextCard = result?.card;
+
+        if (nextCard && Array.isArray(props.workbench?.workflowLibrary)) {
+          props.workbench.workflowLibrary = props.workbench.workflowLibrary.map((entry) => (entry.id === nextCard.id ? nextCard : entry));
+        }
+
+        props.ui.workflow.infoReaderResolvedUrl = String(result?.url ?? "").trim();
+        url = props.ui.workflow.infoReaderResolvedUrl;
+      } catch (error) {
+        props.handleInfoRadarReaderLoadingEnd();
+        props.ui.workflow.infoReaderError = error instanceof Error ? error.message : "公众号链接重新检索失败。";
+
+        if (desktopApi?.closeInfoRadarReader) {
+          await desktopApi.closeInfoRadarReader();
+        }
+
+        return;
+      }
+    }
+  }
+
+  if (!url || !bounds || !desktopApi?.openInfoRadarReader) {
+    if (url && props.ui.workflow.view === "info-reader") {
+      clearInfoReaderBoundsRetry();
+      infoReaderBoundsRetryTimer = window.setTimeout(() => {
+        infoReaderBoundsRetryTimer = 0;
+        void openNativeInfoReader();
+      }, 120);
+    }
+    return;
+  }
+
+  props.handleInfoRadarReaderLoadingStart();
+  await desktopApi.openInfoRadarReader({ url, bounds });
+  scheduleInfoReaderBoundsSync();
+}
+
+async function refreshNativeInfoReader() {
+  if (props.ui.workflow.view !== "info-reader") {
+    if (desktopApi?.closeInfoRadarReader) {
+      await desktopApi.closeInfoRadarReader();
+    }
+    return;
+  }
+
+  await nextTick();
+  scheduleInfoReaderBoundsSync();
+  await openNativeInfoReader();
+}
+
+function handleInfoReaderEvent(payload) {
+  if (!payload || typeof payload !== "object") {
+    return;
+  }
+
+  if (payload.status === "loading") {
+    props.handleInfoRadarReaderLoadingStart();
+    return;
+  }
+
+  if (payload.status === "ready") {
+    props.handleInfoRadarReaderLoadingEnd();
+    props.ui.workflow.infoReaderError = "";
+    return;
+  }
+
+  if (payload.status === "failed") {
+    props.handleInfoRadarReaderLoadingEnd();
+    props.ui.workflow.infoReaderError = String(payload.message ?? "来源页面加载失败，可以尝试外部打开。");
+  }
+}
+
+onMounted(() => {
+  if (desktopApi?.onInfoRadarReaderEvent) {
+    infoReaderEventListenerId = desktopApi.onInfoRadarReaderEvent(handleInfoReaderEvent);
+  }
+
+  if (typeof ResizeObserver !== "undefined") {
+    infoReaderResizeObserver = new ResizeObserver(scheduleInfoReaderBoundsSync);
+  }
+
+  if (infoReaderFrameRef.value && infoReaderResizeObserver) {
+    infoReaderResizeObserver.observe(infoReaderFrameRef.value);
+  }
+
+  window.addEventListener("resize", scheduleInfoReaderBoundsSync);
+  void refreshNativeInfoReader();
+});
+
+onBeforeUnmount(() => {
+  clearInfoReaderBoundsRetry();
+
+  if (infoReaderBoundsAnimationFrame) {
+    cancelAnimationFrame(infoReaderBoundsAnimationFrame);
+    infoReaderBoundsAnimationFrame = 0;
+  }
+
+  window.removeEventListener("resize", scheduleInfoReaderBoundsSync);
+
+  if (infoReaderResizeObserver) {
+    infoReaderResizeObserver.disconnect();
+    infoReaderResizeObserver = null;
+  }
+
+  if (infoReaderEventListenerId && desktopApi?.offInfoRadarReaderEvent) {
+    desktopApi.offInfoRadarReaderEvent(infoReaderEventListenerId);
+    infoReaderEventListenerId = null;
+  }
+
+  if (desktopApi?.closeInfoRadarReader) {
+    void desktopApi.closeInfoRadarReader();
+  }
+});
+
+watch(
+  () => [
+    props.ui.workflow.view,
+    props.activeInfoReaderItem?.id,
+    props.activeInfoReaderItem ? props.getInfoRadarItemHref(props.activeInfoReaderItem) : ""
+  ],
+  () => {
+    void refreshNativeInfoReader();
+  },
+  { flush: "post" }
+);
+
+watch(
+  () => infoReaderFrameRef.value,
+  (frame, previousFrame) => {
+    if (!infoReaderResizeObserver) {
+      return;
+    }
+
+    if (previousFrame) {
+      infoReaderResizeObserver.unobserve(previousFrame);
+    }
+
+    if (frame) {
+      infoReaderResizeObserver.observe(frame);
+      scheduleInfoReaderBoundsSync();
+    }
+  },
+  { flush: "post" }
+);
 </script>

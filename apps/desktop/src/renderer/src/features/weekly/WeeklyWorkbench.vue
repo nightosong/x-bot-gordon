@@ -30,7 +30,7 @@
       </section>
 
       <div class="models-grid models-grid-single" :class="{ 'models-grid-immersive': state.view === 'editor' }">
-        <section v-if="state.view === 'list'" class="model-section">
+        <section v-if="state.view === 'list'" class="model-section weekly-list-section">
           <div class="model-section-head">
             <div>
               <p class="feature-kicker">Weekly Reports</p>
@@ -784,10 +784,31 @@
               />
             </label>
 
+            <label class="weekly-feishu-auto-row">
+              <span class="weekly-feishu-auto-copy">
+                <strong>自动日报</strong>
+                <small>工作日 18:30 北京时间生成并发送</small>
+              </span>
+              <span class="weekly-feishu-switch" :class="{ 'is-active': state.feishuSettingsDraft.autoDailyReportEnabled }">
+                <input
+                  type="checkbox"
+                  :checked="state.feishuSettingsDraft.autoDailyReportEnabled"
+                  :disabled="state.isFeishuSettingsLoading || state.isFeishuSettingsSaving"
+                  @change="setWeeklyFeishuSettingsDraftField('autoDailyReportEnabled', $event.target.checked)"
+                />
+                <span aria-hidden="true"></span>
+              </span>
+            </label>
+
             <div class="writing-export-summary weekly-feishu-summary">
               <span>{{ weeklyFeishuSettingsStatusText }}</span>
               <span>{{ weeklyFeishuSecretStatusText }}</span>
+              <span>{{ weeklyFeishuAutoStatusText }}</span>
             </div>
+
+            <p v-if="weeklyFeishuAutoLastRunText" class="weekly-feishu-auto-last">
+              {{ weeklyFeishuAutoLastRunText }}
+            </p>
           </div>
 
           <p
@@ -986,9 +1007,14 @@ const weeklyYearOptions = computed(() => {
 });
 const weeklyActiveYear = computed(() => {
   const availableYears = weeklyYearOptions.value.map((option) => option.year);
+  const currentYear = String(new Date().getFullYear());
 
   if (weeklySelectedYear.value && availableYears.includes(weeklySelectedYear.value)) {
     return weeklySelectedYear.value;
+  }
+
+  if (availableYears.includes(currentYear)) {
+    return currentYear;
   }
 
   return availableYears[0] ?? "";
@@ -1250,6 +1276,30 @@ const weeklyFeishuSettingsStatusText = computed(() => (weeklyFeishuDraftHasWebho
 const weeklyFeishuSecretStatusText = computed(() =>
   String(props.state.feishuSettingsDraft?.secret ?? "").trim() ? "签名校验已启用" : "未启用签名校验"
 );
+const weeklyFeishuAutoStatusText = computed(() =>
+  props.state.feishuSettingsDraft?.autoDailyReportEnabled ? "自动日报已开启" : "自动日报未开启"
+);
+const weeklyFeishuAutoLastRunText = computed(() => {
+  const status = String(props.state.feishuSettings?.autoDailyReportLastStatus ?? "idle").trim();
+  const message = String(props.state.feishuSettings?.autoDailyReportLastMessage ?? "").trim();
+  const runAt = String(props.state.feishuSettings?.autoDailyReportLastRunAt ?? "").trim();
+
+  if (!runAt && !message) {
+    return "";
+  }
+
+  const statusLabelMap = {
+    success: "最近自动发送成功",
+    failed: "最近自动发送失败",
+    skipped: "最近自动发送跳过",
+    idle: "自动发送待执行"
+  };
+  const timeText = runAt ? formatLocalDateTime(runAt) : "";
+  const statusLabel = statusLabelMap[status] ?? statusLabelMap.idle;
+  const suffix = [timeText, message].filter(Boolean).join(" · ");
+
+  return suffix ? `${statusLabel}：${suffix}` : statusLabel;
+});
 const weeklyDraftInsights = computed(() => buildWeeklyDraftInsights(props.state.draft));
 const weeklyInsightActiveTab = ref("quality");
 const weeklyInsightDoneCount = computed(() => weeklyDraftInsights.value.qualityChecks.filter((check) => check.done).length);

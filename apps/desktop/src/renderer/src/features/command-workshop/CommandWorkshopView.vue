@@ -114,10 +114,10 @@
                       <ol v-if="item.items?.length" class="command-response-plan-list">
                         <li v-for="planItem in item.items" :key="planItem">{{ planItem }}</li>
                       </ol>
-                      <div v-if="item.output" class="command-response-output">
-                        <span class="command-response-output-label">{{ item.outputLabel || "中间输出" }}</span>
+                      <details v-if="item.output" class="command-response-output">
+                        <summary>{{ item.outputLabel || "查看输出" }}</summary>
                         <pre>{{ item.output }}</pre>
-                      </div>
+                      </details>
                     </div>
                   </article>
                 </div>
@@ -271,10 +271,10 @@
                       <ol v-if="item.items?.length" class="command-response-plan-list">
                         <li v-for="planItem in item.items" :key="planItem">{{ planItem }}</li>
                       </ol>
-                      <div v-if="item.output" class="command-response-output">
-                        <span class="command-response-output-label">{{ item.outputLabel || "中间输出" }}</span>
+                      <details v-if="item.output" class="command-response-output">
+                        <summary>{{ item.outputLabel || "查看输出" }}</summary>
                         <pre>{{ item.output }}</pre>
-                      </div>
+                      </details>
                     </div>
                   </article>
                 </div>
@@ -476,7 +476,7 @@
                     <button
                       type="button"
                       class="command-request-queue-guide"
-                      title="发送为下一轮引导"
+                      title="加入当前运行引导"
                       @click="handleCommandQueueItemGuide(item.id)"
                     >
                       引导
@@ -555,6 +555,14 @@
                 >
                   <GIcon name="add" />
                 </button>
+
+                <GCompactSelect
+                  v-model="ui.command.form.permissionMode"
+                  class="command-permission-select"
+                  aria-label="访问权限"
+                  :disabled="!commandSelectedAgent"
+                  :options="commandPermissionModeOptions"
+                />
 
                 <button
                   v-if="ui.command.isRunning && !hasCommandDraftContent()"
@@ -722,6 +730,11 @@ const commandToolSelectOptions = computed(() => [
     label: tool.description ? `${tool.name} / ${tool.description}` : tool.name,
     value: tool.name
   }))
+]);
+
+const commandPermissionModeOptions = computed(() => [
+  { label: "按需申请", value: "on_demand" },
+  { label: "无需申请", value: "auto" }
 ]);
 
 const commandLiveActivityItem = computed(() => props.getCommandLiveActivityItem(props.ui.command.liveProgress));

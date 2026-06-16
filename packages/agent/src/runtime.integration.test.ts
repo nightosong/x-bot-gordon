@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import type { AgentProfile, McpServerConfig, ModelMessage, ModelProfile } from "../../shared/src/index.js";
+import type { AgentProfile, AgentTaskLedger, McpServerConfig, ModelMessage, ModelProfile } from "../../shared/src/index.js";
 import {
   saveModelSettings,
   upsertAgentProfile,
@@ -469,7 +469,8 @@ function createFakeExternalEvidenceModelServer(capturedRequests: CapturedRequest
               toolName: "web_research",
               arguments: {
                 query: "Anthropic Claude latest official API pricing",
-                preferredDomains: ["anthropic.com", "docs.anthropic.com"],
+                includeDomains: ["anthropic.com", "docs.anthropic.com", "platform.claude.com", "support.claude.com"],
+                preferredDomains: ["anthropic.com", "docs.anthropic.com", "platform.claude.com", "support.claude.com"],
                 provider: "auto",
                 maxSearchResults: 10,
                 maxPagesToRead: 4
@@ -516,6 +517,108 @@ function createFakeExternalEvidenceModelServer(capturedRequests: CapturedRequest
       model: "fake-external-evidence"
     });
   });
+}
+
+function createFakeWorkspaceNoToolModelServer(capturedRequests: CapturedRequest[]): Server {
+  return createServer(async (request, response) => {
+    if (request.method !== "POST") {
+      response.writeHead(404);
+      response.end();
+      return;
+    }
+
+    const body = await readRequestBody(request);
+    capturedRequests.push({
+      url: request.url ?? "",
+      body
+    });
+
+    const systemMessage = getSystemMessage(body);
+    let content = "已根据 Workspace Tools 返回的真实文件内容整理结果。";
+
+    if (systemMessage.includes("资源任务规划器")) {
+      content = JSON.stringify({
+        shouldCall: false,
+        serverId: null,
+        toolName: null,
+        arguments: {},
+        reason: "用户可能只是想咨询 README 是否存在，可以直接解释。",
+        expectedOutcome: "",
+        verificationMethod: "",
+        ledgerPatch: {
+          objective: "检查 README 文件是否存在",
+          taskPhase: "planning",
+          decisionTrace: [
+            {
+              step: "尝试直接回答 workspace 文件状态",
+              intent: "快速响应用户",
+              chosenAction: "text_response",
+              rejectedAlternatives: ["Workspace Tools / read_file"],
+              why: "Planner 误判为咨询",
+              expectedOutcome: "回复 README 状态"
+            }
+          ],
+          nextActionHint: "直接整理回复"
+        }
+      });
+    }
+
+    sendJson(response, {
+      choices: [
+        {
+          message: {
+            content
+          }
+        }
+      ]
+    });
+  });
+}
+
+function createWorkspaceContinuationLedger(): AgentTaskLedger {
+  return {
+    taskPhase: "executing",
+    objective: "检查 README 文件是否存在",
+    constraints: [],
+    completedSubtasks: ["已确认需要读取 workspace 文件"],
+    pendingSubtasks: ["读取 README 文件确认状态"],
+    activePlan: [
+      {
+        step: "读取 README 文件",
+        toolHint: "Workspace Tools / read_file",
+        successCriteria: "工具返回 README 内容或不存在状态",
+        status: "pending"
+      }
+    ],
+    decisionTrace: [
+      {
+        step: "上一轮决定读取 README",
+        intent: "确认 workspace 文件状态",
+        chosenAction: "Workspace Tools / read_file",
+        rejectedAlternatives: ["text_response"],
+        why: "文件状态必须通过工具确认",
+        expectedOutcome: "README 状态"
+      }
+    ],
+    decisionMemory: [],
+    observations: [],
+    evidenceGraph: [],
+    discoveredFacts: [],
+    failedAttempts: [],
+    environmentState: [],
+    userInterruptions: [],
+    successCriteria: ["确认 README 状态"],
+    structuredSuccessCriteria: [
+      {
+        type: "tool_result",
+        target: "read_file",
+        expected: "README 文件内容或不存在状态",
+        verificationMethod: "读取 README",
+        status: "pending"
+      }
+    ],
+    nextActionHint: "读取 README 文件确认是否存在"
+  };
 }
 
 function createSlowPlannerModelServer(capturedRequests: CapturedRequest[]): Server {
@@ -581,7 +684,9 @@ function buildToolDefinitions(pathname: string): unknown[] {
             provider: { type: "string" },
             maxSearchResults: { type: "integer" },
             maxPagesToRead: { type: "integer" },
-            preferredDomains: { type: "array", items: { type: "string" } }
+            includeDomains: { type: "array", items: { type: "string" } },
+            preferredDomains: { type: "array", items: { type: "string" } },
+            officialUrls: { type: "array", items: { type: "string" } }
           }
         }
       },
@@ -595,6 +700,7 @@ function buildToolDefinitions(pathname: string): unknown[] {
             query: { type: "string" },
             provider: { type: "string" },
             limit: { type: "integer" },
+            includeDomains: { type: "array", items: { type: "string" } },
             preferredDomains: { type: "array", items: { type: "string" } }
           }
         }
@@ -789,7 +895,7 @@ function createFakeMcpServer(capturedRequests: CapturedRequest[]): Server {
               text: pathname.includes("computer")
                 ? "activeApp=Google Chrome\nvisibleText=Chrome Ready"
                 : pathname.includes("search") && toolName === "web_research"
-                  ? "source=https://docs.anthropic.com/en/docs/about-claude/pricing\nsummary=Anthropic official pricing page returned Claude API price evidence"
+                  ? "source=https://platform.claude.com/docs/en/about-claude/models/overview\nsource=https://platform.claude.com/docs/en/about-claude/pricing\nsummary=Anthropic official pricing page returned Claude API model and price evidence. Claude Sonnet 4.6 input $3 / MTok output $15 / MTok."
                 : pathname.includes("application") && toolName === "comic_update_project_fields"
                   ? "applied=true\nproject=寂寞青梅\nsummary includes 刀梦 小梅\nvisualStyle=古风武侠彩绘分镜\nepisodePlan=24 页首章规划"
                   : pathname.includes("generation") && toolName === "video_gen"
@@ -808,9 +914,9 @@ function createFakeMcpServer(capturedRequests: CapturedRequest[]): Server {
                   sources: [
                     {
                       title: "Anthropic Claude pricing",
-                      url: "https://docs.anthropic.com/en/docs/about-claude/pricing",
-                      domain: "docs.anthropic.com",
-                      snippet: "Official Claude API pricing evidence"
+                      url: "https://platform.claude.com/docs/en/about-claude/pricing",
+                      domain: "platform.claude.com",
+                      snippet: "Official Claude API pricing evidence with input $3 / MTok and output $15 / MTok"
                     }
                   ]
                 }
@@ -845,6 +951,141 @@ function createFakeMcpServer(capturedRequests: CapturedRequest[]): Server {
               : {
                   content: "workspace file content"
                 }
+        }
+      });
+      return;
+    }
+
+    sendJson(response, {
+      jsonrpc: "2.0",
+      id,
+      error: {
+        code: -32601,
+        message: `Unsupported method: ${method}`
+      }
+    });
+  });
+}
+
+function createIrrelevantThenOfficialSearchMcpServer(capturedRequests: CapturedRequest[]): Server {
+  let searchCalls = 0;
+
+  return createServer(async (request, response) => {
+    if (request.method !== "POST") {
+      response.writeHead(404);
+      response.end();
+      return;
+    }
+
+    const body = await readRequestBody(request);
+    capturedRequests.push({
+      url: request.url ?? "",
+      body
+    });
+
+    const method = typeof body.method === "string" ? body.method : "";
+    const id = typeof body.id === "number" ? body.id : undefined;
+    const pathname = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+
+    if (!id) {
+      response.writeHead(202);
+      response.end();
+      return;
+    }
+
+    if (method === "initialize") {
+      sendJson(response, {
+        jsonrpc: "2.0",
+        id,
+        result: {
+          protocolVersion: "2025-11-25",
+          capabilities: {},
+          serverInfo: {
+            name: "fake-search-mcp",
+            version: "0.0.0"
+          }
+        }
+      });
+      return;
+    }
+
+    if (method === "tools/list") {
+      sendJson(response, {
+        jsonrpc: "2.0",
+        id,
+        result: {
+          tools: buildToolDefinitions(pathname)
+        }
+      });
+      return;
+    }
+
+    if (method === "tools/call") {
+      const params = body.params && typeof body.params === "object" ? (body.params as Record<string, unknown>) : {};
+      const toolName = typeof params.name === "string" ? params.name : "";
+
+      if (pathname.includes("search") && toolName === "web_research") {
+        searchCalls += 1;
+        const isFirstSearch = searchCalls === 1;
+
+        sendJson(response, {
+          jsonrpc: "2.0",
+          id,
+          result: {
+            content: [
+              {
+                  type: "text",
+                  text: isFirstSearch
+                    ? "source=https://dict.example.test/help\nsummary=帮字词典页面，和 Anthropic/Claude 模型无关"
+                  : "source=https://platform.claude.com/docs/en/about-claude/models/overview\nsource=https://platform.claude.com/docs/en/about-claude/pricing\nsource=https://support.claude.com/en/articles/12138966-release-notes\nsummary=Anthropic official Claude models overview and release notes include Claude Fable 5, Mythos 5, Opus 4.8, Sonnet 4.6, Haiku 4.5, API IDs, status, and pricing such as input $3 / MTok output $15 / MTok."
+              }
+            ],
+            structuredContent: isFirstSearch
+              ? {
+                  query: "帮",
+                  sources: [
+                    {
+                      title: "帮字词典",
+                      url: "https://dict.example.test/help",
+                      domain: "dict.example.test",
+                      snippet: "汉字解释"
+                    }
+                  ]
+                }
+              : {
+                  query: "Anthropic Claude latest models official model overview",
+                  sources: [
+                    {
+                      title: "Anthropic Claude models overview",
+                      url: "https://platform.claude.com/docs/en/about-claude/models/overview",
+                      domain: "platform.claude.com",
+                      snippet: "Claude model names, API IDs, and current availability."
+                    },
+                    {
+                      title: "Anthropic Claude pricing",
+                      url: "https://platform.claude.com/docs/en/about-claude/pricing",
+                      domain: "platform.claude.com",
+                      snippet: "Official Claude pricing includes input $3 / MTok and output $15 / MTok."
+                    },
+                    {
+                      title: "Claude release notes",
+                      url: "https://support.claude.com/en/articles/12138966-release-notes",
+                      domain: "support.claude.com",
+                      snippet: "Latest Claude release notes and model changes."
+                    }
+                  ]
+                }
+          }
+        });
+        return;
+      }
+
+      sendJson(response, {
+        jsonrpc: "2.0",
+        id,
+        result: {
+          content: [{ type: "text", text: "unsupported test tool" }],
+          structuredContent: {}
         }
       });
       return;
@@ -938,9 +1179,11 @@ test("runAgent keeps Computer Use selectable through capability routing", async 
     const firstPlannerRequest = modelRequests.find(
       (request) => getSystemMessage(request.body).includes("工具规划器") || getSystemMessage(request.body).includes("资源任务规划器")
     );
+    const activeVerificationPlannerRequests = modelRequests.filter((request) => getSystemMessage(request.body).includes("主动验证规划器"));
     const firstPlannerUserMessage = getModelMessages(firstPlannerRequest?.body ?? {}).find((message) => message.role === "user")?.content ?? "";
 
     assert.ok(firstPlannerRequest);
+    assert.equal(activeVerificationPlannerRequests.length, 0);
     assert.match(firstPlannerUserMessage, /能力路由上下文/u);
     assert.match(firstPlannerUserMessage, /"allToolsAvailable": false/u);
     assert.match(firstPlannerUserMessage, /Planner Tool View/u);
@@ -1038,10 +1281,12 @@ test("runAgent directly routes explicit generation requests without planner late
       const systemMessage = getSystemMessage(request.body);
       return systemMessage.includes("资源任务规划器");
     });
+    const activeVerificationPlannerRequests = modelRequests.filter((request) => getSystemMessage(request.body).includes("主动验证规划器"));
     const toolCallRequest = mcpRequests.find((request) => request.url.includes("/generation") && request.body.method === "tools/call");
     const toolParams = toolCallRequest?.body.params as { arguments?: Record<string, unknown>; name?: string } | undefined;
 
     assert.equal(genericPlannerRequests.length, 0);
+    assert.equal(activeVerificationPlannerRequests.length, 0);
     assert.equal(permissionRequests.length, 1);
     assert.ok(log.steps.some((step) => step.type === "mcp_auto_planning" && /已识别为视频生成任务/u.test(step.title)));
     assert.equal(log.mcpCalls?.[0]?.serverId, "test:mcp:generation-tools");
@@ -1141,8 +1386,27 @@ test("runAgent forces external evidence tools for latest official pricing questi
     assert.equal(log.mcpCalls?.[0]?.isError, false);
     assert.equal(searchToolParams?.name, "web_research");
     assert.match(String(searchToolParams?.arguments?.query ?? ""), /Anthropic Claude/u);
-    assert.deepEqual(searchToolParams?.arguments?.preferredDomains, ["anthropic.com", "docs.anthropic.com"]);
-    assert.match(log.mcpResultText ?? "", /docs\.anthropic\.com/u);
+    assert.deepEqual(searchToolParams?.arguments?.preferredDomains, [
+      "anthropic.com",
+      "docs.anthropic.com",
+      "platform.claude.com",
+      "support.claude.com"
+    ]);
+    assert.deepEqual(searchToolParams?.arguments?.includeDomains, [
+      "anthropic.com",
+      "docs.anthropic.com",
+      "platform.claude.com",
+      "support.claude.com"
+    ]);
+    assert.deepEqual(searchToolParams?.arguments?.officialUrls, [
+      "https://platform.claude.com/docs/en/about-claude/models/overview",
+      "https://platform.claude.com/docs/en/about-claude/pricing",
+      "https://support.claude.com/en/articles/12138966-release-notes",
+      "https://www.anthropic.com/news/claude-fable-5-mythos-5",
+      "https://www.anthropic.com/news/fable-mythos-access",
+      "https://www.anthropic.com/news/claude-opus-4-8"
+    ]);
+    assert.match(log.mcpResultText ?? "", /platform\.claude\.com/u);
     assert.match(log.text, /Search Tools|官网|来源|pricing|价格/u);
   } finally {
     process.env.GORDON_HOME = previousHome;
@@ -1152,7 +1416,333 @@ test("runAgent forces external evidence tools for latest official pricing questi
   }
 });
 
-test("runAgent stops generic tool planning when the planner exceeds the latency budget", async () => {
+test("runAgent retries official external evidence when first search result is irrelevant", async () => {
+  const previousHome = process.env.GORDON_HOME;
+  const previousDataRoot = process.env.GORDON_DATA_ROOT;
+  const tempHome = await mkdtemp(path.join(tmpdir(), "gordon-agent-runtime-external-evidence-retry-"));
+  const modelRequests: CapturedRequest[] = [];
+  const mcpRequests: CapturedRequest[] = [];
+  const modelServer = createFakeExternalEvidenceModelServer(modelRequests);
+  const mcpServer = createIrrelevantThenOfficialSearchMcpServer(mcpRequests);
+
+  try {
+    const [modelBaseUrl, mcpBaseUrl] = await Promise.all([listen(modelServer), listen(mcpServer)]);
+    process.env.GORDON_HOME = tempHome;
+    process.env.GORDON_DATA_ROOT = path.join(tempHome, "data");
+
+    const timestamp = "2026-06-01T00:00:00.000Z";
+    const modelProfile: ModelProfile = {
+      id: "test:model:external-evidence-retry",
+      provider: "openai_like",
+      displayName: "External Evidence Retry Model",
+      model: "external-evidence-retry",
+      apiKey: "test-key",
+      baseUrl: modelBaseUrl,
+      apiFormat: "chat_completions",
+      supportsStreaming: false,
+      updatedAt: timestamp
+    };
+    const searchToolsServer: McpServerConfig = {
+      id: "test:mcp:search-tools-retry",
+      name: "Search Tools",
+      description: "Search and research the public web",
+      transport: "http",
+      url: `${mcpBaseUrl}/search`,
+      env: {},
+      toolAllowlist: [],
+      enabled: true,
+      updatedAt: timestamp
+    };
+    const agentProfile: AgentProfile = {
+      id: "test:agent:external-evidence-retry",
+      name: "External Evidence Retry Test Agent",
+      description: "Integration test agent",
+      mode: "chat",
+      modelProfileId: modelProfile.id,
+      systemPrompt: "Use official evidence for current model catalogs.",
+      allowedSkillIds: [],
+      allowedMcpServerIds: [searchToolsServer.id],
+      enabled: true,
+      updatedAt: timestamp
+    };
+
+    await saveModelSettings({
+      profiles: [modelProfile],
+      activeProfileId: modelProfile.id
+    });
+    await upsertMcpServer(searchToolsServer);
+    await upsertAgentProfile(agentProfile);
+
+    const log = await runAgent({
+      agentProfileId: agentProfile.id,
+      userInput: "帮我查一下anthropic旗下最新的模型有哪些？",
+      autoSelectMcp: true
+    });
+    const searchToolCalls = mcpRequests.filter((request) => request.url.includes("/search") && request.body.method === "tools/call");
+    const firstSearchParams = searchToolCalls[0]?.body.params as { arguments?: Record<string, unknown>; name?: string } | undefined;
+    const secondSearchParams = searchToolCalls[1]?.body.params as { arguments?: Record<string, unknown>; name?: string } | undefined;
+
+    assert.equal(searchToolCalls.length, 2);
+    assert.equal(firstSearchParams?.name, "web_research");
+    assert.equal(secondSearchParams?.name, "web_research");
+    assert.match(String(firstSearchParams?.arguments?.query ?? ""), /Anthropic Claude latest models/u);
+    assert.match(String(secondSearchParams?.arguments?.query ?? ""), /Anthropic Claude models overview|Claude model names/u);
+    assert.deepEqual(secondSearchParams?.arguments?.includeDomains, [
+      "anthropic.com",
+      "docs.anthropic.com",
+      "platform.claude.com",
+      "support.claude.com"
+    ]);
+    assert.ok(Array.isArray(secondSearchParams?.arguments?.officialUrls));
+    assert.ok((secondSearchParams?.arguments?.officialUrls as unknown[]).includes("https://platform.claude.com/docs/en/about-claude/pricing"));
+    assert.ok(log.steps.some((step) => /外部证据质量检查未通过/u.test(step.title)));
+    assert.match(log.mcpResultText ?? "", /platform\.claude\.com/u);
+    assert.match(log.text, /官网来源|Claude|价格|Search Tools/u);
+  } finally {
+    process.env.GORDON_HOME = previousHome;
+    process.env.GORDON_DATA_ROOT = previousDataRoot;
+    await Promise.allSettled([closeServer(modelServer), closeServer(mcpServer)]);
+    await rm(tempHome, { recursive: true, force: true });
+  }
+});
+
+test("runAgent falls back to required workspace tools when planner says no tool is needed", async () => {
+  const previousHome = process.env.GORDON_HOME;
+  const previousDataRoot = process.env.GORDON_DATA_ROOT;
+  const tempHome = await mkdtemp(path.join(tmpdir(), "gordon-agent-runtime-workspace-no-tool-"));
+  const modelRequests: CapturedRequest[] = [];
+  const mcpRequests: CapturedRequest[] = [];
+  const modelServer = createFakeWorkspaceNoToolModelServer(modelRequests);
+  const mcpServer = createFakeMcpServer(mcpRequests);
+
+  try {
+    const [modelBaseUrl, mcpBaseUrl] = await Promise.all([listen(modelServer), listen(mcpServer)]);
+    process.env.GORDON_HOME = tempHome;
+    process.env.GORDON_DATA_ROOT = path.join(tempHome, "data");
+
+    const timestamp = "2026-06-01T00:00:00.000Z";
+    const modelProfile: ModelProfile = {
+      id: "test:model:workspace-no-tool",
+      provider: "openai_like",
+      displayName: "Workspace No Tool Model",
+      model: "workspace-no-tool",
+      apiKey: "test-key",
+      baseUrl: modelBaseUrl,
+      apiFormat: "chat_completions",
+      supportsStreaming: false,
+      updatedAt: timestamp
+    };
+    const workspaceServer: McpServerConfig = {
+      id: "test:mcp:workspace-no-tool",
+      name: "Workspace Tools",
+      description: "Read files",
+      transport: "http",
+      url: `${mcpBaseUrl}/workspace`,
+      env: {},
+      toolAllowlist: [],
+      enabled: true,
+      updatedAt: timestamp
+    };
+    const agentProfile: AgentProfile = {
+      id: "test:agent:workspace-no-tool",
+      name: "Workspace No Tool Test Agent",
+      description: "Integration test agent",
+      mode: "chat",
+      modelProfileId: modelProfile.id,
+      systemPrompt: "Use tools for workspace file state.",
+      allowedSkillIds: [],
+      allowedMcpServerIds: [workspaceServer.id],
+      enabled: true,
+      updatedAt: timestamp
+    };
+
+    await saveModelSettings({
+      profiles: [modelProfile],
+      activeProfileId: modelProfile.id
+    });
+    await upsertMcpServer(workspaceServer);
+    await upsertAgentProfile(agentProfile);
+
+    const log = await runAgent({
+      agentProfileId: agentProfile.id,
+      userInput: "检查一下当前项目里的 README 文件是否存在",
+      autoSelectMcp: true
+    });
+    const workspaceToolCallRequest = mcpRequests.find((request) => request.url.includes("/workspace") && request.body.method === "tools/call");
+    const workspaceToolParams = workspaceToolCallRequest?.body.params as { arguments?: Record<string, unknown>; name?: string } | undefined;
+
+    assert.equal(log.mcpCalls?.length ?? 0, 1);
+    assert.equal(log.mcpCalls?.[0]?.toolName, "read_file");
+    assert.equal(workspaceToolParams?.name, "read_file");
+    assert.deepEqual(workspaceToolParams?.arguments, { path: "." });
+    assert.ok(log.steps.some((step) => step.type === "mcp_auto_planning" && /required fallback/u.test(step.title)));
+  } finally {
+    process.env.GORDON_HOME = previousHome;
+    process.env.GORDON_DATA_ROOT = previousDataRoot;
+    await Promise.allSettled([closeServer(modelServer), closeServer(mcpServer)]);
+    await rm(tempHome, { recursive: true, force: true });
+  }
+});
+
+test("runAgent continues an active workspace task without generic planner", async () => {
+  const previousHome = process.env.GORDON_HOME;
+  const previousDataRoot = process.env.GORDON_DATA_ROOT;
+  const tempHome = await mkdtemp(path.join(tmpdir(), "gordon-agent-runtime-task-continuation-"));
+  const modelRequests: CapturedRequest[] = [];
+  const mcpRequests: CapturedRequest[] = [];
+  const modelServer = createFakeWorkspaceNoToolModelServer(modelRequests);
+  const mcpServer = createFakeMcpServer(mcpRequests);
+
+  try {
+    const [modelBaseUrl, mcpBaseUrl] = await Promise.all([listen(modelServer), listen(mcpServer)]);
+    process.env.GORDON_HOME = tempHome;
+    process.env.GORDON_DATA_ROOT = path.join(tempHome, "data");
+
+    const timestamp = "2026-06-01T00:00:00.000Z";
+    const modelProfile: ModelProfile = {
+      id: "test:model:task-continuation",
+      provider: "openai_like",
+      displayName: "Task Continuation Model",
+      model: "task-continuation",
+      apiKey: "test-key",
+      baseUrl: modelBaseUrl,
+      apiFormat: "chat_completions",
+      supportsStreaming: false,
+      updatedAt: timestamp
+    };
+    const workspaceServer: McpServerConfig = {
+      id: "test:mcp:workspace-continuation",
+      name: "Workspace Tools",
+      description: "Read files",
+      transport: "http",
+      url: `${mcpBaseUrl}/workspace`,
+      env: {},
+      toolAllowlist: [],
+      enabled: true,
+      updatedAt: timestamp
+    };
+    const agentProfile: AgentProfile = {
+      id: "test:agent:task-continuation",
+      name: "Task Continuation Test Agent",
+      description: "Integration test agent",
+      mode: "chat",
+      modelProfileId: modelProfile.id,
+      systemPrompt: "Continue active tasks from the ledger.",
+      allowedSkillIds: [],
+      allowedMcpServerIds: [workspaceServer.id],
+      enabled: true,
+      updatedAt: timestamp
+    };
+
+    await saveModelSettings({
+      profiles: [modelProfile],
+      activeProfileId: modelProfile.id
+    });
+    await upsertMcpServer(workspaceServer);
+    await upsertAgentProfile(agentProfile);
+
+    const log = await runAgent({
+      agentProfileId: agentProfile.id,
+      userInput: "继续",
+      autoSelectMcp: true,
+      taskLedger: createWorkspaceContinuationLedger()
+    });
+    const genericPlannerRequests = modelRequests.filter((request) => getSystemMessage(request.body).includes("资源任务规划器"));
+    const workspaceToolCallRequest = mcpRequests.find((request) => request.url.includes("/workspace") && request.body.method === "tools/call");
+    const workspaceToolParams = workspaceToolCallRequest?.body.params as { arguments?: Record<string, unknown>; name?: string } | undefined;
+
+    assert.equal(genericPlannerRequests.length, 0);
+    assert.equal(log.mcpCalls?.length ?? 0, 1);
+    assert.equal(log.mcpCalls?.[0]?.toolName, "read_file");
+    assert.equal(workspaceToolParams?.name, "read_file");
+    assert.deepEqual(workspaceToolParams?.arguments, { path: "." });
+    assert.equal(log.taskLedger?.objective, "检查 README 文件是否存在");
+    assert.ok(log.taskLedger?.userInterruptions.some((item) => item.includes("继续")));
+    assert.ok(log.steps.some((step) => step.type === "mcp_auto_planning" && /继续执行当前任务/u.test(step.title)));
+  } finally {
+    process.env.GORDON_HOME = previousHome;
+    process.env.GORDON_DATA_ROOT = previousDataRoot;
+    await Promise.allSettled([closeServer(modelServer), closeServer(mcpServer)]);
+    await rm(tempHome, { recursive: true, force: true });
+  }
+});
+
+test("runAgent invokes planner for a new task even when previous ledger exists", async () => {
+  const previousHome = process.env.GORDON_HOME;
+  const previousDataRoot = process.env.GORDON_DATA_ROOT;
+  const tempHome = await mkdtemp(path.join(tmpdir(), "gordon-agent-runtime-task-continuation-new-task-"));
+  const modelRequests: CapturedRequest[] = [];
+  const mcpRequests: CapturedRequest[] = [];
+  const modelServer = createFakeWorkspaceNoToolModelServer(modelRequests);
+  const mcpServer = createFakeMcpServer(mcpRequests);
+
+  try {
+    const [modelBaseUrl, mcpBaseUrl] = await Promise.all([listen(modelServer), listen(mcpServer)]);
+    process.env.GORDON_HOME = tempHome;
+    process.env.GORDON_DATA_ROOT = path.join(tempHome, "data");
+
+    const timestamp = "2026-06-01T00:00:00.000Z";
+    const modelProfile: ModelProfile = {
+      id: "test:model:task-continuation-new-task",
+      provider: "openai_like",
+      displayName: "Task Continuation New Task Model",
+      model: "task-continuation-new-task",
+      apiKey: "test-key",
+      baseUrl: modelBaseUrl,
+      apiFormat: "chat_completions",
+      supportsStreaming: false,
+      updatedAt: timestamp
+    };
+    const workspaceServer: McpServerConfig = {
+      id: "test:mcp:workspace-continuation-new-task",
+      name: "Workspace Tools",
+      description: "Read files",
+      transport: "http",
+      url: `${mcpBaseUrl}/workspace`,
+      env: {},
+      toolAllowlist: [],
+      enabled: true,
+      updatedAt: timestamp
+    };
+    const agentProfile: AgentProfile = {
+      id: "test:agent:task-continuation-new-task",
+      name: "Task Continuation New Task Test Agent",
+      description: "Integration test agent",
+      mode: "chat",
+      modelProfileId: modelProfile.id,
+      systemPrompt: "Plan new tasks when the user changes objective.",
+      allowedSkillIds: [],
+      allowedMcpServerIds: [workspaceServer.id],
+      enabled: true,
+      updatedAt: timestamp
+    };
+
+    await saveModelSettings({
+      profiles: [modelProfile],
+      activeProfileId: modelProfile.id
+    });
+    await upsertMcpServer(workspaceServer);
+    await upsertAgentProfile(agentProfile);
+
+    const log = await runAgent({
+      agentProfileId: agentProfile.id,
+      userInput: "帮我实现登录功能",
+      autoSelectMcp: true,
+      taskLedger: createWorkspaceContinuationLedger()
+    });
+    const genericPlannerRequests = modelRequests.filter((request) => getSystemMessage(request.body).includes("资源任务规划器"));
+
+    assert.equal(genericPlannerRequests.length, 1);
+    assert.ok(!log.steps.some((step) => step.type === "mcp_auto_planning" && /继续执行当前任务/u.test(step.title)));
+  } finally {
+    process.env.GORDON_HOME = previousHome;
+    process.env.GORDON_DATA_ROOT = previousDataRoot;
+    await Promise.allSettled([closeServer(modelServer), closeServer(mcpServer)]);
+    await rm(tempHome, { recursive: true, force: true });
+  }
+});
+
+test("runAgent falls back to required workspace tools when the planner exceeds the latency budget", async () => {
   const previousHome = process.env.GORDON_HOME;
   const previousDataRoot = process.env.GORDON_DATA_ROOT;
   const previousPlannerTimeout = process.env.GORDON_MCP_PLANNER_TIMEOUT_MS;
@@ -1230,8 +1820,100 @@ test("runAgent stops generic tool planning when the planner exceeds the latency 
       return systemMessage.includes("资源任务规划器");
     });
 
+    const workspaceToolCallRequest = mcpRequests.find((request) => request.url.includes("/workspace") && request.body.method === "tools/call");
+    const workspaceToolParams = workspaceToolCallRequest?.body.params as { arguments?: Record<string, unknown>; name?: string } | undefined;
+
     assert.equal(genericPlannerRequests.length, 1);
     assert.equal(permissionRequests.length, 0);
+    assert.equal(log.mcpCalls?.length ?? 0, 1);
+    assert.equal(log.mcpCalls?.[0]?.toolName, "read_file");
+    assert.equal(workspaceToolParams?.name, "read_file");
+    assert.deepEqual(workspaceToolParams?.arguments, { path: "." });
+    assert.ok(log.steps.some((step) => step.type === "mcp_auto_planning" && /required fallback/u.test(step.title)));
+    assert.ok(log.steps.some((step) => step.type === "mcp_auto_stopped" && /required fallback 已返回/u.test(step.title)));
+  } finally {
+    process.env.GORDON_HOME = previousHome;
+    process.env.GORDON_DATA_ROOT = previousDataRoot;
+    if (previousPlannerTimeout === undefined) {
+      delete process.env.GORDON_MCP_PLANNER_TIMEOUT_MS;
+    } else {
+      process.env.GORDON_MCP_PLANNER_TIMEOUT_MS = previousPlannerTimeout;
+    }
+    await Promise.allSettled([closeServer(modelServer), closeServer(mcpServer)]);
+    await rm(tempHome, { recursive: true, force: true });
+  }
+});
+
+test("runAgent keeps optional planner timeout behavior unchanged", async () => {
+  const previousHome = process.env.GORDON_HOME;
+  const previousDataRoot = process.env.GORDON_DATA_ROOT;
+  const previousPlannerTimeout = process.env.GORDON_MCP_PLANNER_TIMEOUT_MS;
+  const tempHome = await mkdtemp(path.join(tmpdir(), "gordon-agent-runtime-optional-planner-timeout-"));
+  const modelRequests: CapturedRequest[] = [];
+  const mcpRequests: CapturedRequest[] = [];
+  const modelServer = createSlowPlannerModelServer(modelRequests);
+  const mcpServer = createFakeMcpServer(mcpRequests);
+
+  try {
+    const [modelBaseUrl, mcpBaseUrl] = await Promise.all([listen(modelServer), listen(mcpServer)]);
+    process.env.GORDON_HOME = tempHome;
+    process.env.GORDON_DATA_ROOT = path.join(tempHome, "data");
+    process.env.GORDON_MCP_PLANNER_TIMEOUT_MS = "50";
+
+    const timestamp = "2026-06-01T00:00:00.000Z";
+    const modelProfile: ModelProfile = {
+      id: "test:model:slow-optional-planner",
+      provider: "openai_like",
+      displayName: "Slow Optional Planner Model",
+      model: "slow-optional-planner",
+      apiKey: "test-key",
+      baseUrl: modelBaseUrl,
+      apiFormat: "chat_completions",
+      supportsStreaming: false,
+      updatedAt: timestamp
+    };
+    const workspaceServer: McpServerConfig = {
+      id: "test:mcp:workspace-optional-timeout",
+      name: "Workspace Tools",
+      description: "Read files",
+      transport: "http",
+      url: `${mcpBaseUrl}/workspace`,
+      env: {},
+      toolAllowlist: [],
+      enabled: true,
+      updatedAt: timestamp
+    };
+    const agentProfile: AgentProfile = {
+      id: "test:agent:optional-planner-timeout",
+      name: "Optional Planner Timeout Test Agent",
+      description: "Integration test agent",
+      mode: "chat",
+      modelProfileId: modelProfile.id,
+      systemPrompt: "Use tools when useful.",
+      allowedSkillIds: [],
+      allowedMcpServerIds: [workspaceServer.id],
+      enabled: true,
+      updatedAt: timestamp
+    };
+
+    await saveModelSettings({
+      profiles: [modelProfile],
+      activeProfileId: modelProfile.id
+    });
+    await upsertMcpServer(workspaceServer);
+    await upsertAgentProfile(agentProfile);
+
+    const log = await runAgent({
+      agentProfileId: agentProfile.id,
+      userInput: "解释一下任务账本为什么能帮助长链路 Agent",
+      autoSelectMcp: true
+    });
+    const genericPlannerRequests = modelRequests.filter((request) => {
+      const systemMessage = getSystemMessage(request.body);
+      return systemMessage.includes("资源任务规划器");
+    });
+
+    assert.equal(genericPlannerRequests.length, 1);
     assert.equal(log.mcpCalls?.length ?? 0, 0);
     assert.match(log.stopReason ?? "", /前置工具规划超过/u);
     assert.ok(log.steps.some((step) => step.type === "mcp_auto_stopped" && /工具规划超时/u.test(step.title)));
@@ -1330,6 +2012,433 @@ test("runAgent asks permission before executing high-risk application asset tool
     assert.equal(log.mcpCalls?.[0]?.isError, false);
     assert.equal(log.mcpCalls?.[0]?.structuredContent?.applied, true);
     assert.ok(mcpRequests.some((request) => request.url.includes("/application") && request.body.method === "tools/call"));
+  } finally {
+    process.env.GORDON_HOME = previousHome;
+    process.env.GORDON_DATA_ROOT = previousDataRoot;
+    await Promise.allSettled([closeServer(modelServer), closeServer(mcpServer)]);
+    await rm(tempHome, { recursive: true, force: true });
+  }
+});
+
+test("runAgent auto-grants high-risk application asset tools when permission mode is auto", async () => {
+  const previousHome = process.env.GORDON_HOME;
+  const previousDataRoot = process.env.GORDON_DATA_ROOT;
+  const tempHome = await mkdtemp(path.join(tmpdir(), "gordon-agent-runtime-auto-permission-"));
+  const modelRequests: CapturedRequest[] = [];
+  const mcpRequests: CapturedRequest[] = [];
+  const permissionRequests: unknown[] = [];
+  const modelServer = createFakeModelServer(modelRequests);
+  const mcpServer = createFakeMcpServer(mcpRequests);
+
+  try {
+    const [modelBaseUrl, mcpBaseUrl] = await Promise.all([listen(modelServer), listen(mcpServer)]);
+    process.env.GORDON_HOME = tempHome;
+    process.env.GORDON_DATA_ROOT = path.join(tempHome, "data");
+
+    const timestamp = "2026-06-01T00:00:00.000Z";
+    const modelProfile: ModelProfile = {
+      id: "test:model:fake-auto-permission",
+      provider: "openai_like",
+      displayName: "Fake Auto Permission Model",
+      model: "fake-planner",
+      apiKey: "test-key",
+      baseUrl: modelBaseUrl,
+      apiFormat: "chat_completions",
+      supportsStreaming: false,
+      updatedAt: timestamp
+    };
+    const applicationServer: McpServerConfig = {
+      id: "test:mcp:application-tools",
+      name: "Application Tools",
+      description: "Read and write application assets",
+      transport: "http",
+      url: `${mcpBaseUrl}/application`,
+      env: {},
+      toolAllowlist: [],
+      enabled: true,
+      updatedAt: timestamp
+    };
+    const agentProfile: AgentProfile = {
+      id: "test:agent:auto-permission",
+      name: "Auto Permission Test Agent",
+      description: "Integration test agent",
+      mode: "chat",
+      modelProfileId: modelProfile.id,
+      systemPrompt: "Use tools when users ask to write application assets.",
+      allowedSkillIds: [],
+      allowedMcpServerIds: [applicationServer.id],
+      enabled: true,
+      updatedAt: timestamp
+    };
+
+    await saveModelSettings({
+      profiles: [modelProfile],
+      activeProfileId: modelProfile.id
+    });
+    await upsertMcpServer(applicationServer);
+    await upsertAgentProfile(agentProfile);
+
+    const log = await runAgent(
+      {
+        agentProfileId: agentProfile.id,
+        userInput: "把丹青溢彩项目寂寞青梅的 OVERVIEW 三字段写回，dryRun=false",
+        permissionMode: "auto",
+        autoSelectMcp: true
+      },
+      {
+        onToolPermissionRequest: async (request) => {
+          permissionRequests.push(request);
+          return true;
+        }
+      }
+    );
+
+    assert.equal(permissionRequests.length, 0);
+    assert.deepEqual(
+      log.steps.filter((step) => step.type.startsWith("tool_permission_")).map((step) => step.type),
+      ["tool_permission_granted"]
+    );
+    assert.equal(log.mcpCalls?.[0]?.serverId, "test:mcp:application-tools");
+    assert.equal(log.mcpCalls?.[0]?.toolName, "comic_update_project_fields");
+    assert.equal(log.mcpCalls?.[0]?.isError, false);
+    assert.equal(log.mcpCalls?.[0]?.structuredContent?.applied, true);
+    assert.ok(mcpRequests.some((request) => request.url.includes("/application") && request.body.method === "tools/call"));
+  } finally {
+    process.env.GORDON_HOME = previousHome;
+    process.env.GORDON_DATA_ROOT = previousDataRoot;
+    await Promise.allSettled([closeServer(modelServer), closeServer(mcpServer)]);
+    await rm(tempHome, { recursive: true, force: true });
+  }
+});
+
+function createGuidanceAwareModelServer(capturedRequests: CapturedRequest[]): Server {
+  return createServer(async (request, response) => {
+    if (request.method !== "POST") {
+      response.writeHead(404);
+      response.end();
+      return;
+    }
+
+    const body = await readRequestBody(request);
+    capturedRequests.push({
+      url: request.url ?? "",
+      body
+    });
+
+    const systemMessage = getSystemMessage(body);
+    const userMessage = getModelMessages(body).find((message) => message.role === "user")?.content ?? "";
+    let content = userMessage.includes("需要输出对应的价格")
+      ? "最终回复已吸收价格引导。"
+      : "最终回复未看到价格引导。";
+
+    if (systemMessage.includes("资源任务规划器")) {
+      content = JSON.stringify({
+        shouldCall: false,
+        serverId: null,
+        toolName: null,
+        arguments: {},
+        reason: userMessage.includes("需要输出对应的价格")
+          ? "已吸收运行时用户引导：需要输出对应的价格。"
+          : "未收到运行时用户引导。",
+        expectedOutcome: "整理 Anthropic 模型与价格",
+        verificationMethod: "检查最终回复包含价格要求",
+        ledgerPatch: {
+          objective: "查询 Anthropic 最新模型并输出价格",
+          taskPhase: "verifying",
+          nextActionHint: "最终回复需要包含价格"
+        }
+      });
+    }
+
+    sendJson(response, {
+      choices: [
+        {
+          message: {
+            content
+          }
+        }
+      ]
+    });
+  });
+}
+
+function createLateGuidanceModelServer(capturedRequests: CapturedRequest[]): Server {
+  let finalCalls = 0;
+
+  return createServer(async (request, response) => {
+    if (request.method !== "POST") {
+      response.writeHead(404);
+      response.end();
+      return;
+    }
+
+    const body = await readRequestBody(request);
+    capturedRequests.push({
+      url: request.url ?? "",
+      body
+    });
+
+    const systemMessage = getSystemMessage(body);
+    let content = "基于旧认知整理 Anthropic 模型，没有价格。";
+
+    if (systemMessage.includes("任务账本压缩器")) {
+      content = JSON.stringify({
+        taskPhase: "verifying",
+        discoveredFacts: ["web_research 返回 Anthropic 官方模型和价格证据"],
+        completedSubtasks: ["检索 Anthropic 官方模型和价格"],
+        pendingSubtasks: [],
+        nextActionHint: "最终回复需要包含官方价格"
+      });
+    } else if (systemMessage.includes("资源任务规划器")) {
+      content = JSON.stringify({
+        shouldCall: false,
+        serverId: null,
+        toolName: null,
+        arguments: {},
+        reason: "先直接回答。",
+        expectedOutcome: "整理 Anthropic 模型",
+        verificationMethod: "",
+        ledgerPatch: {
+          objective: "查询 Anthropic 模型",
+          taskPhase: "finalizing"
+        }
+      });
+    } else {
+      finalCalls += 1;
+      content = finalCalls === 1 ? "第一版没有价格。" : "第二版已包含官方价格和来源。";
+    }
+
+    sendJson(response, {
+      choices: [
+        {
+          message: {
+            content
+          }
+        }
+      ]
+    });
+  });
+}
+
+test("runAgent consumes runtime guidance before the current planner turn", async () => {
+  const previousHome = process.env.GORDON_HOME;
+  const previousDataRoot = process.env.GORDON_DATA_ROOT;
+  const tempHome = await mkdtemp(path.join(tmpdir(), "gordon-agent-runtime-guidance-"));
+  const modelRequests: CapturedRequest[] = [];
+  const mcpRequests: CapturedRequest[] = [];
+  const modelServer = createGuidanceAwareModelServer(modelRequests);
+  const mcpServer = createFakeMcpServer(mcpRequests);
+  let consumed = false;
+
+  try {
+    const [modelBaseUrl, mcpBaseUrl] = await Promise.all([listen(modelServer), listen(mcpServer)]);
+    process.env.GORDON_HOME = tempHome;
+    process.env.GORDON_DATA_ROOT = path.join(tempHome, "data");
+
+    const timestamp = "2026-06-01T00:00:00.000Z";
+    const modelProfile: ModelProfile = {
+      id: "test:model:runtime-guidance",
+      provider: "openai_like",
+      displayName: "Runtime Guidance Model",
+      model: "runtime-guidance",
+      apiKey: "test-key",
+      baseUrl: modelBaseUrl,
+      apiFormat: "chat_completions",
+      supportsStreaming: false,
+      updatedAt: timestamp
+    };
+    const searchServer: McpServerConfig = {
+      id: "test:mcp:runtime-guidance-search",
+      name: "Search Tools",
+      description: "Search and research the public web",
+      transport: "http",
+      url: `${mcpBaseUrl}/search`,
+      env: {},
+      toolAllowlist: [],
+      enabled: true,
+      updatedAt: timestamp
+    };
+    const agentProfile: AgentProfile = {
+      id: "test:agent:runtime-guidance",
+      name: "Runtime Guidance Test Agent",
+      description: "Integration test agent",
+      mode: "chat",
+      modelProfileId: modelProfile.id,
+      systemPrompt: "Use runtime guidance.",
+      allowedSkillIds: [],
+      allowedMcpServerIds: [searchServer.id],
+      enabled: true,
+      updatedAt: timestamp
+    };
+
+    await saveModelSettings({
+      profiles: [modelProfile],
+      activeProfileId: modelProfile.id
+    });
+    await upsertMcpServer(searchServer);
+    await upsertAgentProfile(agentProfile);
+
+    const log = await runAgent(
+      {
+        agentProfileId: agentProfile.id,
+        userInput: "帮我查一下目前 Anthropic 最新的模型有哪些",
+        autoSelectMcp: true
+      },
+      {
+        consumeRuntimeGuidance: async () => {
+          if (consumed) {
+            return [];
+          }
+
+          consumed = true;
+          return [
+            {
+              id: "guidance:price",
+              content: "需要输出对应的价格",
+              createdAt: "2026-06-15T00:00:00.000Z"
+            }
+          ];
+        }
+      }
+    );
+    const plannerRequest = modelRequests.find((request) => getSystemMessage(request.body).includes("资源任务规划器"));
+    const plannerUserMessage = plannerRequest ? getModelMessages(plannerRequest.body).find((message) => message.role === "user")?.content ?? "" : "";
+
+    assert.match(plannerUserMessage, /需要输出对应的价格/u);
+    assert.match(log.text, /价格引导/u);
+    assert.ok(log.taskLedger?.userInterruptions.some((item) => item.includes("需要输出对应的价格")));
+  } finally {
+    process.env.GORDON_HOME = previousHome;
+    process.env.GORDON_DATA_ROOT = previousDataRoot;
+    await Promise.allSettled([closeServer(modelServer), closeServer(mcpServer)]);
+    await rm(tempHome, { recursive: true, force: true });
+  }
+});
+
+test("runAgent reprocesses guidance that arrives during final response", async () => {
+  const previousHome = process.env.GORDON_HOME;
+  const previousDataRoot = process.env.GORDON_DATA_ROOT;
+  const tempHome = await mkdtemp(path.join(tmpdir(), "gordon-agent-late-guidance-"));
+  const modelRequests: CapturedRequest[] = [];
+  const mcpRequests: CapturedRequest[] = [];
+  const modelServer = createLateGuidanceModelServer(modelRequests);
+  const mcpServer = createFakeMcpServer(mcpRequests);
+  let delivered = false;
+
+  try {
+    const [modelBaseUrl, mcpBaseUrl] = await Promise.all([listen(modelServer), listen(mcpServer)]);
+    process.env.GORDON_HOME = tempHome;
+    process.env.GORDON_DATA_ROOT = path.join(tempHome, "data");
+
+    const timestamp = "2026-06-01T00:00:00.000Z";
+    const modelProfile: ModelProfile = {
+      id: "test:model:late-guidance",
+      provider: "openai_like",
+      displayName: "Late Guidance Model",
+      model: "late-guidance",
+      apiKey: "test-key",
+      baseUrl: modelBaseUrl,
+      apiFormat: "chat_completions",
+      supportsStreaming: false,
+      updatedAt: timestamp
+    };
+    const searchServer: McpServerConfig = {
+      id: "test:mcp:late-guidance-search",
+      name: "Search Tools",
+      description: "Search and research the public web",
+      transport: "http",
+      url: `${mcpBaseUrl}/search`,
+      env: {},
+      toolAllowlist: [],
+      enabled: true,
+      updatedAt: timestamp
+    };
+    const agentProfile: AgentProfile = {
+      id: "test:agent:late-guidance",
+      name: "Late Guidance Test Agent",
+      description: "Integration test agent",
+      mode: "chat",
+      modelProfileId: modelProfile.id,
+      systemPrompt: "Use late runtime guidance.",
+      allowedSkillIds: [],
+      allowedMcpServerIds: [searchServer.id],
+      enabled: true,
+      updatedAt: timestamp
+    };
+
+    await saveModelSettings({
+      profiles: [modelProfile],
+      activeProfileId: modelProfile.id
+    });
+    await upsertMcpServer(searchServer);
+    await upsertAgentProfile(agentProfile);
+
+    const log = await runAgent(
+      {
+        agentProfileId: agentProfile.id,
+        userInput: "帮我查下anthropic旗下罪行的模型有哪些？",
+        autoSelectMcp: true
+      },
+      {
+        consumeRuntimeGuidance: async (lastGuidanceId) => {
+          if (delivered || lastGuidanceId) {
+            return [];
+          }
+
+          const finalCalls = modelRequests.filter((entry) => {
+            const systemMessage = getSystemMessage(entry.body);
+            return (
+              !systemMessage.includes("资源任务规划器") &&
+              !systemMessage.includes("任务账本压缩器") &&
+              !systemMessage.includes("主动验证规划器")
+            );
+          }).length;
+
+          if (finalCalls < 1) {
+            return [];
+          }
+
+          delivered = true;
+          return [
+            {
+              id: "guidance:late-price",
+              content: "需要输出对应的官方价格",
+              createdAt: "2026-06-15T00:00:00.000Z"
+            }
+          ];
+        }
+      }
+    );
+
+    const searchToolParams = mcpRequests.find((entry) => entry.body.method === "tools/call")?.body.params as
+      | { arguments?: Record<string, unknown> }
+      | undefined;
+
+    assert.match(String(searchToolParams?.arguments?.query ?? ""), /latest/u);
+    assert.doesNotMatch(String(searchToolParams?.arguments?.query ?? ""), /罪行/u);
+    assert.deepEqual(searchToolParams?.arguments?.preferredDomains, [
+      "anthropic.com",
+      "docs.anthropic.com",
+      "platform.claude.com",
+      "support.claude.com"
+    ]);
+    assert.deepEqual(searchToolParams?.arguments?.includeDomains, [
+      "anthropic.com",
+      "docs.anthropic.com",
+      "platform.claude.com",
+      "support.claude.com"
+    ]);
+    assert.match(log.text, /官方价格/u);
+    assert.ok(log.taskLedger?.userInterruptions.some((item) => item.includes("官方价格")));
+    const finalResponseRequests = modelRequests.filter((entry) => {
+      const systemMessage = getSystemMessage(entry.body);
+      return (
+        !systemMessage.includes("资源任务规划器") &&
+        !systemMessage.includes("任务账本压缩器") &&
+        !systemMessage.includes("主动验证规划器")
+      );
+    });
+    assert.ok(finalResponseRequests.length >= 2);
   } finally {
     process.env.GORDON_HOME = previousHome;
     process.env.GORDON_DATA_ROOT = previousDataRoot;

@@ -32,7 +32,7 @@
               @click="selectFeature(item.id)"
             >
               <span class="home-settings-item-title">{{ item.title }}</span>
-              <span class="home-settings-item-copy">{{ item.copy }}</span>
+              <span v-if="item.copy" class="home-settings-item-copy">{{ item.copy }}</span>
             </button>
           </div>
         </details>
