@@ -436,8 +436,10 @@ export interface InfoRadarItem {
   summary: string;
   author?: string;
   publishedAt?: string;
+  imageUrl?: string;
   fetchedAt: string;
   tags: string[];
+  matchedKeywords?: string[];
   score: number;
   status: "new" | "saved" | "ignored";
 }

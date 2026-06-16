@@ -53,7 +53,7 @@ Gordon 是一个面向持续演进的工作助手，当前以桌面端和 CLI �
   - 应用广场应用级 AI 助手统一使用 `AiAssistantActionBar.vue` 表达“状态 / 快速模式 / Gordon 处理”三段动作；快速模式负责轻量生成或专用工具调用，Gordon 处理负责默认 Agent 主导的深度任务推进，其中墨笔生花显式结合内置 `writing` Skill，丹青溢彩显式结合内置 `comic` Skill
   - 应用广场字段级 AI 优化能力，支持在具体编辑框旁唤起紧凑悬浮面板，调用优先模型生成结果并替换或追加回当前字段
   - 应用广场项目型资产通用封面能力，墨笔生花书籍、丹青溢彩漫画项目、流光绘影视频项目和瑶琴映月音乐专辑均支持封面 URL、本地上传、`image_gen` 生成、草稿预览、确认写回和下载；灵犀照命当前为对话态应用，暂不挂项目封面
-  - 流程中心页面，当前包含信息雷达与模型接口测试两类入口：信息雷达用于维护动态信息窗口、RSS / 网页来源、关键词过滤和刷新结果；模型接口测试继续承接独立 curl 工作流舞台
+  - 流程中心页面，当前包含信息雷达与模型接口测试两类入口：信息雷达用于维护动态信息窗口、RSS / 网页 / 搜索 / 公众号线索来源、关键词过滤、刷新结果和信息流可视化；模型接口测试继续承接独立 curl 工作流舞台
   - 命令工坊页面
   - 命令工坊输入区附件上传，支持图片、视频、文本、文档、表格和数据类文件作为会话上下文
   - 能力拓展管理页面
@@ -357,7 +357,7 @@ Gordon 是一个面向持续演进的工作助手，当前以桌面端和 CLI �
 
 - 已从“效率工具”收敛为 `流程中心 / workflow`，采用“首页工作流卡片 -> 当前资源工作区 / 工作流列表 -> 执行 / 配置页”的结构；首页只承担入口，不把信息流、curl 详情和配置面板摊平
 - 当前内置两个默认卡片：`信息雷达` 与 `模型接口测试`
-- `信息雷达` 采用 Resource-Oriented Agent（面向资源的 Agent）思路，核心资源是 `InfoRadarWindow` 信息窗口；每个窗口维护 `sources / keywords / negativeKeywords / digestPrompt / items / runHistory / cadence`，用于追踪技术、政治、金融、科研、公众号等来源。首版支持 RSS / Atom 和普通网页由桌面主进程刷新，按关键词与排除词过滤、去重、记录刷新结果；搜索和公众号先作为可配置来源保留，后续接入 Search Tools 与公众号专项采集能力
+- `信息雷达` 采用 Resource-Oriented Agent（面向资源的 Agent）思路，核心资源是 `InfoRadarWindow` 信息窗口；每个窗口维护 `sources / keywords / negativeKeywords / digestPrompt / items / runHistory / cadence`，用于追踪技术、政治、金融、科研、公众号等来源。当前支持 RSS / Atom、普通网页、公开搜索 RSS 和搜狗微信公众号线索由桌面主进程刷新，按关键词与排除词过滤、去重、记录刷新结果；信息雷达初始化只提供能力入口，不硬编码预置具体信息窗口，Agent / 大模型、科研论文、金融、生物学等关注窗口属于用户配置，统一落在 `~/.gord/data/workbench/workflow-library.json`；页面内展示来源 / 标签筛选、普通信息流和相关性分数；条目来源阅读页由主进程 `BrowserView` 内嵌承载，标题栏只保留返回、单行标题和外部打开，正文区域随右侧主舞台铺满并提供加载 / 失败兜底
 - `模型接口测试` 继续承接历史工作流记录、动态请求步骤、`$BASE_URL / $API_KEY / $TASK_ID` 风格变量、步骤产出变量 JSONPath 提取、dev/test/pre/prod 环境 Base URL + APIKEY 注入、步骤级单次 / 轮询执行、轮询终止判断、请求 Body 快捷编辑与 JSON 修复、实时 stdout / stderr 输出和运行中主动中断，并支持从界面新建、编辑、删除和执行 curl 工作流
 - 渲染层 `features/workflow-library/workflowConfig.js` 承接流程中心默认配置、信息窗口草稿与 curl 记录草稿工厂，`features/workflow-library/workflowRuntime.js` 承接信息雷达展示 helper、curl 解析、Body 修复、环境归一化、record 草稿转换和运行结果展示 helper，`features/workflow-library/workflowActions.js` 承接选择同步、信息窗口编辑保存 / 删除 / 刷新、记录保存 / 复制 / 删除、环境 / Body 写回、运行中断和 IPC 进度回显动作
 - 流程中心资产统一通过本地 JSON 仓储持久化：`~/.gord/data/workbench/workflow-library.json`；其中 `WorkflowLibraryItem.kind` 当前支持 `info-radar` 与 `api-test`，旧 `api-suite` 会继续迁移为 `api-test`

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell } from "electron";
+import { app, BrowserView, BrowserWindow, dialog, ipcMain, nativeImage, shell } from "electron";
 import { spawn } from "node:child_process";
 import { createHmac, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -100,6 +100,7 @@ const appIconPath = path.join(desktopAssetDir, appIconFileName);
 const modelTextAbortControllers = new Map<string, AbortController>();
 const agentRunAbortControllers = new Map<string, AbortController>();
 const agentRunGuidanceQueues = new Map<string, AgentRuntimeGuidance[]>();
+const infoRadarReaderViews = new Map<number, InfoRadarNativeReaderView>();
 const MAIN_WINDOW_MIN_WIDTH = 1180;
 const MAIN_WINDOW_MIN_HEIGHT = 760;
 const MODEL_BALANCE_POLL_INTERVAL_MS = 60 * 60 * 1000;
@@ -110,6 +111,193 @@ const FEISHU_DAILY_REPORT_CONTENT_LIMIT = 15000;
 const FEISHU_DAILY_REPORT_MARKDOWN_TEXT_SIZE = "normal_v2";
 
 type GordonConfirmWindowTone = "neutral" | "warning" | "danger";
+
+type InfoRadarNativeReaderBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+type InfoRadarNativeReaderView =
+  {
+    ownerWindow: BrowserWindow;
+    view: BrowserView;
+    bounds: InfoRadarNativeReaderBounds | null;
+    visible: boolean;
+  };
+
+function normalizeInfoRadarNativeReaderUrl(url: unknown): string {
+  const normalizedUrl = typeof url === "string" ? url.trim() : "";
+
+  if (!/^https?:\/\//i.test(normalizedUrl)) {
+    throw new Error("来源链接必须是 http 或 https 地址");
+  }
+
+  return normalizedUrl;
+}
+
+function normalizeInfoRadarNativeReaderBounds(bounds: unknown): InfoRadarNativeReaderBounds {
+  const rawBounds = bounds && typeof bounds === "object" ? bounds as Partial<InfoRadarNativeReaderBounds> : {};
+  const x = Math.max(0, Math.round(Number(rawBounds.x ?? 0)));
+  const y = Math.max(0, Math.round(Number(rawBounds.y ?? 0)));
+  const width = Math.max(0, Math.round(Number(rawBounds.width ?? 0)));
+  const height = Math.max(0, Math.round(Number(rawBounds.height ?? 0)));
+
+  return { x, y, width, height };
+}
+
+function getInfoRadarNativeReaderWebContents(readerView: InfoRadarNativeReaderView): Electron.WebContents {
+  return readerView.view.webContents;
+}
+
+function setInfoRadarNativeReaderBounds(readerView: InfoRadarNativeReaderView, bounds: InfoRadarNativeReaderBounds): void {
+  if (readerView.ownerWindow.isDestroyed()) {
+    return;
+  }
+
+  if (bounds.width < 120 || bounds.height < 120) {
+    return;
+  }
+
+  const safeBounds = {
+    ...bounds,
+    width: Math.max(1, bounds.width),
+    height: Math.max(1, bounds.height)
+  };
+
+  readerView.view.setBounds(safeBounds);
+  readerView.bounds = safeBounds;
+}
+
+function showInfoRadarNativeReaderView(readerView: InfoRadarNativeReaderView): void {
+  if (readerView.visible || readerView.ownerWindow.isDestroyed()) {
+    return;
+  }
+
+  readerView.ownerWindow.setBrowserView(readerView.view);
+  readerView.visible = true;
+}
+
+function hideInfoRadarNativeReaderView(readerView: InfoRadarNativeReaderView): void {
+  if (!readerView.visible || readerView.ownerWindow.isDestroyed()) {
+    readerView.visible = false;
+    return;
+  }
+
+  readerView.ownerWindow.setBrowserView(null);
+  readerView.visible = false;
+}
+
+function sendInfoRadarNativeReaderEvent(
+  ownerWindow: BrowserWindow,
+  payload: { status: "loading" | "ready" | "failed"; url?: string; message?: string }
+): void {
+  if (ownerWindow.isDestroyed() || ownerWindow.webContents.isDestroyed()) {
+    return;
+  }
+
+  ownerWindow.webContents.send("gordon:workflow-library:info-reader", payload);
+}
+
+function detachInfoRadarNativeReaderView(ownerWindow: BrowserWindow): void {
+  const windowId = ownerWindow.id;
+  const existingView = infoRadarReaderViews.get(windowId);
+
+  if (!existingView) {
+    return;
+  }
+
+  try {
+    if (!ownerWindow.isDestroyed()) {
+      hideInfoRadarNativeReaderView(existingView);
+    }
+  } catch (error) {
+    console.warn("[info-radar-reader] Failed to detach native reader view:", error);
+  }
+
+  try {
+    const webContents = getInfoRadarNativeReaderWebContents(existingView);
+
+    if (!webContents.isDestroyed()) {
+      webContents.close();
+    }
+  } catch (error) {
+    console.warn("[info-radar-reader] Failed to close native reader webContents:", error);
+  }
+
+  infoRadarReaderViews.delete(windowId);
+}
+
+function createInfoRadarNativeReaderView(ownerWindow: BrowserWindow): InfoRadarNativeReaderView {
+  const view = new BrowserView({
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      partition: "persist:gordon-info-radar"
+    }
+  });
+  view.setBackgroundColor("#0b111c");
+  return { ownerWindow, view, bounds: null, visible: false };
+}
+
+async function openInfoRadarNativeReader(
+  ownerWindow: BrowserWindow,
+  url: string,
+  bounds: InfoRadarNativeReaderBounds
+): Promise<void> {
+  detachInfoRadarNativeReaderView(ownerWindow);
+
+  const readerView = createInfoRadarNativeReaderView(ownerWindow);
+  const webContents = getInfoRadarNativeReaderWebContents(readerView);
+  webContents.setWindowOpenHandler(({ url: targetUrl }) => {
+    void shell.openExternal(targetUrl);
+    return { action: "deny" };
+  });
+  webContents.on("will-navigate", (event, targetUrl) => {
+    if (/^https?:\/\//i.test(targetUrl)) {
+      return;
+    }
+
+    event.preventDefault();
+  });
+  webContents.on("did-start-loading", () => {
+    hideInfoRadarNativeReaderView(readerView);
+    sendInfoRadarNativeReaderEvent(ownerWindow, { status: "loading", url });
+  });
+  webContents.on("did-finish-load", () => {
+    showInfoRadarNativeReaderView(readerView);
+    sendInfoRadarNativeReaderEvent(ownerWindow, { status: "ready", url });
+  });
+  webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
+    if (!isMainFrame || errorCode === -3) {
+      return;
+    }
+
+    hideInfoRadarNativeReaderView(readerView);
+    sendInfoRadarNativeReaderEvent(ownerWindow, {
+      status: "failed",
+      url: validatedUrl || url,
+      message: errorDescription || "来源页面加载失败"
+    });
+  });
+
+  setInfoRadarNativeReaderBounds(readerView, bounds);
+  infoRadarReaderViews.set(ownerWindow.id, readerView);
+  sendInfoRadarNativeReaderEvent(ownerWindow, { status: "loading", url });
+
+  try {
+    await webContents.loadURL(url);
+  } catch (error) {
+    sendInfoRadarNativeReaderEvent(ownerWindow, {
+      status: "failed",
+      url,
+      message: error instanceof Error ? error.message : "来源页面加载失败"
+    });
+  }
+
+}
 
 type GordonConfirmWindowOptions = {
   title: string;
@@ -203,7 +391,7 @@ type WorkflowActiveRunContext = {
 
 const WORKFLOW_RUN_CANCELLED_MESSAGE = "执行已中断";
 const INFO_RADAR_FETCH_TIMEOUT_MS = 18_000;
-const INFO_RADAR_MAX_ITEMS_PER_SOURCE = 12;
+const INFO_RADAR_MAX_ITEMS_PER_SOURCE = 16;
 const INFO_RADAR_MAX_WINDOW_ITEMS = 160;
 const activeWorkflowRuns = new Map<string, WorkflowActiveRunContext>();
 const WRITING_BOOK_EXPORT_EXTENSIONS = new Set<WritingBookExportFormat>(["txt", "md"]);
@@ -2670,6 +2858,7 @@ function buildInfoRadarItem(
     summary?: unknown;
     author?: unknown;
     publishedAt?: unknown;
+    imageUrl?: unknown;
     tags?: unknown[];
   },
   baseUrl = ""
@@ -2677,6 +2866,7 @@ function buildInfoRadarItem(
   const title = truncateInfoRadarText(readXmlText(rawItem.title), 180);
   const url = resolveInfoRadarUrl(rawItem.url, baseUrl);
   const summary = truncateInfoRadarText(rawItem.summary, 320);
+  const imageUrl = resolveInfoRadarUrl(rawItem.imageUrl, baseUrl);
 
   if (!title && !url) {
     return null;
@@ -2695,8 +2885,10 @@ function buildInfoRadarItem(
     summary,
     ...(rawItem.author ? { author: truncateInfoRadarText(readXmlText(rawItem.author), 80) } : {}),
     ...(rawItem.publishedAt ? { publishedAt: normalizeInfoRadarDate(rawItem.publishedAt) ?? readXmlText(rawItem.publishedAt) } : {}),
+    ...(imageUrl ? { imageUrl } : {}),
     fetchedAt,
     tags: [...(source.tags ?? []), ...(rawItem.tags ?? []).map((tag) => readXmlText(tag)).filter(Boolean)].slice(0, 8),
+    matchedKeywords: [],
     score: 0,
     status: "new"
   };
@@ -2721,6 +2913,10 @@ function parseInfoRadarFeed(xmlText: string, source: InfoRadarSource, baseUrl = 
         summary: item.description ?? item["content:encoded"] ?? item.summary,
         author: item.author ?? item["dc:creator"],
         publishedAt: item.pubDate ?? item.published ?? item.updated,
+        imageUrl:
+          (item["media:thumbnail"] as Record<string, unknown> | undefined)?.["@_url"] ??
+          (item["media:content"] as Record<string, unknown> | undefined)?.["@_url"] ??
+          (item.enclosure as Record<string, unknown> | undefined)?.["@_url"],
         tags: toArray(item.category)
       },
       baseUrl
@@ -2740,6 +2936,9 @@ function parseInfoRadarFeed(xmlText: string, source: InfoRadarSource, baseUrl = 
         summary: entry.summary ?? entry.content,
         author: (entry.author as Record<string, unknown> | undefined)?.name ?? entry.author,
         publishedAt: entry.published ?? entry.updated,
+        imageUrl:
+          (entry["media:thumbnail"] as Record<string, unknown> | undefined)?.["@_url"] ??
+          (entry["media:content"] as Record<string, unknown> | undefined)?.["@_url"],
         tags: toArray(entry.category)
       },
       baseUrl
@@ -2760,8 +2959,170 @@ function readHtmlMeta(htmlText: string, name: string): string {
   return decodeBasicHtmlEntities(htmlText.match(pattern)?.[1] ?? htmlText.match(reversePattern)?.[1] ?? "").trim();
 }
 
+function readHtmlAttribute(htmlText: string, attributeName: string): string {
+  const escapedName = attributeName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`\\s${escapedName}=["']([^"']+)["']`, "i");
+  return decodeBasicHtmlEntities(htmlText.match(pattern)?.[1] ?? "").trim();
+}
+
+function normalizeInfoRadarSearchQuery(query: string): string {
+  return String(query ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function createBingRssSearchUrl(query: string): string {
+  const normalizedQuery = normalizeInfoRadarSearchQuery(query);
+  const params = new URLSearchParams({
+    format: "rss",
+    q: normalizedQuery
+  });
+
+  return `https://www.bing.com/search?${params.toString()}`;
+}
+
+function getInfoRadarHostName(value: string): string {
+  try {
+    return new URL(value).hostname.replace(/^www\./i, "").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function looksLikeInfoRadarArticleUrl(url: string, sourceUrl = ""): boolean {
+  const normalizedUrl = String(url ?? "").trim();
+
+  if (!/^https?:\/\//i.test(normalizedUrl)) {
+    return false;
+  }
+
+  const lowerUrl = normalizedUrl.toLowerCase();
+
+  if (/\.(?:png|jpe?g|gif|svg|webp|ico|css|js|zip|pdf)(?:[?#].*)?$/i.test(lowerUrl)) {
+    return false;
+  }
+
+  if (/#(?:comments|respond|main|content)$/i.test(lowerUrl)) {
+    return false;
+  }
+
+  const sourceHost = getInfoRadarHostName(sourceUrl);
+  const urlHost = getInfoRadarHostName(normalizedUrl);
+
+  if (sourceHost && urlHost && sourceHost !== urlHost) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(normalizedUrl);
+    const pathName = parsed.pathname.toLowerCase();
+    return (
+      /\/(?:news|blog|post|posts|article|articles|research|discover|technology|ai|20\d{2}|archives?)\//i.test(pathName) ||
+      /\/20\d{2}\/\d{1,2}\//.test(pathName) ||
+      pathName.split("/").filter(Boolean).length >= 2
+    );
+  } catch {
+    return false;
+  }
+}
+
+function extractInfoRadarHtmlItems(htmlText: string, source: InfoRadarSource, finalUrl = ""): InfoRadarItem[] {
+  const html = String(htmlText ?? "");
+  const baseUrl = finalUrl || source.url;
+  const items: InfoRadarItem[] = [];
+  const seenUrls = new Set<string>();
+  const anchorPattern = /<a\b([^>]*)>([\s\S]*?)<\/a>/gi;
+  const genericTitleRejects = new Set([
+    "home",
+    "about",
+    "contact",
+    "privacy",
+    "terms",
+    "careers",
+    "menu",
+    "more",
+    "learn more",
+    "read more",
+    "subscribe",
+    "首页",
+    "关于",
+    "联系我们",
+    "隐私",
+    "更多",
+    "阅读更多",
+    "阅读全文",
+    "订阅"
+  ]);
+
+  for (const match of html.matchAll(anchorPattern)) {
+    const attributes = match[1] ?? "";
+    const innerHtml = match[2] ?? "";
+    const href = readHtmlAttribute(attributes, "href");
+    const url = resolveInfoRadarUrl(href, baseUrl);
+
+    if (!looksLikeInfoRadarArticleUrl(url, baseUrl)) {
+      continue;
+    }
+
+    const dedupeUrl = url.toLowerCase().replace(/#.*$/, "").replace(/\/$/, "");
+
+    if (seenUrls.has(dedupeUrl)) {
+      continue;
+    }
+
+    const fullText = stripHtml(innerHtml);
+    const title =
+      truncateInfoRadarText(
+        stripHtml(innerHtml.match(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/i)?.[1] ?? "") ||
+          readHtmlAttribute(attributes, "aria-label") ||
+          readHtmlAttribute(attributes, "title") ||
+          fullText,
+        180
+      );
+    const titleKey = title.toLowerCase();
+
+    if (title.length < 6 || genericTitleRejects.has(titleKey)) {
+      continue;
+    }
+
+    seenUrls.add(dedupeUrl);
+
+    const imageUrl =
+      readHtmlAttribute(innerHtml.match(/<img\b[\s\S]*?>/i)?.[0] ?? "", "src") ||
+      readHtmlAttribute(innerHtml.match(/<img\b[\s\S]*?>/i)?.[0] ?? "", "data-src");
+    const summary = fullText && fullText !== title ? fullText : "";
+    const item = buildInfoRadarItem(
+      source,
+      {
+        title,
+        url,
+        summary: summary || `${source.title} 发现的新内容`,
+        imageUrl,
+        tags: source.tags
+      },
+      baseUrl
+    );
+
+    if (item) {
+      items.push(item);
+    }
+
+    if (items.length >= INFO_RADAR_MAX_ITEMS_PER_SOURCE * 2) {
+      break;
+    }
+  }
+
+  return items;
+}
+
 function parseInfoRadarWebPage(htmlText: string, source: InfoRadarSource, finalUrl = ""): InfoRadarItem[] {
   const html = String(htmlText ?? "");
+  const extractedItems = extractInfoRadarHtmlItems(html, source, finalUrl);
+
+  if (extractedItems.length) {
+    return extractedItems;
+  }
+
   const title =
     readHtmlMeta(html, "og:title") ||
     stripHtml(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "") ||
@@ -2776,12 +3137,106 @@ function parseInfoRadarWebPage(htmlText: string, source: InfoRadarSource, finalU
       title,
       url: finalUrl || source.url,
       summary,
+      imageUrl: readHtmlMeta(html, "og:image"),
       tags: source.tags
     },
     source.url
   );
 
   return item ? [item] : [];
+}
+
+function parseInfoRadarWechatSearch(htmlText: string, source: InfoRadarSource, finalUrl = ""): InfoRadarItem[] {
+  const html = String(htmlText ?? "");
+  const baseUrl = finalUrl || "https://weixin.sogou.com/weixin";
+  const items: InfoRadarItem[] = [];
+  const blocks = html.match(/<li\b[^>]*id=["']sogou_vr_11002601_box_[^"']+["'][\s\S]*?<\/li>/gi) ?? [];
+
+  for (const block of blocks) {
+    const titleAnchor = block.match(/<h3[^>]*>\s*<a\b([^>]*)>([\s\S]*?)<\/a>\s*<\/h3>/i);
+    const href = titleAnchor ? readHtmlAttribute(titleAnchor[1] ?? "", "href") : "";
+    const title = truncateInfoRadarText(
+      stripHtml(String(titleAnchor?.[2] ?? "").replace(/<!--red_beg-->|<!--red_end-->/g, "")),
+      180
+    );
+    const summary = truncateInfoRadarText(
+      stripHtml(
+        (block.match(/<p[^>]+class=["']txt-info["'][^>]*>([\s\S]*?)<\/p>/i)?.[1] ?? "").replace(
+          /<!--red_beg-->|<!--red_end-->/g,
+          ""
+        )
+      ),
+      320
+    );
+    const author = stripHtml(block.match(/<span[^>]+class=["']all-time-y2["'][^>]*>([\s\S]*?)<\/span>/i)?.[1] ?? "");
+    const epochSeconds = Number(block.match(/timeConvert\(['"]?(\d+)['"]?\)/i)?.[1] ?? "");
+    const imageTag = block.match(/<img\b[\s\S]*?>/i)?.[0] ?? "";
+    const imageUrl = readHtmlAttribute(imageTag, "data-src") || readHtmlAttribute(imageTag, "src");
+    const item = buildInfoRadarItem(
+      source,
+      {
+        title,
+        url: href ? resolveInfoRadarUrl(href, baseUrl) : "",
+        summary,
+        author,
+        publishedAt: Number.isFinite(epochSeconds) && epochSeconds > 0 ? new Date(epochSeconds * 1000).toISOString() : undefined,
+        imageUrl,
+        tags: source.tags
+      },
+      baseUrl
+    );
+
+    if (item) {
+      items.push(item);
+    }
+  }
+
+  return items;
+}
+
+async function fetchInfoRadarSearchSource(source: InfoRadarSource): Promise<InfoRadarSourceFetchResult> {
+  const query = normalizeInfoRadarSearchQuery(source.query || source.url);
+
+  if (!query) {
+    return {
+      items: [],
+      message: `${source.title} 缺少搜索关键词`
+    };
+  }
+
+  const searchUrl = /^https?:\/\//i.test(query) ? query : createBingRssSearchUrl(query);
+  const response = await fetchInfoRadarText(searchUrl);
+  const items = response.text.trim().startsWith("<")
+    ? parseInfoRadarFeed(response.text, source, response.finalUrl)
+    : [];
+
+  return {
+    items,
+    message: items.length ? undefined : `${source.title} 暂无可解析的搜索结果`
+  };
+}
+
+async function fetchInfoRadarWechatSource(source: InfoRadarSource): Promise<InfoRadarSourceFetchResult> {
+  const query = normalizeInfoRadarSearchQuery(source.query || source.title);
+
+  if (!query) {
+    return {
+      items: [],
+      message: `${source.title} 缺少公众号搜索关键词`
+    };
+  }
+
+  const searchUrl =
+    source.url && /^https?:\/\//i.test(source.url)
+      ? source.url
+      : `https://weixin.sogou.com/weixin?type=2&query=${encodeURIComponent(query)}`;
+  const response = await fetchInfoRadarText(searchUrl);
+  const items = parseInfoRadarWechatSearch(response.text, source, response.finalUrl);
+
+  return {
+    items,
+    message: items.length ? undefined : `${source.title} 暂无可解析的公众号结果，可能被搜索页限流`
+  };
 }
 
 async function fetchInfoRadarText(url: string, timeoutMs = INFO_RADAR_FETCH_TIMEOUT_MS): Promise<{ text: string; finalUrl: string }> {
@@ -2793,7 +3248,7 @@ async function fetchInfoRadarText(url: string, timeoutMs = INFO_RADAR_FETCH_TIME
       signal: controller.signal,
       headers: {
         accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, text/html;q=0.8, */*;q=0.5",
-        "user-agent": "Gordon Info Radar/1.0"
+        "user-agent": "Mozilla/5.0 (compatible; Gordon Info Radar/1.0; +https://gordon.local)"
       }
     });
 
@@ -2833,9 +3288,21 @@ function scoreInfoRadarItem(item: InfoRadarItem, radarWindow: InfoRadarWindow): 
     return null;
   }
 
+  const publishedTime = new Date(item.publishedAt ?? "").getTime();
+  const ageHours = Number.isFinite(publishedTime) ? Math.max(0, (Date.now() - publishedTime) / 3_600_000) : Number.POSITIVE_INFINITY;
+  const recencyScore =
+    ageHours <= 24 ? 10 : ageHours <= 72 ? 7 : ageHours <= 24 * 14 ? 4 : item.publishedAt ? 2 : 0;
+  const sourceScore = item.sourceKind === "rss" ? 4 : item.sourceKind === "web_page" ? 3 : item.sourceKind === "wechat" ? 2 : 1;
+
   return {
     ...item,
-    score: keywordMatches.length * 10 + (item.publishedAt ? 3 : 0) + (item.summary ? 2 : 0)
+    matchedKeywords: keywordMatches,
+    score:
+      keywordMatches.length * 10 +
+      recencyScore +
+      sourceScore +
+      (item.summary ? 2 : 0) +
+      (item.imageUrl ? 1 : 0)
   };
 }
 
@@ -2843,6 +3310,39 @@ function getInfoRadarItemDedupeKey(item: InfoRadarItem): string {
   const url = String(item.url ?? "").trim().toLowerCase().replace(/#.*$/, "").replace(/\/$/, "");
   const title = String(item.title ?? "").trim().toLowerCase();
   return url || `${item.sourceId}:${title}`;
+}
+
+function getInfoRadarPublishedRank(item: InfoRadarItem): number {
+  const timestamp = new Date(item.publishedAt ?? "").getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function getInfoRadarFetchedRank(item: InfoRadarItem): number {
+  const timestamp = new Date(item.fetchedAt ?? "").getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function compareInfoRadarItems(left: InfoRadarItem, right: InfoRadarItem): number {
+  const leftPublishedRank = getInfoRadarPublishedRank(left);
+  const rightPublishedRank = getInfoRadarPublishedRank(right);
+  const leftHasPublishedAt = leftPublishedRank > 0;
+  const rightHasPublishedAt = rightPublishedRank > 0;
+
+  if (leftHasPublishedAt !== rightHasPublishedAt) {
+    return leftHasPublishedAt ? -1 : 1;
+  }
+
+  if (rightPublishedRank !== leftPublishedRank) {
+    return rightPublishedRank - leftPublishedRank;
+  }
+
+  const scoreRank = (right.score ?? 0) - (left.score ?? 0);
+
+  if (scoreRank !== 0) {
+    return scoreRank;
+  }
+
+  return getInfoRadarFetchedRank(right) - getInfoRadarFetchedRank(left);
 }
 
 function mergeInfoRadarItems(existingItems: InfoRadarItem[], fetchedItems: InfoRadarItem[]): InfoRadarItem[] {
@@ -2869,13 +3369,7 @@ function mergeInfoRadarItems(existingItems: InfoRadarItem[], fetchedItems: InfoR
   }
 
   return Array.from(byKey.values())
-    .sort((left, right) => {
-      const leftTime = new Date(left.publishedAt ?? left.fetchedAt ?? 0).getTime();
-      const rightTime = new Date(right.publishedAt ?? right.fetchedAt ?? 0).getTime();
-      const leftRank = Number.isFinite(leftTime) ? leftTime : 0;
-      const rightRank = Number.isFinite(rightTime) ? rightTime : 0;
-      return rightRank - leftRank || (right.score ?? 0) - (left.score ?? 0);
-    })
+    .sort(compareInfoRadarItems)
     .slice(0, INFO_RADAR_MAX_WINDOW_ITEMS);
 }
 
@@ -2885,16 +3379,18 @@ async function fetchInfoRadarSource(source: InfoRadarSource): Promise<InfoRadarS
   }
 
   if (source.kind === "search") {
+    const result = await fetchInfoRadarSearchSource(source);
     return {
-      items: [],
-      message: `${source.title} 需要接入 Search Tools 后才能自动刷新`
+      ...result,
+      items: result.items.slice(0, INFO_RADAR_MAX_ITEMS_PER_SOURCE)
     };
   }
 
   if (source.kind === "wechat") {
+    const result = await fetchInfoRadarWechatSource(source);
     return {
-      items: [],
-      message: `${source.title} 需要公众号专项采集能力，当前仅保存配置`
+      ...result,
+      items: result.items.slice(0, INFO_RADAR_MAX_ITEMS_PER_SOURCE)
     };
   }
 
@@ -3451,6 +3947,44 @@ app.whenReady().then(async () => {
   ipcMain.handle("gordon:workflow-library:refresh-info-window", async (_event, request: InfoRadarRefreshRequest) =>
     toCloneableIpcValue(await refreshInfoRadarWindow(request))
   );
+  ipcMain.handle("gordon:workflow-library:info-reader:open", async (event, request) => {
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+
+    if (!ownerWindow) {
+      throw new Error("无法定位 Gordon 主窗口");
+    }
+
+    const url = normalizeInfoRadarNativeReaderUrl(request?.url);
+    const bounds = normalizeInfoRadarNativeReaderBounds(request?.bounds);
+    await openInfoRadarNativeReader(ownerWindow, url, bounds);
+    return true;
+  });
+  ipcMain.handle("gordon:workflow-library:info-reader:set-bounds", async (event, bounds) => {
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+
+    if (!ownerWindow) {
+      return false;
+    }
+
+    const readerView = infoRadarReaderViews.get(ownerWindow.id);
+
+    if (!readerView) {
+      return false;
+    }
+
+    setInfoRadarNativeReaderBounds(readerView, normalizeInfoRadarNativeReaderBounds(bounds));
+    return true;
+  });
+  ipcMain.handle("gordon:workflow-library:info-reader:close", async (event) => {
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+
+    if (!ownerWindow) {
+      return false;
+    }
+
+    detachInfoRadarNativeReaderView(ownerWindow);
+    return true;
+  });
   ipcMain.handle("gordon:comic-projects:list", async () => listComicProjects());
   ipcMain.handle("gordon:comic-projects:upsert", async (_event, project) => upsertComicProject(project));
   ipcMain.handle("gordon:comic-projects:delete", async (_event, projectId: string) =>

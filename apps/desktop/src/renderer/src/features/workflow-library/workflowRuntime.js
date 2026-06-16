@@ -466,6 +466,74 @@ export function getInfoRadarItemHref(item) {
   return /^https?:\/\//i.test(url) ? url : "";
 }
 
+export function getInfoRadarValueText(value) {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value).trim();
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => getInfoRadarValueText(entry))
+      .filter(Boolean)
+      .join("；")
+      .trim();
+  }
+
+  if (typeof value === "object") {
+    const preferredKeys = ["summary", "text", "content", "description", "abstract", "message", "title"];
+
+    for (const key of preferredKeys) {
+      const text = getInfoRadarValueText(value[key]);
+
+      if (text) {
+        return text;
+      }
+    }
+
+    return Object.values(value)
+      .map((entry) => getInfoRadarValueText(entry))
+      .filter(Boolean)
+      .slice(0, 3)
+      .join("；")
+      .trim();
+  }
+
+  return "";
+}
+
+export function getInfoRadarItemSummaryText(item) {
+  return getInfoRadarValueText(item?.summary);
+}
+
+export function getInfoRadarScorePercent(item) {
+  const score = Number(item?.score ?? 0);
+  return Math.max(8, Math.min(100, Math.round((Number.isFinite(score) ? score : 0) * 3.2)));
+}
+
+export function getInfoRadarSourceTone(kind) {
+  if (kind === "rss") {
+    return "is-rss";
+  }
+
+  if (kind === "web_page") {
+    return "is-web";
+  }
+
+  if (kind === "search") {
+    return "is-search";
+  }
+
+  if (kind === "wechat") {
+    return "is-wechat";
+  }
+
+  return "is-manual";
+}
+
 export function parseNumberInput(value, fallback) {
   const numeric = Number(String(value ?? "").trim());
   return Number.isFinite(numeric) && numeric >= 0 ? numeric : fallback;

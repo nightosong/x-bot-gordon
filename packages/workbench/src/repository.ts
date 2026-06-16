@@ -4604,8 +4604,10 @@ function normalizeInfoRadarItem(input: Partial<InfoRadarItem> | null | undefined
     summary: String(input.summary ?? "").trim(),
     ...(input.author ? { author: String(input.author).trim() } : {}),
     ...(input.publishedAt ? { publishedAt: String(input.publishedAt).trim() } : {}),
+    ...(input.imageUrl ? { imageUrl: String(input.imageUrl).trim() } : {}),
     fetchedAt,
     tags: normalizeStringArray(input.tags),
+    matchedKeywords: normalizeStringArray(input.matchedKeywords),
     score: Number.isFinite(Number(input.score)) ? Number(input.score) : 0,
     status
   };
@@ -4691,75 +4693,7 @@ function createDefaultInfoRadarCard(): WorkflowLibraryItem {
     createdAt: now,
     updatedAt: now,
     records: [],
-    infoWindows: [
-      {
-        id: "info_window_tech_radar",
-        title: "技术与 Agent 趋势",
-        summary: "跟踪 AI、Agent、模型发布、开源工具和工程实践。",
-        category: "技术",
-        status: "active",
-        cadence: "manual",
-        keywords: ["AI", "Agent", "模型", "开源", "工程"],
-        negativeKeywords: [],
-        digestPrompt: "按重要性归纳：重大变化、可行动线索、需要继续深挖的问题。",
-        sources: [
-          {
-            id: "info_source_openai_blog",
-            kind: "rss",
-            title: "OpenAI Blog",
-            url: "https://openai.com/news/rss.xml",
-            query: "",
-            enabled: true,
-            tags: ["AI", "官方"],
-            notes: "官方发布源",
-            updatedAt: now
-          },
-          {
-            id: "info_source_hn_frontpage",
-            kind: "rss",
-            title: "Hacker News",
-            url: "https://hnrss.org/frontpage",
-            query: "",
-            enabled: true,
-            tags: ["技术", "社区"],
-            notes: "",
-            updatedAt: now
-          }
-        ],
-        items: [],
-        runHistory: [],
-        createdAt: now,
-        updatedAt: now
-      },
-      {
-        id: "info_window_research_radar",
-        title: "科研论文观察",
-        summary: "关注 arXiv、实验室博客和研究动态，保留后续接论文工具的入口。",
-        category: "科研",
-        status: "active",
-        cadence: "manual",
-        keywords: ["paper", "research", "benchmark", "agent"],
-        negativeKeywords: [],
-        digestPrompt: "提取论文问题、方法、证据强度、潜在复现实验和与现有项目的关系。",
-        sources: [
-          {
-            id: "info_source_arxiv_ai",
-            kind: "rss",
-            title: "arXiv cs.AI",
-            url: "https://export.arxiv.org/rss/cs.AI",
-            query: "",
-            enabled: true,
-            tags: ["论文", "AI"],
-            notes: "",
-            updatedAt: now
-          }
-        ],
-        items: [],
-        runHistory: [],
-        createdAt: now,
-        updatedAt: now
-      }
-    ]
+    infoWindows: []
   };
 }
 

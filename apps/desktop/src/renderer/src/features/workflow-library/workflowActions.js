@@ -21,10 +21,13 @@ import {
   formatDurationMs,
   getInfoRadarCadenceLabel,
   getInfoRadarItemHref,
+  getInfoRadarItemSummaryText,
   getInfoRadarItemStatusLabel,
   getInfoRadarRunStatusLabel,
   getInfoRadarRunStatusTone,
+  getInfoRadarScorePercent,
   getInfoRadarSourceKindLabel,
+  getInfoRadarSourceTone,
   getWorkflowCardCountLabel,
   getWorkflowRunCompletedCount,
   getWorkflowRunDurationLabel,
@@ -74,6 +77,63 @@ function buildWorkflowRecordFromDraft(createLocalId, draft, existingRecord = nul
   return buildWorkflowRecordFromDraftRuntime(draft, existingRecord, { createLocalId });
 }
 
+function normalizeInfoRadarFilterValue(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function getInfoRadarItemTagValues(item) {
+  return [...(item?.matchedKeywords ?? []), ...(item?.tags ?? [])]
+    .map((tag) => String(tag ?? "").trim())
+    .filter(Boolean);
+}
+
+function infoRadarItemMatchesSource(item, sourceFilter) {
+  return !sourceFilter || normalizeInfoRadarFilterValue(item?.sourceKind ?? "manual") === sourceFilter;
+}
+
+function infoRadarItemMatchesTopic(item, topicFilter) {
+  if (!topicFilter) {
+    return true;
+  }
+
+  return getInfoRadarItemTagValues(item)
+    .map((tag) => normalizeInfoRadarFilterValue(tag))
+    .includes(topicFilter);
+}
+
+function getInfoRadarPublishedRank(item) {
+  const publishedTime = new Date(item?.publishedAt ?? "").getTime();
+  return Number.isFinite(publishedTime) ? publishedTime : 0;
+}
+
+function getInfoRadarFetchedRank(item) {
+  const fetchedTime = new Date(item?.fetchedAt ?? "").getTime();
+  return Number.isFinite(fetchedTime) ? fetchedTime : 0;
+}
+
+function compareInfoRadarItems(left, right) {
+  const leftPublishedRank = getInfoRadarPublishedRank(left);
+  const rightPublishedRank = getInfoRadarPublishedRank(right);
+  const leftHasPublishedAt = leftPublishedRank > 0;
+  const rightHasPublishedAt = rightPublishedRank > 0;
+
+  if (leftHasPublishedAt !== rightHasPublishedAt) {
+    return leftHasPublishedAt ? -1 : 1;
+  }
+
+  if (rightPublishedRank !== leftPublishedRank) {
+    return rightPublishedRank - leftPublishedRank;
+  }
+
+  const scoreRank = Number(right?.score ?? 0) - Number(left?.score ?? 0);
+
+  if (scoreRank !== 0) {
+    return scoreRank;
+  }
+
+  return getInfoRadarFetchedRank(right) - getInfoRadarFetchedRank(left);
+}
+
 function createInfoRadarSourceDraft(createLocalId, overrides = {}) {
   return createInfoRadarSourceDraftFromConfig(overrides, createLocalId);
 }
@@ -115,38 +175,147 @@ export function createWorkflowActions({
   const activeInfoWindow = computed(
     () => activeInfoWindows.value.find((infoWindow) => infoWindow.id === ui.workflow.activeInfoWindowId) ?? activeInfoWindows.value[0] ?? null
   );
-  const filteredInfoRadarItems = computed(() => {
+  const activeInfoReaderItem = computed(
+    () => activeInfoWindow.value?.items?.find((item) => item.id === ui.workflow.activeInfoReaderItemId) ?? null
+  );
+  const searchFilteredInfoRadarItems = computed(() => {
     const query = String(ui.workflow.infoSearchQuery ?? "").trim().toLowerCase();
     const items = activeInfoWindow.value?.items ?? [];
-
-    if (!query) {
-      return items;
-    }
-
-    return items.filter((item) =>
+    const visibleItems = query
+      ? items.filter((item) =>
       [
         item.title,
-        item.summary,
+        getInfoRadarItemSummaryText(item),
         item.sourceTitle,
         item.author,
+        item.matchedKeywords?.join(" "),
         item.tags?.join(" ")
       ]
         .join(" ")
         .toLowerCase()
         .includes(query)
+      )
+      : items;
+
+    return [...visibleItems].sort(compareInfoRadarItems);
+  });
+  const sourceCountInfoRadarItems = computed(() => {
+    const topicFilter = normalizeInfoRadarFilterValue(ui.workflow.infoTopicFilter);
+    return searchFilteredInfoRadarItems.value.filter((item) => infoRadarItemMatchesTopic(item, topicFilter));
+  });
+  const topicCountInfoRadarItems = computed(() => {
+    const sourceFilter = normalizeInfoRadarFilterValue(ui.workflow.infoSourceFilter);
+    return searchFilteredInfoRadarItems.value.filter((item) => infoRadarItemMatchesSource(item, sourceFilter));
+  });
+  const filteredInfoRadarItems = computed(() => {
+    const sourceFilter = normalizeInfoRadarFilterValue(ui.workflow.infoSourceFilter);
+    const topicFilter = normalizeInfoRadarFilterValue(ui.workflow.infoTopicFilter);
+
+    return searchFilteredInfoRadarItems.value.filter(
+      (item) => infoRadarItemMatchesSource(item, sourceFilter) && infoRadarItemMatchesTopic(item, topicFilter)
     );
+  });
+  const activeInfoRadarSourceGroups = computed(() => {
+    const sources = activeInfoWindow.value?.sources ?? [];
+    const sourceItemCounts = new Map();
+    const groups = new Map();
+
+    for (const item of sourceCountInfoRadarItems.value) {
+      const key = item.sourceKind ?? "manual";
+      sourceItemCounts.set(key, (sourceItemCounts.get(key) ?? 0) + 1);
+    }
+
+    for (const source of sources) {
+      const key = source.kind ?? "manual";
+      const current = groups.get(key) ?? {
+        kind: key,
+        label: getInfoRadarSourceKindLabel(key),
+        tone: getInfoRadarSourceTone(key),
+        total: 0,
+        enabled: 0,
+        itemCount: sourceItemCounts.get(key) ?? 0,
+        sources: []
+      };
+
+      current.total += 1;
+
+      if (source.enabled !== false) {
+        current.enabled += 1;
+      }
+
+      current.sources.push(source);
+      groups.set(key, current);
+    }
+
+    for (const [key, itemCount] of sourceItemCounts.entries()) {
+      if (groups.has(key)) {
+        continue;
+      }
+
+      groups.set(key, {
+        kind: key,
+        label: getInfoRadarSourceKindLabel(key),
+        tone: getInfoRadarSourceTone(key),
+        total: 0,
+        enabled: 0,
+        itemCount,
+        sources: []
+      });
+    }
+
+    return Array.from(groups.values()).sort((left, right) => right.enabled - left.enabled || right.total - left.total);
+  });
+  const infoRadarSourceFilterOptions = computed(() => [
+    { value: "", label: `全部来源 ${sourceCountInfoRadarItems.value.length}` },
+    ...activeInfoRadarSourceGroups.value.map((group) => ({
+      value: group.kind,
+      label: `${group.label} ${group.itemCount}`
+    }))
+  ]);
+  const activeInfoRadarHotTopics = computed(() => {
+    const counts = new Map();
+
+    for (const item of topicCountInfoRadarItems.value) {
+      for (const tag of getInfoRadarItemTagValues(item)) {
+        counts.set(tag, (counts.get(tag) ?? 0) + 1);
+      }
+    }
+
+    return Array.from(counts.entries())
+      .map(([label, count]) => ({ label, count }))
+      .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
+  });
+  const infoRadarTopicFilterOptions = computed(() => {
+    const selectedTopic = String(ui.workflow.infoTopicFilter ?? "").trim();
+    const topicOptions = activeInfoRadarHotTopics.value.map((topic) => ({
+      value: topic.label,
+      label: `${topic.label} ${topic.count}`
+    }));
+
+    if (selectedTopic && !topicOptions.some((option) => option.value === selectedTopic)) {
+      topicOptions.unshift({ value: selectedTopic, label: `${selectedTopic} 0` });
+    }
+
+    return [{ value: "", label: `全部标签 ${topicCountInfoRadarItems.value.length}` }, ...topicOptions];
   });
   const infoRadarMetrics = computed(() => {
     const windows = activeInfoWindows.value;
     const items = windows.flatMap((infoWindow) => infoWindow.items ?? []);
     const sources = windows.flatMap((infoWindow) => infoWindow.sources ?? []);
+    const activeItems = activeInfoWindow.value?.items ?? [];
+    const newItemCount = activeItems.filter((item) => item.status === "new").length;
+    const highScoreCount = activeItems.filter((item) => Number(item.score ?? 0) >= 20).length;
+    const latestItem = [...activeItems].sort(compareInfoRadarItems)[0] ?? null;
 
     return {
       windowCount: windows.length,
       itemCount: items.length,
       sourceCount: sources.length,
       activeSourceCount: sources.filter((source) => source.enabled !== false).length,
-      activeItemCount: activeInfoWindow.value?.items?.length ?? 0
+      activeItemCount: activeItems.length,
+      newItemCount,
+      highScoreCount,
+      latestItemAt: latestItem?.publishedAt ?? latestItem?.fetchedAt ?? ""
     };
   });
   const activeWorkflowSteps = computed(() => activeWorkflowRecord.value?.steps ?? []);
@@ -222,6 +391,10 @@ export function createWorkflowActions({
 
     if (ui.workflow.view === "info") {
       return activeInfoWindow.value?.title ?? activeWorkflowCard.value?.title ?? "信息雷达";
+    }
+
+    if (ui.workflow.view === "info-reader") {
+      return activeInfoReaderItem.value?.title ?? "来源阅读";
     }
 
     if (ui.workflow.view === "editor") {
@@ -612,10 +785,15 @@ export function createWorkflowActions({
         null;
       ui.workflow.activeInfoWindowId = nextWindow?.id ?? null;
       ui.workflow.activeRecordId = null;
+      ui.workflow.activeInfoReaderItemId =
+        nextWindow?.items?.some((item) => item.id === ui.workflow.activeInfoReaderItemId) ? ui.workflow.activeInfoReaderItemId : null;
+      ui.workflow.infoReaderError = "";
     } else {
       const nextRecord = nextCard?.records?.find((record) => record.id === ui.workflow.activeRecordId) ?? nextCard?.records?.[0] ?? null;
       ui.workflow.activeRecordId = nextRecord?.id ?? null;
       ui.workflow.activeInfoWindowId = null;
+      ui.workflow.activeInfoReaderItemId = null;
+      ui.workflow.infoReaderError = "";
     }
 
     ui.workflow.copiedStepId = null;
@@ -631,9 +809,13 @@ export function createWorkflowActions({
     ui.workflow.view = isInfoRadar ? "info" : "list";
     ui.workflow.activeRecordId = isInfoRadar ? null : card?.records?.[0]?.id ?? null;
     ui.workflow.activeInfoWindowId = isInfoRadar ? card?.infoWindows?.[0]?.id ?? null : null;
+    ui.workflow.activeInfoReaderItemId = null;
+    ui.workflow.infoReaderError = "";
     ui.workflow.copiedStepId = null;
     ui.workflow.searchQuery = "";
     ui.workflow.infoSearchQuery = "";
+    ui.workflow.infoSourceFilter = "";
+    ui.workflow.infoTopicFilter = "";
     ui.workflow.runResult = null;
     ui.workflow.expandedStepIds = [];
   }
@@ -643,6 +825,14 @@ export function createWorkflowActions({
       ui.workflow.view = "info";
       ui.workflow.editingInfoWindowId = null;
       ui.workflow.infoWindowDraft = createInfoRadarWindowDraft(createLocalId);
+      return;
+    }
+
+    if (ui.workflow.view === "info-reader") {
+      ui.workflow.view = "info";
+      ui.workflow.activeInfoReaderItemId = null;
+      ui.workflow.isInfoReaderLoading = false;
+      ui.workflow.infoReaderError = "";
       return;
     }
 
@@ -665,14 +855,49 @@ export function createWorkflowActions({
     ui.workflow.view = "library";
     ui.workflow.editingRecordId = null;
     ui.workflow.editingInfoWindowId = null;
+    ui.workflow.activeInfoReaderItemId = null;
+    ui.workflow.isInfoReaderLoading = false;
+    ui.workflow.infoReaderError = "";
     ui.workflow.runResult = null;
     syncWorkflowSelection();
   }
 
   function openInfoRadarWindow(windowId) {
     ui.workflow.activeInfoWindowId = windowId;
+    ui.workflow.activeInfoReaderItemId = null;
+    ui.workflow.isInfoReaderLoading = false;
+    ui.workflow.infoReaderError = "";
     ui.workflow.infoSearchQuery = "";
+    ui.workflow.infoSourceFilter = "";
+    ui.workflow.infoTopicFilter = "";
     ui.workflow.view = "info";
+  }
+
+  function openInfoRadarItemReader(item) {
+    const href = getInfoRadarItemHref(item);
+
+    if (!href) {
+      setStatus("当前信息没有可打开的来源链接。", "warning");
+      return;
+    }
+
+    ui.workflow.activeInfoReaderItemId = item?.id ?? null;
+    ui.workflow.isInfoReaderLoading = true;
+    ui.workflow.infoReaderError = "";
+    ui.workflow.view = "info-reader";
+  }
+
+  function handleInfoRadarReaderLoadingStart() {
+    if (ui.workflow.view !== "info-reader") {
+      return;
+    }
+
+    ui.workflow.isInfoReaderLoading = true;
+    ui.workflow.infoReaderError = "";
+  }
+
+  function handleInfoRadarReaderLoadingEnd() {
+    ui.workflow.isInfoReaderLoading = false;
   }
 
   function openInfoRadarWindowEditor(infoWindow = null) {
@@ -1101,6 +1326,7 @@ export function createWorkflowActions({
     activeWorkflowMetrics,
     activeWorkflowRecord,
     activeWorkflowSteps,
+    activeInfoReaderItem,
     addInfoRadarSourceDraft,
     addWorkflowDraftEnvironment,
     addWorkflowDraftStep,
@@ -1115,10 +1341,13 @@ export function createWorkflowActions({
     formatDurationMs,
     getInfoRadarCadenceLabel,
     getInfoRadarItemHref,
+    getInfoRadarItemSummaryText,
     getInfoRadarItemStatusLabel,
     getInfoRadarRunStatusLabel,
     getInfoRadarRunStatusTone,
+    getInfoRadarScorePercent,
     getInfoRadarSourceKindLabel,
+    getInfoRadarSourceTone,
     getWorkflowCardCountLabel,
     getWorkflowRunCompletedCount,
     getWorkflowRunDurationLabel,
@@ -1134,11 +1363,16 @@ export function createWorkflowActions({
     handleWorkflowBodyDraftInput,
     handleWorkflowBodyStepSelect,
     handleWorkflowCurlCopy,
+    handleInfoRadarReaderLoadingEnd,
+    handleInfoRadarReaderLoadingStart,
     handleWorkflowRunProgress,
     isWorkflowStepExpanded,
     infoRadarMetrics,
+    infoRadarSourceFilterOptions,
+    infoRadarTopicFilterOptions,
     openInfoRadarWindow,
     openInfoRadarWindowEditor,
+    openInfoRadarItemReader,
     openWorkflowCard,
     openWorkflowRecord,
     openWorkflowRecordEditor,

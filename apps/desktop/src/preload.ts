@@ -48,6 +48,7 @@ import type {
 let progressListenerIdSeed = 0;
 const agentRunProgressListeners = new Map<string, (_event: Electron.IpcRendererEvent, payload: AgentRunProgressEvent) => void>();
 const workflowRunProgressListeners = new Map<string, (_event: Electron.IpcRendererEvent, payload: unknown) => void>();
+const infoRadarReaderListeners = new Map<string, (_event: Electron.IpcRendererEvent, payload: unknown) => void>();
 
 function toPlainIpcData<T>(value: T): T {
   const visited = new WeakSet<object>();
@@ -188,6 +189,28 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
     ipcRenderer.invoke("gordon:workflow-library:cancel-run", progressEventId),
   refreshInfoRadarWindow: (request: { cardId: string; windowId: string }): Promise<InfoRadarRefreshResult> =>
     ipcRenderer.invoke("gordon:workflow-library:refresh-info-window", toPlainIpcData(request)),
+  openInfoRadarReader: (request: { url: string; bounds: { x: number; y: number; width: number; height: number } }) =>
+    ipcRenderer.invoke("gordon:workflow-library:info-reader:open", toPlainIpcData(request)),
+  setInfoRadarReaderBounds: (bounds: { x: number; y: number; width: number; height: number }) =>
+    ipcRenderer.invoke("gordon:workflow-library:info-reader:set-bounds", toPlainIpcData(bounds)),
+  closeInfoRadarReader: () => ipcRenderer.invoke("gordon:workflow-library:info-reader:close"),
+  onInfoRadarReaderEvent: (listener: (payload: unknown) => void): string => {
+    const listenerId = `info_reader_listener_${Date.now()}_${progressListenerIdSeed++}`;
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload);
+    infoRadarReaderListeners.set(listenerId, wrapped);
+    ipcRenderer.on("gordon:workflow-library:info-reader", wrapped);
+    return listenerId;
+  },
+  offInfoRadarReaderEvent: (listenerId: string): void => {
+    const wrapped = infoRadarReaderListeners.get(listenerId);
+
+    if (!wrapped) {
+      return;
+    }
+
+    ipcRenderer.removeListener("gordon:workflow-library:info-reader", wrapped);
+    infoRadarReaderListeners.delete(listenerId);
+  },
   onWorkflowRunProgress: (listener: (payload: unknown) => void): string => {
     const listenerId = `workflow_progress_listener_${Date.now()}_${progressListenerIdSeed++}`;
     const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload);
