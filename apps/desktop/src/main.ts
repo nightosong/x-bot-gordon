@@ -2693,10 +2693,20 @@ type InfoRadarRefreshRequest = {
   windowId?: string;
 };
 
+type InfoRadarWechatResolveRequest = {
+  cardId?: string;
+  windowId?: string;
+  itemId?: string;
+};
+
 type InfoRadarSourceFetchResult = {
   items: InfoRadarItem[];
   message?: string;
+  skipped?: boolean;
+  attempted?: boolean;
 };
+
+const INFO_RADAR_WECHAT_DISCOVERY_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 
 const infoRadarXmlParser = new XMLParser({
   ignoreAttributes: false,
@@ -2786,6 +2796,25 @@ function resolveInfoRadarUrl(value: unknown, baseUrl = ""): string {
   }
 }
 
+function isInfoRadarWechatTemporaryUrl(value: unknown): boolean {
+  const url = String(value ?? "").trim();
+
+  if (!url) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(url);
+    return (
+      /(?:^|\.)mp\.weixin\.qq\.com$/i.test(parsed.hostname) &&
+      parsed.pathname === "/s" &&
+      (parsed.searchParams.has("signature") || parsed.searchParams.has("timestamp") || parsed.searchParams.has("src"))
+    );
+  } catch {
+    return false;
+  }
+}
+
 function readAtomLink(value: unknown, baseUrl = ""): string {
   for (const link of toArray(value)) {
     if (typeof link === "string") {
@@ -2855,6 +2884,7 @@ function buildInfoRadarItem(
   rawItem: {
     title?: unknown;
     url?: unknown;
+    resolvedUrl?: unknown;
     summary?: unknown;
     author?: unknown;
     publishedAt?: unknown;
@@ -2865,6 +2895,7 @@ function buildInfoRadarItem(
 ): InfoRadarItem | null {
   const title = truncateInfoRadarText(readXmlText(rawItem.title), 180);
   const url = resolveInfoRadarUrl(rawItem.url, baseUrl);
+  const resolvedUrl = resolveInfoRadarUrl(rawItem.resolvedUrl, baseUrl);
   const summary = truncateInfoRadarText(rawItem.summary, 320);
   const imageUrl = resolveInfoRadarUrl(rawItem.imageUrl, baseUrl);
 
@@ -2882,6 +2913,7 @@ function buildInfoRadarItem(
     sourceKind: source.kind,
     title: title || url,
     url,
+    ...(resolvedUrl ? { resolvedUrl } : {}),
     summary,
     ...(rawItem.author ? { author: truncateInfoRadarText(readXmlText(rawItem.author), 80) } : {}),
     ...(rawItem.publishedAt ? { publishedAt: normalizeInfoRadarDate(rawItem.publishedAt) ?? readXmlText(rawItem.publishedAt) } : {}),
@@ -2979,6 +3011,10 @@ function createBingRssSearchUrl(query: string): string {
   });
 
   return `https://www.bing.com/search?${params.toString()}`;
+}
+
+function createInfoRadarWechatSearchUrl(query: string): string {
+  return `https://weixin.sogou.com/weixin?type=2&query=${encodeURIComponent(normalizeInfoRadarSearchQuery(query))}`;
 }
 
 function getInfoRadarHostName(value: string): string {
@@ -3176,7 +3212,8 @@ function parseInfoRadarWechatSearch(htmlText: string, source: InfoRadarSource, f
       source,
       {
         title,
-        url: href ? resolveInfoRadarUrl(href, baseUrl) : "",
+        url: "",
+        resolvedUrl: href ? resolveInfoRadarUrl(href, baseUrl) : "",
         summary,
         author,
         publishedAt: Number.isFinite(epochSeconds) && epochSeconds > 0 ? new Date(epochSeconds * 1000).toISOString() : undefined,
@@ -3229,7 +3266,7 @@ async function fetchInfoRadarWechatSource(source: InfoRadarSource): Promise<Info
   const searchUrl =
     source.url && /^https?:\/\//i.test(source.url)
       ? source.url
-      : `https://weixin.sogou.com/weixin?type=2&query=${encodeURIComponent(query)}`;
+      : createInfoRadarWechatSearchUrl(query);
   const response = await fetchInfoRadarText(searchUrl);
   const items = parseInfoRadarWechatSearch(response.text, source, response.finalUrl);
 
@@ -3237,6 +3274,67 @@ async function fetchInfoRadarWechatSource(source: InfoRadarSource): Promise<Info
     items,
     message: items.length ? undefined : `${source.title} 暂无可解析的公众号结果，可能被搜索页限流`
   };
+}
+
+function buildInfoRadarWechatResolveQuery(item: InfoRadarItem, source?: InfoRadarSource): string {
+  return normalizeInfoRadarSearchQuery(
+    [
+      item.title,
+      item.author,
+      source?.query,
+      source?.title && source.title !== item.sourceTitle ? source.title : item.sourceTitle
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
+}
+
+function getInfoRadarWechatResolveScore(candidate: InfoRadarItem, target: InfoRadarItem): number {
+  const candidateTitle = String(candidate.title ?? "").trim().toLowerCase();
+  const targetTitle = String(target.title ?? "").trim().toLowerCase();
+  const candidateAuthor = String(candidate.author ?? "").trim().toLowerCase();
+  const targetAuthor = String(target.author ?? "").trim().toLowerCase();
+
+  let score = 0;
+
+  if (candidateTitle && targetTitle && candidateTitle === targetTitle) {
+    score += 100;
+  } else if (candidateTitle && targetTitle && (candidateTitle.includes(targetTitle) || targetTitle.includes(candidateTitle))) {
+    score += 55;
+  }
+
+  if (candidateAuthor && targetAuthor && candidateAuthor === targetAuthor) {
+    score += 30;
+  }
+
+  const candidatePublishedAt = new Date(candidate.publishedAt ?? "").getTime();
+  const targetPublishedAt = new Date(target.publishedAt ?? "").getTime();
+
+  if (Number.isFinite(candidatePublishedAt) && Number.isFinite(targetPublishedAt)) {
+    const dayGap = Math.abs(candidatePublishedAt - targetPublishedAt) / 86_400_000;
+
+    if (dayGap < 1) {
+      score += 20;
+    } else if (dayGap <= 3) {
+      score += 10;
+    }
+  }
+
+  if (candidate.resolvedUrl && !isInfoRadarWechatTemporaryUrl(candidate.resolvedUrl)) {
+    score += 5;
+  }
+
+  return score;
+}
+
+function getInfoRadarSourceLatestFetchedAt(source: InfoRadarSource, radarWindow: InfoRadarWindow): number {
+  return Math.max(
+    0,
+    ...(radarWindow.items ?? [])
+      .filter((item) => item.sourceId === source.id || (item.sourceKind === source.kind && item.sourceTitle === source.title))
+      .map((item) => new Date(item.fetchedAt || item.publishedAt || "").getTime())
+      .filter((timestamp) => Number.isFinite(timestamp))
+  );
 }
 
 async function fetchInfoRadarText(url: string, timeoutMs = INFO_RADAR_FETCH_TIMEOUT_MS): Promise<{ text: string; finalUrl: string }> {
@@ -3359,9 +3457,10 @@ function mergeInfoRadarItems(existingItems: InfoRadarItem[], fetchedItems: InfoR
   for (const item of fetchedItems) {
     const key = getInfoRadarItemDedupeKey(item);
     const existing = byKey.get(key);
+    const nextItem = item.sourceKind === "wechat" ? { ...item, resolvedUrl: undefined } : item;
 
     byKey.set(key, {
-      ...item,
+      ...nextItem,
       id: existing?.id ?? item.id,
       status: existing?.status ?? item.status,
       fetchedAt: item.fetchedAt || existing?.fetchedAt || new Date().toISOString()
@@ -3373,7 +3472,121 @@ function mergeInfoRadarItems(existingItems: InfoRadarItem[], fetchedItems: InfoR
     .slice(0, INFO_RADAR_MAX_WINDOW_ITEMS);
 }
 
-async function fetchInfoRadarSource(source: InfoRadarSource): Promise<InfoRadarSourceFetchResult> {
+async function resolveInfoRadarWechatItemUrl(
+  request: InfoRadarWechatResolveRequest
+): Promise<{ card: unknown; window: InfoRadarWindow; item: InfoRadarItem; url: string }> {
+  const cardId = String(request?.cardId ?? "").trim();
+  const windowId = String(request?.windowId ?? "").trim();
+  const itemId = String(request?.itemId ?? "").trim();
+  const library = await listWorkflowLibrary();
+  const card =
+    library.find((entry) => entry.id === cardId && entry.kind === "info-radar") ??
+    library.find((entry) => entry.kind === "info-radar");
+
+  if (!card) {
+    throw new Error("未找到信息雷达卡片");
+  }
+
+  const radarWindow =
+    (card.infoWindows ?? []).find((entry) => entry.id === windowId) ??
+    (card.infoWindows ?? [])[0];
+
+  if (!radarWindow) {
+    throw new Error("未找到信息窗口");
+  }
+
+  const targetItem = (radarWindow.items ?? []).find((item) => item.id === itemId);
+
+  if (!targetItem) {
+    throw new Error("未找到公众号条目");
+  }
+
+  if (targetItem.sourceKind !== "wechat") {
+    const url = targetItem.url || targetItem.resolvedUrl || "";
+
+    if (!/^https?:\/\//i.test(url)) {
+      throw new Error("当前条目没有可打开的来源链接");
+    }
+
+    return { card, window: radarWindow, item: targetItem, url };
+  }
+
+  const source = (radarWindow.sources ?? []).find((entry) => entry.id === targetItem.sourceId);
+  const query = buildInfoRadarWechatResolveQuery(targetItem, source);
+
+  if (!query) {
+    throw new Error("公众号条目缺少可用于重新检索的标题或作者");
+  }
+
+  const resolverSource: InfoRadarSource = {
+    ...(source ?? {
+      id: targetItem.sourceId || `info_source_resolver_${randomUUID()}`,
+      kind: "wechat",
+      title: targetItem.sourceTitle || "公众号",
+      url: "",
+      query,
+      enabled: true,
+      tags: targetItem.tags ?? [],
+      notes: "",
+      updatedAt: new Date().toISOString()
+    }),
+    kind: "wechat",
+    query,
+    url: ""
+  };
+  const response = await fetchInfoRadarText(createInfoRadarWechatSearchUrl(query));
+  const candidates = parseInfoRadarWechatSearch(response.text, resolverSource, response.finalUrl)
+    .map((candidate) => ({
+      item: candidate,
+      score: getInfoRadarWechatResolveScore(candidate, targetItem)
+    }))
+    .filter((candidate) => candidate.item.resolvedUrl && candidate.score >= 55)
+    .sort((left, right) => right.score - left.score);
+  const best = candidates[0]?.item ?? null;
+  const resolvedUrl = best?.resolvedUrl ?? "";
+
+  if (!resolvedUrl) {
+    throw new Error("没有重新检索到可用的公众号链接");
+  }
+
+  const now = new Date().toISOString();
+  const nextSources = (radarWindow.sources ?? []).map((entry) =>
+    entry.id === targetItem.sourceId
+      ? {
+          ...entry,
+          lastDiscoveredAt: now,
+          updatedAt: now
+        }
+      : entry
+  );
+  const nextWindow: InfoRadarWindow = {
+    ...radarWindow,
+    sources: nextSources,
+    updatedAt: now
+  };
+  const nextCard = {
+    ...card,
+    updatedAt: now,
+    lastUsedAt: now,
+    infoWindows: (card.infoWindows ?? []).map((entry) => (entry.id === nextWindow.id ? nextWindow : entry))
+  };
+  const nextLibrary = await upsertWorkflowLibraryItem(nextCard);
+  const savedCard = nextLibrary.find((entry) => entry.id === nextCard.id) ?? nextCard;
+  const savedWindow = (savedCard.infoWindows ?? []).find((entry) => entry.id === nextWindow.id) ?? nextWindow;
+  const savedItem = (savedWindow.items ?? []).find((item) => item.id === targetItem.id) ?? targetItem;
+
+  return {
+    card: savedCard,
+    window: savedWindow,
+    item: {
+      ...savedItem,
+      resolvedUrl
+    },
+    url: resolvedUrl
+  };
+}
+
+async function fetchInfoRadarSource(source: InfoRadarSource, radarWindow: InfoRadarWindow): Promise<InfoRadarSourceFetchResult> {
   if (!source.enabled) {
     return { items: [] };
   }
@@ -3387,9 +3600,24 @@ async function fetchInfoRadarSource(source: InfoRadarSource): Promise<InfoRadarS
   }
 
   if (source.kind === "wechat") {
+    const latestDiscoveredAt = new Date(source.lastDiscoveredAt ?? "").getTime();
+    const latestFetchedAt = Math.max(
+      Number.isFinite(latestDiscoveredAt) ? latestDiscoveredAt : 0,
+      getInfoRadarSourceLatestFetchedAt(source, radarWindow)
+    );
+
+    if (latestFetchedAt > 0 && Date.now() - latestFetchedAt < INFO_RADAR_WECHAT_DISCOVERY_COOLDOWN_MS) {
+      return {
+        items: [],
+        skipped: true,
+        message: `${source.title} 公众号线索处于低频检索保护中，本次跳过搜索页访问`
+      };
+    }
+
     const result = await fetchInfoRadarWechatSource(source);
     return {
       ...result,
+      attempted: true,
       items: result.items.slice(0, INFO_RADAR_MAX_ITEMS_PER_SOURCE)
     };
   }
@@ -3443,14 +3671,22 @@ async function refreshInfoRadarWindow(request: InfoRadarRefreshRequest): Promise
   const enabledSources = (radarWindow.sources ?? []).filter((source) => source.enabled !== false);
   const fetchedItems: InfoRadarItem[] = [];
   const messages: string[] = [];
+  const blockingMessages: string[] = [];
+  const discoveredWechatSourceIds = new Set<string>();
 
   if (!enabledSources.length) {
     messages.push("当前窗口没有启用的信息源");
+    blockingMessages.push("当前窗口没有启用的信息源");
   }
 
   for (const source of enabledSources) {
     try {
-      const result = await fetchInfoRadarSource(source);
+      const result = await fetchInfoRadarSource(source, radarWindow);
+
+      if (source.kind === "wechat" && result.attempted) {
+        discoveredWechatSourceIds.add(source.id);
+      }
+
       fetchedItems.push(
         ...result.items
           .map((item) => scoreInfoRadarItem(item, radarWindow))
@@ -3459,17 +3695,23 @@ async function refreshInfoRadarWindow(request: InfoRadarRefreshRequest): Promise
 
       if (result.message) {
         messages.push(result.message);
+
+        if (!result.skipped) {
+          blockingMessages.push(result.message);
+        }
       }
     } catch (error) {
-      messages.push(`${source.title || source.url}: ${error instanceof Error ? error.message : String(error)}`);
+      const message = `${source.title || source.url}: ${error instanceof Error ? error.message : String(error)}`;
+      messages.push(message);
+      blockingMessages.push(message);
     }
   }
 
   const now = new Date().toISOString();
   const status: InfoRadarRefreshRun["status"] =
-    messages.length && fetchedItems.length
+    blockingMessages.length && fetchedItems.length
       ? "partial"
-      : messages.length
+      : blockingMessages.length
         ? "failed"
         : "success";
   const run: InfoRadarRefreshRun = {
@@ -3486,8 +3728,18 @@ async function refreshInfoRadarWindow(request: InfoRadarRefreshRequest): Promise
           ? `刷新完成，获取 ${fetchedItems.length} 条信息`
           : "刷新完成，暂无匹配的新信息"
   };
+  const nextSources = (radarWindow.sources ?? []).map((source) =>
+    discoveredWechatSourceIds.has(source.id)
+      ? {
+          ...source,
+          lastDiscoveredAt: now,
+          updatedAt: now
+        }
+      : source
+  );
   const nextWindow: InfoRadarWindow = {
     ...radarWindow,
+    sources: nextSources,
     items: mergeInfoRadarItems(radarWindow.items ?? [], fetchedItems),
     runHistory: [run, ...(radarWindow.runHistory ?? [])].slice(0, 20),
     lastRefreshedAt: now,
@@ -3947,6 +4199,14 @@ app.whenReady().then(async () => {
   ipcMain.handle("gordon:workflow-library:refresh-info-window", async (_event, request: InfoRadarRefreshRequest) =>
     toCloneableIpcValue(await refreshInfoRadarWindow(request))
   );
+  ipcMain.handle("gordon:workflow-library:resolve-wechat-item-url", async (_event, request: InfoRadarWechatResolveRequest) =>
+    toCloneableIpcValue(await resolveInfoRadarWechatItemUrl(request))
+  );
+  ipcMain.handle("gordon:workflow-library:open-external-url", async (_event, urlValue) => {
+    const url = normalizeInfoRadarNativeReaderUrl(urlValue);
+    await shell.openExternal(url);
+    return true;
+  });
   ipcMain.handle("gordon:workflow-library:info-reader:open", async (event, request) => {
     const ownerWindow = BrowserWindow.fromWebContents(event.sender);
 

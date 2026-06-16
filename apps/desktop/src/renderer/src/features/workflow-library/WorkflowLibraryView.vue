@@ -151,17 +151,16 @@
             </button>
           </template>
           <template v-else-if="ui.workflow.view === 'info-reader' && activeInfoReaderItem">
-            <a
-              v-if="getInfoRadarItemHref(activeInfoReaderItem)"
+            <button
+              v-if="canOpenInfoRadarItem(activeInfoReaderItem)"
+              type="button"
               class="model-action-secondary workflow-info-reader-external"
-              :href="getInfoRadarItemHref(activeInfoReaderItem)"
-              target="_blank"
-              rel="noreferrer"
               title="在浏览器打开"
               aria-label="在浏览器打开"
+              @click="openInfoRadarItemExternal(activeInfoReaderItem, ui.workflow.infoReaderResolvedUrl)"
             >
               <GIcon name="jump" />
-            </a>
+            </button>
           </template>
         </div>
       </section>
@@ -345,7 +344,7 @@
                       </div>
                     </div>
                     <button
-                      v-if="getInfoRadarItemHref(item)"
+                      v-if="canOpenInfoRadarItem(item)"
                       type="button"
                       class="workflow-info-item-link"
                       :aria-label="`打开来源：${item.title}`"
@@ -375,7 +374,7 @@
         </template>
 
         <section v-else-if="ui.workflow.view === 'info-reader'" class="workflow-info-reader-stage">
-          <template v-if="activeInfoReaderItem && getInfoRadarItemHref(activeInfoReaderItem)">
+          <template v-if="activeInfoReaderItem && canOpenInfoRadarItem(activeInfoReaderItem)">
             <div ref="infoReaderFrameRef" class="workflow-info-reader-frame">
               <div v-if="ui.workflow.isInfoReaderLoading" class="workflow-info-reader-loading" role="status" aria-live="polite">
                 <span class="workflow-info-reader-spinner" aria-hidden="true"></span>
@@ -383,15 +382,14 @@
               </div>
               <div v-else-if="ui.workflow.infoReaderError" class="workflow-info-reader-fallback" role="status">
                 <p>{{ ui.workflow.infoReaderError }}</p>
-                <a
+                <button
+                  type="button"
                   class="model-action-secondary"
-                  :href="getInfoRadarItemHref(activeInfoReaderItem)"
-                  target="_blank"
-                  rel="noreferrer"
+                  @click="openInfoRadarItemExternal(activeInfoReaderItem, ui.workflow.infoReaderResolvedUrl)"
                 >
                   <GIcon name="jump" />
                   外部打开
-                </a>
+                </button>
               </div>
             </div>
           </template>
@@ -1225,6 +1223,7 @@ function getWorkflowBodyStepSelectOptions(entries = []) {
 
 const props = defineProps({
   ui: { type: Object, required: true },
+  workbench: { type: Object, required: true },
   workflowLibraryCards: { type: Array, default: () => [] },
   workflowDetailTitle: { type: String, default: "流程中心" },
   activeInfoReaderItem: { type: Object, default: null },
@@ -1255,6 +1254,7 @@ const props = defineProps({
   deleteInfoRadarWindow: { type: Function, required: true },
   deleteWorkflowRecord: { type: Function, required: true },
   duplicateWorkflowRecord: { type: Function, required: true },
+  canOpenInfoRadarItem: { type: Function, required: true },
   formatDurationMs: { type: Function, required: true },
   formatLocalDateTime: { type: Function, required: true },
   getInfoRadarCadenceLabel: { type: Function, required: true },
@@ -1286,6 +1286,7 @@ const props = defineProps({
   isWorkflowStepExpanded: { type: Function, required: true },
   openInfoRadarWindow: { type: Function, required: true },
   openInfoRadarWindowEditor: { type: Function, required: true },
+  openInfoRadarItemExternal: { type: Function, required: true },
   openInfoRadarItemReader: { type: Function, required: true },
   openWorkflowCard: { type: Function, required: true },
   openWorkflowRecord: { type: Function, required: true },
@@ -1383,8 +1384,45 @@ async function waitForInfoReaderBounds() {
 }
 
 async function openNativeInfoReader() {
-  const url = props.activeInfoReaderItem ? props.getInfoRadarItemHref(props.activeInfoReaderItem) : "";
+  let url = props.ui.workflow.infoReaderResolvedUrl || (props.activeInfoReaderItem ? props.getInfoRadarItemHref(props.activeInfoReaderItem) : "");
   const bounds = await waitForInfoReaderBounds();
+
+  if (props.activeInfoReaderItem?.sourceKind === "wechat") {
+    if (!props.ui.workflow.infoReaderResolvedUrl) {
+      const cardId = props.ui.workflow.activeCardId;
+      const windowId = props.ui.workflow.activeInfoWindowId;
+      const itemId = props.activeInfoReaderItem.id;
+
+      if (!desktopApi?.resolveInfoRadarWechatItemUrl || !cardId || !windowId || !itemId) {
+        props.handleInfoRadarReaderLoadingEnd();
+        props.ui.workflow.infoReaderError = "公众号链接需要重新检索，但当前桥接未就绪。";
+        return;
+      }
+
+      props.handleInfoRadarReaderLoadingStart();
+
+      try {
+        const result = await desktopApi.resolveInfoRadarWechatItemUrl({ cardId, windowId, itemId });
+        const nextCard = result?.card;
+
+        if (nextCard && Array.isArray(props.workbench?.workflowLibrary)) {
+          props.workbench.workflowLibrary = props.workbench.workflowLibrary.map((entry) => (entry.id === nextCard.id ? nextCard : entry));
+        }
+
+        props.ui.workflow.infoReaderResolvedUrl = String(result?.url ?? "").trim();
+        url = props.ui.workflow.infoReaderResolvedUrl;
+      } catch (error) {
+        props.handleInfoRadarReaderLoadingEnd();
+        props.ui.workflow.infoReaderError = error instanceof Error ? error.message : "公众号链接重新检索失败。";
+
+        if (desktopApi?.closeInfoRadarReader) {
+          await desktopApi.closeInfoRadarReader();
+        }
+
+        return;
+      }
+    }
+  }
 
   if (!url || !bounds || !desktopApi?.openInfoRadarReader) {
     if (url && props.ui.workflow.view === "info-reader") {

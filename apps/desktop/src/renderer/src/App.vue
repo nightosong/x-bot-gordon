@@ -107,6 +107,7 @@
           <template v-else-if="activeFeature === FEATURE_WORKFLOW_LIBRARY">
             <WorkflowLibraryView
               :ui="ui"
+              :workbench="workbench"
               :workflow-library-cards="workflowLibraryCards"
               :workflow-detail-title="workflowDetailTitle"
               :active-info-reader-item="activeInfoReaderItem"
@@ -139,6 +140,7 @@
               :duplicate-workflow-record="duplicateWorkflowRecord"
               :format-duration-ms="formatDurationMs"
               :format-local-date-time="formatLocalDateTime"
+              :can-open-info-radar-item="canOpenInfoRadarItem"
               :get-info-radar-cadence-label="getInfoRadarCadenceLabel"
               :get-info-radar-item-href="getInfoRadarItemHref"
               :get-info-radar-item-summary-text="getInfoRadarItemSummaryText"
@@ -168,6 +170,7 @@
               :is-workflow-step-expanded="isWorkflowStepExpanded"
               :open-info-radar-window="openInfoRadarWindow"
               :open-info-radar-window-editor="openInfoRadarWindowEditor"
+              :open-info-radar-item-external="openInfoRadarItemExternal"
               :open-info-radar-item-reader="openInfoRadarItemReader"
               :open-workflow-card="openWorkflowCard"
               :open-workflow-record="openWorkflowRecord"
@@ -903,6 +906,7 @@ const {
   filteredInfoRadarItems,
   filteredWorkflowRecords,
   formatDurationMs,
+  canOpenInfoRadarItem,
   getInfoRadarCadenceLabel,
   getInfoRadarItemHref,
   getInfoRadarItemSummaryText,
@@ -936,6 +940,7 @@ const {
   infoRadarTopicFilterOptions,
   openInfoRadarWindow,
   openInfoRadarWindowEditor,
+  openInfoRadarItemExternal,
   openInfoRadarItemReader,
   openWorkflowCard,
   openWorkflowRecord,

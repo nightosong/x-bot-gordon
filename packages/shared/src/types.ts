@@ -424,6 +424,7 @@ export interface InfoRadarSource {
   tags: string[];
   notes: string;
   updatedAt: string;
+  lastDiscoveredAt?: string;
 }
 
 export interface InfoRadarItem {
@@ -433,6 +434,7 @@ export interface InfoRadarItem {
   sourceKind: InfoRadarSourceKind;
   title: string;
   url: string;
+  resolvedUrl?: string;
   summary: string;
   author?: string;
   publishedAt?: string;

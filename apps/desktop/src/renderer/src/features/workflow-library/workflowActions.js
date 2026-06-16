@@ -14,6 +14,7 @@ import {
   buildInfoRadarWindowFromDraft,
   buildWorkflowInitialRunResult,
   buildWorkflowRecordFromDraft as buildWorkflowRecordFromDraftRuntime,
+  canOpenInfoRadarItem,
   createWorkflowRecordDraftFromRecord as createWorkflowRecordDraftFromRecordRuntime,
   extractCurlMethod,
   extractCurlUrl,
@@ -811,6 +812,7 @@ export function createWorkflowActions({
     ui.workflow.activeInfoWindowId = isInfoRadar ? card?.infoWindows?.[0]?.id ?? null : null;
     ui.workflow.activeInfoReaderItemId = null;
     ui.workflow.infoReaderError = "";
+    ui.workflow.infoReaderResolvedUrl = "";
     ui.workflow.copiedStepId = null;
     ui.workflow.searchQuery = "";
     ui.workflow.infoSearchQuery = "";
@@ -833,6 +835,7 @@ export function createWorkflowActions({
       ui.workflow.activeInfoReaderItemId = null;
       ui.workflow.isInfoReaderLoading = false;
       ui.workflow.infoReaderError = "";
+      ui.workflow.infoReaderResolvedUrl = "";
       return;
     }
 
@@ -858,6 +861,7 @@ export function createWorkflowActions({
     ui.workflow.activeInfoReaderItemId = null;
     ui.workflow.isInfoReaderLoading = false;
     ui.workflow.infoReaderError = "";
+    ui.workflow.infoReaderResolvedUrl = "";
     ui.workflow.runResult = null;
     syncWorkflowSelection();
   }
@@ -867,6 +871,7 @@ export function createWorkflowActions({
     ui.workflow.activeInfoReaderItemId = null;
     ui.workflow.isInfoReaderLoading = false;
     ui.workflow.infoReaderError = "";
+    ui.workflow.infoReaderResolvedUrl = "";
     ui.workflow.infoSearchQuery = "";
     ui.workflow.infoSourceFilter = "";
     ui.workflow.infoTopicFilter = "";
@@ -874,9 +879,7 @@ export function createWorkflowActions({
   }
 
   function openInfoRadarItemReader(item) {
-    const href = getInfoRadarItemHref(item);
-
-    if (!href) {
+    if (!canOpenInfoRadarItem(item)) {
       setStatus("当前信息没有可打开的来源链接。", "warning");
       return;
     }
@@ -884,7 +887,30 @@ export function createWorkflowActions({
     ui.workflow.activeInfoReaderItemId = item?.id ?? null;
     ui.workflow.isInfoReaderLoading = true;
     ui.workflow.infoReaderError = "";
+    ui.workflow.infoReaderResolvedUrl = "";
     ui.workflow.view = "info-reader";
+  }
+
+  async function openInfoRadarItemExternal(item, overrideUrl = "") {
+    const href = String(overrideUrl || getInfoRadarItemHref(item)).trim();
+
+    if (!href) {
+      setStatus("当前信息没有可打开的来源链接。", "warning");
+      return;
+    }
+
+    if (!desktopApi?.openExternalUrl) {
+      window.open(href, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    try {
+      await desktopApi.openExternalUrl(href);
+      setStatus("已使用系统默认浏览器打开来源。", "success");
+    } catch (error) {
+      console.error("Failed to open info radar item externally", error);
+      setStatus(`打开来源失败：${getErrorMessage(error)}`, "danger");
+    }
   }
 
   function handleInfoRadarReaderLoadingStart() {
@@ -1340,6 +1366,7 @@ export function createWorkflowActions({
     filteredWorkflowRecords,
     formatDurationMs,
     getInfoRadarCadenceLabel,
+    canOpenInfoRadarItem,
     getInfoRadarItemHref,
     getInfoRadarItemSummaryText,
     getInfoRadarItemStatusLabel,
@@ -1372,6 +1399,7 @@ export function createWorkflowActions({
     infoRadarTopicFilterOptions,
     openInfoRadarWindow,
     openInfoRadarWindowEditor,
+    openInfoRadarItemExternal,
     openInfoRadarItemReader,
     openWorkflowCard,
     openWorkflowRecord,

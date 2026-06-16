@@ -40,6 +40,7 @@ export function createWorkflowState(createLocalId = createFallbackLocalId) {
     isRefreshingInfoWindow: false,
     isInfoReaderLoading: false,
     infoReaderError: "",
+    infoReaderResolvedUrl: "",
     runResult: null,
     activeProgressEventId: null,
     expandedStepIds: [],
@@ -112,7 +113,8 @@ export function createInfoRadarSourceDraft(overrides = {}, createLocalId = creat
     query: overrides.query ?? "",
     enabled: overrides.enabled !== false,
     tagsText: Array.isArray(overrides.tags) ? overrides.tags.join("，") : overrides.tagsText ?? "",
-    notes: overrides.notes ?? ""
+    notes: overrides.notes ?? "",
+    lastDiscoveredAt: overrides.lastDiscoveredAt ?? ""
   };
 }
 

@@ -4548,6 +4548,25 @@ function normalizeInfoRadarSourceKind(value: unknown): InfoRadarSourceKind {
   return INFO_RADAR_SOURCE_KINDS.has(kind as InfoRadarSourceKind) ? (kind as InfoRadarSourceKind) : "web_page";
 }
 
+function isWechatTemporaryArticleUrl(value: unknown): boolean {
+  const url = String(value ?? "").trim();
+
+  if (!url) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(url);
+    return (
+      /(?:^|\.)mp\.weixin\.qq\.com$/i.test(parsed.hostname) &&
+      parsed.pathname === "/s" &&
+      (parsed.searchParams.has("signature") || parsed.searchParams.has("timestamp") || parsed.searchParams.has("src"))
+    );
+  } catch {
+    return false;
+  }
+}
+
 function normalizeInfoRadarSource(input: Partial<InfoRadarSource> | null | undefined, windowId = ""): InfoRadarSource | null {
   if (!input || typeof input !== "object") {
     return null;
@@ -4574,7 +4593,8 @@ function normalizeInfoRadarSource(input: Partial<InfoRadarSource> | null | undef
     enabled: input.enabled !== false,
     tags: normalizeStringArray(input.tags),
     notes: String(input.notes ?? "").trim(),
-    updatedAt: timestamp
+    updatedAt: timestamp,
+    ...(String(input.lastDiscoveredAt ?? "").trim() ? { lastDiscoveredAt: String(input.lastDiscoveredAt).trim() } : {})
   };
 }
 
@@ -4591,6 +4611,10 @@ function normalizeInfoRadarItem(input: Partial<InfoRadarItem> | null | undefined
   }
 
   const sourceKind = normalizeInfoRadarSourceKind(input.sourceKind);
+  const normalizedUrl = sourceKind === "wechat" && isWechatTemporaryArticleUrl(url) ? "" : url;
+  const resolvedUrl = String(input.resolvedUrl ?? "").trim();
+  const normalizedResolvedUrl =
+    sourceKind === "wechat" && isWechatTemporaryArticleUrl(resolvedUrl) ? "" : resolvedUrl;
   const fetchedAt = String(input.fetchedAt ?? "").trim() || new Date().toISOString();
   const status = input.status === "saved" || input.status === "ignored" ? input.status : "new";
 
@@ -4599,8 +4623,9 @@ function normalizeInfoRadarItem(input: Partial<InfoRadarItem> | null | undefined
     sourceId: String(input.sourceId ?? "").trim(),
     sourceTitle: String(input.sourceTitle ?? "").trim() || "未知来源",
     sourceKind,
-    title: title || url,
-    url,
+    title: title || normalizedUrl,
+    url: normalizedUrl,
+    ...(normalizedResolvedUrl ? { resolvedUrl: normalizedResolvedUrl } : {}),
     summary: String(input.summary ?? "").trim(),
     ...(input.author ? { author: String(input.author).trim() } : {}),
     ...(input.publishedAt ? { publishedAt: String(input.publishedAt).trim() } : {}),

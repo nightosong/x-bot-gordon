@@ -448,7 +448,8 @@ export function buildInfoRadarWindowFromDraft(draft, existingWindow = null, opti
           enabled: source?.enabled !== false,
           tags: parseList(source?.tagsText),
           notes: String(source?.notes ?? "").trim(),
-          updatedAt: now
+          updatedAt: now,
+          ...(source?.lastDiscoveredAt ? { lastDiscoveredAt: source.lastDiscoveredAt } : {})
         };
       })
       .filter(Boolean),
@@ -462,8 +463,16 @@ export function buildInfoRadarWindowFromDraft(draft, existingWindow = null, opti
 }
 
 export function getInfoRadarItemHref(item) {
-  const url = String(item?.url ?? "").trim();
+  const url = String(item?.url || item?.resolvedUrl || "").trim();
   return /^https?:\/\//i.test(url) ? url : "";
+}
+
+export function canOpenInfoRadarItem(item) {
+  if (getInfoRadarItemHref(item)) {
+    return true;
+  }
+
+  return item?.sourceKind === "wechat" && Boolean(String(item?.title ?? "").trim());
 }
 
 export function getInfoRadarValueText(value) {

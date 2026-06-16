@@ -189,6 +189,10 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
     ipcRenderer.invoke("gordon:workflow-library:cancel-run", progressEventId),
   refreshInfoRadarWindow: (request: { cardId: string; windowId: string }): Promise<InfoRadarRefreshResult> =>
     ipcRenderer.invoke("gordon:workflow-library:refresh-info-window", toPlainIpcData(request)),
+  resolveInfoRadarWechatItemUrl: (request: { cardId: string; windowId: string; itemId: string }) =>
+    ipcRenderer.invoke("gordon:workflow-library:resolve-wechat-item-url", toPlainIpcData(request)),
+  openExternalUrl: (url: string): Promise<boolean> =>
+    ipcRenderer.invoke("gordon:workflow-library:open-external-url", url),
   openInfoRadarReader: (request: { url: string; bounds: { x: number; y: number; width: number; height: number } }) =>
     ipcRenderer.invoke("gordon:workflow-library:info-reader:open", toPlainIpcData(request)),
   setInfoRadarReaderBounds: (bounds: { x: number; y: number; width: number; height: number }) =>
