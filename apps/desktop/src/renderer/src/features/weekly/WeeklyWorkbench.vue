@@ -30,7 +30,7 @@
       </section>
 
       <div class="models-grid models-grid-single" :class="{ 'models-grid-immersive': state.view === 'editor' }">
-        <section v-if="state.view === 'list'" class="model-section">
+        <section v-if="state.view === 'list'" class="model-section weekly-list-section">
           <div class="model-section-head">
             <div>
               <p class="feature-kicker">Weekly Reports</p>
@@ -1007,9 +1007,14 @@ const weeklyYearOptions = computed(() => {
 });
 const weeklyActiveYear = computed(() => {
   const availableYears = weeklyYearOptions.value.map((option) => option.year);
+  const currentYear = String(new Date().getFullYear());
 
   if (weeklySelectedYear.value && availableYears.includes(weeklySelectedYear.value)) {
     return weeklySelectedYear.value;
+  }
+
+  if (availableYears.includes(currentYear)) {
+    return currentYear;
   }
 
   return availableYears[0] ?? "";
