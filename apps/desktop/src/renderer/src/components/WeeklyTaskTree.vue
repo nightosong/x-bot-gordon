@@ -14,7 +14,10 @@
       class="weekly-task-card"
       :class="{
         'is-busy': isTaskRewriting(task.id),
+        'is-planned': task.status === 'planned',
+        'is-in-progress': task.status === 'in_progress',
         'is-completed': task.status === 'completed',
+        'is-blocked': task.status === 'blocked',
         'is-dragging': draggingTaskId === task.id,
         'is-drop-target': dropTargetTaskId === task.id
       }"
@@ -22,8 +25,16 @@
       @dragleave.stop="handleTaskDragLeave(task.id)"
       @drop.prevent.stop="handleTaskDrop(task.id, $event)"
     >
-      <div class="weekly-task-row" :class="{ 'is-completed': task.status === 'completed' }">
-        <details v-if="!isTaskRewriting(task.id)" class="weekly-task-status-menu">
+      <div
+        class="weekly-task-row"
+        :class="{
+          'is-planned': task.status === 'planned',
+          'is-in-progress': task.status === 'in_progress',
+          'is-completed': task.status === 'completed',
+          'is-blocked': task.status === 'blocked'
+        }"
+      >
+        <details v-if="!isTaskRewriting(task.id)" class="weekly-task-status-menu" @toggle="handleStatusMenuToggle($event)">
           <summary
             class="weekly-task-index-button"
             :class="[getStatusToneClass(task.status), { 'is-drag-source': draggingTaskId === task.id }]"
@@ -34,7 +45,8 @@
             @dragstart.stop="handleTaskDragStart(task.id, $event)"
             @dragend.stop="handleTaskDragEnd(task.id)"
           >
-            {{ getTaskIndexLabel(taskIndex) }}
+            <span class="weekly-task-index-glow" aria-hidden="true"></span>
+            <span class="weekly-task-index-label">{{ getTaskIndexLabel(taskIndex) }}</span>
           </summary>
 
           <div class="weekly-task-status-panel">
@@ -44,7 +56,7 @@
               type="button"
               class="weekly-task-status-option"
               :class="{ 'is-active': task.status === statusKey }"
-              @click="emit('set-status', { projectId, taskId: task.id, status: statusKey, event: $event })"
+              @click="handleStatusOptionClick(task.id, statusKey, $event)"
             >
               <span class="weekly-task-status-swatch" :class="getStatusToneClass(statusKey)"></span>
               <span>{{ meta.label }}</span>
@@ -52,6 +64,7 @@
           </div>
         </details>
         <span v-else class="weekly-task-index-button is-running" aria-label="任务优化中">
+          <span class="weekly-task-index-glow" aria-hidden="true"></span>
           <span class="weekly-task-spinner"></span>
         </span>
 
@@ -161,7 +174,7 @@
 </template>
 
 <script setup>
-import { computed, inject, nextTick, provide, ref } from "vue";
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, provide, ref } from "vue";
 
 import GIcon from "./GIcon.vue";
 
@@ -229,6 +242,54 @@ const rootTaskList = dragContext.rootTasks;
 const isRootDropTarget = computed(
   () => isProjectRootTree.value && rootDropProjectId.value === props.projectId && !dropTargetTaskId.value
 );
+
+function closeWeeklyStatusMenus(exceptMenu = null) {
+  document.querySelectorAll(".weekly-task-status-menu[open]").forEach((menu) => {
+    if (menu !== exceptMenu && menu instanceof HTMLDetailsElement) {
+      menu.open = false;
+    }
+  });
+}
+
+function handleDocumentPointerDown(event) {
+  const target = event?.target;
+
+  if (target instanceof Element && target.closest(".weekly-task-status-menu")) {
+    return;
+  }
+
+  closeWeeklyStatusMenus();
+}
+
+function handleStatusMenuToggle(event) {
+  const menu = event?.currentTarget;
+
+  if (!(menu instanceof HTMLDetailsElement) || !menu.open) {
+    return;
+  }
+
+  closeWeeklyStatusMenus(menu);
+}
+
+function handleStatusOptionClick(taskId, status, event) {
+  emit("set-status", { projectId: props.projectId, taskId, status, event });
+
+  const menu = event?.currentTarget?.closest?.(".weekly-task-status-menu");
+
+  if (menu instanceof HTMLDetailsElement) {
+    menu.open = false;
+  }
+}
+
+if (!inheritedDragContext) {
+  onMounted(() => {
+    document.addEventListener("pointerdown", handleDocumentPointerDown);
+  });
+
+  onBeforeUnmount(() => {
+    document.removeEventListener("pointerdown", handleDocumentPointerDown);
+  });
+}
 
 function getTaskChildren(task) {
   return Array.isArray(task?.children) ? task.children : [];
