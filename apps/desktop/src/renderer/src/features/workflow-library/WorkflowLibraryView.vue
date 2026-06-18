@@ -1521,7 +1521,11 @@ watch(
   () => [
     props.ui.workflow.view,
     props.activeInfoReaderItem?.id,
-    props.activeInfoReaderItem ? props.getInfoRadarItemHref(props.activeInfoReaderItem) : ""
+    props.activeInfoReaderItem?.sourceKind === "wechat"
+      ? props.ui.workflow.infoReaderResolvedUrl
+      : props.activeInfoReaderItem
+        ? props.getInfoRadarItemHref(props.activeInfoReaderItem)
+        : ""
   ],
   () => {
     void refreshNativeInfoReader();

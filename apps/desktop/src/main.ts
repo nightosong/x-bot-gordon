@@ -3134,6 +3134,51 @@ function truncateInfoRadarText(value: unknown, maxLength = 280): string {
   return `${text.slice(0, maxLength - 1).trim()}…`;
 }
 
+function normalizeInfoRadarComparableText(value: unknown): string {
+  return stripHtml(value)
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeInfoRadarComparableUrl(value: unknown): string {
+  const url = String(value ?? "").trim();
+
+  if (!url) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(url);
+    parsed.hash = "";
+
+    for (const volatileParam of ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "spm", "from"]) {
+      parsed.searchParams.delete(volatileParam);
+    }
+
+    return parsed.toString().replace(/\/$/, "").toLowerCase();
+  } catch {
+    return url.replace(/#.*$/, "").replace(/\/$/, "").toLowerCase();
+  }
+}
+
+function getInfoRadarComparableDate(value: unknown): string {
+  const timestamp = new Date(String(value ?? "")).getTime();
+
+  if (Number.isFinite(timestamp)) {
+    return new Date(timestamp).toISOString().slice(0, 10);
+  }
+
+  return normalizeInfoRadarComparableText(value).slice(0, 16);
+}
+
+function getInfoRadarStableHash(value: unknown): string {
+  return createHmac("sha256", "gordon-info-radar")
+    .update(String(value ?? ""))
+    .digest("base64url")
+    .slice(0, 28);
+}
+
 function readXmlText(value: unknown): string {
   if (value === null || value === undefined) {
     return "";
@@ -3277,19 +3322,33 @@ function buildInfoRadarItem(
   }
 
   const fetchedAt = new Date().toISOString();
-  const stableKey = [source.id, url || title].join(":");
-
-  return {
-    id: `info_item_${Buffer.from(stableKey).toString("base64url").slice(0, 28)}_${randomUUID().slice(0, 8)}`,
+  const isWechatSource = source.kind === "wechat";
+  const shouldStoreUrl = !isWechatSource && !isInfoRadarWechatTemporaryUrl(url);
+  const shouldStoreResolvedUrl = !isWechatSource && !isInfoRadarWechatTemporaryUrl(resolvedUrl);
+  const author = rawItem.author ? truncateInfoRadarText(readXmlText(rawItem.author), 80) : "";
+  const publishedAt = rawItem.publishedAt ? normalizeInfoRadarDate(rawItem.publishedAt) ?? readXmlText(rawItem.publishedAt) : "";
+  const stableKey = getInfoRadarItemDedupeKey({
     sourceId: source.id,
     sourceTitle: source.title,
     sourceKind: source.kind,
     title: title || url,
-    url,
-    ...(resolvedUrl ? { resolvedUrl } : {}),
+    url: shouldStoreUrl ? url : "",
+    ...(shouldStoreResolvedUrl ? { resolvedUrl } : {}),
+    ...(author ? { author } : {}),
+    ...(publishedAt ? { publishedAt } : {}),
+  });
+
+  return {
+    id: `info_item_${getInfoRadarStableHash(stableKey)}`,
+    sourceId: source.id,
+    sourceTitle: source.title,
+    sourceKind: source.kind,
+    title: title || url,
+    url: shouldStoreUrl ? url : "",
+    ...(shouldStoreResolvedUrl ? { resolvedUrl } : {}),
     summary,
-    ...(rawItem.author ? { author: truncateInfoRadarText(readXmlText(rawItem.author), 80) } : {}),
-    ...(rawItem.publishedAt ? { publishedAt: normalizeInfoRadarDate(rawItem.publishedAt) ?? readXmlText(rawItem.publishedAt) } : {}),
+    ...(author ? { author } : {}),
+    ...(publishedAt ? { publishedAt } : {}),
     ...(imageUrl ? { imageUrl } : {}),
     fetchedAt,
     tags: [...(source.tags ?? []), ...(rawItem.tags ?? []).map((tag) => readXmlText(tag)).filter(Boolean)].slice(0, 8),
@@ -3555,7 +3614,12 @@ function parseInfoRadarWebPage(htmlText: string, source: InfoRadarSource, finalU
   return item ? [item] : [];
 }
 
-function parseInfoRadarWechatSearch(htmlText: string, source: InfoRadarSource, finalUrl = ""): InfoRadarItem[] {
+function parseInfoRadarWechatSearch(
+  htmlText: string,
+  source: InfoRadarSource,
+  finalUrl = "",
+  options: { keepResolvedUrl?: boolean } = {}
+): InfoRadarItem[] {
   const html = String(htmlText ?? "");
   const baseUrl = finalUrl || "https://weixin.sogou.com/weixin";
   const items: InfoRadarItem[] = [];
@@ -3597,7 +3661,7 @@ function parseInfoRadarWechatSearch(htmlText: string, source: InfoRadarSource, f
     );
 
     if (item) {
-      items.push(item);
+      items.push(options.keepResolvedUrl && href ? { ...item, resolvedUrl: resolveInfoRadarUrl(href, baseUrl) } : item);
     }
   }
 
@@ -3777,10 +3841,26 @@ function scoreInfoRadarItem(item: InfoRadarItem, radarWindow: InfoRadarWindow): 
   };
 }
 
-function getInfoRadarItemDedupeKey(item: InfoRadarItem): string {
-  const url = String(item.url ?? "").trim().toLowerCase().replace(/#.*$/, "").replace(/\/$/, "");
-  const title = String(item.title ?? "").trim().toLowerCase();
-  return url || `${item.sourceId}:${title}`;
+function getInfoRadarItemDedupeKey(
+  item: Pick<InfoRadarItem, "sourceId" | "sourceTitle" | "sourceKind" | "title" | "url"> &
+    Partial<Pick<InfoRadarItem, "resolvedUrl" | "author" | "publishedAt">>
+): string {
+  const title = normalizeInfoRadarComparableText(item.title);
+  const author = normalizeInfoRadarComparableText(item.author);
+  const sourceTitle = normalizeInfoRadarComparableText(item.sourceTitle);
+
+  if (item.sourceKind === "wechat") {
+    const publishedDate = getInfoRadarComparableDate(item.publishedAt);
+    return ["wechat", title, author, publishedDate].filter(Boolean).join(":");
+  }
+
+  const url = normalizeInfoRadarComparableUrl(item.url || item.resolvedUrl);
+
+  if (url) {
+    return url;
+  }
+
+  return [item.sourceKind, item.sourceId || sourceTitle, title].filter(Boolean).join(":");
 }
 
 function getInfoRadarPublishedRank(item: InfoRadarItem): number {
@@ -3816,6 +3896,88 @@ function compareInfoRadarItems(left: InfoRadarItem, right: InfoRadarItem): numbe
   return getInfoRadarFetchedRank(right) - getInfoRadarFetchedRank(left);
 }
 
+function getInfoRadarStatusRank(status: InfoRadarItem["status"]): number {
+  if (status === "saved") {
+    return 3;
+  }
+
+  if (status === "ignored") {
+    return 2;
+  }
+
+  return 1;
+}
+
+function getPreferredInfoRadarStatus(left?: InfoRadarItem, right?: InfoRadarItem): InfoRadarItem["status"] {
+  const leftStatus = left?.status ?? "new";
+  const rightStatus = right?.status ?? "new";
+  return getInfoRadarStatusRank(leftStatus) >= getInfoRadarStatusRank(rightStatus) ? leftStatus : rightStatus;
+}
+
+function getPreferredInfoRadarId(left: InfoRadarItem | undefined, right: InfoRadarItem): string {
+  if (!left) {
+    return right.id;
+  }
+
+  if (left.status === "saved" || left.status === "ignored") {
+    return left.id;
+  }
+
+  if (right.status === "saved" || right.status === "ignored") {
+    return right.id;
+  }
+
+  return compareInfoRadarItems(left, right) <= 0 ? left.id : right.id;
+}
+
+function getLatestInfoRadarTimestamp(left?: string, right?: string): string {
+  const leftTime = new Date(left ?? "").getTime();
+  const rightTime = new Date(right ?? "").getTime();
+
+  if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) {
+    return leftTime >= rightTime ? String(left) : String(right);
+  }
+
+  return String(right || left || new Date().toISOString());
+}
+
+function stripInfoRadarVolatileItemLinks(item: InfoRadarItem): InfoRadarItem {
+  if (item.sourceKind !== "wechat") {
+    return item;
+  }
+
+  const { resolvedUrl: _resolvedUrl, ...rest } = item;
+
+  return {
+    ...rest,
+    url: ""
+  };
+}
+
+function mergeInfoRadarItemPair(existing: InfoRadarItem | undefined, incoming: InfoRadarItem): InfoRadarItem {
+  const sanitizedIncoming = stripInfoRadarVolatileItemLinks(incoming);
+
+  if (!existing) {
+    return sanitizedIncoming;
+  }
+
+  const sanitizedExisting = stripInfoRadarVolatileItemLinks(existing);
+  const preferred = compareInfoRadarItems(sanitizedIncoming, sanitizedExisting) < 0 ? sanitizedIncoming : sanitizedExisting;
+
+  return {
+    ...sanitizedExisting,
+    ...preferred,
+    id: getPreferredInfoRadarId(sanitizedExisting, sanitizedIncoming),
+    status: getPreferredInfoRadarStatus(sanitizedExisting, sanitizedIncoming),
+    fetchedAt: getLatestInfoRadarTimestamp(sanitizedExisting.fetchedAt, sanitizedIncoming.fetchedAt),
+    tags: Array.from(new Set([...(sanitizedExisting.tags ?? []), ...(sanitizedIncoming.tags ?? [])])).slice(0, 8),
+    matchedKeywords: Array.from(
+      new Set([...(sanitizedExisting.matchedKeywords ?? []), ...(sanitizedIncoming.matchedKeywords ?? [])])
+    ).slice(0, 8),
+    score: Math.max(Number(sanitizedExisting.score ?? 0), Number(sanitizedIncoming.score ?? 0))
+  };
+}
+
 function mergeInfoRadarItems(existingItems: InfoRadarItem[], fetchedItems: InfoRadarItem[]): InfoRadarItem[] {
   const byKey = new Map<string, InfoRadarItem>();
 
@@ -3823,21 +3985,16 @@ function mergeInfoRadarItems(existingItems: InfoRadarItem[], fetchedItems: InfoR
     const key = getInfoRadarItemDedupeKey(item);
 
     if (key) {
-      byKey.set(key, item);
+      byKey.set(key, mergeInfoRadarItemPair(byKey.get(key), item));
     }
   }
 
   for (const item of fetchedItems) {
     const key = getInfoRadarItemDedupeKey(item);
-    const existing = byKey.get(key);
-    const nextItem = item.sourceKind === "wechat" ? { ...item, resolvedUrl: undefined } : item;
 
-    byKey.set(key, {
-      ...nextItem,
-      id: existing?.id ?? item.id,
-      status: existing?.status ?? item.status,
-      fetchedAt: item.fetchedAt || existing?.fetchedAt || new Date().toISOString()
-    });
+    if (key) {
+      byKey.set(key, mergeInfoRadarItemPair(byKey.get(key), item));
+    }
   }
 
   return Array.from(byKey.values())
@@ -3908,7 +4065,7 @@ async function resolveInfoRadarWechatItemUrl(
     url: ""
   };
   const response = await fetchInfoRadarText(createInfoRadarWechatSearchUrl(query));
-  const candidates = parseInfoRadarWechatSearch(response.text, resolverSource, response.finalUrl)
+  const candidates = parseInfoRadarWechatSearch(response.text, resolverSource, response.finalUrl, { keepResolvedUrl: true })
     .map((candidate) => ({
       item: candidate,
       score: getInfoRadarWechatResolveScore(candidate, targetItem)
