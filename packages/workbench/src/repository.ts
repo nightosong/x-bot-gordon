@@ -1342,7 +1342,7 @@ function buildWeeklyProgressContent(projects: WeeklyProgressProjectItem[]): stri
 }
 
 function shouldCarryForwardWeeklyTaskStatus(status: WeeklyProgressItemStatus): boolean {
-  return status === "in_progress" || status === "blocked";
+  return status === "planned" || status === "in_progress" || status === "blocked";
 }
 
 function cloneWeeklyProgressTaskForCarryForward(task: WeeklyProgressTaskItem): WeeklyProgressTaskItem | null {
@@ -4589,6 +4589,105 @@ function isWechatTemporaryArticleUrl(value: unknown): boolean {
   }
 }
 
+function normalizeInfoRadarComparableText(value: unknown): string {
+  return String(value ?? "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeInfoRadarComparableUrl(value: unknown): string {
+  const url = String(value ?? "").trim();
+
+  if (!url) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(url);
+    parsed.hash = "";
+
+    for (const volatileParam of ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "spm", "from"]) {
+      parsed.searchParams.delete(volatileParam);
+    }
+
+    return parsed.toString().replace(/\/$/, "").toLowerCase();
+  } catch {
+    return url.replace(/#.*$/, "").replace(/\/$/, "").toLowerCase();
+  }
+}
+
+function getInfoRadarComparableDate(value: unknown): string {
+  const timestamp = new Date(String(value ?? "")).getTime();
+
+  if (Number.isFinite(timestamp)) {
+    return new Date(timestamp).toISOString().slice(0, 10);
+  }
+
+  return normalizeInfoRadarComparableText(value).slice(0, 16);
+}
+
+function getInfoRadarItemDedupeKey(item: InfoRadarItem): string {
+  const title = normalizeInfoRadarComparableText(item.title);
+  const author = normalizeInfoRadarComparableText(item.author);
+  const sourceTitle = normalizeInfoRadarComparableText(item.sourceTitle);
+
+  if (item.sourceKind === "wechat") {
+    const publishedDate = getInfoRadarComparableDate(item.publishedAt);
+    return ["wechat", title, author, publishedDate].filter(Boolean).join(":");
+  }
+
+  const url = normalizeInfoRadarComparableUrl(item.url || item.resolvedUrl);
+
+  if (url) {
+    return url;
+  }
+
+  return [item.sourceKind, item.sourceId || sourceTitle, title].filter(Boolean).join(":");
+}
+
+function getInfoRadarItemSortTime(item: InfoRadarItem): number {
+  const publishedTime = new Date(item.publishedAt ?? "").getTime();
+
+  if (Number.isFinite(publishedTime)) {
+    return publishedTime;
+  }
+
+  const fetchedTime = new Date(item.fetchedAt ?? "").getTime();
+  return Number.isFinite(fetchedTime) ? fetchedTime : 0;
+}
+
+function mergeNormalizedInfoRadarItems(items: InfoRadarItem[]): InfoRadarItem[] {
+  const byKey = new Map<string, InfoRadarItem>();
+
+  for (const item of items) {
+    const key = getInfoRadarItemDedupeKey(item);
+    const existing = byKey.get(key);
+
+    if (!existing) {
+      byKey.set(key, item.sourceKind === "wechat" ? { ...item, url: "", resolvedUrl: undefined } : item);
+      continue;
+    }
+
+    const preferred = getInfoRadarItemSortTime(item) >= getInfoRadarItemSortTime(existing) ? item : existing;
+    const preserved = existing.status === "saved" || existing.status === "ignored" ? existing : item.status === "saved" || item.status === "ignored" ? item : preferred;
+
+    byKey.set(key, {
+      ...(existing.sourceKind === "wechat" ? { ...existing, url: "", resolvedUrl: undefined } : existing),
+      ...(preferred.sourceKind === "wechat" ? { ...preferred, url: "", resolvedUrl: undefined } : preferred),
+      id: preserved.id,
+      status: preserved.status,
+      fetchedAt: preferred.fetchedAt || existing.fetchedAt,
+      tags: Array.from(new Set([...(existing.tags ?? []), ...(item.tags ?? [])])).slice(0, 8),
+      matchedKeywords: Array.from(new Set([...(existing.matchedKeywords ?? []), ...(item.matchedKeywords ?? [])])).slice(0, 8),
+      score: Math.max(Number(existing.score ?? 0), Number(item.score ?? 0))
+    });
+  }
+
+  return Array.from(byKey.values()).sort((left, right) => getInfoRadarItemSortTime(right) - getInfoRadarItemSortTime(left));
+}
+
 function normalizeInfoRadarSource(input: Partial<InfoRadarSource> | null | undefined, windowId = ""): InfoRadarSource | null {
   if (!input || typeof input !== "object") {
     return null;
@@ -4699,7 +4798,10 @@ function normalizeInfoRadarWindow(input: Partial<InfoRadarWindow> | null | undef
   const items = (Array.isArray(input.items) ? input.items : [])
     .map(normalizeInfoRadarItem)
     .filter((item): item is InfoRadarItem => Boolean(item))
-    .slice(0, 200);
+    .reduce<InfoRadarItem[]>((entries, item) => {
+      entries.push(item);
+      return entries;
+    }, []);
   const runHistory = (Array.isArray(input.runHistory) ? input.runHistory : [])
     .map(normalizeInfoRadarRefreshRun)
     .filter((run): run is InfoRadarRefreshRun => Boolean(run))
@@ -4717,7 +4819,7 @@ function normalizeInfoRadarWindow(input: Partial<InfoRadarWindow> | null | undef
     negativeKeywords: normalizeStringArray(input.negativeKeywords),
     sources,
     digestPrompt: String(input.digestPrompt ?? "").trim(),
-    items,
+    items: mergeNormalizedInfoRadarItems(items).slice(0, 200),
     runHistory,
     createdAt: String(input.createdAt ?? "").trim() || timestamp,
     updatedAt: timestamp,
