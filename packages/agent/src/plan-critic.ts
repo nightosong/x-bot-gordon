@@ -84,6 +84,24 @@ function repeatsActiveDecisionMemory(contextPacket: AgentContextPacket, tool: Mc
   });
 }
 
+function isGithubTool(tool: McpToolDefinition): boolean {
+  return /github_search_repositories/iu.test(tool.name);
+}
+
+function isGithubSearchIntent(contextPacket: AgentContextPacket): boolean {
+  const text = [
+    contextPacket.goal.latestUserRequest,
+    contextPacket.goal.objective,
+    contextPacket.goal.nextActionHint,
+    ...contextPacket.constraints,
+    ...contextPacket.openQuestions
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return /github|开源|仓库|repository|repo/iu.test(text);
+}
+
 export function critiqueMcpToolPlan(input: AgentPlanCriticInput): AgentPlanCriticResult {
   const issues: string[] = [];
 
@@ -136,12 +154,29 @@ export function critiqueMcpToolPlan(input: AgentPlanCriticInput): AgentPlanCriti
     issues.push("missing_verification_method");
   }
 
+  if (
+    input.toolRequirement?.capability === "external_evidence" &&
+    isGithubTool(tool) &&
+    !isGithubSearchIntent(input.contextPacket)
+  ) {
+    issues.push("github_for_non_repository_evidence");
+  }
+
   if (repeatsActiveDecisionMemory(input.contextPacket, tool)) {
     issues.push("repeats_active_decision_memory");
   }
 
   if (hasSameRecentToolCall(input.contextPacket, input.serverId, input.toolName, input.arguments)) {
     issues.push("duplicate_recent_tool_call");
+  }
+
+  if (issues.includes("github_for_non_repository_evidence")) {
+    return {
+      decision: "revise",
+      reason: "当前外部证据任务不是 GitHub 仓库或开源项目检索，GitHub 仓库搜索不匹配",
+      issues,
+      revisionHint: "改用 web_research、web_search_v2 或 read_web_page 获取网页来源；只有用户明确要求 GitHub、开源项目或仓库搜索时才使用 github_search_repositories"
+    };
   }
 
   if (issues.includes("repeats_active_decision_memory") || issues.includes("duplicate_recent_tool_call")) {

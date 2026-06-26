@@ -412,6 +412,7 @@ export function createCommandWorkshopActions({
     return {
       agentProfileId,
       skillId: runnableSkills.some((skill) => skill.id === skillIdCandidate) ? skillIdCandidate : "",
+      permissionMode: config.permissionMode === "on_demand" ? "on_demand" : "auto",
       autoSelectMcp: config.autoSelectMcp !== false,
       mcpServerId: hasAuthorizedServer ? mcpServerIdCandidate : "",
       mcpToolName: hasAuthorizedServer ? mcpToolNameCandidate : "",
@@ -514,9 +515,9 @@ export function createCommandWorkshopActions({
     });
   }
 
-  function scrollCommandToBottom() {
+  function scrollCommandToBottom(force = false) {
     runOnNextTick(() => {
-      commandWorkshopViewRef.value?.scrollCommandToBottom?.();
+      commandWorkshopViewRef.value?.scrollCommandToBottom?.(force);
     });
   }
 
@@ -545,6 +546,7 @@ export function createCommandWorkshopActions({
     ui.command.queuedRunDraft = null;
     ui.command.availableMcpTools = [];
     ui.command.liveProgress = null;
+    closeCommandSlashMenu();
     focusCommandInput();
   }
 
@@ -573,7 +575,8 @@ export function createCommandWorkshopActions({
     ui.command.pendingGuidanceQueue = [];
     ui.command.queuedRunDraft = null;
     ui.command.liveProgress = null;
-    scrollCommandToBottom();
+    closeCommandSlashMenu();
+    scrollCommandToBottom(true);
   }
 
   async function handleCommandSessionDelete(sessionId) {
@@ -637,6 +640,81 @@ export function createCommandWorkshopActions({
   }
 
   async function handleCommandMessageCopy(message) {
+    return runCommandMessageCopy(message);
+  }
+
+  // 内联「重试本轮」：用失败 / 停止回复保留的入参重新发起一次运行，无需手动重填。
+  async function handleCommandMessageRetry(message) {
+    if (ui.command.isRunning) {
+      setStatus("当前已有任务在运行，请先停止再重试。", "warning");
+      return;
+    }
+
+    const retry = message?.retry;
+    const content = String(retry?.content ?? "").trim();
+    const attachments = toPlainIpcData(retry?.attachments ?? [], []);
+
+    if (!content && !attachments.length) {
+      setStatus("这条回复没有可重试的输入。", "warning");
+      return;
+    }
+
+    ui.command.draftInput = content;
+    ui.command.attachments = attachments;
+    ui.command.composerView = "input";
+    setStatus("正在按上一轮输入重试...", "neutral");
+    await handleCommandSubmit();
+  }
+
+  // 判断某条助手消息是否仍有可继续的未完成工作（用于「从这里继续」入口）。
+  function getCommandMessageContinuation(message) {
+    const ledger = message?.artifact?.taskLedger;
+
+    if (!ledger || typeof ledger !== "object" || Array.isArray(ledger)) {
+      return null;
+    }
+
+    const pendingSubtasks = Array.isArray(ledger.pendingSubtasks)
+      ? ledger.pendingSubtasks.filter((item) => String(item ?? "").trim())
+      : [];
+    const nextActionHint = String(ledger.nextActionHint ?? "").trim();
+    const hasActivePlan = Array.isArray(ledger.activePlan)
+      ? ledger.activePlan.some((item) => String(item ?? "").trim())
+      : Boolean(String(ledger.activePlan ?? "").trim());
+
+    if (!pendingSubtasks.length && !nextActionHint && !hasActivePlan) {
+      return null;
+    }
+
+    return { pendingSubtasks, nextActionHint };
+  }
+
+  function hasCommandMessageContinuation(message) {
+    return Boolean(getCommandMessageContinuation(message));
+  }
+
+  // 「从这里继续」：复用上一轮 taskLedger，由 Task Continuation Engine 直接续跑未完成的部分。
+  async function handleCommandMessageContinue(message) {
+    if (ui.command.isRunning) {
+      setStatus("当前已有任务在运行，请等待结束后再继续。", "warning");
+      return;
+    }
+
+    const continuation = getCommandMessageContinuation(message);
+
+    if (!continuation) {
+      setStatus("这条回复没有可继续的未完成内容。", "warning");
+      return;
+    }
+
+    ui.command.draftInput = "继续未完成的部分，把上一轮计划里剩下的工作做完。";
+    ui.command.attachments = [];
+    ui.command.composerView = "input";
+    setStatus("正在继续未完成的部分...", "neutral");
+    await handleCommandSubmit();
+  }
+
+  async function runCommandMessageCopy(message) {
     const content = String(message?.content ?? "").trim();
 
     if (!content) {
@@ -724,8 +802,295 @@ export function createCommandWorkshopActions({
       return;
     }
 
+    if (isCommandSlashMenuOpen()) {
+      event.preventDefault();
+      commitActiveCommandSlashCommand();
+      return;
+    }
+
     event.preventDefault();
     void handleCommandSubmit();
+  }
+
+  // Esc：运行中直接停止本轮运行（对齐 Codex / Claude Code 的中断手感）。
+  function handleCommandInputEscKeydown(event) {
+    if (event?.isComposing || ui.command.isInputComposing) {
+      return;
+    }
+
+    if (isCommandSlashMenuOpen()) {
+      event?.preventDefault?.();
+      closeCommandSlashMenu();
+      return;
+    }
+
+    if (!ui.command.isRunning || ui.command.cancelRequested) {
+      return;
+    }
+
+    event?.preventDefault?.();
+    void handleCommandRunCancel();
+  }
+
+  // ↑：当输入框为空时召回上一条已发送的请求，便于快速修改重发。
+  function handleCommandInputArrowUpKeydown(event) {
+    if (event?.isComposing || ui.command.isInputComposing) {
+      return;
+    }
+
+    if (isCommandSlashMenuOpen()) {
+      event?.preventDefault?.();
+      moveCommandSlashActive(-1);
+      return;
+    }
+
+    if (String(ui.command.draftInput ?? "").length) {
+      return;
+    }
+
+    const lastInput = String(ui.command.lastSubmittedInput ?? "");
+
+    if (!lastInput) {
+      return;
+    }
+
+    event?.preventDefault?.();
+    ui.command.draftInput = lastInput;
+    focusCommandInput();
+  }
+
+  // ===== / 斜杠命令面板 =====
+  // 命令集中定义，run 返回 true 表示已消费输入（清空 draft），false 表示仅改写 draft（如打开设置）。
+  const commandSlashCommands = computed(() => {
+    const skillName = ui.command.form.skillId ? getSkillById(ui.command.form.skillId)?.name ?? "Skill" : "通用模式";
+    const toolsOn = ui.command.form.autoSelectMcp !== false;
+    const permissionAuto = ui.command.form.permissionMode !== "on_demand";
+
+    return [
+      {
+        id: "new",
+        triggers: ["new", "新建", "新会话"],
+        title: "/new",
+        hint: "新建一轮会话",
+        run: () => {
+          beginNewCommandSession();
+          return true;
+        }
+      },
+      {
+        id: "settings",
+        triggers: ["settings", "设置", "高级"],
+        title: "/settings",
+        hint: "打开高级设置（Agent / Skill / 工具）",
+        run: () => {
+          ui.command.composerView = "settings";
+          return true;
+        }
+      },
+      {
+        id: "skill",
+        triggers: ["skill", "技能"],
+        title: "/skill",
+        hint: `切换 Skill（当前：${skillName}）`,
+        run: () => {
+          ui.command.composerView = "settings";
+          return true;
+        }
+      },
+      {
+        id: "agent",
+        triggers: ["agent", "助手"],
+        title: "/agent",
+        hint: `切换 Agent（当前：${commandSelectedAgent.value?.name ?? "未选择"}）`,
+        run: () => {
+          ui.command.composerView = "settings";
+          return true;
+        }
+      },
+      {
+        id: "tools",
+        triggers: ["tools", "工具", toolsOn ? "tools-off" : "tools-on"],
+        title: toolsOn ? "/tools-off" : "/tools-on",
+        hint: toolsOn ? "关闭按需使用工具" : "开启按需使用工具",
+        run: () => {
+          ui.command.form.autoSelectMcp = !toolsOn;
+          setStatus(ui.command.form.autoSelectMcp ? "已开启按需使用工具。" : "已关闭按需使用工具。", "success");
+          return true;
+        }
+      },
+      {
+        id: "permission",
+        triggers: ["auto", "ask", "权限", permissionAuto ? "ask" : "auto"],
+        title: permissionAuto ? "/ask" : "/auto",
+        hint: permissionAuto ? "切换为按需申请权限" : "切换为无需申请权限",
+        run: () => {
+          ui.command.form.permissionMode = permissionAuto ? "on_demand" : "auto";
+          setStatus(permissionAuto ? "已切换为按需申请权限。" : "已切换为无需申请权限。", "success");
+          return true;
+        }
+      },
+      {
+        id: "attach",
+        triggers: ["attach", "附件", "上传"],
+        title: "/attach",
+        hint: "上传附件作为上下文",
+        disabled: !commandSelectedAgent.value,
+        run: () => {
+          void handleCommandAttachmentSelect();
+          return true;
+        }
+      },
+      {
+        id: "stop",
+        triggers: ["stop", "停止", "中断"],
+        title: "/stop",
+        hint: "停止当前运行",
+        disabled: !ui.command.isRunning,
+        run: () => {
+          void handleCommandRunCancel();
+          return true;
+        }
+      },
+      {
+        id: "copy",
+        triggers: ["copy", "复制"],
+        title: "/copy",
+        hint: "复制最后一条 AI 回复",
+        run: () => {
+          const lastAssistant = [...(activeCommandMessages.value ?? [])]
+            .reverse()
+            .find((message) => message?.role === "assistant" && String(message?.content ?? "").trim());
+
+          if (!lastAssistant) {
+            setStatus("当前还没有可复制的 AI 回复。", "warning");
+          } else {
+            void handleCommandMessageCopy(lastAssistant);
+          }
+
+          return true;
+        }
+      },
+      {
+        id: "list",
+        triggers: ["list", "列表", "会话"],
+        title: "/list",
+        hint: "返回会话列表",
+        disabled: !workbench.commandSessions.length,
+        run: () => {
+          backToCommandList();
+          return true;
+        }
+      }
+    ];
+  });
+
+  function parseCommandSlashQuery(value) {
+    const text = String(value ?? "");
+
+    // 仅当输入以 / 开头、且还没出现空格（即仍在敲命令名）时，视为斜杠命令查询。
+    if (!text.startsWith("/")) {
+      return null;
+    }
+
+    const rest = text.slice(1);
+
+    if (/\s/u.test(rest)) {
+      return null;
+    }
+
+    return rest.toLowerCase();
+  }
+
+  const commandSlashFilteredCommands = computed(() => {
+    const query = String(ui.command.slashMenu?.query ?? "").toLowerCase();
+    const commands = commandSlashCommands.value.filter((command) => !command.disabled);
+
+    if (!query) {
+      return commands;
+    }
+
+    return commands.filter((command) =>
+      command.id.includes(query) ||
+      command.title.toLowerCase().includes(query) ||
+      (command.triggers ?? []).some((trigger) => String(trigger).toLowerCase().includes(query))
+    );
+  });
+
+  function refreshCommandSlashMenu() {
+    const query = parseCommandSlashQuery(ui.command.draftInput);
+
+    if (query === null) {
+      closeCommandSlashMenu();
+      return;
+    }
+
+    ui.command.slashMenu.query = query;
+    ui.command.slashMenu.open = commandSlashFilteredCommands.value.length > 0;
+    ui.command.slashMenu.activeIndex = 0;
+  }
+
+  function closeCommandSlashMenu() {
+    if (ui.command.slashMenu?.open) {
+      ui.command.slashMenu.open = false;
+    }
+
+    ui.command.slashMenu.query = "";
+    ui.command.slashMenu.activeIndex = 0;
+  }
+
+  function isCommandSlashMenuOpen() {
+    return Boolean(ui.command.slashMenu?.open) && commandSlashFilteredCommands.value.length > 0;
+  }
+
+  function moveCommandSlashActive(delta) {
+    const total = commandSlashFilteredCommands.value.length;
+
+    if (!total) {
+      return;
+    }
+
+    const current = Number(ui.command.slashMenu?.activeIndex ?? 0);
+    ui.command.slashMenu.activeIndex = (current + delta + total) % total;
+  }
+
+  function runCommandSlashCommand(command) {
+    if (!command || command.disabled) {
+      return;
+    }
+
+    const consumed = command.run();
+    closeCommandSlashMenu();
+
+    if (consumed) {
+      ui.command.draftInput = "";
+    }
+
+    focusCommandInput();
+  }
+
+  function handleCommandSlashSelect(commandId) {
+    const command = commandSlashCommands.value.find((entry) => entry.id === commandId);
+    runCommandSlashCommand(command);
+  }
+
+  function commitActiveCommandSlashCommand() {
+    const commands = commandSlashFilteredCommands.value;
+    const index = Math.min(Math.max(0, Number(ui.command.slashMenu?.activeIndex ?? 0)), commands.length - 1);
+    runCommandSlashCommand(commands[index]);
+  }
+
+  function handleCommandInputChange() {
+    refreshCommandSlashMenu();
+  }
+
+  // 当斜杠面板打开时，↑ / ↓ 在命令间移动。
+  function handleCommandInputArrowDownKeydown(event) {
+    if (!isCommandSlashMenuOpen()) {
+      return;
+    }
+
+    event?.preventDefault?.();
+    moveCommandSlashActive(1);
   }
 
   async function handleCommandAttachmentSelect() {
@@ -955,7 +1320,7 @@ export function createCommandWorkshopActions({
       ...(Array.isArray(ui.command.pendingGuidanceQueue) ? ui.command.pendingGuidanceQueue : []),
       pendingGuidance
     ];
-    scrollCommandToBottom();
+    scrollCommandToBottom(true);
 
     if (!ui.command.isRunning) {
       runQueuedCommandGuidanceIfNeeded();
@@ -994,6 +1359,7 @@ export function createCommandWorkshopActions({
       phase: payload.phase ?? "running",
       statusText: payload.statusText || "正在执行中",
       text: typeof payload.text === "string" ? payload.text : ui.command.liveProgress?.text ?? "",
+      thinkingText: typeof payload.thinkingText === "string" ? payload.thinkingText : "",
       updatedAt: payload.updatedAt ?? new Date().toISOString(),
       artifact: buildCommandWorkshopLiveArtifact({
         ...payload,
@@ -1082,7 +1448,7 @@ export function createCommandWorkshopActions({
       messages: [...toPlainIpcData(activeSession.messages ?? [], []), guidanceMessage],
       updatedAt: createdAt
     });
-    scrollCommandToBottom();
+    scrollCommandToBottom(true);
     return true;
   }
 
@@ -1131,6 +1497,8 @@ export function createCommandWorkshopActions({
   }
 
   async function handleCommandSubmit() {
+    closeCommandSlashMenu();
+
     if (!desktopApi) {
       setStatus("桌面桥接未就绪，暂无法执行命令工坊会话。", "danger");
       recoverQueuedRunDraft();
@@ -1145,14 +1513,37 @@ export function createCommandWorkshopActions({
       ? toPlainIpcData(queuedRunDraft?.attachments ?? [], [])
       : toPlainIpcData(ui.command.attachments ?? [], []);
 
+    if (!isQueuedRun && userInput) {
+      ui.command.lastSubmittedInput = userInput;
+    }
+
     if (ui.command.isRunning && !isQueuedRun) {
       if (!userInput && !attachments.length) {
         setStatus("当前任务仍在运行；输入内容后可加入请求队列。", "warning");
         return;
       }
 
+      // 像 Claude Code 一样：运行中直接发送即时插话当前运行，仅当无法注入时才退回请求队列。
+      ui.command.draftInput = "";
+      ui.command.attachments = [];
+
+      let injected = false;
+
+      try {
+        injected = await appendCommandGuidanceToActiveRun({ content: userInput, attachments });
+      } catch (error) {
+        console.error("Failed to inject command guidance into active run", error);
+        injected = false;
+      }
+
+      if (injected) {
+        setStatus("已插入当前运行：Gordon 会在下一步纳入你的补充。", "success");
+        scrollCommandToBottom(true);
+        return;
+      }
+
       const queuedItem = queueCommandGuidance(userInput, attachments);
-      setStatus(`已加入请求队列：${getCommandQueueItemSummary(queuedItem)}`, "success");
+      setStatus(`当前暂无法即时插话，已加入请求队列：${getCommandQueueItemSummary(queuedItem)}`, "warning");
       return;
     }
 
@@ -1315,7 +1706,7 @@ export function createCommandWorkshopActions({
       ui.command.draftInput = "";
       ui.command.attachments = [];
     }
-    scrollCommandToBottom();
+    scrollCommandToBottom(true);
 
     try {
       const runStatusText = forceApplicationTools
@@ -1403,7 +1794,13 @@ export function createCommandWorkshopActions({
         content: wasCancelled ? stoppedContent : `运行失败：${getErrorMessage(error)}`,
         state: wasCancelled ? "stopped" : "error",
         createdAt: failedAt,
-        ...(ui.command.liveProgress?.artifact ? { artifact: ui.command.liveProgress.artifact } : {})
+        ...(ui.command.liveProgress?.artifact ? { artifact: ui.command.liveProgress.artifact } : {}),
+        // 内联重试：失败 / 停止的回复保留本轮入参，前端据此渲染「重试本轮」按钮，避免再次手填。
+        retry: {
+          userMessageId: userMessage.id,
+          content: userInput,
+          attachments: toPlainIpcData(attachments ?? [], [])
+        }
       };
       const latestSessionState = toPlainIpcData(activeCommandSession.value, pendingSession);
       const latestMessages = toPlainIpcData(latestSessionState?.messages ?? pendingSession.messages, []);
@@ -1432,16 +1829,6 @@ export function createCommandWorkshopActions({
       setStatus(wasCancelled ? "命令工坊已停止，本轮部分输出已保留。" : `命令工坊运行失败：${getErrorMessage(error)}`, wasCancelled ? "warning" : "danger");
       if (runQueuedCommandGuidanceIfNeeded() === "queue") {
         setStatus("正在按队列继续执行。", "neutral");
-      }
-
-      if (!wasCancelled) {
-        void showAlertDialog({
-          tone: "danger",
-          title: "命令工坊运行失败",
-          message: getErrorMessage(error),
-          detail: "失败消息已保留在当前会话中，可回到消息流查看上下文后重试。",
-          confirmText: "知道了"
-        });
       }
       scrollCommandToBottom();
     }
@@ -1912,9 +2299,10 @@ export function createCommandWorkshopActions({
     }
 
     if (String(step?.type ?? "").endsWith("_granted")) {
+      const isAutoGranted = /无需申请|自动放行/u.test(String(step?.detail ?? ""));
       return {
         priority: 2,
-        label: `${getCommandPermissionDomainLabel(step)} · 已授权`,
+        label: `${getCommandPermissionDomainLabel(step)} · ${isAutoGranted ? "自动放行" : "已授权"}`,
         className: "is-done"
       };
     }
@@ -2364,6 +2752,13 @@ export function createCommandWorkshopActions({
     const label = getCommandLiveActivityLabel(latestActivityStep);
     const tone = getCommandLiveActivityTone(latestActivityStep);
 
+    // 思考态心跳（带计时）优先作为当前活动的细节展示，让长任务静默等待时也持续可见。
+    const thinkingText = normalizeCommandArtifactInlineText(liveProgress?.thinkingText);
+
+    if (thinkingText && !["completed"].includes(latestActivityStep?.type)) {
+      detail = thinkingText;
+    }
+
     return {
       id: latestActivityStep?.id ?? `live_activity_${liveProgress?.progressEventId ?? "current"}`,
       label,
@@ -2617,6 +3012,12 @@ export function createCommandWorkshopActions({
       return streamedText;
     }
 
+    const thinkingText = String(liveProgress?.thinkingText ?? "").trim();
+
+    if (thinkingText) {
+      return thinkingText;
+    }
+
     const artifact = liveProgress?.artifact;
     const calls = Array.isArray(artifact?.mcpCalls) ? artifact.mcpCalls : [];
     const lastCall = calls[calls.length - 1];
@@ -2677,8 +3078,18 @@ export function createCommandWorkshopActions({
     handleCommandInputCompositionEnd,
     handleCommandInputCompositionStart,
     handleCommandInputEnterKeydown,
+    handleCommandInputEscKeydown,
+    handleCommandInputArrowUpKeydown,
+    handleCommandInputArrowDownKeydown,
+    handleCommandInputChange,
+    handleCommandSlashSelect,
+    commandSlashFilteredCommands,
+    closeCommandSlashMenu,
     handleCommandLoadMcpTools,
     handleCommandMessageCopy,
+    handleCommandMessageRetry,
+    handleCommandMessageContinue,
+    hasCommandMessageContinuation,
     handleCommandMessageExport,
     handleCommandQueueItemDelete,
     handleCommandQueueItemEdit,

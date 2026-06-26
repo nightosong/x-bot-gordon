@@ -1,5 +1,6 @@
 <template>
   <div class="app-shell">
+    <div class="window-drag-region" aria-hidden="true"></div>
     <div class="ambient ambient-one"></div>
     <div class="ambient ambient-two"></div>
 
@@ -220,8 +221,17 @@
               :handle-command-input-composition-end="handleCommandInputCompositionEnd"
               :handle-command-input-composition-start="handleCommandInputCompositionStart"
               :handle-command-input-enter-keydown="handleCommandInputEnterKeydown"
+              :handle-command-input-esc-keydown="handleCommandInputEscKeydown"
+              :handle-command-input-arrow-up-keydown="handleCommandInputArrowUpKeydown"
+              :handle-command-input-arrow-down-keydown="handleCommandInputArrowDownKeydown"
+              :handle-command-input-change="handleCommandInputChange"
+              :handle-command-slash-select="handleCommandSlashSelect"
+              :command-slash-filtered-commands="commandSlashFilteredCommands"
               :handle-command-load-mcp-tools="handleCommandLoadMcpTools"
               :handle-command-message-copy="handleCommandMessageCopy"
+              :handle-command-message-retry="handleCommandMessageRetry"
+              :handle-command-message-continue="handleCommandMessageContinue"
+              :has-command-message-continuation="hasCommandMessageContinuation"
               :handle-command-message-export="handleCommandMessageExport"
               :handle-command-queue-item-delete="handleCommandQueueItemDelete"
               :handle-command-queue-item-edit="handleCommandQueueItemEdit"
@@ -1004,8 +1014,17 @@ const {
   handleCommandInputCompositionEnd,
   handleCommandInputCompositionStart,
   handleCommandInputEnterKeydown,
+  handleCommandInputEscKeydown,
+  handleCommandInputArrowUpKeydown,
+  handleCommandInputArrowDownKeydown,
+  handleCommandInputChange,
+  handleCommandSlashSelect,
+  commandSlashFilteredCommands,
   handleCommandLoadMcpTools,
   handleCommandMessageCopy,
+  handleCommandMessageRetry,
+  handleCommandMessageContinue,
+  hasCommandMessageContinuation,
   handleCommandMessageExport,
   handleCommandQueueItemDelete,
   handleCommandQueueItemEdit,

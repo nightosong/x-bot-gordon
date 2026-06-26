@@ -1102,6 +1102,106 @@ function createIrrelevantThenOfficialSearchMcpServer(capturedRequests: CapturedR
   });
 }
 
+function createGoldPriceSearchMcpServer(capturedRequests: CapturedRequest[]): Server {
+  return createServer(async (request, response) => {
+    if (request.method !== "POST") {
+      response.writeHead(404);
+      response.end();
+      return;
+    }
+
+    const body = await readRequestBody(request);
+    capturedRequests.push({
+      url: request.url ?? "",
+      body
+    });
+
+    const method = typeof body.method === "string" ? body.method : "";
+    const id = typeof body.id === "number" ? body.id : undefined;
+    const pathname = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+
+    if (!id) {
+      response.writeHead(202);
+      response.end();
+      return;
+    }
+
+    if (method === "initialize") {
+      sendJson(response, {
+        jsonrpc: "2.0",
+        id,
+        result: {
+          protocolVersion: "2025-11-25",
+          capabilities: {},
+          serverInfo: {
+            name: "fake-gold-search-mcp",
+            version: "0.0.0"
+          }
+        }
+      });
+      return;
+    }
+
+    if (method === "tools/list") {
+      sendJson(response, {
+        jsonrpc: "2.0",
+        id,
+        result: {
+          tools: buildToolDefinitions(pathname)
+        }
+      });
+      return;
+    }
+
+    if (method === "tools/call") {
+      const params = body.params && typeof body.params === "object" ? (body.params as Record<string, unknown>) : {};
+      const toolName = typeof params.name === "string" ? params.name : "";
+
+      sendJson(response, {
+        jsonrpc: "2.0",
+        id,
+        result: {
+          content: [
+            {
+              type: "text",
+              text:
+                pathname.includes("search") && toolName === "web_research"
+                  ? "source=https://gold.example.test/live\nsummary=现货黄金 XAU/USD 今日实时价格为 2320.12 美元/盎司，国内黄金约 548.30 元/克。"
+                  : "workspace file content"
+            }
+          ],
+          structuredContent:
+            pathname.includes("search") && toolName === "web_research"
+              ? {
+                  query: "今日黄金价格 XAU/USD 现货黄金 实时",
+                  sources: [
+                    {
+                      title: "Gold live price",
+                      url: "https://gold.example.test/live",
+                      domain: "gold.example.test",
+                      snippet: "XAU/USD gold price 2320.12 USD/oz; 黄金 548.30 元/克"
+                    }
+                  ]
+                }
+              : {
+                  content: "workspace file content"
+                }
+        }
+      });
+      return;
+    }
+
+    sendJson(response, {
+      jsonrpc: "2.0",
+      id,
+      error: {
+        code: -32601,
+        message: `Unsupported method: ${method}`
+      }
+    });
+  });
+}
+
 test("runAgent keeps Computer Use selectable through capability routing", async () => {
   const previousHome = process.env.GORDON_HOME;
   const previousDataRoot = process.env.GORDON_DATA_ROOT;
@@ -1408,6 +1508,88 @@ test("runAgent forces external evidence tools for latest official pricing questi
     ]);
     assert.match(log.mcpResultText ?? "", /platform\.claude\.com/u);
     assert.match(log.text, /Search Tools|官网|来源|pricing|价格/u);
+  } finally {
+    process.env.GORDON_HOME = previousHome;
+    process.env.GORDON_DATA_ROOT = previousDataRoot;
+    await Promise.allSettled([closeServer(modelServer), closeServer(mcpServer)]);
+    await rm(tempHome, { recursive: true, force: true });
+  }
+});
+
+test("runAgent uses clean web research query for live gold price questions", async () => {
+  const previousHome = process.env.GORDON_HOME;
+  const previousDataRoot = process.env.GORDON_DATA_ROOT;
+  const tempHome = await mkdtemp(path.join(tmpdir(), "gordon-agent-runtime-gold-price-"));
+  const modelRequests: CapturedRequest[] = [];
+  const mcpRequests: CapturedRequest[] = [];
+  const modelServer = createFakeExternalEvidenceModelServer(modelRequests);
+  const mcpServer = createGoldPriceSearchMcpServer(mcpRequests);
+
+  try {
+    const [modelBaseUrl, mcpBaseUrl] = await Promise.all([listen(modelServer), listen(mcpServer)]);
+    process.env.GORDON_HOME = tempHome;
+    process.env.GORDON_DATA_ROOT = path.join(tempHome, "data");
+
+    const timestamp = "2026-06-01T00:00:00.000Z";
+    const modelProfile: ModelProfile = {
+      id: "test:model:fake-gold-price",
+      provider: "openai_like",
+      displayName: "Fake Gold Price Model",
+      model: "fake-gold-price",
+      apiKey: "test-key",
+      baseUrl: modelBaseUrl,
+      apiFormat: "chat_completions",
+      supportsStreaming: false,
+      updatedAt: timestamp
+    };
+    const searchToolsServer: McpServerConfig = {
+      id: "test:mcp:search-tools",
+      name: "Search Tools",
+      description: "Search and research the public web",
+      transport: "http",
+      url: `${mcpBaseUrl}/search`,
+      env: {},
+      toolAllowlist: [],
+      enabled: true,
+      updatedAt: timestamp
+    };
+    const agentProfile: AgentProfile = {
+      id: "test:agent:gold-price",
+      name: "Gold Price Test Agent",
+      description: "Integration test agent",
+      mode: "chat",
+      modelProfileId: modelProfile.id,
+      systemPrompt: "Use tools for current market prices and cite evidence.",
+      allowedSkillIds: [],
+      allowedMcpServerIds: [searchToolsServer.id],
+      enabled: true,
+      updatedAt: timestamp
+    };
+
+    await saveModelSettings({
+      profiles: [modelProfile],
+      activeProfileId: modelProfile.id
+    });
+    await upsertMcpServer(searchToolsServer);
+    await upsertAgentProfile(agentProfile);
+
+    const log = await runAgent({
+      agentProfileId: agentProfile.id,
+      userInput: "帮我查下现在黄金的价格是多少",
+      conversationMessages: [
+        { role: "user", content: "你是谁" },
+        { role: "assistant", content: "我是 Gordon，一个持续执行型工程 Agent。" }
+      ],
+      autoSelectMcp: true
+    });
+    const searchToolCallRequest = mcpRequests.find((request) => request.url.includes("/search") && request.body.method === "tools/call");
+    const searchToolParams = searchToolCallRequest?.body.params as { arguments?: Record<string, unknown>; name?: string } | undefined;
+
+    assert.equal(log.mcpCalls?.[0]?.toolName, "web_research");
+    assert.equal(searchToolParams?.name, "web_research");
+    assert.equal(searchToolParams?.arguments?.query, "今日黄金价格 XAU/USD 现货黄金 实时");
+    assert.doesNotMatch(String(searchToolParams?.arguments?.query ?? ""), /当前会话最近上下文|你是谁|Gordon/u);
+    assert.equal(log.mcpCalls?.some((call) => call.toolName === "github_search_repositories"), false);
   } finally {
     process.env.GORDON_HOME = previousHome;
     process.env.GORDON_DATA_ROOT = previousDataRoot;

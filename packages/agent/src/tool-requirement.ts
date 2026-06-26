@@ -167,7 +167,9 @@ export function assessToolRequirement(
       routeStrength: "strong",
       capability: "external_evidence",
       reasons: [externalEvidence.reason],
-      preferredToolNames: ["web_research", "web_search_v2", "read_web_page", "web_search", "github_search_repositories"]
+      preferredToolNames: /github|开源|仓库|repository|repo/iu.test(text)
+        ? ["github_search_repositories", "web_research", "web_search_v2", "read_web_page", "web_search"]
+        : ["web_research", "web_search_v2", "read_web_page", "web_search"]
     });
   }
 

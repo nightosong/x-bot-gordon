@@ -765,6 +765,7 @@ export interface AgentRunProgressEvent {
   phase: "running" | "completed" | "failed";
   statusText: string;
   text?: string;
+  thinkingText?: string;
   profileLabel: string | null;
   model: string | null;
   skillName: string | null;
@@ -825,6 +826,7 @@ export interface CommandWorkshopSession {
   summary: string;
   agentProfileId: string | null;
   skillId: string | null;
+  permissionMode?: AgentPermissionMode;
   autoSelectMcp: boolean;
   mcpServerId: string | null;
   mcpToolName: string | null;

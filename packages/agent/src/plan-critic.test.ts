@@ -308,6 +308,51 @@ test("critiqueMcpToolPlan requires external evidence for current official pricin
   assert.match(result.revisionHint ?? "", /web_research/u);
 });
 
+test("critiqueMcpToolPlan rejects GitHub search for non-repository market price evidence", () => {
+  const result = critiqueMcpToolPlan({
+    contextPacket: createContextPacket({
+      goal: {
+        latestUserRequest: "帮我查下现在黄金的价格是多少",
+        objective: "查询实时黄金价格",
+        taskPhase: "planning"
+      }
+    }),
+    candidateTools: [
+      createTool({
+        serverId: "builtin:mcp:search-tools",
+        serverName: "Search Tools",
+        name: "github_search_repositories",
+        description: "Search GitHub repositories"
+      }),
+      createTool({
+        serverId: "builtin:mcp:search-tools",
+        serverName: "Search Tools",
+        name: "web_research",
+        description: "Research web pages"
+      })
+    ],
+    toolRequirement: {
+      mode: "required",
+      routeStrength: "strong",
+      capability: "external_evidence",
+      reasons: ["用户询问金融、商品或汇率的实时行情价格"],
+      preferredToolNames: ["web_research"],
+      fallbackPolicy: "rule_based"
+    },
+    serverId: "builtin:mcp:search-tools",
+    toolName: "github_search_repositories",
+    arguments: { query: "现在黄金的价格是多少" },
+    expectedOutcome: "返回黄金价格来源",
+    verificationMethod: "检查搜索结果包含价格数字",
+    reason: "搜索外部资料",
+    shouldCall: true
+  });
+
+  assert.equal(result.decision, "revise");
+  assert.ok(result.issues.includes("github_for_non_repository_evidence"));
+  assert.match(result.revisionHint ?? "", /web_research/u);
+});
+
 test("critiqueMcpToolPlan stops invalid tool selections", () => {
   const result = critiqueMcpToolPlan({
     contextPacket: createContextPacket(),

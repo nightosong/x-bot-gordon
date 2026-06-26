@@ -4298,8 +4298,16 @@ async function createMainWindow(): Promise<void> {
     height: MAIN_WINDOW_MIN_HEIGHT,
     minWidth: MAIN_WINDOW_MIN_WIDTH,
     minHeight: MAIN_WINDOW_MIN_HEIGHT,
-    title: "Gordon Work Assistant",
+    title: "Gordon",
     icon: appIconPath,
+    backgroundColor: "#07111d",
+    autoHideMenuBar: true,
+    ...(process.platform === "darwin"
+      ? {
+          titleBarStyle: "hiddenInset" as const,
+          trafficLightPosition: { x: 18, y: 18 }
+        }
+      : {}),
     webPreferences: {
       preload: path.join(currentDir, "preload.cjs"),
       contextIsolation: true,

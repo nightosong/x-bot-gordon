@@ -240,3 +240,53 @@ test("selectRequiredToolFallbackPlan prefers external evidence helper", () => {
   assert.deepEqual(plan?.arguments.preferredDomains, ["anthropic.com", "docs.anthropic.com", "platform.claude.com", "support.claude.com"]);
   assert.deepEqual(plan?.arguments.includeDomains, ["anthropic.com", "docs.anthropic.com", "platform.claude.com", "support.claude.com"]);
 });
+
+test("selectRequiredToolFallbackPlan routes live gold price to web research instead of GitHub", () => {
+  const contextPacket = createContextPacket("帮我查下现在黄金的价格是多少");
+  const candidateTools = [
+    createTool({
+      serverId: "test:mcp:search-tools",
+      serverName: "Search Tools",
+      name: "github_search_repositories",
+      description: "Search GitHub repositories",
+      inputSchema: {
+        type: "object",
+        required: ["query"],
+        properties: {
+          query: { type: "string" },
+          sort: { type: "string" }
+        }
+      }
+    }),
+    createTool({
+      serverId: "test:mcp:search-tools",
+      serverName: "Search Tools",
+      name: "web_research",
+      description: "Research web pages",
+      inputSchema: {
+        type: "object",
+        required: ["query"],
+        properties: {
+          query: { type: "string" },
+          provider: { type: "string" },
+          maxSearchResults: { type: "integer" },
+          maxPagesToRead: { type: "integer" }
+        }
+      }
+    })
+  ];
+  const requirement = assessToolRequirement(contextPacket, candidateTools);
+  const routingContext = buildCapabilityRoutingContext(contextPacket, candidateTools);
+  const plan = selectRequiredToolFallbackPlan({
+    requirement,
+    contextPacket,
+    candidateTools,
+    routingContext
+  });
+
+  assert.equal(requirement.mode, "required");
+  assert.equal(requirement.capability, "external_evidence");
+  assert.equal(requirement.preferredToolNames.includes("github_search_repositories"), false);
+  assert.equal(plan?.toolName, "web_research");
+  assert.equal(plan?.arguments.query, "今日黄金价格 XAU/USD 现货黄金 实时");
+});
