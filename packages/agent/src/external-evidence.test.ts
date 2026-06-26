@@ -152,6 +152,49 @@ test("external evidence tool selection uses canonical official Anthropic queries
   assert.doesNotMatch(String(selection?.arguments.query), /帮我|查一下/u);
 });
 
+test("external evidence tool selection uses clean market price queries and avoids GitHub", () => {
+  const contextPacket = createContextPacket("帮我查下现在黄金的价格是多少");
+  const selection = selectExternalEvidenceTool(contextPacket, [
+    {
+      serverId: "test:mcp:search",
+      serverName: "Search Tools",
+      name: "github_search_repositories",
+      description: "Search GitHub repositories",
+      inputSchema: {
+        type: "object",
+        required: ["query"],
+        properties: {
+          query: { type: "string" },
+          sort: { type: "string" }
+        }
+      }
+    },
+    {
+      serverId: "test:mcp:search",
+      serverName: "Search Tools",
+      name: "web_research",
+      description: "Research web pages",
+      inputSchema: {
+        type: "object",
+        required: ["query"],
+        properties: {
+          query: { type: "string" },
+          queries: { type: "array", items: { type: "string" } },
+          provider: { type: "string" },
+          maxSearchResults: { type: "integer" },
+          maxPagesToRead: { type: "integer" },
+          language: { type: "string" },
+          country: { type: "string" }
+        }
+      }
+    }
+  ]);
+
+  assert.equal(selection?.tool.name, "web_research");
+  assert.equal(selection?.arguments.query, "今日黄金价格 XAU/USD 现货黄金 实时");
+  assert.doesNotMatch(String(selection?.arguments.query), /帮我|查一下|当前会话最近上下文/u);
+});
+
 test("external evidence rejects official homepage-only result for model pricing tasks", () => {
   const contextPacket = createContextPacket("帮我查一下 Anthropic 最新模型有哪些，并打印官方价格");
   const call = createCallRecord({

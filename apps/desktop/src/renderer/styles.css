@@ -112,6 +112,26 @@ canvas {
   overflow: hidden;
 }
 
+.is-macos-shell .app-shell {
+  padding-top: calc(clamp(12px, 1.4vw, 20px) + 30px);
+}
+
+.window-drag-region {
+  display: none;
+}
+
+.is-macos-shell .window-drag-region {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 2;
+  display: block;
+  height: 34px;
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
 .ambient {
   position: absolute;
   border-radius: 999px;
@@ -16675,6 +16695,7 @@ canvas {
   height: 100%;
   min-height: 0;
   gap: 12px;
+  position: relative;
 }
 
 .command-chat-shell-immersive {
@@ -16912,6 +16933,29 @@ canvas {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  background: linear-gradient(
+    90deg,
+    rgba(247, 243, 235, 0.55) 0%,
+    rgba(247, 243, 235, 0.55) 38%,
+    rgba(204, 248, 236, 0.98) 50%,
+    rgba(247, 243, 235, 0.55) 62%,
+    rgba(247, 243, 235, 0.55) 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: command-live-shimmer 2.2s linear infinite;
+}
+
+@keyframes command-live-shimmer {
+  0% {
+    background-position: 120% 0;
+  }
+
+  100% {
+    background-position: -120% 0;
+  }
 }
 
 .command-live-waiting-dots {
@@ -17476,6 +17520,215 @@ canvas {
   border-top: 0;
 }
 
+/* 流式阶段：用等宽友好的纯文本承接增量输出，避免每帧整段 Markdown re-parse 造成抖动；
+   结束后由 actions 写回 message.content，再走完整的 renderRichText 富文本渲染。 */
+.command-final-reply-streaming {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.66;
+}
+
+.command-stream-cursor {
+  display: inline-block;
+  width: 7px;
+  height: 1.05em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  border-radius: 1px;
+  background: rgba(92, 225, 194, 0.9);
+  animation: command-stream-cursor-blink 1s steps(2, start) infinite;
+}
+
+@keyframes command-stream-cursor-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+}
+
+/* “回到底部”悬浮按钮：仅当用户上滚脱离底部时显示。 */
+.command-scroll-to-bottom {
+  position: absolute;
+  left: 50%;
+  bottom: 96px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid rgba(151, 182, 216, 0.18);
+  border-radius: 999px;
+  background: rgba(11, 20, 32, 0.92);
+  color: rgba(214, 230, 247, 0.94);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 6;
+  box-shadow: 0 6px 18px rgba(2, 6, 12, 0.45);
+  backdrop-filter: blur(8px);
+  transition: background 0.16s ease, transform 0.16s ease, border-color 0.16s ease;
+}
+
+.command-scroll-to-bottom:hover {
+  background: rgba(16, 28, 44, 0.96);
+  border-color: rgba(92, 225, 194, 0.36);
+}
+
+.command-scroll-fab-enter-active,
+.command-scroll-fab-leave-active {
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.command-scroll-fab-enter-from,
+.command-scroll-fab-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(6px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .command-stream-cursor {
+    animation: none;
+  }
+}
+
+/* 运行失败 / 停止后的内联提示 + 重试入口，替代模态弹窗。 */
+.command-message-retry {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border: 1px solid rgba(151, 182, 216, 0.16);
+  border-radius: 12px;
+  background: rgba(13, 22, 34, 0.7);
+}
+
+.command-message-retry.is-error {
+  border-color: rgba(244, 121, 121, 0.32);
+  background: rgba(54, 22, 26, 0.55);
+}
+
+.command-message-retry-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12.5px;
+  color: rgba(214, 230, 247, 0.82);
+}
+
+.command-message-retry.is-error .command-message-retry-copy {
+  color: rgba(248, 198, 198, 0.92);
+}
+
+.command-message-retry-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid rgba(92, 225, 194, 0.32);
+  border-radius: 999px;
+  background: rgba(16, 28, 44, 0.92);
+  color: rgba(214, 230, 247, 0.94);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease, opacity 0.16s ease;
+}
+
+.command-message-retry-button:hover {
+  background: rgba(22, 38, 56, 0.96);
+  border-color: rgba(92, 225, 194, 0.5);
+}
+
+.command-message-retry-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.command-message-retry-button-primary {
+  border-color: rgba(92, 225, 194, 0.5);
+  background: rgba(92, 225, 194, 0.16);
+  color: rgba(204, 248, 236, 0.96);
+}
+
+.command-message-retry-button-primary:hover {
+  background: rgba(92, 225, 194, 0.24);
+  border-color: rgba(92, 225, 194, 0.7);
+}
+
+/* / 斜杠命令面板：锚定在输入框左上方，键盘上下选、Enter 执行、Esc 关闭。 */
+.command-slash-menu {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: calc(100% + 8px);
+  z-index: 8;
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid rgba(151, 182, 216, 0.18);
+  border-radius: 14px;
+  background: rgba(9, 16, 26, 0.97);
+  box-shadow: 0 14px 40px rgba(2, 6, 12, 0.55);
+  backdrop-filter: blur(10px);
+}
+
+.command-slash-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: rgba(214, 230, 247, 0.9);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.command-slash-item.is-active,
+.command-slash-item:hover {
+  background: rgba(92, 225, 194, 0.14);
+}
+
+.command-slash-item-title {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(204, 248, 236, 0.96);
+  font-variant-ligatures: none;
+}
+
+.command-slash-item-hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  color: rgba(176, 198, 222, 0.72);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-slash-menu-enter-active,
+.command-slash-menu-leave-active {
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+
+.command-slash-menu-enter-from,
+.command-slash-menu-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
 .command-response-process + .command-final-reply {
   margin-top: 8px;
   padding-top: 8px;
@@ -17524,6 +17777,11 @@ canvas {
   .command-live-activity-mark::before,
   .command-live-activity-dots span {
     animation: none;
+  }
+
+  .command-live-waiting-copy {
+    animation: none;
+    -webkit-text-fill-color: rgba(247, 243, 235, 0.78);
   }
 }
 

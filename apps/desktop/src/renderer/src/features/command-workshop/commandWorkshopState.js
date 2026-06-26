@@ -28,6 +28,12 @@ export function createCommandWorkshopState() {
     isInputComposing: false,
     copiedMessageId: null,
     exportingMessageKey: null,
-    liveProgress: null
+    liveProgress: null,
+    lastSubmittedInput: "",
+    slashMenu: {
+      open: false,
+      query: "",
+      activeIndex: 0
+    }
   };
 }

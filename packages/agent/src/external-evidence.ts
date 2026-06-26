@@ -74,6 +74,15 @@ function getExternalEvidenceText(contextPacket: AgentContextPacket): string {
     .join("\n");
 }
 
+function getExternalEvidenceQueryText(contextPacket: AgentContextPacket): string {
+  return (
+    normalizeText(contextPacket.goal.latestUserRequest) ||
+    normalizeText(contextPacket.goal.objective) ||
+    normalizeText(contextPacket.goal.nextActionHint) ||
+    getExternalEvidenceText(contextPacket)
+  );
+}
+
 function getPrimaryRequestText(contextPacket: AgentContextPacket): string {
   const text = (
     normalizeText(contextPacket.goal.latestUserRequest) ||
@@ -144,6 +153,13 @@ function getQueryTerms(text: string): { primary: string[]; secondary: string[] }
     secondary.add("current");
   }
 
+  if (/黄金|金价|现货金|伦敦金|xau|xau\/usd|gold/iu.test(text)) {
+    primary.add("黄金");
+    primary.add("gold");
+    secondary.add("xau");
+    secondary.add("price");
+  }
+
   return {
     primary: [...primary],
     secondary: [...secondary]
@@ -152,6 +168,10 @@ function getQueryTerms(text: string): { primary: string[]; secondary: string[] }
 
 function hasPricingIntent(text: string): boolean {
   return /价格|定价|费用|报价|pricing|price|cost|rate/iu.test(text);
+}
+
+function hasLiveMarketPriceIntent(text: string): boolean {
+  return /(?:最新|当前|现在|今天|今日|实时|现价|行情|报价|now|current|today|live|spot)[^。！？\n]{0,48}(?:黄金|金价|现货金|伦敦金|xau|xau\/usd|贵金属|白银|原油|股票|股价|汇率|外汇|比特币|bitcoin|btc|gold|silver|oil|stock|forex|exchange rate)|(?:黄金|金价|现货金|伦敦金|xau|xau\/usd|贵金属|白银|原油|股票|股价|汇率|外汇|比特币|bitcoin|btc|gold|silver|oil|stock|forex|exchange rate)[^。！？\n]{0,48}(?:价格|行情|报价|现价|最新|当前|现在|今天|今日|实时|price|rate|quote|now|current|today|live|spot)/iu.test(text);
 }
 
 function hasModelCatalogIntent(text: string): boolean {
@@ -191,6 +211,10 @@ function getEvidenceSufficiencySignals(resultText: string, contextText: string):
     signals.add("pricing_numbers");
   }
 
+  if (/xau|黄金|金价|gold|spot gold|现货金/iu.test(resultText) && /(?:[$¥￥]\s*)?\d+(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?\s*(?:美元|元|人民币|\/克|\/盎司|usd|cny|oz|ounce|gram|g)\b/iu.test(resultText)) {
+    signals.add("pricing_numbers");
+  }
+
   if (/\bpricing\b|价格|定价|费用|input|output|输入|输出/iu.test(resultText)) {
     signals.add("pricing_terms");
   }
@@ -222,9 +246,14 @@ function hasSufficientEvidenceText(resultText: string, contextText: string): boo
   const signals = new Set(getEvidenceSufficiencySignals(resultText, contextText));
   const needsPricing = hasPricingIntent(contextText);
   const needsModels = hasModelCatalogIntent(contextText);
+  const needsLiveMarketPrice = hasLiveMarketPriceIntent(contextText);
 
   if (needsPricing && !signals.has("pricing_numbers")) {
     return false;
+  }
+
+  if (needsLiveMarketPrice) {
+    return signals.has("pricing_numbers");
   }
 
   if (needsModels && !signals.has("model_names") && !signals.has("api_ids")) {
@@ -253,6 +282,14 @@ function stripPoliteSearchPrefix(text: string): string {
     .trim();
 }
 
+function isGoldPriceIntent(text: string): boolean {
+  return /黄金|金价|现货金|伦敦金|xau|xau\/usd|gold/iu.test(text) && /价格|行情|报价|现价|最新|当前|现在|今天|今日|实时|price|quote|spot|live|current|today|now/iu.test(text);
+}
+
+function isGithubSearchIntent(text: string): boolean {
+  return /github|开源|仓库|repository|repo/iu.test(text);
+}
+
 function hasAnthropicModelCatalogIntent(text: string): boolean {
   return /(?:anthropic|claude)[^。！？\n]{0,80}(?:最新|当前|目前|现行|可用|旗下|模型|model|models|pricing|price|价格|定价|release|发布)|(?:最新|当前|目前|现行|可用|旗下|模型|model|models|pricing|price|价格|定价|release|发布)[^。！？\n]{0,80}(?:anthropic|claude)/iu.test(text);
 }
@@ -261,6 +298,14 @@ function buildCanonicalExternalEvidenceQueries(text: string): string[] {
   const normalized = normalizeQueryText(text);
   const stripped = stripPoliteSearchPrefix(normalized);
   const queries: string[] = [];
+
+  if (isGoldPriceIntent(normalized)) {
+    queries.push(
+      "今日黄金价格 XAU/USD 现货黄金 实时",
+      "现货黄金 XAU/USD live price today",
+      "今日国内黄金价格 人民币 每克"
+    );
+  }
 
   if (hasAnthropicModelCatalogIntent(normalized)) {
     const wantsPricing = /价格|定价|费用|pricing|price/iu.test(normalized);
@@ -419,8 +464,14 @@ export function assessExternalEvidenceRequirement(contextPacket: AgentContextPac
     {
       signal: "current_or_latest_fact",
       pattern:
-        /(?:最新|当前|现在|今天|今日|实时|recent|latest|current|today|now)[^。！？\n]{0,48}(?:价格|报价|费用|定价|pricing|price|模型|版本|发布|新闻|政策|法规|文档|官网|api|名单|列表)|(?:价格|报价|费用|定价|pricing|price)[^。！？\n]{0,48}(?:最新|当前|现在|官网|官方|official)/iu,
+        /(?:最新|当前|现在|今天|今日|实时|recent|latest|current|today|now)[^。！？\n]{0,48}(?:价格|报价|费用|定价|pricing|price|模型|版本|发布|新闻|政策|法规|文档|官网|api|名单|列表)|(?:价格|报价|费用|定价|pricing|price)[^。！？\n]{0,48}(?:最新|当前|现在|今天|今日|实时|官网|官方|official|today|now|current|live)/iu,
       reason: "用户询问最新、当前或实时事实"
+    },
+    {
+      signal: "live_market_price",
+      pattern:
+        /(?:黄金|金价|现货金|伦敦金|xau|xau\/usd|贵金属|白银|原油|股票|股价|汇率|外汇|比特币|bitcoin|btc|gold|silver|oil|stock|forex|exchange rate)[^。！？\n]{0,64}(?:价格|行情|报价|现价|最新|当前|现在|今天|今日|实时|price|rate|quote|spot|live|current|today|now)|(?:价格|行情|报价|现价|最新|当前|现在|今天|今日|实时|price|rate|quote|spot|live|current|today|now)[^。！？\n]{0,64}(?:黄金|金价|现货金|伦敦金|xau|xau\/usd|贵金属|白银|原油|股票|股价|汇率|外汇|比特币|bitcoin|btc|gold|silver|oil|stock|forex|exchange rate)/iu,
+      reason: "用户询问金融、商品或汇率的实时行情价格"
     },
     {
       signal: "vendor_model_catalog",
@@ -660,7 +711,7 @@ function buildExternalEvidenceArguments(tool: McpToolDefinition, query: string, 
 function scoreExternalEvidenceTool(tool: McpToolDefinition, text: string): number {
   const name = tool.name.toLowerCase();
   const hasUrl = extractNonLocalUrls(text).length > 0;
-  const isGithubTask = /github|开源|仓库|repository|repo/iu.test(text);
+  const isGithubTask = isGithubSearchIntent(text);
 
   if (name === "web_research") {
     return 100;
@@ -679,7 +730,7 @@ function scoreExternalEvidenceTool(tool: McpToolDefinition, text: string): numbe
   }
 
   if (name === "github_search_repositories") {
-    return isGithubTask ? 80 : 35;
+    return isGithubTask ? 80 : 0;
   }
 
   return inferToolExecutionDomain(tool) === "web_research" ? 60 : 0;
@@ -690,7 +741,8 @@ export function selectExternalEvidenceTool(
   candidateTools: McpToolDefinition[]
 ): ExternalEvidenceToolSelection | null {
   const text = getExternalEvidenceText(contextPacket);
-  const query = buildCanonicalExternalEvidenceQueries(getExternalEvidenceText(contextPacket))[0] ?? getPrimaryRequestText(contextPacket);
+  const queryText = getExternalEvidenceQueryText(contextPacket);
+  const query = buildCanonicalExternalEvidenceQueries(queryText)[0] ?? getPrimaryRequestText(contextPacket);
   const rankedTools = candidateTools
     .filter(isExternalEvidenceTool)
     .map((tool) => ({
@@ -726,7 +778,8 @@ export function buildExternalEvidenceRetryArguments(
   priorCalls: AgentMcpCallRecord[] = []
 ): Record<string, unknown> | null {
   const text = getExternalEvidenceText(contextPacket);
-  const canonicalQueries = buildCanonicalExternalEvidenceQueries(text);
+  const queryText = getExternalEvidenceQueryText(contextPacket);
+  const canonicalQueries = buildCanonicalExternalEvidenceQueries(queryText);
   const usedQueries = new Set(
     priorCalls
       .filter((call) => call.toolName === tool.name)

@@ -52,7 +52,7 @@
             </div>
           </div>
 
-          <div ref="commandMessagesRef" class="command-chat-scroll-region">
+          <div ref="commandMessagesRef" class="command-chat-scroll-region" @scroll.passive="handleCommandScroll">
             <div class="command-message-stream">
               <article
                 v-for="message in activeCommandMessages"
@@ -128,6 +128,36 @@
                   v-html="renderRichText(message.content)"
                   @click="handleRichTextClick"
                 ></div>
+
+                <div
+                  v-if="message.role === 'assistant' && (message.state === 'error' || message.state === 'stopped') && (message.retry || hasCommandMessageContinuation(message))"
+                  class="command-message-retry"
+                  :class="{ 'is-error': message.state === 'error' }"
+                >
+                  <span class="command-message-retry-copy">
+                    {{ message.state === "error" ? "本轮运行失败。" : "本轮已停止。" }}{{ hasCommandMessageContinuation(message) ? "可从上一轮计划继续，或基于原输入重试。" : "可基于上一轮输入重试。" }}
+                  </span>
+                  <button
+                    v-if="hasCommandMessageContinuation(message)"
+                    type="button"
+                    class="command-message-retry-button command-message-retry-button-primary"
+                    :disabled="ui.command.isRunning"
+                    @click="handleCommandMessageContinue(message)"
+                  >
+                    <GIcon name="enter" :size="13" />
+                    <span>从这里继续</span>
+                  </button>
+                  <button
+                    v-if="message.retry"
+                    type="button"
+                    class="command-message-retry-button"
+                    :disabled="ui.command.isRunning"
+                    @click="handleCommandMessageRetry(message)"
+                  >
+                    <GIcon name="refresh" :size="13" />
+                    <span>重试本轮</span>
+                  </button>
+                </div>
 
                 <div v-if="getCommandArtifactProducts(message.artifact).length" class="command-generated-products">
                   <article
@@ -281,9 +311,8 @@
 
                 <div
                   v-if="ui.command.liveProgress?.text"
-                  class="command-message-body command-rich-text command-final-reply"
-                  v-html="renderRichText(ui.command.liveProgress.text)"
-                ></div>
+                  class="command-message-body command-final-reply command-final-reply-streaming"
+                >{{ ui.command.liveProgress.text }}<span class="command-stream-cursor" aria-hidden="true"></span></div>
 
                 <div
                   v-else-if="!commandLiveActivityItem && !commandLiveProcessItems.length"
@@ -380,6 +409,20 @@
             </div>
           </div>
 
+          <transition name="command-scroll-fab">
+            <button
+              v-if="showScrollToBottomButton"
+              type="button"
+              class="command-scroll-to-bottom"
+              aria-label="回到底部"
+              title="回到底部"
+              @click="jumpCommandToBottom"
+            >
+              <GIcon name="chevronDown" :size="16" />
+              <span>回到底部</span>
+            </button>
+          </transition>
+
           <form class="command-composer" @submit.prevent="handleCommandSubmit">
             <div v-if="ui.command.composerView === 'settings'" class="command-input-shell command-input-shell-float command-settings-shell">
               <div class="command-settings-head">
@@ -464,6 +507,30 @@
 
             <div v-else class="command-input-shell command-input-shell-plain">
               <div class="command-input-frame">
+                <transition name="command-slash-menu">
+                  <div
+                    v-if="ui.command.slashMenu?.open && commandSlashFilteredCommands.length"
+                    class="command-slash-menu"
+                    role="listbox"
+                    aria-label="斜杠命令"
+                  >
+                    <button
+                      v-for="(command, index) in commandSlashFilteredCommands"
+                      :key="command.id"
+                      type="button"
+                      class="command-slash-item"
+                      :class="{ 'is-active': index === ui.command.slashMenu.activeIndex }"
+                      role="option"
+                      :aria-selected="index === ui.command.slashMenu.activeIndex"
+                      @mousedown.prevent="handleCommandSlashSelect(command.id)"
+                      @mouseenter="ui.command.slashMenu.activeIndex = index"
+                    >
+                      <span class="command-slash-item-title">{{ command.title }}</span>
+                      <span class="command-slash-item-hint">{{ command.hint }}</span>
+                    </button>
+                  </div>
+                </transition>
+
                 <div v-if="ui.command.requestQueue?.length" class="command-request-queue" aria-label="请求队列">
                   <article
                     v-for="item in ui.command.requestQueue"
@@ -532,7 +599,11 @@
                   autofocus
                   @compositionstart="handleCommandInputCompositionStart"
                   @compositionend="handleCommandInputCompositionEnd"
+                  @input="handleCommandInputChange"
                   @keydown.enter.exact="handleCommandInputEnterKeydown"
+                  @keydown.esc="handleCommandInputEscKeydown"
+                  @keydown.up="handleCommandInputArrowUpKeydown"
+                  @keydown.down="handleCommandInputArrowDownKeydown"
                 ></textarea>
 
                 <button
@@ -649,7 +720,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import GCompactSelect from "../../components/GCompactSelect.vue";
 import GIcon from "../../components/GIcon.vue";
@@ -683,8 +754,17 @@ const props = defineProps({
   handleCommandInputCompositionEnd: { type: Function, required: true },
   handleCommandInputCompositionStart: { type: Function, required: true },
   handleCommandInputEnterKeydown: { type: Function, required: true },
+  handleCommandInputEscKeydown: { type: Function, required: true },
+  handleCommandInputArrowUpKeydown: { type: Function, required: true },
+  handleCommandInputArrowDownKeydown: { type: Function, required: true },
+  handleCommandInputChange: { type: Function, required: true },
+  handleCommandSlashSelect: { type: Function, required: true },
+  commandSlashFilteredCommands: { type: Array, default: () => [] },
   handleCommandLoadMcpTools: { type: Function, required: true },
   handleCommandMessageCopy: { type: Function, required: true },
+  handleCommandMessageRetry: { type: Function, required: true },
+  handleCommandMessageContinue: { type: Function, required: true },
+  hasCommandMessageContinuation: { type: Function, required: true },
   handleCommandMessageExport: { type: Function, required: true },
   handleCommandQueueItemDelete: { type: Function, required: true },
   handleCommandQueueItemEdit: { type: Function, required: true },
@@ -700,6 +780,34 @@ const props = defineProps({
 
 const commandInputRef = ref(null);
 const commandMessagesRef = ref(null);
+
+// 仅当用户本来就贴底时才自动跟随流式输出；用户上滚后停止跟随并显示“回到底部”。
+const PIN_THRESHOLD_PX = 48;
+const isPinnedToBottom = ref(true);
+const showScrollToBottomButton = ref(false);
+
+function computeIsPinnedToBottom(el) {
+  if (!el) {
+    return true;
+  }
+
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= PIN_THRESHOLD_PX;
+}
+
+function syncScrollPinState() {
+  const el = commandMessagesRef.value;
+
+  if (!el) {
+    return;
+  }
+
+  isPinnedToBottom.value = computeIsPinnedToBottom(el);
+  showScrollToBottomButton.value = !isPinnedToBottom.value;
+}
+
+function handleCommandScroll() {
+  syncScrollPinState();
+}
 
 const commandAgentSelectOptions = computed(() =>
   props.enabledAgentProfiles.map((agent) => ({
@@ -744,11 +852,69 @@ function focusCommandInput() {
   commandInputRef.value?.focus?.();
 }
 
-function scrollCommandToBottom() {
-  if (commandMessagesRef.value) {
-    commandMessagesRef.value.scrollTop = commandMessagesRef.value.scrollHeight;
+function performScrollToBottom(behavior = "auto") {
+  const el = commandMessagesRef.value;
+
+  if (!el) {
+    return;
+  }
+
+  if (typeof el.scrollTo === "function") {
+    el.scrollTo({ top: el.scrollHeight, behavior });
+  } else {
+    el.scrollTop = el.scrollHeight;
+  }
+
+  isPinnedToBottom.value = true;
+  showScrollToBottomButton.value = false;
+}
+
+// 由 actions 层在每帧 / 每条消息后调用：只有贴底时才跟随，避免和用户回看抢滚动条。
+function scrollCommandToBottom(force = false) {
+  if (!force && !isPinnedToBottom.value) {
+    showScrollToBottomButton.value = true;
+    return;
+  }
+
+  performScrollToBottom();
+}
+
+// 用户主动点击“回到底部”：强制贴底并平滑滚动。
+function jumpCommandToBottom() {
+  performScrollToBottom("smooth");
+}
+
+watch(
+  () => props.activeCommandSession?.id,
+  () => {
+    isPinnedToBottom.value = true;
+    showScrollToBottomButton.value = false;
+    nextTick(() => performScrollToBottom());
+  }
+);
+
+function handleCommandGlobalKeydown(event) {
+  // Cmd/Ctrl + K：在命令工坊内快速新建会话（对齐 Codex / Claude Code 的键盘流）。
+  if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && (event.key === "k" || event.key === "K")) {
+    if (props.ui?.command?.view !== "chat" && props.ui?.command?.view !== "list") {
+      return;
+    }
+
+    event.preventDefault();
+    props.beginNewCommandSession?.();
+    nextTick(() => focusCommandInput());
   }
 }
+
+onMounted(() => {
+  syncScrollPinState();
+  window.addEventListener("keydown", handleCommandGlobalKeydown);
+});
+
+onBeforeUnmount(() => {
+  // 滚动事件通过模板 @scroll 绑定，组件卸载时由 Vue 自动解绑。
+  window.removeEventListener("keydown", handleCommandGlobalKeydown);
+});
 
 function openGeneratedImagePreview(product) {
   if (!product?.src) {

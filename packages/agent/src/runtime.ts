@@ -41,7 +41,8 @@ import {
   buildExternalEvidenceRetryArguments,
   buildMissingExternalEvidenceFinalInstruction,
   getExternalEvidenceExpectedOfficialDomains,
-  isExternalEvidenceTool
+  isExternalEvidenceTool,
+  selectExternalEvidenceTool
 } from "./external-evidence.js";
 import {
   assessToolRequirement,
@@ -2396,8 +2397,8 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
         steps.push(
           createRunStep(
             "tool_permission_granted",
-            "高风险工具已授权",
-            `${server.name} / ${toolName} / 访问权限：无需申请`
+            "高风险工具自动放行",
+            `${server.name} / ${toolName} / 访问权限：无需申请，已自动放行`
           )
         );
         reportProgress?.();
@@ -2500,8 +2501,8 @@ async function executeMcpToolCall(options: ExecuteMcpToolCallOptions): Promise<A
       steps.push(
         createRunStep(
           "workspace_permission_granted",
-          "外部路径访问已授权",
-          `${permissionPayload.suggestedRoot} / 访问权限：无需申请，将重试当前工具调用`
+          "外部路径访问自动放行",
+          `${permissionPayload.suggestedRoot} / 访问权限：无需申请，已自动放行，将重试当前工具调用`
         )
       );
       reportProgress?.();
@@ -2951,6 +2952,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
   throwIfAgentAborted(options.signal);
 
   let userInput = request.userInput.trim();
+  let primaryUserRequest = extractPrimaryUserRequest(userInput);
   const progressCreatedAt = new Date().toISOString();
   const initializationSteps: AgentRunStep[] = [];
   const emitInitializationProgress = (
@@ -3043,17 +3045,17 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
   const authorizedMcpServers = resolveAuthorizedMcpServers(agent, mcpServers);
   let selectedMcpServer = resolveMcpSelection(agent, authorizedMcpServers, request);
   let taskContinuation = assessTaskContinuation({
-    userInput,
+    userInput: primaryUserRequest,
     previousLedger: request.taskLedger ?? null
   });
   const continuedLedger = mergeLedgerForContinuation({
     previousLedger: request.taskLedger ?? null,
-    userInput,
+    userInput: primaryUserRequest,
     decision: taskContinuation
   });
   let taskLedger = continuedLedger
-    ? normalizeAgentTaskLedger(continuedLedger, continuedLedger.objective || contextualUserInput)
-    : createInitialTaskLedger(contextualUserInput, selectedSkill);
+    ? normalizeAgentTaskLedger(continuedLedger, continuedLedger.objective || primaryUserRequest)
+    : createInitialTaskLedger(primaryUserRequest, selectedSkill);
   const mcpCalls: AgentMcpCallRecord[] = [];
   let discoveredCandidateTools: McpToolDefinition[] = [];
   let plannerToolViewSummary = "";
@@ -3064,6 +3066,8 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
   const steps: AgentRunStep[] = [...initializationSteps];
   let streamedFinalText = "";
   let lastStreamProgressAt = 0;
+  let currentThinkingText = "";
+  let lastThinkingProgressAt = 0;
   const autoGrantPermissions = request.permissionMode === "auto";
   const workspacePermission: WorkspacePermissionRuntime = {
     allowedRoots: new Set<string>(),
@@ -3100,6 +3104,11 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
         phase: overrides.phase ?? "running",
         statusText: overrides.statusText ?? defaultStatusText,
         ...(overrides.text ? { text: overrides.text } : {}),
+        ...(overrides.thinkingText !== undefined
+          ? { thinkingText: overrides.thinkingText }
+          : currentThinkingText
+            ? { thinkingText: currentThinkingText }
+            : {}),
         profileLabel: overrides.profileLabel ?? modelProfile.displayName ?? null,
         model: overrides.model ?? modelProfile.model ?? null,
         skillName: overrides.skillName ?? selectedSkill?.name ?? null,
@@ -3119,7 +3128,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
 
   const buildCurrentContextPacket = (): AgentContextPacket =>
     buildAgentContextPacket({
-      userInput,
+      userInput: primaryUserRequest,
       conversationMessages,
       taskLedger,
       mcpCalls
@@ -3130,8 +3139,61 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
   const pushStep = (type: AgentRunStep["type"], title: string, detail: string): AgentRunStep => {
     const step = createRunStep(type, title, detail);
     steps.push(step);
+    // 一旦有确定的步骤落地，就清掉上一段「思考态」临时文字，避免和正式步骤标题重叠。
+    currentThinkingText = "";
     emitProgress();
     return step;
+  };
+
+  // 中间节点（规划 / 观察压缩 / 验证等）模型流式输出时，透出一段轻量「思考态」文字流，
+  // 让长工具任务期间界面不再只有跳动点。思考文字只取尾部片段、带节流，且不写入最终回复。
+  const THINKING_TAIL_LENGTH = 180;
+
+  const emitThinkingProgress = (label: string, rawText: string, force = false): void => {
+    const normalized = String(rawText ?? "")
+      .replace(/\s+/gu, " ")
+      .trim();
+    const tail = normalized.length > THINKING_TAIL_LENGTH ? `…${normalized.slice(-THINKING_TAIL_LENGTH)}` : normalized;
+    currentThinkingText = tail ? (label ? `${label} ${tail}` : tail) : label;
+
+    const now = Date.now();
+
+    if (!force && now - lastThinkingProgressAt < 90) {
+      return;
+    }
+
+    lastThinkingProgressAt = now;
+    emitProgress({ thinkingText: currentThinkingText });
+  };
+
+  const makeThinkingDeltaHandler = (label: string) => (_delta: string, text: string): void => {
+    emitThinkingProgress(label, text);
+  };
+
+  // 中间节点（规划 / fallback / 观察压缩 / 验证等）模型调用期间，按心跳节奏透出带计时的「思考态」状态，
+  // 让长任务在静默等待时也持续可见，而不是停在一句静态文案上。
+  const withThinkingHeartbeat = async <T>(label: string, work: () => Promise<T>): Promise<T> => {
+    const startedAt = Date.now();
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const tick = (force = false): void => {
+      const elapsedSeconds = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
+      currentThinkingText = elapsedSeconds > 0 ? `${label} · ${elapsedSeconds}s` : label;
+      emitProgress({ thinkingText: currentThinkingText, ...(force ? {} : {}) });
+    };
+
+    tick(true);
+    timer = setInterval(() => tick(), 700);
+
+    try {
+      return await work();
+    } finally {
+      if (timer) {
+        clearInterval(timer);
+      }
+
+      currentThinkingText = "";
+    }
   };
 
   let lastRuntimeGuidanceId: string | null = null;
@@ -3164,6 +3226,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
     lastRuntimeGuidanceId = normalizedGuidance[normalizedGuidance.length - 1]?.id ?? lastRuntimeGuidanceId;
     const guidanceText = normalizedGuidance.map((item) => `- ${item.content}`).join("\n");
     userInput = `${userInput}\n\n运行时用户引导（${reason}）：\n${guidanceText}`;
+    primaryUserRequest = `${primaryUserRequest}\n\n运行时用户引导（${reason}）：\n${guidanceText}`.trim();
     contextualUserInput = buildContextualUserInput(userInput, conversationMessages);
     conversationMessages = normalizeConversationMessages([
       ...conversationMessages,
@@ -3185,7 +3248,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
       contextualUserInput
     );
     taskContinuation = assessTaskContinuation({
-      userInput,
+      userInput: primaryUserRequest,
       previousLedger: taskLedger
     });
     emitProgress({ taskLedger });
@@ -3194,13 +3257,15 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
 
   const updateLedgerFromToolCall = async (callRecord: AgentMcpCallRecord): Promise<void> => {
     try {
-      taskLedger = await updateTaskLedgerAfterToolCall(
-        modelProfile,
-        agent,
-        buildCurrentContextPacketText(),
-        taskLedger,
-        callRecord,
-        options.signal
+      taskLedger = await withThinkingHeartbeat("正在整理工具结果与任务进展", () =>
+        updateTaskLedgerAfterToolCall(
+          modelProfile,
+          agent,
+          buildCurrentContextPacketText(),
+          taskLedger,
+          callRecord,
+          options.signal
+        )
       );
       const observation = createObservationFromToolCall(callRecord);
       taskLedger = appendLedgerObservation(taskLedger, observation);
@@ -3369,8 +3434,15 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
       return false;
     }
 
-    const searchTools = buildPlannerVisibleTools(candidateTools, buildCapabilityRoutingContext(contextPacket, candidateTools).groups)
-      .filter(isExternalEvidenceTool);
+    const retrySelection = selectExternalEvidenceTool(
+      contextPacket,
+      buildPlannerVisibleTools(candidateTools, buildCapabilityRoutingContext(contextPacket, candidateTools).groups)
+    );
+    const searchTools = retrySelection
+      ? [retrySelection.tool]
+      : buildPlannerVisibleTools(candidateTools, buildCapabilityRoutingContext(contextPacket, candidateTools).groups)
+          .filter(isExternalEvidenceTool)
+          .filter((tool) => !/github_search_repositories/iu.test(tool.name) || /github|开源|仓库|repository|repo/iu.test(contextPacket.goal.latestUserRequest));
 
     for (const tool of searchTools) {
       const args = buildExternalEvidenceRetryArguments(contextPacket, tool, mcpCalls);
@@ -3607,19 +3679,21 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
         if (!plannedSelection) {
           roundContextPacket = buildCurrentContextPacket();
           toolRequirement = assessToolRequirement(roundContextPacket, candidateTools);
-          plannedSelection = await runWithPlannerTimeout(
-            (plannerSignal) =>
-              planMcpToolSelection(
-                modelProfile,
-                agent,
-                roundContextPacket,
-                buildAgentContextPacketText(roundContextPacket),
-                candidateTools,
-                round,
-                toolRequirement,
-                plannerSignal
-              ),
-            options.signal
+          plannedSelection = await withThinkingHeartbeat(`正在规划下一步工具（第 ${round} 轮）`, () =>
+            runWithPlannerTimeout(
+              (plannerSignal) =>
+                planMcpToolSelection(
+                  modelProfile,
+                  agent,
+                  roundContextPacket,
+                  buildAgentContextPacketText(roundContextPacket),
+                  candidateTools,
+                  round,
+                  toolRequirement,
+                  plannerSignal
+                ),
+              options.signal
+            )
           );
         }
       } catch (error) {
@@ -3709,12 +3783,7 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
       taskLedger = mergeAgentTaskLedgerPatch(taskLedger, plannedSelection.ledgerPatch, contextualUserInput);
       emitProgress({ taskLedger });
 
-      const critiqueContextPacket = buildAgentContextPacket({
-        userInput,
-        conversationMessages,
-        taskLedger,
-        mcpCalls
-      });
+      const critiqueContextPacket = buildCurrentContextPacket();
       toolRequirement = assessToolRequirement(critiqueContextPacket, candidateTools);
       let critiqueResult = critiqueMcpToolPlan({
         contextPacket: critiqueContextPacket,
@@ -3759,22 +3828,10 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
           );
           taskLedger = mergeAgentTaskLedgerPatch(taskLedger, plannedSelection.ledgerPatch, contextualUserInput);
           emitProgress({ taskLedger });
-          const fallbackRequirement = assessToolRequirement(
-            buildAgentContextPacket({
-              userInput,
-              conversationMessages,
-              taskLedger,
-              mcpCalls
-            }),
-            candidateTools
-          );
+          const fallbackContextPacket = buildCurrentContextPacket();
+          const fallbackRequirement = assessToolRequirement(fallbackContextPacket, candidateTools);
           critiqueResult = critiqueMcpToolPlan({
-            contextPacket: buildAgentContextPacket({
-              userInput,
-              conversationMessages,
-              taskLedger,
-              mcpCalls
-            }),
+            contextPacket: fallbackContextPacket,
             candidateTools,
             toolRequirement: fallbackRequirement,
             serverId: plannedSelection.serverId,
@@ -4182,19 +4239,23 @@ export async function runAgent(request: AgentRunRequest, options: RunAgentOption
 
       try {
         const verificationContextPacket = buildCurrentContextPacket();
-        verificationPlan = await runWithPlannerTimeout(
-          (plannerSignal) =>
-            planActiveMcpVerification(
-              modelProfile,
-              agent,
-              verificationContextPacket,
-              buildAgentContextPacketText(verificationContextPacket),
-              activeVerificationTools,
-              taskLedger,
-              verificationRound,
-              plannerSignal
-            ),
-          options.signal
+        verificationPlan = await withThinkingHeartbeat(
+          `正在主动验证成功条件（第 ${verificationRound} 轮）`,
+          () =>
+            runWithPlannerTimeout(
+              (plannerSignal) =>
+                planActiveMcpVerification(
+                  modelProfile,
+                  agent,
+                  verificationContextPacket,
+                  buildAgentContextPacketText(verificationContextPacket),
+                  activeVerificationTools,
+                  taskLedger,
+                  verificationRound,
+                  plannerSignal
+                ),
+              options.signal
+            )
         );
       } catch (error) {
         throwIfAgentAborted(options.signal);
