@@ -65,6 +65,13 @@ import type {
   CommandWorkshopMessageExportRequest,
   ComicProjectExportFormat,
   ComicProjectExportRequest,
+  FinanceBriefDerivedMetric,
+  FinanceBriefInterval,
+  FinanceBriefQuoteRequest,
+  FinanceBriefQuoteSnapshot,
+  FinanceBriefRange,
+  FinanceBriefSnapshot,
+  FinanceBriefSymbol,
   InfoRadarItem,
   InfoRadarRefreshResult,
   InfoRadarRefreshRun,
@@ -104,8 +111,10 @@ const modelTextAbortControllers = new Map<string, AbortController>();
 const agentRunAbortControllers = new Map<string, AbortController>();
 const agentRunGuidanceQueues = new Map<string, AgentRuntimeGuidance[]>();
 const infoRadarReaderViews = new Map<number, InfoRadarNativeReaderView>();
+const liveStreamViews = new Map<number, LiveStreamNativeView>();
 const MAIN_WINDOW_MIN_WIDTH = 1180;
 const MAIN_WINDOW_MIN_HEIGHT = 760;
+const LIVE_STREAM_SESSION_PARTITION = "persist:gordon-live-stream";
 const MODEL_BALANCE_POLL_INTERVAL_MS = 60 * 60 * 1000;
 const MODEL_BALANCE_INITIAL_POLL_DELAY_MS = 60 * 1000;
 const WEEKLY_AUTO_DAILY_REPORT_CHECK_INTERVAL_MS = 60 * 1000;
@@ -117,6 +126,20 @@ let weeklyAutoDailyReportTimer: NodeJS.Timeout | null = null;
 let weeklyAutoDailyReportInFlight = false;
 const FEISHU_DAILY_REPORT_CONTENT_LIMIT = 15000;
 const FEISHU_DAILY_REPORT_MARKDOWN_TEXT_SIZE = "normal_v2";
+
+function configureChromiumNativeLogging(): void {
+  const configuredLogLevel = String(process.env.GORDON_CHROMIUM_LOG_LEVEL ?? "3").trim();
+  const logLevel = /^(?:0|1|2|3)$/.test(configuredLogLevel) ? configuredLogLevel : "3";
+  const disableLogging = process.env.GORDON_CHROMIUM_DISABLE_LOGGING !== "0";
+
+  app.commandLine.appendSwitch("log-level", logLevel);
+
+  if (disableLogging) {
+    app.commandLine.appendSwitch("disable-logging");
+  }
+}
+
+configureChromiumNativeLogging();
 
 type GordonConfirmWindowTone = "neutral" | "warning" | "danger";
 
@@ -134,6 +157,143 @@ type InfoRadarNativeReaderView =
     bounds: InfoRadarNativeReaderBounds | null;
     visible: boolean;
   };
+
+type LiveStreamNativeView = InfoRadarNativeReaderView;
+
+const BILIBILI_LIVE_THEATER_CSS = `
+html.gordon-live-theater,
+html.gordon-live-theater body {
+  width: 100vw !important;
+  height: 100vh !important;
+  min-width: 100vw !important;
+  min-height: 100vh !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  background: #000 !important;
+}
+
+html.gordon-live-auth,
+html.gordon-live-auth body {
+  width: auto !important;
+  height: auto !important;
+  min-width: 100vw !important;
+  min-height: 100vh !important;
+  overflow: auto !important;
+  background: #000 !important;
+}
+
+body.gordon-live-auth {
+  position: static !important;
+}
+
+body.gordon-live-auth .bili-mini-login,
+body.gordon-live-auth .bili-mini-mask,
+body.gordon-live-auth .login-panel-popover,
+body.gordon-live-auth .login-panel,
+body.gordon-live-auth .login-dialog,
+body.gordon-live-auth .login-box,
+body.gordon-live-auth .passport-login,
+body.gordon-live-auth .qrcode-login,
+body.gordon-live-auth .qrcode-img,
+body.gordon-live-auth .qr-code,
+body.gordon-live-auth .geetest_panel,
+body.gordon-live-auth [class*="qrcode"],
+body.gordon-live-auth [class*="qr-code"],
+body.gordon-live-auth [class*="passport"] {
+  z-index: 2147483647 !important;
+}
+
+body.gordon-live-theater {
+  position: fixed !important;
+  inset: 0 !important;
+}
+
+body.gordon-live-theater::-webkit-scrollbar,
+body.gordon-live-theater *::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+}
+
+body.gordon-live-theater header,
+body.gordon-live-theater nav,
+body.gordon-live-theater footer,
+body.gordon-live-theater .room-info,
+body.gordon-live-theater .room-info-cntr,
+body.gordon-live-theater .room-info-ctnr,
+body.gordon-live-theater .room-info-section,
+body.gordon-live-theater .chat-history-panel,
+body.gordon-live-theater .chat-panel,
+body.gordon-live-theater .gift-panel,
+body.gordon-live-theater .rank-list,
+body.gordon-live-theater .activity-section,
+body.gordon-live-theater .recommend-list,
+body.gordon-live-theater .live-sidebar,
+body.gordon-live-theater .side-bar,
+body.gordon-live-theater .aside-area,
+body.gordon-live-theater .anchor-info,
+body.gordon-live-theater .room-feed,
+body.gordon-live-theater .fans-medal,
+body.gordon-live-theater .link-footer,
+body.gordon-live-theater .bili-header,
+body.gordon-live-theater .bili-footer,
+body.gordon-live-theater .live-room-app > aside {
+  display: none !important;
+}
+
+body.gordon-live-theater .gordon-live-purified-hidden {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+body.gordon-live-theater .gordon-live-player-shell {
+  visibility: visible !important;
+  opacity: 1 !important;
+  transform: none !important;
+  contain: none !important;
+  overflow: visible !important;
+  background: #000 !important;
+}
+
+body.gordon-live-theater .gordon-live-player-root {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 2147483000 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  min-width: 100vw !important;
+  min-height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  transform: none !important;
+  overflow: hidden !important;
+  background: #000 !important;
+  box-shadow: none !important;
+}
+
+body.gordon-live-theater .gordon-live-player-root video,
+body.gordon-live-theater .gordon-live-player-root canvas,
+body.gordon-live-theater video.gordon-live-player-root {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain !important;
+  background: #000 !important;
+}
+
+body.gordon-live-theater .gordon-live-player-root iframe,
+body.gordon-live-theater .gordon-live-player-root embed,
+body.gordon-live-theater .gordon-live-player-root object {
+  width: 100% !important;
+  height: 100% !important;
+}
+`;
 
 function normalizeInfoRadarNativeReaderUrl(url: unknown): string {
   const normalizedUrl = typeof url === "string" ? url.trim() : "";
@@ -208,6 +368,412 @@ function sendInfoRadarNativeReaderEvent(
   ownerWindow.webContents.send("gordon:workflow-library:info-reader", payload);
 }
 
+function sendLiveStreamNativeViewEvent(
+  ownerWindow: BrowserWindow,
+  payload: { status: "loading" | "ready" | "failed"; url?: string; message?: string }
+): void {
+  if (ownerWindow.isDestroyed() || ownerWindow.webContents.isDestroyed()) {
+    return;
+  }
+
+  ownerWindow.webContents.send("gordon:workflow-library:live-stream", payload);
+}
+
+function shouldApplyBilibiliLiveTheaterMode(rawUrl: string): boolean {
+  try {
+    const parsedUrl = new URL(rawUrl);
+
+    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+      return false;
+    }
+
+    if (parsedUrl.hostname !== "live.bilibili.com") {
+      return false;
+    }
+
+    const pathname = parsedUrl.pathname.replace(/\/+$/g, "");
+    return pathname === "" || /^\/(?:blanc\/)?\d+$/i.test(pathname) || pathname.startsWith("/blanc/");
+  } catch {
+    return false;
+  }
+}
+
+function isBilibiliAuthUrl(rawUrl: string): boolean {
+  try {
+    const parsedUrl = new URL(rawUrl);
+    const hostname = parsedUrl.hostname.toLowerCase();
+    const pathname = parsedUrl.pathname.toLowerCase();
+
+    if (hostname === "passport.bilibili.com") {
+      return true;
+    }
+
+    if (hostname === "account.bilibili.com") {
+      return true;
+    }
+
+    if (!hostname.endsWith(".bilibili.com") && hostname !== "bilibili.com") {
+      return false;
+    }
+
+    return /login|passport|oauth|account/.test(pathname);
+  } catch {
+    return false;
+  }
+}
+
+function createBilibiliLiveTheaterScript(): string {
+  return `
+(() => {
+  const css = ${JSON.stringify(BILIBILI_LIVE_THEATER_CSS)};
+  const styleId = "gordon-live-theater-style";
+  const pageRootClass = "gordon-live-theater";
+  const authRootClass = "gordon-live-auth";
+  const playerRootClass = "gordon-live-player-root";
+  const hiddenClass = "gordon-live-purified-hidden";
+  const playerShellClass = "gordon-live-player-shell";
+  const playerSelector = [
+    "#live-player",
+    ".bilibili-live-player",
+    ".web-player",
+    ".live-player",
+    ".live-player-ctnr",
+    ".live-player-mounter",
+    ".player-section",
+    ".player-ctnr",
+    ".player-wrapper",
+    ".player-area",
+    ".room-player-wrapper",
+    ".live-room-player",
+    ".bpx-player-container",
+    ".bpx-player-primary-area",
+    ".bpx-player-video-area",
+    ".bpx-player-video-wrap"
+  ].join(",");
+  const authSelector = [
+    ".bili-mini-login",
+    ".bili-mini-mask",
+    ".login-panel-popover",
+    ".login-panel",
+    ".login-dialog",
+    ".login-box",
+    ".login-container",
+    ".passport-login",
+    ".qrcode-login",
+    ".qrcode-img",
+    ".qr-code",
+    ".geetest_panel",
+    ".geetest_panel_box",
+    "[class*='qrcode']",
+    "[class*='qr-code']",
+    "[class*='passport']"
+  ].join(",");
+
+  const installStyle = () => {
+    let style = document.getElementById(styleId);
+
+    if (!style) {
+      style = document.createElement("style");
+      style.id = styleId;
+      document.head.appendChild(style);
+    }
+
+    if (style.textContent !== css) {
+      style.textContent = css;
+    }
+  };
+
+  const isUsable = (element) => {
+    if (!element || !(element instanceof Element)) {
+      return false;
+    }
+
+    const rect = element.getBoundingClientRect();
+    const style = window.getComputedStyle(element);
+    const opacity = Number(style.opacity || "1");
+    return rect.width >= 160 && rect.height >= 90 && style.display !== "none" && style.visibility !== "hidden" && opacity > 0.01;
+  };
+
+  const isVisibleAuthElement = (element) => {
+    if (!element || !(element instanceof Element)) {
+      return false;
+    }
+
+    const rect = element.getBoundingClientRect();
+    const style = window.getComputedStyle(element);
+    const opacity = Number(style.opacity || "1");
+    return rect.width >= 48 && rect.height >= 48 && style.display !== "none" && style.visibility !== "hidden" && opacity > 0.01;
+  };
+
+  const areaOf = (element) => {
+    const rect = element.getBoundingClientRect();
+    return rect.width * rect.height;
+  };
+
+  const pickLargest = (elements) => {
+    return elements
+      .filter(isUsable)
+      .sort((left, right) => areaOf(right) - areaOf(left))[0] || null;
+  };
+
+  const looksLikePlayer = (element) => {
+    const identity = String(element.id || "") + " " + String(element.className || "");
+    return /player|video|live|bpx/i.test(identity);
+  };
+
+  const looksLikeAuthSurface = (element) => {
+    const identity = (String(element.id || "") + " " + String(element.className || "")).toLowerCase();
+    return /qrcode|qr-code|passport|mini-login|login-panel|login-dialog|login-box|login-container|geetest|captcha/.test(identity);
+  };
+
+  const hasAuthVisual = (element) => {
+    if (element.querySelector("canvas, svg")) {
+      return true;
+    }
+
+    const images = Array.from(element.querySelectorAll("img"));
+    return images.some((image) => {
+      const rect = image.getBoundingClientRect();
+      return rect.width >= 80 && rect.height >= 80;
+    });
+  };
+
+  const hasVisibleAuthSurface = () => {
+    const directMatches = Array.from(document.querySelectorAll(authSelector));
+
+    if (directMatches.some((element) => isVisibleAuthElement(element) && (areaOf(element) >= 4800 || hasAuthVisual(element)))) {
+      return true;
+    }
+
+    const genericMatches = Array.from(document.querySelectorAll("[id],[class]"));
+    return genericMatches.some((element) => {
+      if (!looksLikeAuthSurface(element) || !isVisibleAuthElement(element)) {
+        return false;
+      }
+
+      return areaOf(element) >= 4800 || hasAuthVisual(element);
+    });
+  };
+
+  const findPlayerRoot = () => {
+    const video = pickLargest(Array.from(document.querySelectorAll("video")));
+
+    if (video) {
+      const closestPlayer = video.closest(playerSelector);
+
+      if (closestPlayer && isUsable(closestPlayer)) {
+        return closestPlayer;
+      }
+
+      const viewportArea = Math.max(1, window.innerWidth * window.innerHeight);
+      let best = video;
+      let node = video.parentElement;
+
+      while (node && node !== document.body && node !== document.documentElement) {
+        if (isUsable(node)) {
+          const nodeArea = areaOf(node);
+
+          if (looksLikePlayer(node) || nodeArea <= viewportArea * 1.12) {
+            best = node;
+          }
+        }
+
+        node = node.parentElement;
+      }
+
+      return best;
+    }
+
+    return pickLargest(Array.from(document.querySelectorAll(playerSelector)));
+  };
+
+  const clearPreviousPlayerRoot = (activeRoot) => {
+    document.querySelectorAll("." + playerRootClass).forEach((element) => {
+      if (element === activeRoot) {
+        return;
+      }
+
+      element.classList.remove(playerRootClass);
+      element.removeAttribute("data-gordon-live-theater");
+    });
+  };
+
+  const clearPurifiedLayout = () => {
+    document.querySelectorAll("." + hiddenClass).forEach((element) => {
+      element.classList.remove(hiddenClass);
+      element.removeAttribute("data-gordon-live-purified");
+    });
+
+    document.querySelectorAll("." + playerShellClass).forEach((element) => {
+      element.classList.remove(playerShellClass);
+    });
+  };
+
+  const shouldPreservePageElement = (element, playerRoot) => {
+    if (!element || !(element instanceof Element)) {
+      return true;
+    }
+
+    if (element === playerRoot || element.contains(playerRoot) || playerRoot.contains(element)) {
+      return true;
+    }
+
+    if (looksLikeAuthSurface(element) || element.querySelector(authSelector)) {
+      return true;
+    }
+
+    const tagName = element.tagName.toLowerCase();
+    return tagName === "script" || tagName === "style" || tagName === "link" || tagName === "meta" || tagName === "noscript";
+  };
+
+  const hideNonPlayerSibling = (element, playerRoot) => {
+    if (shouldPreservePageElement(element, playerRoot)) {
+      return;
+    }
+
+    element.classList.add(hiddenClass);
+    element.setAttribute("data-gordon-live-purified", "true");
+  };
+
+  const purifyAroundPlayer = (playerRoot) => {
+    if (!playerRoot || !(playerRoot instanceof Element)) {
+      return;
+    }
+
+    let activeBranch = playerRoot;
+    let parent = activeBranch.parentElement;
+    let depth = 0;
+
+    while (parent && parent !== document.body && parent !== document.documentElement && depth < 10) {
+      parent.classList.add(playerShellClass);
+      Array.from(parent.children).forEach((child) => {
+        if (child === activeBranch || child.contains(activeBranch)) {
+          return;
+        }
+
+        hideNonPlayerSibling(child, playerRoot);
+      });
+
+      activeBranch = parent;
+      parent = activeBranch.parentElement;
+      depth += 1;
+    }
+
+    if (document.body) {
+      Array.from(document.body.children).forEach((child) => {
+        if (child === activeBranch || child.contains(activeBranch) || activeBranch.contains(child)) {
+          return;
+        }
+
+        hideNonPlayerSibling(child, playerRoot);
+      });
+    }
+  };
+
+  const clearTheaterMode = () => {
+    document.documentElement.classList.remove(pageRootClass);
+
+    if (document.body) {
+      document.body.classList.remove(pageRootClass);
+    }
+
+    clearPurifiedLayout();
+    clearPreviousPlayerRoot(null);
+  };
+
+  const apply = () => {
+    installStyle();
+    clearPurifiedLayout();
+
+    if (hasVisibleAuthSurface()) {
+      clearTheaterMode();
+      document.documentElement.classList.add(authRootClass);
+
+      if (document.body) {
+        document.body.classList.add(authRootClass);
+      }
+
+      window.__gordonLiveTheaterState = "auth";
+      return false;
+    }
+
+    document.documentElement.classList.remove(authRootClass);
+
+    if (document.body) {
+      document.body.classList.remove(authRootClass);
+    }
+
+    document.documentElement.classList.add(pageRootClass);
+
+    if (document.body) {
+      document.body.classList.add(pageRootClass);
+    }
+
+    const playerRoot = findPlayerRoot();
+
+    if (!playerRoot) {
+      return false;
+    }
+
+    clearPreviousPlayerRoot(playerRoot);
+
+    if (!playerRoot.classList.contains(playerRootClass)) {
+      playerRoot.classList.add(playerRootClass);
+    }
+
+    playerRoot.setAttribute("data-gordon-live-theater", "true");
+    purifyAroundPlayer(playerRoot);
+    window.__gordonLiveTheaterState = "theater";
+    return true;
+  };
+
+  window.__gordonApplyLiveTheater = apply;
+  apply();
+
+  if (!window.__gordonLiveTheaterObserver && document.body) {
+    let pendingTimer = 0;
+    const scheduleApply = () => {
+      window.clearTimeout(pendingTimer);
+      pendingTimer = window.setTimeout(apply, 120);
+    };
+    const observer = new MutationObserver(scheduleApply);
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style"] });
+    window.__gordonLiveTheaterObserver = observer;
+  }
+})();
+`;
+}
+
+async function applyBilibiliLiveTheaterMode(webContents: Electron.WebContents, requestedUrl: string): Promise<void> {
+  if (webContents.isDestroyed()) {
+    return;
+  }
+
+  const currentUrl = webContents.getURL() || requestedUrl;
+
+  if (isBilibiliAuthUrl(currentUrl)) {
+    return;
+  }
+
+  if (!shouldApplyBilibiliLiveTheaterMode(currentUrl)) {
+    return;
+  }
+
+  try {
+    await webContents.executeJavaScript(createBilibiliLiveTheaterScript(), true);
+  } catch (error) {
+    console.warn("[live-stream] Failed to apply Bilibili theater mode:", error);
+  }
+}
+
+function flushLiveStreamNativeViewStorage(webContents: Electron.WebContents): void {
+  try {
+    webContents.session.flushStorageData();
+  } catch (error) {
+    console.warn("[live-stream] Failed to request live stream storage flush:", error);
+  }
+}
+
 function detachInfoRadarNativeReaderView(ownerWindow: BrowserWindow): void {
   const windowId = ownerWindow.id;
   const existingView = infoRadarReaderViews.get(windowId);
@@ -237,6 +803,35 @@ function detachInfoRadarNativeReaderView(ownerWindow: BrowserWindow): void {
   infoRadarReaderViews.delete(windowId);
 }
 
+function detachLiveStreamNativeView(ownerWindow: BrowserWindow): void {
+  const windowId = ownerWindow.id;
+  const existingView = liveStreamViews.get(windowId);
+
+  if (!existingView) {
+    return;
+  }
+
+  try {
+    if (!ownerWindow.isDestroyed()) {
+      hideInfoRadarNativeReaderView(existingView);
+    }
+  } catch (error) {
+    console.warn("[live-stream] Failed to detach native live view:", error);
+  }
+
+  try {
+    const webContents = getInfoRadarNativeReaderWebContents(existingView);
+
+    if (!webContents.isDestroyed()) {
+      webContents.close();
+    }
+  } catch (error) {
+    console.warn("[live-stream] Failed to close native live webContents:", error);
+  }
+
+  liveStreamViews.delete(windowId);
+}
+
 function createInfoRadarNativeReaderView(ownerWindow: BrowserWindow): InfoRadarNativeReaderView {
   const view = new BrowserView({
     webPreferences: {
@@ -250,11 +845,25 @@ function createInfoRadarNativeReaderView(ownerWindow: BrowserWindow): InfoRadarN
   return { ownerWindow, view, bounds: null, visible: false };
 }
 
+function createLiveStreamNativeView(ownerWindow: BrowserWindow): LiveStreamNativeView {
+  const view = new BrowserView({
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      partition: LIVE_STREAM_SESSION_PARTITION
+    }
+  });
+  view.setBackgroundColor("#050a11");
+  return { ownerWindow, view, bounds: null, visible: false };
+}
+
 async function openInfoRadarNativeReader(
   ownerWindow: BrowserWindow,
   url: string,
   bounds: InfoRadarNativeReaderBounds
 ): Promise<void> {
+  detachLiveStreamNativeView(ownerWindow);
   detachInfoRadarNativeReaderView(ownerWindow);
 
   const readerView = createInfoRadarNativeReaderView(ownerWindow);
@@ -305,6 +914,136 @@ async function openInfoRadarNativeReader(
     });
   }
 
+}
+
+async function openLiveStreamNativeView(
+  ownerWindow: BrowserWindow,
+  url: string,
+  bounds: InfoRadarNativeReaderBounds
+): Promise<void> {
+  detachInfoRadarNativeReaderView(ownerWindow);
+  detachLiveStreamNativeView(ownerWindow);
+
+  const liveView = createLiveStreamNativeView(ownerWindow);
+  const webContents = getInfoRadarNativeReaderWebContents(liveView);
+  let hasShownLiveView = false;
+  let liveViewFallbackTimer: NodeJS.Timeout | null = null;
+  const liveTheaterRetryTimers = new Set<NodeJS.Timeout>();
+  const clearLiveTheaterRetryTimers = (): void => {
+    liveTheaterRetryTimers.forEach((timer) => clearTimeout(timer));
+    liveTheaterRetryTimers.clear();
+  };
+  const applyLiveTheaterIfCurrent = (): void => {
+    if (liveStreamViews.get(ownerWindow.id) !== liveView || webContents.isDestroyed()) {
+      return;
+    }
+
+    void applyBilibiliLiveTheaterMode(webContents, url);
+  };
+  const scheduleLiveTheaterMode = (delays = [0, 650, 1800, 3600]): void => {
+    clearLiveTheaterRetryTimers();
+    delays.forEach((delay) => {
+      const timer = setTimeout(() => {
+        liveTheaterRetryTimers.delete(timer);
+        applyLiveTheaterIfCurrent();
+      }, delay);
+      liveTheaterRetryTimers.add(timer);
+    });
+  };
+  const showLiveViewAsReady = (): void => {
+    if (hasShownLiveView) {
+      return;
+    }
+
+    hasShownLiveView = true;
+
+    if (liveViewFallbackTimer) {
+      clearTimeout(liveViewFallbackTimer);
+      liveViewFallbackTimer = null;
+    }
+
+    showInfoRadarNativeReaderView(liveView);
+    sendLiveStreamNativeViewEvent(ownerWindow, { status: "ready", url });
+  };
+  webContents.setWindowOpenHandler(({ url: targetUrl }) => {
+    void shell.openExternal(targetUrl);
+    return { action: "deny" };
+  });
+  webContents.on("will-navigate", (event, targetUrl) => {
+    if (/^https?:\/\//i.test(targetUrl)) {
+      return;
+    }
+
+    event.preventDefault();
+  });
+  webContents.on("did-start-loading", () => {
+    sendLiveStreamNativeViewEvent(ownerWindow, { status: "loading", url });
+  });
+  webContents.on("did-navigate", () => {
+    flushLiveStreamNativeViewStorage(webContents);
+  });
+  webContents.on("did-navigate-in-page", () => {
+    flushLiveStreamNativeViewStorage(webContents);
+  });
+  webContents.on("dom-ready", () => {
+    scheduleLiveTheaterMode();
+    showLiveViewAsReady();
+  });
+  webContents.on("did-finish-load", () => {
+    scheduleLiveTheaterMode([0, 500, 1400]);
+    showLiveViewAsReady();
+  });
+  webContents.on("did-stop-loading", () => {
+    scheduleLiveTheaterMode([0, 800, 2200]);
+    flushLiveStreamNativeViewStorage(webContents);
+    showLiveViewAsReady();
+  });
+  webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
+    if (!isMainFrame || errorCode === -3) {
+      return;
+    }
+
+    if (liveViewFallbackTimer) {
+      clearTimeout(liveViewFallbackTimer);
+      liveViewFallbackTimer = null;
+    }
+
+    clearLiveTheaterRetryTimers();
+    hideInfoRadarNativeReaderView(liveView);
+    sendLiveStreamNativeViewEvent(ownerWindow, {
+      status: "failed",
+      url: validatedUrl || url,
+      message: errorDescription || "直播页面加载失败"
+    });
+  });
+
+  setInfoRadarNativeReaderBounds(liveView, bounds);
+  liveStreamViews.set(ownerWindow.id, liveView);
+  sendLiveStreamNativeViewEvent(ownerWindow, { status: "loading", url });
+  liveViewFallbackTimer = setTimeout(() => {
+    if (liveStreamViews.get(ownerWindow.id) !== liveView) {
+      return;
+    }
+
+    scheduleLiveTheaterMode([0, 900, 2400]);
+    showLiveViewAsReady();
+  }, 3000);
+
+  try {
+    await webContents.loadURL(url);
+  } catch (error) {
+    if (liveViewFallbackTimer) {
+      clearTimeout(liveViewFallbackTimer);
+      liveViewFallbackTimer = null;
+    }
+
+    clearLiveTheaterRetryTimers();
+    sendLiveStreamNativeViewEvent(ownerWindow, {
+      status: "failed",
+      url,
+      message: error instanceof Error ? error.message : "直播页面加载失败"
+    });
+  }
 }
 
 type GordonConfirmWindowOptions = {
@@ -399,8 +1138,11 @@ type WorkflowActiveRunContext = {
 
 const WORKFLOW_RUN_CANCELLED_MESSAGE = "执行已中断";
 const INFO_RADAR_FETCH_TIMEOUT_MS = 18_000;
-const INFO_RADAR_MAX_ITEMS_PER_SOURCE = 16;
-const INFO_RADAR_MAX_WINDOW_ITEMS = 160;
+const INFO_RADAR_MAX_ITEMS_PER_SOURCE = 32;
+const INFO_RADAR_MAX_WINDOW_ITEMS = 400;
+const FINANCE_BRIEF_FETCH_TIMEOUT_MS = 15_000;
+const FINANCE_BRIEF_RANGES = new Set<FinanceBriefRange>(["1d", "5d", "1mo", "3mo", "6mo", "1y", "ytd", "2y", "5y"]);
+const FINANCE_BRIEF_INTERVALS = new Set<FinanceBriefInterval>(["1m", "5m", "15m", "30m", "60m", "1d", "1wk", "1mo"]);
 const activeWorkflowRuns = new Map<string, WorkflowActiveRunContext>();
 const WRITING_BOOK_EXPORT_EXTENSIONS = new Set<WritingBookExportFormat>(["txt", "md"]);
 const COMIC_PROJECT_EXPORT_EXTENSIONS = new Set<ComicProjectExportFormat>(["md"]);
@@ -550,7 +1292,7 @@ function normalizeFeishuDailyReportMarkdown(content: string): string {
   const oddSpacePattern = /[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g;
   const zeroWidthPattern = /[\u200B-\u200D\u2060\uFEFF]/g;
   const bulletLikePattern = /^[•●▪◦‣・·]\s+/;
-  const statusSuffixPattern = /(?:（|\()(已完成|进行中|待开始|受阻)(?:）|\))\s*$/;
+  const statusSuffixPattern = /(?:（|\()(已完成|进行中|测试中|待开始|受阻)(?:）|\))\s*$/;
   const normalizedLines = String(content ?? "")
     .replace(/\r\n?/g, "\n")
     .replace(zeroWidthPattern, "")
@@ -3445,6 +4187,38 @@ function createBingRssSearchUrl(query: string): string {
   return `https://www.bing.com/search?${params.toString()}`;
 }
 
+function createGoogleNewsRssSearchUrl(query: string): string {
+  const normalizedQuery = normalizeInfoRadarSearchQuery(query);
+  const params = new URLSearchParams({
+    q: normalizedQuery,
+    hl: "zh-CN",
+    gl: "CN",
+    ceid: "CN:zh-Hans"
+  });
+
+  return `https://news.google.com/rss/search?${params.toString()}`;
+}
+
+function createArxivSearchUrl(query: string): string {
+  const normalizedQuery = normalizeInfoRadarSearchQuery(query);
+  const params = new URLSearchParams({
+    query: normalizedQuery,
+    searchtype: "all",
+    max_results: "20"
+  });
+  return `https://export.arxiv.org/search/?${params.toString()}`;
+}
+
+function isAcademicSearchQuery(query: string): boolean {
+  const lower = query.toLowerCase();
+  const academicSignals = [
+    "paper", "arxiv", "research", "algorithm", "neural", "model",
+    "learning", "theory", "quantum", "bio", "gene", "protein",
+    "论文", "算法", "研究", "神经", "模型", "量子", "生物", "基因"
+  ];
+  return academicSignals.some((signal) => lower.includes(signal));
+}
+
 function createInfoRadarWechatSearchUrl(query: string): string {
   return `https://weixin.sogou.com/weixin?type=2&query=${encodeURIComponent(normalizeInfoRadarSearchQuery(query))}`;
 }
@@ -3678,15 +4452,49 @@ async function fetchInfoRadarSearchSource(source: InfoRadarSource): Promise<Info
     };
   }
 
-  const searchUrl = /^https?:\/\//i.test(query) ? query : createBingRssSearchUrl(query);
-  const response = await fetchInfoRadarText(searchUrl);
-  const items = response.text.trim().startsWith("<")
-    ? parseInfoRadarFeed(response.text, source, response.finalUrl)
-    : [];
+  // 直接给定 URL 时按原样抓取；否则聚合多个公开搜索 RSS 源，扩大信息覆盖面。
+  if (/^https?:\/\//i.test(query)) {
+    const response = await fetchInfoRadarText(query);
+    const items = response.text.trim().startsWith("<")
+      ? parseInfoRadarFeed(response.text, source, response.finalUrl)
+      : [];
+
+    return {
+      items,
+      message: items.length ? undefined : `${source.title} 暂无可解析的搜索结果`
+    };
+  }
+
+  const searchUrls: string[] = [createGoogleNewsRssSearchUrl(query), createBingRssSearchUrl(query)];
+
+  // 学术类查询额外加入 arXiv Atom 搜索，覆盖论文、算法、生物等领域。
+  if (isAcademicSearchQuery(query)) {
+    searchUrls.push(createArxivSearchUrl(query));
+  }
+  const aggregated: InfoRadarItem[] = [];
+  const failures: string[] = [];
+
+  for (const searchUrl of searchUrls) {
+    try {
+      const response = await fetchInfoRadarText(searchUrl);
+
+      if (response.text.trim().startsWith("<")) {
+        aggregated.push(...parseInfoRadarFeed(response.text, source, response.finalUrl));
+      }
+    } catch (error) {
+      failures.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  const items = mergeInfoRadarItems([], aggregated);
 
   return {
     items,
-    message: items.length ? undefined : `${source.title} 暂无可解析的搜索结果`
+    message: items.length
+      ? undefined
+      : failures.length
+        ? `${source.title} 搜索源暂不可用：${failures.slice(0, 2).join("；")}`
+        : `${source.title} 暂无可解析的搜索结果`
   };
 }
 
@@ -3827,7 +4635,9 @@ function scoreInfoRadarItem(item: InfoRadarItem, radarWindow: InfoRadarWindow): 
   const ageHours = Number.isFinite(publishedTime) ? Math.max(0, (Date.now() - publishedTime) / 3_600_000) : Number.POSITIVE_INFINITY;
   const recencyScore =
     ageHours <= 24 ? 10 : ageHours <= 72 ? 7 : ageHours <= 24 * 14 ? 4 : item.publishedAt ? 2 : 0;
-  const sourceScore = item.sourceKind === "rss" ? 4 : item.sourceKind === "web_page" ? 3 : item.sourceKind === "wechat" ? 2 : 1;
+  const sourceScore = (item.sourceKind === "rss" || item.sourceKind === "github" || item.sourceKind === "reddit") ? 4
+    : item.sourceKind === "web_page" ? 3
+    : item.sourceKind === "wechat" ? 2 : 1;
 
   return {
     ...item,
@@ -4129,6 +4939,20 @@ async function fetchInfoRadarSource(source: InfoRadarSource, radarWindow: InfoRa
     };
   }
 
+  // GitHub 和 Reddit 本质上都是 RSS/Atom 源，走 RSS 解析链路即可，
+  // 但在无 URL 时提供有意义的错误提示。
+  if (source.kind === "github" || source.kind === "reddit") {
+    if (!source.url) {
+      const hint = source.kind === "github"
+        ? "请填写 GitHub RSS URL，例如 https://github.com/trending.atom 或仓库 releases RSS"
+        : "请填写 Reddit RSS URL，例如 https://www.reddit.com/r/MachineLearning/.rss";
+      return { items: [], message: `${source.title} 缺少 URL — ${hint}` };
+    }
+    const response = await fetchInfoRadarText(source.url);
+    const items = parseInfoRadarFeed(response.text, source, response.finalUrl);
+    return { items: items.slice(0, INFO_RADAR_MAX_ITEMS_PER_SOURCE) };
+  }
+
   if (source.kind === "wechat") {
     const latestDiscoveredAt = new Date(source.lastDiscoveredAt ?? "").getTime();
     const latestFetchedAt = Math.max(
@@ -4289,6 +5113,432 @@ async function refreshInfoRadarWindow(request: InfoRadarRefreshRequest): Promise
     card: savedCard,
     window: savedWindow,
     run
+  };
+}
+
+function normalizeFinanceBriefRange(value: unknown): FinanceBriefRange {
+  const range = String(value ?? "").trim();
+  return FINANCE_BRIEF_RANGES.has(range as FinanceBriefRange) ? (range as FinanceBriefRange) : "1mo";
+}
+
+function normalizeFinanceBriefInterval(value: unknown): FinanceBriefInterval {
+  const interval = String(value ?? "").trim();
+  return FINANCE_BRIEF_INTERVALS.has(interval as FinanceBriefInterval) ? (interval as FinanceBriefInterval) : "1d";
+}
+
+function normalizeFinanceBriefQueryWindow(
+  range: FinanceBriefRange,
+  interval: FinanceBriefInterval
+): { range: FinanceBriefRange; interval: FinanceBriefInterval } {
+  if (interval === "1m" && range !== "1d" && range !== "5d") {
+    return { range: "1d", interval };
+  }
+
+  if ((interval === "5m" || interval === "15m" || interval === "30m" || interval === "60m") && !["1d", "5d", "1mo"].includes(range)) {
+    return { range: "1d", interval };
+  }
+
+  return { range, interval };
+}
+
+function normalizeFinanceBriefSymbolValue(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .toUpperCase();
+}
+
+function parseFinanceBriefNumber(value: unknown): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value !== "number" && typeof value !== "string") {
+    return null;
+  }
+
+  if (typeof value === "string" && !value.trim()) {
+    return null;
+  }
+
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
+function parseFinanceBriefPrice(value: unknown): number | null {
+  const numberValue = parseFinanceBriefNumber(value);
+  return numberValue !== null && numberValue > 0 ? numberValue : null;
+}
+
+function readFinanceBriefArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? value as T[] : [];
+}
+
+const FINANCE_BRIEF_TROY_OUNCE_GRAMS = 31.1034768;
+const FINANCE_BRIEF_USD_CNY_SYMBOL = "CNY=X";
+const FINANCE_BRIEF_GOLD_SYMBOLS = new Set(["GC=F", "XAUUSD=X", "XAU=X", "MGC=F"]);
+const FINANCE_BRIEF_INTRADAY_INTERVALS = new Set<FinanceBriefInterval>(["1m", "5m", "15m", "30m", "60m"]);
+
+function createYahooFinanceChartUrl(symbol: string, range: FinanceBriefRange, interval: FinanceBriefInterval): string {
+  const encodedSymbol = encodeURIComponent(symbol);
+  const params = new URLSearchParams({
+    range,
+    interval,
+    includePrePost: "false"
+  });
+
+  return `https://query1.finance.yahoo.com/v8/finance/chart/${encodedSymbol}?${params.toString()}`;
+}
+
+function isFinanceBriefGoldSymbol(symbolConfig: FinanceBriefSymbol): boolean {
+  const symbol = normalizeFinanceBriefSymbolValue(symbolConfig.symbol);
+  const displayName = String(symbolConfig.displayName ?? "").toLowerCase();
+  const notes = String(symbolConfig.notes ?? "").toLowerCase();
+
+  return (
+    FINANCE_BRIEF_GOLD_SYMBOLS.has(symbol) ||
+    (symbolConfig.assetKind === "commodity" && (displayName.includes("gold") || displayName.includes("黄金") || notes.includes("gold")))
+  );
+}
+
+function isFinanceBriefContinuousIntradaySymbol(symbolConfig: FinanceBriefSymbol): boolean {
+  return ["commodity", "forex", "crypto"].includes(symbolConfig.assetKind) || isFinanceBriefGoldSymbol(symbolConfig);
+}
+
+function getFinanceBriefFetchRange(symbolConfig: FinanceBriefSymbol, range: FinanceBriefRange, interval: FinanceBriefInterval): FinanceBriefRange {
+  if (range === "1d" && FINANCE_BRIEF_INTRADAY_INTERVALS.has(interval) && isFinanceBriefContinuousIntradaySymbol(symbolConfig)) {
+    return "5d";
+  }
+
+  return range;
+}
+
+function trimFinanceBriefPointsForDisplay(
+  points: FinanceBriefQuoteSnapshot["points"],
+  range: FinanceBriefRange,
+  interval: FinanceBriefInterval
+): FinanceBriefQuoteSnapshot["points"] {
+  if (range !== "1d" || !FINANCE_BRIEF_INTRADAY_INTERVALS.has(interval) || points.length <= 1) {
+    return points;
+  }
+
+  const sortedPoints = points
+    .slice()
+    .sort((left, right) => new Date(left.time).getTime() - new Date(right.time).getTime());
+  const lastTime = new Date(sortedPoints[sortedPoints.length - 1]?.time ?? "").getTime();
+
+  if (!Number.isFinite(lastTime)) {
+    return sortedPoints;
+  }
+
+  const windowStart = lastTime - 24 * 60 * 60 * 1000;
+  const trimmedPoints = sortedPoints.filter((point) => {
+    const pointTime = new Date(point.time).getTime();
+    return Number.isFinite(pointTime) && pointTime >= windowStart;
+  });
+
+  return trimmedPoints.length >= 2 ? trimmedPoints : sortedPoints;
+}
+
+function readYahooChartMarketTime(meta: Record<string, unknown>): string | undefined {
+  const rawTime = Number(meta.regularMarketTime ?? 0);
+
+  if (!Number.isFinite(rawTime) || rawTime <= 0) {
+    return undefined;
+  }
+
+  return new Date(rawTime * 1000).toISOString();
+}
+
+function readYahooChartTimezoneMeta(meta: Record<string, unknown>): Pick<FinanceBriefQuoteSnapshot, "exchangeTimezoneName" | "timezone" | "gmtoffset"> {
+  const exchangeTimezoneName = String(meta.exchangeTimezoneName ?? "").trim();
+  const timezone = String(meta.timezone ?? "").trim();
+  const gmtoffset = parseFinanceBriefNumber(meta.gmtoffset);
+
+  return {
+    ...(exchangeTimezoneName ? { exchangeTimezoneName } : {}),
+    ...(timezone ? { timezone } : {}),
+    ...(gmtoffset !== null ? { gmtoffset } : {})
+  };
+}
+
+function normalizeYahooChartPoint(
+  timestamp: unknown,
+  quote: Record<string, unknown[]>,
+  index: number
+): FinanceBriefQuoteSnapshot["points"][number] | null {
+  const timeSeconds = Number(timestamp);
+  const open = parseFinanceBriefPrice(readFinanceBriefArray(quote.open)[index]);
+  const high = parseFinanceBriefPrice(readFinanceBriefArray(quote.high)[index]);
+  const low = parseFinanceBriefPrice(readFinanceBriefArray(quote.low)[index]);
+  const close = parseFinanceBriefPrice(readFinanceBriefArray(quote.close)[index]);
+  const volume = parseFinanceBriefNumber(readFinanceBriefArray(quote.volume)[index]);
+
+  if (!Number.isFinite(timeSeconds) || timeSeconds <= 0 || open === null || high === null || low === null || close === null) {
+    return null;
+  }
+
+  if (high < low || high < Math.max(open, close) || low > Math.min(open, close)) {
+    return null;
+  }
+
+  return {
+    time: new Date(timeSeconds * 1000).toISOString(),
+    open,
+    high,
+    low,
+    close,
+    ...(volume !== null ? { volume } : {})
+  };
+}
+
+async function fetchYahooFinanceLatestPrice(symbol: string): Promise<number | null> {
+  const normalizedSymbol = normalizeFinanceBriefSymbolValue(symbol);
+
+  if (!normalizedSymbol) {
+    return null;
+  }
+
+  const sourceUrl = createYahooFinanceChartUrl(normalizedSymbol, "5d", "1d");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FINANCE_BRIEF_FETCH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(sourceUrl, {
+      signal: controller.signal,
+      headers: {
+        accept: "application/json",
+        "user-agent": "Mozilla/5.0 (compatible; Gordon Finance Brief/1.0; +https://gordon.local)"
+      }
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = await response.json() as Record<string, unknown>;
+    const chart = payload.chart as Record<string, unknown> | undefined;
+    const result = readFinanceBriefArray<Record<string, unknown>>(chart?.result)[0];
+    const meta = (result?.meta && typeof result.meta === "object" ? result.meta : {}) as Record<string, unknown>;
+
+    return parseFinanceBriefPrice(meta.regularMarketPrice);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function createFinanceBriefDerivedMetrics(
+  symbolConfig: FinanceBriefSymbol,
+  quote: FinanceBriefQuoteSnapshot,
+  calculatedAt: string
+): Promise<FinanceBriefDerivedMetric[]> {
+  const pricePerOunce = parseFinanceBriefPrice(quote.regularMarketPrice);
+
+  if (!isFinanceBriefGoldSymbol(symbolConfig) || pricePerOunce === null) {
+    return [];
+  }
+
+  const usdPerGram = pricePerOunce / FINANCE_BRIEF_TROY_OUNCE_GRAMS;
+  const metrics: FinanceBriefDerivedMetric[] = [
+    {
+      id: "gold_usd_per_gram",
+      label: "美元克价",
+      value: usdPerGram,
+      unit: "USD/g",
+      sourceName: "Yahoo Finance",
+      sourceSymbol: quote.symbol,
+      calculatedAt,
+      notes: "按 1 金衡盎司 = 31.1034768 克由黄金盎司报价换算"
+    }
+  ];
+  const usdCny = await fetchYahooFinanceLatestPrice(FINANCE_BRIEF_USD_CNY_SYMBOL);
+
+  if (usdCny !== null) {
+    metrics.push({
+      id: "gold_cny_per_gram",
+      label: "人民币克价",
+      value: usdPerGram * usdCny,
+      unit: "CNY/g",
+      sourceName: "Yahoo Finance",
+      sourceSymbol: FINANCE_BRIEF_USD_CNY_SYMBOL,
+      calculatedAt,
+      notes: "按 Yahoo Finance USD/CNY 汇率由美元克价换算"
+    });
+  }
+
+  return metrics;
+}
+
+async function fetchYahooFinanceChart(
+  symbolConfig: FinanceBriefSymbol,
+  range: FinanceBriefRange,
+  interval: FinanceBriefInterval
+): Promise<FinanceBriefSnapshot> {
+  const symbol = normalizeFinanceBriefSymbolValue(symbolConfig.symbol);
+
+  if (!symbol) {
+    throw new Error("金融标的缺少 symbol");
+  }
+
+  const fetchRange = getFinanceBriefFetchRange(symbolConfig, range, interval);
+  const sourceUrl = createYahooFinanceChartUrl(symbol, fetchRange, interval);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FINANCE_BRIEF_FETCH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(sourceUrl, {
+      signal: controller.signal,
+      headers: {
+        accept: "application/json",
+        "user-agent": "Mozilla/5.0 (compatible; Gordon Finance Brief/1.0; +https://gordon.local)"
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Yahoo Finance HTTP ${response.status}`);
+    }
+
+    const payload = await response.json() as Record<string, unknown>;
+    const chart = payload.chart as Record<string, unknown> | undefined;
+    const errorPayload = chart?.error as Record<string, unknown> | null | undefined;
+
+    if (errorPayload) {
+      throw new Error(String(errorPayload.description ?? errorPayload.code ?? "Yahoo Finance 返回错误"));
+    }
+
+    const result = readFinanceBriefArray<Record<string, unknown>>(chart?.result)[0];
+
+    if (!result) {
+      throw new Error("Yahoo Finance 没有返回行情结果");
+    }
+
+    const meta = (result.meta && typeof result.meta === "object" ? result.meta : {}) as Record<string, unknown>;
+    const indicators = (result.indicators && typeof result.indicators === "object" ? result.indicators : {}) as Record<string, unknown>;
+    const quote = readFinanceBriefArray<Record<string, unknown[]>>(indicators.quote)[0] ?? {};
+    const timestamps = readFinanceBriefArray(result.timestamp);
+    const rawPoints = timestamps
+      .map((timestamp, index) => normalizeYahooChartPoint(timestamp, quote, index))
+      .filter((point): point is FinanceBriefQuoteSnapshot["points"][number] => Boolean(point));
+    const points = trimFinanceBriefPointsForDisplay(rawPoints, range, interval);
+    const regularMarketPrice = parseFinanceBriefPrice(meta.regularMarketPrice);
+    const previousClose = parseFinanceBriefPrice(meta.chartPreviousClose);
+    const change = regularMarketPrice !== null && previousClose !== null ? regularMarketPrice - previousClose : null;
+    const changePercent = change !== null && previousClose ? (change / previousClose) * 100 : null;
+    const marketTime = readYahooChartMarketTime(meta);
+    const timezoneMeta = readYahooChartTimezoneMeta(meta);
+    const fetchedAt = new Date().toISOString();
+    const displayName = String(meta.longName ?? meta.shortName ?? symbolConfig.displayName ?? symbol).trim() || symbol;
+    const quoteSnapshot: FinanceBriefQuoteSnapshot = {
+      symbol,
+      displayName,
+      provider: "yahoo",
+      currency: String(meta.currency ?? symbolConfig.currency ?? "").trim(),
+      exchangeName: String(meta.fullExchangeName ?? meta.exchangeName ?? symbolConfig.market ?? "").trim(),
+      ...timezoneMeta,
+      ...(marketTime ? { marketTime } : {}),
+      regularMarketPrice,
+      previousClose,
+      dayHigh: parseFinanceBriefPrice(meta.regularMarketDayHigh),
+      dayLow: parseFinanceBriefPrice(meta.regularMarketDayLow),
+      volume: parseFinanceBriefNumber(meta.regularMarketVolume),
+      change,
+      changePercent,
+      fetchedAt,
+      points
+    };
+    const derivedMetrics = await createFinanceBriefDerivedMetrics(symbolConfig, quoteSnapshot, fetchedAt);
+
+    return {
+      symbolId: symbolConfig.id,
+      range,
+      interval,
+      fetchedAt,
+      sourceName: "Yahoo Finance",
+      sourceUrl,
+      quote: quoteSnapshot,
+      ...(derivedMetrics.length ? { derivedMetrics } : {})
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function queryFinanceBriefQuote(request: FinanceBriefQuoteRequest): Promise<{ card: unknown; snapshot: FinanceBriefSnapshot }> {
+  const cardId = String(request?.cardId ?? "").trim();
+  const symbolId = String(request?.symbolId ?? "").trim();
+  const requestedSymbol = normalizeFinanceBriefSymbolValue(request?.symbol);
+  const requestedRange = normalizeFinanceBriefRange(request?.range);
+  const requestedInterval = normalizeFinanceBriefInterval(request?.interval);
+  const { range, interval } = normalizeFinanceBriefQueryWindow(requestedRange, requestedInterval);
+  const library = await listWorkflowLibrary();
+  const card =
+    library.find((entry) => entry.id === cardId && entry.kind === "finance-brief") ??
+    library.find((entry) => entry.kind === "finance-brief");
+
+  if (!card) {
+    throw new Error("未找到金融快报卡片");
+  }
+
+  const financeBrief = card.financeBrief;
+  const configuredSymbols = financeBrief?.symbols ?? [];
+  const configuredSymbol =
+    configuredSymbols.find((entry) => entry.id === symbolId) ??
+    configuredSymbols.find((entry) => normalizeFinanceBriefSymbolValue(entry.symbol) === requestedSymbol) ??
+    configuredSymbols.find((entry) => entry.id === financeBrief?.activeSymbolId) ??
+    configuredSymbols[0];
+  const shouldUseRequestedSymbol =
+    requestedSymbol && (!configuredSymbol || normalizeFinanceBriefSymbolValue(configuredSymbol.symbol) !== requestedSymbol);
+  const symbolConfig: FinanceBriefSymbol | null = shouldUseRequestedSymbol
+    ? {
+        id: `finance_symbol_custom_${getInfoRadarStableHash(requestedSymbol)}`,
+        symbol: requestedSymbol,
+        displayName: requestedSymbol,
+        assetKind: "other",
+        market: "",
+        currency: "",
+        provider: "yahoo",
+        notes: "临时查询标的",
+        sortOrder: configuredSymbols.length,
+        updatedAt: new Date().toISOString()
+      }
+    : configuredSymbol ?? null;
+
+  if (!symbolConfig) {
+    throw new Error("金融快报没有可查询的标的");
+  }
+
+  const snapshot = await fetchYahooFinanceChart(symbolConfig, range, interval);
+  const now = new Date().toISOString();
+  const nextSymbols = configuredSymbols.some((entry) => entry.id === symbolConfig.id)
+    ? configuredSymbols.map((entry) => entry.id === symbolConfig.id ? { ...entry, updatedAt: now } : entry)
+    : [
+        ...configuredSymbols,
+        {
+          ...symbolConfig,
+          sortOrder: configuredSymbols.length,
+          updatedAt: now
+        }
+      ];
+  const nextCard = {
+    ...card,
+    updatedAt: now,
+    lastUsedAt: now,
+    financeBrief: {
+      symbols: nextSymbols,
+      activeSymbolId: symbolConfig.id,
+      range,
+      interval,
+      updatedAt: now,
+      lastSnapshot: snapshot
+    }
+  };
+  const nextLibrary = await upsertWorkflowLibraryItem(nextCard);
+  const savedCard = nextLibrary.find((entry) => entry.id === nextCard.id) ?? nextCard;
+
+  return {
+    card: savedCard,
+    snapshot
   };
 }
 
@@ -4737,6 +5987,9 @@ app.whenReady().then(async () => {
   ipcMain.handle("gordon:workflow-library:refresh-info-window", async (_event, request: InfoRadarRefreshRequest) =>
     toCloneableIpcValue(await refreshInfoRadarWindow(request))
   );
+  ipcMain.handle("gordon:workflow-library:query-finance-quote", async (_event, request: FinanceBriefQuoteRequest) =>
+    toCloneableIpcValue(await queryFinanceBriefQuote(toCloneableIpcValue(request)))
+  );
   ipcMain.handle("gordon:workflow-library:resolve-wechat-item-url", async (_event, request: InfoRadarWechatResolveRequest) =>
     toCloneableIpcValue(await resolveInfoRadarWechatItemUrl(request))
   );
@@ -4781,6 +6034,44 @@ app.whenReady().then(async () => {
     }
 
     detachInfoRadarNativeReaderView(ownerWindow);
+    return true;
+  });
+  ipcMain.handle("gordon:workflow-library:live-stream:open", async (event, request) => {
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+
+    if (!ownerWindow) {
+      throw new Error("无法定位 Gordon 主窗口");
+    }
+
+    const url = normalizeInfoRadarNativeReaderUrl(request?.url);
+    const bounds = normalizeInfoRadarNativeReaderBounds(request?.bounds);
+    await openLiveStreamNativeView(ownerWindow, url, bounds);
+    return true;
+  });
+  ipcMain.handle("gordon:workflow-library:live-stream:set-bounds", async (event, bounds) => {
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+
+    if (!ownerWindow) {
+      return false;
+    }
+
+    const liveView = liveStreamViews.get(ownerWindow.id);
+
+    if (!liveView) {
+      return false;
+    }
+
+    setInfoRadarNativeReaderBounds(liveView, normalizeInfoRadarNativeReaderBounds(bounds));
+    return true;
+  });
+  ipcMain.handle("gordon:workflow-library:live-stream:close", async (event) => {
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+
+    if (!ownerWindow) {
+      return false;
+    }
+
+    detachLiveStreamNativeView(ownerWindow);
     return true;
   });
   ipcMain.handle("gordon:comic-projects:list", async () => listComicProjects());

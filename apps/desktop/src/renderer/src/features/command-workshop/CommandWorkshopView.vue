@@ -65,11 +65,42 @@
                 }"
               >
                 <div
-                  v-if="message.role !== 'assistant' && message.content"
+                  v-if="message.role !== 'assistant' && message.content && ui.command.editingMessageId !== message.id"
                   class="command-message-body command-rich-text"
                   v-html="renderRichText(message.content)"
                   @click="handleRichTextClick"
                 ></div>
+
+                <div v-if="message.role !== 'assistant' && ui.command.editingMessageId === message.id" class="command-message-edit-shell">
+                  <textarea
+                    v-model="ui.command.editingMessageDraft"
+                    class="field-textarea command-message-edit-input"
+                    rows="3"
+                    aria-label="编辑消息"
+                    @keydown.enter.exact.prevent="handleCommandMessageEditSubmit(message.id)"
+                    @keydown.esc.prevent="handleCommandMessageEditCancel()"
+                  ></textarea>
+                  <div class="command-message-edit-actions">
+                    <button
+                      type="button"
+                      class="model-icon-button"
+                      aria-label="提交编辑"
+                      title="提交并重新运行（Enter）"
+                      @click="handleCommandMessageEditSubmit(message.id)"
+                    >
+                      <GIcon name="enter" :size="13" />
+                    </button>
+                    <button
+                      type="button"
+                      class="model-icon-button"
+                      aria-label="取消编辑"
+                      title="取消（Esc）"
+                      @click="handleCommandMessageEditCancel()"
+                    >
+                      <GIcon name="close" :size="13" />
+                    </button>
+                  </div>
+                </div>
 
                 <div v-if="message.role !== 'assistant' && message.attachments?.length" class="command-message-attachments">
                   <span
@@ -88,9 +119,17 @@
                     v-for="item in getCommandResponseProcessItems(message.artifact)"
                     :key="item.id"
                     class="command-response-process-item"
-                    :class="item.className"
+                    :class="[item.className, { 'is-collapsed': isCommandProcessStepCollapsed(item.id) }]"
                   >
-                    <span class="command-response-process-rail" aria-hidden="true">
+                    <span
+                      class="command-response-process-rail"
+                      aria-hidden="true"
+                      role="button"
+                      tabindex="0"
+                      :title="isCommandProcessStepCollapsed(item.id) ? '展开步骤' : '折叠步骤'"
+                      @click="toggleCommandProcessStepCollapse(item.id)"
+                      @keydown.enter.prevent="toggleCommandProcessStepCollapse(item.id)"
+                    >
                       <span class="command-response-process-mark">{{ item.marker }}</span>
                     </span>
                     <div class="command-response-process-main">
@@ -99,25 +138,43 @@
                         <span v-if="item.createdAt" class="command-response-process-time">{{ formatLocalDateTime(item.createdAt) }}</span>
                       </div>
                       <p class="command-response-process-title" :title="item.title">{{ item.title }}</p>
-                      <p v-if="item.detail" class="command-response-process-detail" :title="item.detail">{{ item.detail }}</p>
-                      <div v-if="item.tags?.length" class="command-response-process-tags" aria-label="执行状态">
-                        <span
-                          v-for="tag in item.tags"
-                          :key="`${item.id}:${tag.label}`"
-                          class="command-response-process-tag"
-                          :class="tag.className"
-                          :title="tag.detail || tag.label"
-                        >
-                          {{ tag.label }}
-                        </span>
-                      </div>
-                      <ol v-if="item.items?.length" class="command-response-plan-list">
-                        <li v-for="planItem in item.items" :key="planItem">{{ planItem }}</li>
-                      </ol>
-                      <details v-if="item.output" class="command-response-output">
-                        <summary>{{ item.outputLabel || "查看输出" }}</summary>
-                        <pre>{{ item.output }}</pre>
-                      </details>
+                      <template v-if="!isCommandProcessStepCollapsed(item.id)">
+                        <p v-if="item.detail" class="command-response-process-detail" :title="item.detail">{{ item.detail }}</p>
+                        <div v-if="item.tags?.length" class="command-response-process-tags" aria-label="执行状态">
+                          <span
+                            v-for="tag in item.tags"
+                            :key="`${item.id}:${tag.label}`"
+                            class="command-response-process-tag"
+                            :class="tag.className"
+                            :title="tag.detail || tag.label"
+                          >
+                            {{ tag.label }}
+                          </span>
+                        </div>
+                        <ol v-if="item.items?.length" class="command-response-plan-list">
+                          <li v-for="planItem in item.items" :key="planItem">{{ planItem }}</li>
+                        </ol>
+                        <details v-if="item.output || item.successOutput" class="command-response-output">
+                          <summary>{{ item.output ? (item.outputLabel || "查看输出") : "查看结果" }}</summary>
+                          <!-- diff 类型：用专属两色渲染 -->
+                          <div v-if="item.outputKind === 'diff'" class="command-output-diff">
+                            <div
+                              v-for="(line, lineIdx) in (item.successOutput || item.output).split('\n')"
+                              :key="lineIdx"
+                              class="command-diff-line"
+                              :class="line.startsWith('+') && !line.startsWith('+++') ? 'is-add' : line.startsWith('-') && !line.startsWith('---') ? 'is-remove' : line.startsWith('@@') ? 'is-hunk' : ''"
+                            >{{ line }}</div>
+                          </div>
+                          <!-- shell / file / code：代码块样式 -->
+                          <pre v-else-if="item.outputKind === 'shell' || item.outputKind === 'code' || item.outputKind === 'file'" class="command-output-code">{{ item.successOutput || item.output }}</pre>
+                          <!-- search：列表样式 -->
+                          <div v-else-if="item.outputKind === 'search'" class="command-output-search">
+                            <pre class="command-output-search-pre">{{ item.successOutput || item.output }}</pre>
+                          </div>
+                          <!-- 默认 plain -->
+                          <pre v-else>{{ item.output }}</pre>
+                        </details>
+                      </template>
                     </div>
                   </article>
                 </div>
@@ -203,6 +260,18 @@
 
                 <div class="command-message-foot">
                   <span class="command-message-time">{{ formatLocalDateTime(message.createdAt) }}</span>
+                  <span v-if="message.role === 'user' && message.content && ui.command.editingMessageId !== message.id" class="command-message-actions" aria-label="消息操作">
+                    <button
+                      type="button"
+                      class="model-icon-button command-message-action-button"
+                      :disabled="ui.command.isRunning"
+                      aria-label="编辑并重发"
+                      title="编辑并重发"
+                      @click="handleCommandMessageEditStart(message.id)"
+                    >
+                      <GIcon name="edit" :size="13" />
+                    </button>
+                  </span>
                   <span v-if="message.role === 'assistant' && message.content" class="command-message-actions" aria-label="消息操作">
                     <button
                       type="button"
@@ -604,6 +673,7 @@
                   @keydown.esc="handleCommandInputEscKeydown"
                   @keydown.up="handleCommandInputArrowUpKeydown"
                   @keydown.down="handleCommandInputArrowDownKeydown"
+                  @paste="handleCommandInputPaste"
                 ></textarea>
 
                 <button
@@ -679,17 +749,46 @@
           </div>
         </div>
 
+        <div class="command-session-search-row">
+          <GIcon name="search" :size="14" class="command-session-search-icon" />
+          <input
+            v-model="ui.command.sessionSearchQuery"
+            type="search"
+            class="command-session-search-input"
+            placeholder="搜索会话…"
+            aria-label="搜索会话"
+          />
+        </div>
+
         <div class="model-section-body command-session-list-shell">
-          <div v-if="workbench.commandSessions.length" class="command-session-list">
+          <div v-if="filteredCommandSessions.length" class="command-session-list">
             <article
-              v-for="session in workbench.commandSessions"
+              v-for="session in filteredCommandSessions"
               :key="session.id"
               class="command-session-card"
-              :class="{ 'is-active': ui.command.activeSessionId === session.id }"
+              :class="{ 'is-active': ui.command.activeSessionId === session.id, 'is-pinned': session.pinned }"
             >
               <button type="button" class="command-session-main" @click="openCommandSession(session.id)">
                 <div class="command-session-topline">
-                  <p class="command-session-title">{{ session.title || "新对话" }}</p>
+                  <GIcon v-if="session.pinned" name="pin" :size="11" class="command-session-pin-badge" />
+                  <p
+                    v-if="ui.command.renamingSessionId !== session.id"
+                    class="command-session-title"
+                    @dblclick.stop="startSessionRename(session.id, session.title)"
+                  >{{ session.title || "新对话" }}</p>
+                  <input
+                    v-else
+                    :ref="(el) => { if (el) renamingInputRef = el; }"
+                    v-model="ui.command.renamingSessionDraft"
+                    class="command-session-rename-input"
+                    type="text"
+                    maxlength="40"
+                    aria-label="重命名会话"
+                    @keydown.enter.prevent="commitSessionRename(session.id)"
+                    @keydown.esc.prevent="cancelSessionRename()"
+                    @blur="commitSessionRename(session.id)"
+                    @click.stop
+                  />
                   <p class="command-session-meta">
                     {{ formatLocalDateTime(session.updatedAt) }} · {{ session.messages.length }} 条消息 ·
                     {{ session.messages.filter((message) => message.role === "assistant").length }} 次响应
@@ -697,20 +796,37 @@
                 </div>
               </button>
 
-              <button
-                type="button"
-                class="model-icon-button model-icon-button-danger command-session-delete"
-                :aria-label="`删除 ${session.title || '当前会话'}`"
-                title="删除会话"
-                @click.stop="handleCommandSessionDelete(session.id)"
-              >
-                <GIcon name="delete" />
-              </button>
+              <div class="command-session-actions" aria-label="会话操作">
+                <button
+                  type="button"
+                  class="model-icon-button command-session-pin"
+                  :class="{ 'is-active': session.pinned }"
+                  :aria-label="session.pinned ? '取消置顶' : '置顶会话'"
+                  :title="session.pinned ? '取消置顶' : '置顶'"
+                  @click.stop="handleCommandSessionPin(session.id)"
+                >
+                  <GIcon name="pin" :size="13" />
+                </button>
+
+                <button
+                  type="button"
+                  class="model-icon-button model-icon-button-danger command-session-delete"
+                  :aria-label="`删除 ${session.title || '当前会话'}`"
+                  title="删除会话"
+                  @click.stop="handleCommandSessionDelete(session.id)"
+                >
+                  <GIcon name="delete" />
+                </button>
+              </div>
             </article>
           </div>
 
+          <div v-else-if="ui.command.sessionSearchQuery" class="command-empty-card">
+            <p class="model-empty-copy">没有匹配"{{ ui.command.sessionSearchQuery }}"的会话。</p>
+          </div>
+
           <div v-else class="command-empty-card">
-            <p class="model-empty-copy">还没有历史会话。点击右上角“新建会话”，直接进入命令工坊。</p>
+            <p class="model-empty-copy">还没有历史会话。点击右上角"新建会话"，直接进入命令工坊。</p>
           </div>
         </div>
       </section>
@@ -771,8 +887,17 @@ const props = defineProps({
   handleCommandQueueItemGuide: { type: Function, required: true },
   handleCommandRunCancel: { type: Function, required: true },
   handleCommandServerChange: { type: Function, required: true },
+  filteredCommandSessions: { type: Array, default: () => [] },
+  handleCommandInputPaste: { type: Function, required: true },
+  handleCommandMessageEditStart: { type: Function, required: true },
+  handleCommandMessageEditCancel: { type: Function, required: true },
+  handleCommandMessageEditSubmit: { type: Function, required: true },
   handleCommandSessionDelete: { type: Function, required: true },
+  handleCommandSessionPin: { type: Function, required: true },
+  handleCommandSessionRename: { type: Function, required: true },
   handleCommandSubmit: { type: Function, required: true },
+  isCommandProcessStepCollapsed: { type: Function, required: true },
+  toggleCommandProcessStepCollapse: { type: Function, required: true },
   handleRichTextClick: { type: Function, required: true },
   openCommandSession: { type: Function, required: true },
   removeCommandAttachment: { type: Function, required: true }
@@ -780,6 +905,34 @@ const props = defineProps({
 
 const commandInputRef = ref(null);
 const commandMessagesRef = ref(null);
+const renamingInputRef = ref(null);
+
+// ===== 会话重命名本地状态 =====
+function startSessionRename(sessionId, currentTitle) {
+  props.ui.command.renamingSessionId = sessionId;
+  props.ui.command.renamingSessionDraft = String(currentTitle ?? "");
+  nextTick(() => {
+    const input = renamingInputRef.value;
+    if (input) {
+      input.focus();
+      input.select();
+    }
+  });
+}
+
+function commitSessionRename(sessionId) {
+  const newTitle = String(props.ui.command.renamingSessionDraft ?? "").trim();
+  props.ui.command.renamingSessionId = null;
+  props.ui.command.renamingSessionDraft = "";
+  if (newTitle) {
+    props.handleCommandSessionRename(sessionId, newTitle);
+  }
+}
+
+function cancelSessionRename() {
+  props.ui.command.renamingSessionId = null;
+  props.ui.command.renamingSessionDraft = "";
+}
 
 // 仅当用户本来就贴底时才自动跟随流式输出；用户上滚后停止跟随并显示“回到底部”。
 const PIN_THRESHOLD_PX = 48;
@@ -894,15 +1047,50 @@ watch(
 );
 
 function handleCommandGlobalKeydown(event) {
-  // Cmd/Ctrl + K：在命令工坊内快速新建会话（对齐 Codex / Claude Code 的键盘流）。
-  if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && (event.key === "k" || event.key === "K")) {
-    if (props.ui?.command?.view !== "chat" && props.ui?.command?.view !== "list") {
-      return;
-    }
+  const inWorkshop = props.ui?.command?.view === "chat" || props.ui?.command?.view === "list";
+  if (!inWorkshop) return;
 
+  const meta = event.metaKey || event.ctrlKey;
+
+  // Cmd/Ctrl + K：新建会话
+  if (meta && !event.altKey && !event.shiftKey && (event.key === "k" || event.key === "K")) {
     event.preventDefault();
     props.beginNewCommandSession?.();
     nextTick(() => focusCommandInput());
+    return;
+  }
+
+  // Cmd/Ctrl + [ ：切换到上一个会话
+  if (meta && !event.altKey && !event.shiftKey && event.key === "[") {
+    event.preventDefault();
+    const sessions = props.filteredCommandSessions ?? [];
+    if (!sessions.length) return;
+    const currentIdx = sessions.findIndex((s) => s.id === props.ui.command.activeSessionId);
+    const prevIdx = currentIdx <= 0 ? sessions.length - 1 : currentIdx - 1;
+    props.openCommandSession?.(sessions[prevIdx]?.id);
+    return;
+  }
+
+  // Cmd/Ctrl + ] ：切换到下一个会话
+  if (meta && !event.altKey && !event.shiftKey && event.key === "]") {
+    event.preventDefault();
+    const sessions = props.filteredCommandSessions ?? [];
+    if (!sessions.length) return;
+    const currentIdx = sessions.findIndex((s) => s.id === props.ui.command.activeSessionId);
+    const nextIdx = currentIdx < 0 || currentIdx >= sessions.length - 1 ? 0 : currentIdx + 1;
+    props.openCommandSession?.(sessions[nextIdx]?.id);
+    return;
+  }
+
+  // Cmd/Ctrl + Shift + C：复制最后一条 AI 回复
+  if (meta && !event.altKey && event.shiftKey && (event.key === "c" || event.key === "C")) {
+    const messages = props.activeCommandMessages ?? [];
+    const lastAssistant = [...messages].reverse().find((m) => m?.role === "assistant" && m?.content);
+    if (lastAssistant) {
+      event.preventDefault();
+      props.handleCommandMessageCopy?.(lastAssistant);
+    }
+    return;
   }
 }
 

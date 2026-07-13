@@ -5,6 +5,8 @@ import {
   createInfoRadarSourceDraft as createInfoRadarSourceDraftFromConfig,
   createInfoRadarWindowDraft as createInfoRadarWindowDraftFromConfig,
   createInfoRadarWindowDraftFromWindow as createInfoRadarWindowDraftFromWindowConfig,
+  createInfoRadarWindowDraftFromPreset as createInfoRadarWindowDraftFromPresetConfig,
+  findInfoRadarWindowPreset,
   createWorkflowOutputDraft as createWorkflowOutputDraftFromConfig,
   createWorkflowRecordDraft as createWorkflowRecordDraftFromConfig,
   createWorkflowState as createWorkflowStateFromConfig,
@@ -20,6 +22,11 @@ import {
   extractCurlUrl,
   findWorkflowCurlBodySegment,
   formatDurationMs,
+  formatFinanceBriefCompactNumber,
+  formatFinanceBriefNumber,
+  formatFinanceBriefPercent,
+  formatFinanceBriefQuoteDateTime,
+  formatFinanceBriefSignedNumber,
   getInfoRadarCadenceLabel,
   getInfoRadarItemHref,
   getInfoRadarItemSummaryText,
@@ -29,6 +36,17 @@ import {
   getInfoRadarScorePercent,
   getInfoRadarSourceKindLabel,
   getInfoRadarSourceTone,
+  getFinanceBriefChartAxis,
+  getFinanceBriefChartBounds,
+  getFinanceBriefChartRows,
+  getFinanceBriefChartSummary,
+  getFinanceBriefChangeTone,
+  getFinanceBriefIntervalLabel,
+  getFinanceBriefRangeLabel,
+  getFinanceBriefSymbolLabel,
+  getLiveStreamInputPlaceholder,
+  getLiveStreamPlatformLabel,
+  getLiveStreamSourceLabel,
   getWorkflowCardCountLabel,
   getWorkflowRunCompletedCount,
   getWorkflowRunDurationLabel,
@@ -41,6 +59,7 @@ import {
   getWorkflowStepStatusTone,
   getWorkflowStepVisualRows,
   getWorkflowTimeoutMs,
+  normalizeLiveStreamUrl,
   looksLikeWorkflowJsonBody,
   normalizeWorkflowBodyDraftForCompare,
   normalizeWorkflowEnvironments,
@@ -147,6 +166,10 @@ function createInfoRadarWindowDraftFromWindow(createLocalId, infoWindow) {
   return createInfoRadarWindowDraftFromWindowConfig(infoWindow, createLocalId);
 }
 
+function createInfoRadarWindowDraftFromPreset(createLocalId, preset) {
+  return createInfoRadarWindowDraftFromPresetConfig(preset, createLocalId);
+}
+
 export function createWorkflowState(createLocalId) {
   return createWorkflowStateFromConfig(createLocalId);
 }
@@ -179,6 +202,46 @@ export function createWorkflowActions({
   const activeInfoReaderItem = computed(
     () => activeInfoWindow.value?.items?.find((item) => item.id === ui.workflow.activeInfoReaderItemId) ?? null
   );
+  const activeFinanceBrief = computed(() => activeWorkflowCard.value?.financeBrief ?? null);
+  const activeFinanceSymbols = computed(() => activeFinanceBrief.value?.symbols ?? []);
+  const activeFinanceSymbol = computed(() => {
+    const symbols = activeFinanceSymbols.value;
+    const configuredSymbol =
+      symbols.find((symbol) => symbol.id === activeFinanceBrief.value?.activeSymbolId) ??
+      symbols[0] ??
+      null;
+    const query = String(ui.workflow.financeSymbolQuery ?? "").trim().toUpperCase();
+
+    if (!query) {
+      return configuredSymbol;
+    }
+
+    return symbols.find((symbol) => String(symbol.symbol ?? "").trim().toUpperCase() === query) ?? configuredSymbol;
+  });
+  const activeFinanceSnapshot = computed(() => activeFinanceBrief.value?.lastSnapshot ?? null);
+  const activeFinanceChartRows = computed(() => getFinanceBriefChartRows(activeFinanceSnapshot.value));
+  const activeFinanceChartBounds = computed(() => getFinanceBriefChartBounds(activeFinanceSnapshot.value));
+  const activeFinanceChartAxis = computed(() => getFinanceBriefChartAxis(activeFinanceSnapshot.value));
+  const activeFinanceChartSummary = computed(() => getFinanceBriefChartSummary(activeFinanceSnapshot.value));
+  const financeBriefSymbolOptions = computed(() =>
+    activeFinanceSymbols.value.map((symbol) => ({
+      value: symbol.id,
+      label: getFinanceBriefSymbolLabel(symbol)
+    }))
+  );
+  const activeLiveStreamConfig = computed(() => activeWorkflowCard.value?.liveStream ?? null);
+  const activeLiveStreamSources = computed(() => activeLiveStreamConfig.value?.sources ?? []);
+  const activeLiveStreamSource = computed(() => {
+    const sources = activeLiveStreamSources.value;
+    const requestedId = ui.workflow.liveStreamActiveSourceId || activeLiveStreamConfig.value?.activeSourceId;
+    return sources.find((source) => source.id === requestedId) ?? sources.find((source) => source.status !== "paused") ?? sources[0] ?? null;
+  });
+  const liveStreamPlatformOptions = computed(() => [
+    { value: "bilibili", label: "Bilibili" },
+    { value: "xiaohongshu", label: "小红书" },
+    { value: "custom", label: "自定义" }
+  ]);
+  const liveStreamInputPlaceholder = computed(() => getLiveStreamInputPlaceholder(ui.workflow.liveStreamPlatform));
   const searchFilteredInfoRadarItems = computed(() => {
     const query = String(ui.workflow.infoSearchQuery ?? "").trim().toLowerCase();
     const items = activeInfoWindow.value?.items ?? [];
@@ -215,6 +278,12 @@ export function createWorkflowActions({
     return searchFilteredInfoRadarItems.value.filter(
       (item) => infoRadarItemMatchesSource(item, sourceFilter) && infoRadarItemMatchesTopic(item, topicFilter)
     );
+  });
+  const filteredInfoRadarItemsByStatus = computed(() => {
+    const statusFilter = String(ui.workflow.infoStatusFilter ?? "").trim();
+    const base = filteredInfoRadarItems.value;
+    if (!statusFilter) return base;
+    return base.filter((item) => item.status === statusFilter);
   });
   const activeInfoRadarSourceGroups = computed(() => {
     const sources = activeInfoWindow.value?.sources ?? [];
@@ -396,6 +465,14 @@ export function createWorkflowActions({
 
     if (ui.workflow.view === "info-reader") {
       return activeInfoReaderItem.value?.title ?? "来源阅读";
+    }
+
+    if (ui.workflow.view === "finance") {
+      return activeWorkflowCard.value?.title ?? "金融快报";
+    }
+
+    if (ui.workflow.view === "live-stream") {
+      return activeWorkflowCard.value?.title ?? "直播流";
     }
 
     if (ui.workflow.view === "editor") {
@@ -789,6 +866,33 @@ export function createWorkflowActions({
       ui.workflow.activeInfoReaderItemId =
         nextWindow?.items?.some((item) => item.id === ui.workflow.activeInfoReaderItemId) ? ui.workflow.activeInfoReaderItemId : null;
       ui.workflow.infoReaderError = "";
+    } else if (nextCard?.kind === "finance-brief") {
+      ui.workflow.activeRecordId = null;
+      ui.workflow.activeInfoWindowId = null;
+      ui.workflow.activeInfoReaderItemId = null;
+      ui.workflow.infoReaderError = "";
+      ui.workflow.financeRange = nextCard.financeBrief?.range ?? ui.workflow.financeRange ?? "1mo";
+      ui.workflow.financeInterval = nextCard.financeBrief?.interval ?? ui.workflow.financeInterval ?? "1d";
+      ui.workflow.financeSymbolQuery =
+        nextCard.financeBrief?.symbols?.find((symbol) => symbol.id === nextCard.financeBrief?.activeSymbolId)?.symbol ??
+        nextCard.financeBrief?.symbols?.[0]?.symbol ??
+        ui.workflow.financeSymbolQuery ??
+        "";
+    } else if (nextCard?.kind === "live-stream") {
+      const nextSource =
+        nextCard?.liveStream?.sources?.find((source) => source.id === (ui.workflow.liveStreamActiveSourceId || nextCard.liveStream?.activeSourceId)) ??
+        nextCard?.liveStream?.sources?.find((source) => source.status !== "paused") ??
+        nextCard?.liveStream?.sources?.[0] ??
+        null;
+      ui.workflow.activeRecordId = null;
+      ui.workflow.activeInfoWindowId = null;
+      ui.workflow.activeInfoReaderItemId = null;
+      ui.workflow.infoReaderError = "";
+      ui.workflow.liveStreamActiveSourceId = nextSource?.id ?? null;
+      ui.workflow.liveStreamPlatform = nextSource?.platform ?? ui.workflow.liveStreamPlatform ?? "bilibili";
+      ui.workflow.liveStreamUrlInput = nextSource?.roomId || nextSource?.url || ui.workflow.liveStreamUrlInput || "";
+      ui.workflow.liveStreamResolvedUrl = normalizeLiveStreamUrl(nextSource?.url, nextSource?.platform) || nextSource?.url || "";
+      ui.workflow.liveStreamError = "";
     } else {
       const nextRecord = nextCard?.records?.find((record) => record.id === ui.workflow.activeRecordId) ?? nextCard?.records?.[0] ?? null;
       ui.workflow.activeRecordId = nextRecord?.id ?? null;
@@ -806,9 +910,16 @@ export function createWorkflowActions({
     ui.workflow.activeCardId = cardId;
     const card = workbench.workflowLibrary.find((entry) => entry.id === cardId);
     const isInfoRadar = card?.kind === "info-radar";
+    const isFinanceBrief = card?.kind === "finance-brief";
+    const isLiveStream = card?.kind === "live-stream";
+    const liveSource =
+      card?.liveStream?.sources?.find((source) => source.id === card.liveStream?.activeSourceId) ??
+      card?.liveStream?.sources?.find((source) => source.status !== "paused") ??
+      card?.liveStream?.sources?.[0] ??
+      null;
 
-    ui.workflow.view = isInfoRadar ? "info" : "list";
-    ui.workflow.activeRecordId = isInfoRadar ? null : card?.records?.[0]?.id ?? null;
+    ui.workflow.view = isInfoRadar ? "info" : isFinanceBrief ? "finance" : isLiveStream ? "live-stream" : "list";
+    ui.workflow.activeRecordId = isInfoRadar || isFinanceBrief || isLiveStream ? null : card?.records?.[0]?.id ?? null;
     ui.workflow.activeInfoWindowId = isInfoRadar ? card?.infoWindows?.[0]?.id ?? null : null;
     ui.workflow.activeInfoReaderItemId = null;
     ui.workflow.infoReaderError = "";
@@ -818,6 +929,20 @@ export function createWorkflowActions({
     ui.workflow.infoSearchQuery = "";
     ui.workflow.infoSourceFilter = "";
     ui.workflow.infoTopicFilter = "";
+    ui.workflow.infoStatusFilter = "";
+    ui.workflow.financeRange = card?.financeBrief?.range ?? ui.workflow.financeRange ?? "1mo";
+    ui.workflow.financeInterval = card?.financeBrief?.interval ?? ui.workflow.financeInterval ?? "1d";
+    ui.workflow.financeSymbolQuery =
+      card?.financeBrief?.symbols?.find((symbol) => symbol.id === card.financeBrief?.activeSymbolId)?.symbol ??
+      card?.financeBrief?.symbols?.[0]?.symbol ??
+      "";
+    ui.workflow.financeBriefError = "";
+    ui.workflow.liveStreamActiveSourceId = liveSource?.id ?? null;
+    ui.workflow.liveStreamPlatform = liveSource?.platform ?? "bilibili";
+    ui.workflow.liveStreamUrlInput = liveSource?.roomId || liveSource?.url || "";
+    ui.workflow.liveStreamResolvedUrl = normalizeLiveStreamUrl(liveSource?.url, liveSource?.platform) || liveSource?.url || "";
+    ui.workflow.liveStreamError = "";
+    ui.workflow.isLiveStreamLoading = Boolean(isLiveStream && liveSource?.url);
     ui.workflow.runResult = null;
     ui.workflow.expandedStepIds = [];
   }
@@ -844,6 +969,16 @@ export function createWorkflowActions({
       return;
     }
 
+    if (ui.workflow.view === "finance") {
+      backToWorkflowLibrary();
+      return;
+    }
+
+    if (ui.workflow.view === "live-stream") {
+      backToWorkflowLibrary();
+      return;
+    }
+
     if (ui.workflow.view === "run" || ui.workflow.view === "editor") {
       ui.workflow.view = "list";
       ui.workflow.editingRecordId = null;
@@ -862,6 +997,9 @@ export function createWorkflowActions({
     ui.workflow.isInfoReaderLoading = false;
     ui.workflow.infoReaderError = "";
     ui.workflow.infoReaderResolvedUrl = "";
+    ui.workflow.financeBriefError = "";
+    ui.workflow.liveStreamError = "";
+    ui.workflow.isLiveStreamLoading = false;
     ui.workflow.runResult = null;
     syncWorkflowSelection();
   }
@@ -875,6 +1013,7 @@ export function createWorkflowActions({
     ui.workflow.infoSearchQuery = "";
     ui.workflow.infoSourceFilter = "";
     ui.workflow.infoTopicFilter = "";
+    ui.workflow.infoStatusFilter = "";
     ui.workflow.view = "info";
   }
 
@@ -932,6 +1071,19 @@ export function createWorkflowActions({
       ? createInfoRadarWindowDraftFromWindow(createLocalId, infoWindow)
       : createInfoRadarWindowDraft(createLocalId);
     ui.workflow.view = "info-editor";
+  }
+
+  function applyInfoRadarPreset(presetId) {
+    const preset = findInfoRadarWindowPreset(presetId);
+
+    if (!preset) {
+      return;
+    }
+
+    ui.workflow.editingInfoWindowId = null;
+    ui.workflow.infoWindowDraft = createInfoRadarWindowDraftFromPreset(createLocalId, preset);
+    ui.workflow.view = "info-editor";
+    setStatus(`已载入「${preset.label}」预设，确认来源后保存即可开始接收。`, "neutral");
   }
 
   function addInfoRadarSourceDraft() {
@@ -1073,6 +1225,315 @@ export function createWorkflowActions({
       setStatus(`刷新信息窗口失败：${getErrorMessage(error)}`, "danger");
     } finally {
       ui.workflow.isRefreshingInfoWindow = false;
+    }
+  }
+
+  function selectFinanceBriefSymbol(symbolId) {
+    const symbol = activeFinanceSymbols.value.find((entry) => entry.id === symbolId) ?? null;
+
+    if (!symbol) {
+      return;
+    }
+
+    ui.workflow.financeSymbolQuery = symbol.symbol;
+  }
+
+  async function queryActiveFinanceBrief(options = {}) {
+    const card = activeWorkflowCard.value;
+    const query = String(ui.workflow.financeSymbolQuery || activeFinanceSymbol.value?.symbol || "").trim().toUpperCase();
+    const silent = options?.silent === true;
+
+    if (ui.workflow.isQueryingFinanceBrief) {
+      return;
+    }
+
+    if (!desktopApi?.queryFinanceBriefQuote || !card || card.kind !== "finance-brief") {
+      if (!silent) {
+        setStatus("金融行情桥接未就绪。", "danger");
+      }
+      return;
+    }
+
+    if (!query) {
+      if (!silent) {
+        setStatus("请输入要查询的金融标的 symbol。", "warning");
+      }
+      return;
+    }
+
+    try {
+      ui.workflow.isQueryingFinanceBrief = true;
+      ui.workflow.financeBriefError = "";
+      if (!silent) {
+        setStatus(`正在查询 ${query} 行情...`, "neutral");
+      }
+
+      const result = await desktopApi.queryFinanceBriefQuote(
+        toPlainIpcData({
+          cardId: card.id,
+          symbolId: activeFinanceSymbol.value?.id,
+          symbol: query,
+          range: ui.workflow.financeRange,
+          interval: ui.workflow.financeInterval
+        })
+      );
+      const nextCard = result?.card;
+
+      if (nextCard) {
+        workbench.workflowLibrary = workbench.workflowLibrary.map((entry) => (entry.id === nextCard.id ? nextCard : entry));
+        ui.workflow.activeCardId = nextCard.id;
+        ui.workflow.financeRange = nextCard.financeBrief?.range ?? ui.workflow.financeRange;
+        ui.workflow.financeInterval = nextCard.financeBrief?.interval ?? ui.workflow.financeInterval;
+        ui.workflow.financeSymbolQuery =
+          nextCard.financeBrief?.symbols?.find((symbol) => symbol.id === nextCard.financeBrief?.activeSymbolId)?.symbol ??
+          result?.snapshot?.quote?.symbol ??
+          query;
+      }
+
+      if (!silent) {
+        setStatus(`已更新 ${result?.snapshot?.quote?.displayName ?? query} 行情。`, "success");
+      }
+    } catch (error) {
+      console.error("Failed to query finance brief quote", error);
+      const message = getErrorMessage(error);
+      ui.workflow.financeBriefError = message;
+      if (!silent) {
+        setStatus(`查询行情失败：${message}`, "danger");
+      }
+    } finally {
+      ui.workflow.isQueryingFinanceBrief = false;
+    }
+  }
+
+  function resolveLiveStreamUrlFromInput(input = ui.workflow.liveStreamUrlInput, platform = ui.workflow.liveStreamPlatform) {
+    return normalizeLiveStreamUrl(input, platform);
+  }
+
+  function handleLiveStreamLoadingStart() {
+    if (ui.workflow.view !== "live-stream") {
+      return;
+    }
+
+    ui.workflow.isLiveStreamLoading = true;
+    ui.workflow.liveStreamError = "";
+  }
+
+  function handleLiveStreamLoadingEnd() {
+    ui.workflow.isLiveStreamLoading = false;
+  }
+
+  async function persistLiveStreamSelection(source, resolvedUrl = "") {
+    const card = activeWorkflowCard.value;
+
+    if (!desktopApi?.upsertWorkflowLibraryItem || !card || card.kind !== "live-stream" || !source) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const nextSource = {
+      ...source,
+      ...(resolvedUrl ? { url: resolvedUrl } : {}),
+      lastOpenedAt: now,
+      updatedAt: now
+    };
+    const nextCard = {
+      ...card,
+      updatedAt: now,
+      lastUsedAt: now,
+      liveStream: {
+        ...(card.liveStream ?? {}),
+        activeSourceId: source.id,
+        updatedAt: now,
+        sources: (card.liveStream?.sources ?? []).map((entry) => (entry.id === source.id ? nextSource : entry))
+      }
+    };
+
+    try {
+      workbench.workflowLibrary = await desktopApi.upsertWorkflowLibraryItem(toPlainIpcData(nextCard));
+      ui.workflow.activeCardId = nextCard.id;
+      ui.workflow.liveStreamActiveSourceId = source.id;
+      ui.workflow.liveStreamResolvedUrl = resolvedUrl || source.url || "";
+    } catch (error) {
+      console.error("Failed to persist live stream selection", error);
+    }
+  }
+
+  async function openLiveStreamSource(source = activeLiveStreamSource.value) {
+    if (!source) {
+      setStatus("还没有可打开的直播间。", "warning");
+      return;
+    }
+
+    const resolvedUrl = normalizeLiveStreamUrl(source.url, source.platform) || source.url;
+
+    if (!resolvedUrl) {
+      setStatus("当前直播间链接不可用。", "warning");
+      return;
+    }
+
+    ui.workflow.liveStreamActiveSourceId = source.id;
+    ui.workflow.liveStreamPlatform = source.platform ?? "custom";
+    ui.workflow.liveStreamUrlInput = source.roomId || source.url || "";
+    ui.workflow.liveStreamResolvedUrl = resolvedUrl;
+    ui.workflow.liveStreamError = "";
+    ui.workflow.isLiveStreamLoading = true;
+    ui.workflow.liveStreamReloadKey = Number(ui.workflow.liveStreamReloadKey ?? 0) + 1;
+
+    await persistLiveStreamSelection(source, resolvedUrl);
+  }
+
+  function openLiveStreamFromInput() {
+    const resolvedUrl = resolveLiveStreamUrlFromInput();
+
+    if (!resolvedUrl) {
+      setStatus("请输入有效的直播间房间号或 http/https 链接。", "warning");
+      ui.workflow.liveStreamError = "直播地址格式不正确。";
+      return;
+    }
+
+    ui.workflow.liveStreamActiveSourceId = null;
+    ui.workflow.liveStreamResolvedUrl = resolvedUrl;
+    ui.workflow.liveStreamError = "";
+    ui.workflow.isLiveStreamLoading = true;
+    ui.workflow.liveStreamReloadKey = Number(ui.workflow.liveStreamReloadKey ?? 0) + 1;
+    ui.workflow.view = "live-stream";
+  }
+
+  function refreshLiveStreamView() {
+    const source = activeLiveStreamSource.value;
+    const resolvedUrl =
+      ui.workflow.liveStreamResolvedUrl ||
+      normalizeLiveStreamUrl(source?.url, source?.platform) ||
+      normalizeLiveStreamUrl(ui.workflow.liveStreamUrlInput, ui.workflow.liveStreamPlatform);
+
+    if (!resolvedUrl) {
+      setStatus("当前没有可刷新的直播链接。", "warning");
+      return;
+    }
+
+    ui.workflow.liveStreamResolvedUrl = resolvedUrl;
+    ui.workflow.liveStreamError = "";
+    ui.workflow.isLiveStreamLoading = true;
+    ui.workflow.liveStreamReloadKey = Number(ui.workflow.liveStreamReloadKey ?? 0) + 1;
+  }
+
+  async function openLiveStreamExternal() {
+    const href = String(ui.workflow.liveStreamResolvedUrl || resolveLiveStreamUrlFromInput()).trim();
+
+    if (!href) {
+      setStatus("当前没有可打开的直播链接。", "warning");
+      return;
+    }
+
+    if (!desktopApi?.openExternalUrl) {
+      window.open(href, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    try {
+      await desktopApi.openExternalUrl(href);
+      setStatus("已使用系统默认浏览器打开直播页。", "success");
+    } catch (error) {
+      console.error("Failed to open live stream externally", error);
+      setStatus(`打开直播页失败：${getErrorMessage(error)}`, "danger");
+    }
+  }
+
+  async function saveLiveStreamInputAsSource() {
+    const card = activeWorkflowCard.value;
+    const resolvedUrl = resolveLiveStreamUrlFromInput();
+
+    if (!desktopApi?.upsertWorkflowLibraryItem || !card || card.kind !== "live-stream") {
+      setStatus("直播流仓储未就绪，暂时无法收藏。", "danger");
+      return;
+    }
+
+    if (!resolvedUrl) {
+      setStatus("请输入有效的直播间房间号或 http/https 链接。", "warning");
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const platform = ui.workflow.liveStreamPlatform || "custom";
+    const inputValue = String(ui.workflow.liveStreamUrlInput ?? "").trim();
+    const bilibiliRoomMatch = platform === "bilibili" ? resolvedUrl.match(/live\.bilibili\.com\/(?:blanc\/)?(\d+)/i) : null;
+    const roomId = platform === "bilibili" && /^\d+$/.test(inputValue)
+      ? inputValue
+      : bilibiliRoomMatch?.[1] ?? "";
+    const title = roomId ? `Bilibili 直播间 ${roomId}` : `${getLiveStreamPlatformLabel(platform)} 直播`;
+    const existingSources = card.liveStream?.sources ?? [];
+    const duplicateSource =
+      existingSources.find((source) => String(source.url ?? "").trim() === resolvedUrl) ??
+      existingSources.find((source) => platform === "bilibili" && roomId && source.platform === "bilibili" && source.roomId === roomId) ??
+      null;
+    const nextSource = duplicateSource
+      ? {
+        ...duplicateSource,
+        platform,
+        ...(roomId ? { roomId } : {}),
+        url: resolvedUrl,
+        status: "active",
+        updatedAt: now
+      }
+      : {
+        id: createLocalId("live_stream"),
+        title,
+        platform,
+        ...(roomId ? { roomId } : {}),
+        url: resolvedUrl,
+        notes: "",
+        status: "active",
+        sortOrder: existingSources.length,
+        updatedAt: now
+      };
+    const nextSources = duplicateSource
+      ? existingSources.map((source) => (source.id === duplicateSource.id ? nextSource : source))
+      : [...existingSources, nextSource];
+    const nextCard = {
+      ...card,
+      usageCount: Number(card.usageCount ?? 0) + (duplicateSource ? 0 : 1),
+      updatedAt: now,
+      lastUsedAt: now,
+      liveStream: {
+        sources: nextSources,
+        activeSourceId: nextSource.id,
+        updatedAt: now
+      }
+    };
+
+    try {
+      workbench.workflowLibrary = await desktopApi.upsertWorkflowLibraryItem(toPlainIpcData(nextCard));
+      ui.workflow.liveStreamActiveSourceId = nextSource.id;
+      ui.workflow.liveStreamResolvedUrl = resolvedUrl;
+      setStatus(duplicateSource ? "已更新直播收藏。" : "已收藏直播间。", "success");
+    } catch (error) {
+      console.error("Failed to save live stream source", error);
+      setStatus(`收藏直播间失败：${getErrorMessage(error)}`, "danger");
+    }
+  }
+
+  async function markInfoRadarItemStatus(itemId, status) {
+    const card = activeWorkflowCard.value;
+    const radarWindow = activeInfoWindow.value;
+
+    if (!desktopApi?.upsertWorkflowLibraryItem || !card || !radarWindow) {
+      return;
+    }
+
+    try {
+      const nextItems = (radarWindow.items ?? []).map((item) =>
+        item.id === itemId ? { ...item, status } : item
+      );
+      const nextWindow = { ...radarWindow, items: nextItems, updatedAt: new Date().toISOString() };
+      const nextCard = {
+        ...card,
+        updatedAt: nextWindow.updatedAt,
+        infoWindows: (card.infoWindows ?? []).map((w) => (w.id === nextWindow.id ? nextWindow : w))
+      };
+      workbench.workflowLibrary = await desktopApi.upsertWorkflowLibraryItem(toPlainIpcData(nextCard));
+    } catch (error) {
+      console.error("Failed to mark info radar item status", error);
+      setStatus(`标记失败：${getErrorMessage(error)}`, "danger");
     }
   }
 
@@ -1353,7 +1814,19 @@ export function createWorkflowActions({
     activeWorkflowRecord,
     activeWorkflowSteps,
     activeInfoReaderItem,
+    activeFinanceBrief,
+    activeFinanceChartAxis,
+    activeFinanceChartBounds,
+    activeFinanceChartRows,
+    activeFinanceChartSummary,
+    activeFinanceSnapshot,
+    activeFinanceSymbol,
+    activeFinanceSymbols,
+    activeLiveStreamConfig,
+    activeLiveStreamSource,
+    activeLiveStreamSources,
     addInfoRadarSourceDraft,
+    applyInfoRadarPreset,
     addWorkflowDraftEnvironment,
     addWorkflowDraftStep,
     addWorkflowStepOutput,
@@ -1363,8 +1836,19 @@ export function createWorkflowActions({
     deleteWorkflowRecord,
     duplicateWorkflowRecord,
     filteredInfoRadarItems,
+    filteredInfoRadarItemsByStatus,
     filteredWorkflowRecords,
+    financeBriefSymbolOptions,
+    formatFinanceBriefCompactNumber,
+    formatFinanceBriefNumber,
+    formatFinanceBriefPercent,
+    formatFinanceBriefQuoteDateTime,
+    formatFinanceBriefSignedNumber,
     formatDurationMs,
+    getFinanceBriefChangeTone,
+    getFinanceBriefIntervalLabel,
+    getFinanceBriefRangeLabel,
+    getFinanceBriefSymbolLabel,
     getInfoRadarCadenceLabel,
     canOpenInfoRadarItem,
     getInfoRadarItemHref,
@@ -1375,6 +1859,9 @@ export function createWorkflowActions({
     getInfoRadarScorePercent,
     getInfoRadarSourceKindLabel,
     getInfoRadarSourceTone,
+    getLiveStreamInputPlaceholder,
+    getLiveStreamPlatformLabel,
+    getLiveStreamSourceLabel,
     getWorkflowCardCountLabel,
     getWorkflowRunCompletedCount,
     getWorkflowRunDurationLabel,
@@ -1392,15 +1879,22 @@ export function createWorkflowActions({
     handleWorkflowCurlCopy,
     handleInfoRadarReaderLoadingEnd,
     handleInfoRadarReaderLoadingStart,
+    handleLiveStreamLoadingEnd,
+    handleLiveStreamLoadingStart,
     handleWorkflowRunProgress,
     isWorkflowStepExpanded,
     infoRadarMetrics,
     infoRadarSourceFilterOptions,
     infoRadarTopicFilterOptions,
+    liveStreamInputPlaceholder,
+    liveStreamPlatformOptions,
     openInfoRadarWindow,
     openInfoRadarWindowEditor,
     openInfoRadarItemExternal,
     openInfoRadarItemReader,
+    openLiveStreamExternal,
+    openLiveStreamFromInput,
+    openLiveStreamSource,
     openWorkflowCard,
     openWorkflowRecord,
     openWorkflowRecordEditor,
@@ -1412,9 +1906,14 @@ export function createWorkflowActions({
     removeInfoRadarSourceDraft,
     repairWorkflowBodyDraft,
     refreshActiveInfoRadarWindow,
+    refreshLiveStreamView,
+    queryActiveFinanceBrief,
     runActiveWorkflowRecord,
     saveInfoRadarWindow,
+    saveLiveStreamInputAsSource,
+    markInfoRadarItemStatus,
     saveWorkflowRecord,
+    selectFinanceBriefSymbol,
     selectWorkflowEnvironment,
     syncWorkflowBodyDraftFromActiveStep,
     syncWorkflowSelection,

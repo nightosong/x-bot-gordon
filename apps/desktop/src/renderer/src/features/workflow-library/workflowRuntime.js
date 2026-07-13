@@ -334,7 +334,738 @@ export function getWorkflowCardCountLabel(entry) {
     return `${windows.length} 个窗口 · ${itemCount} 条信息`;
   }
 
+  if (entry?.kind === "finance-brief") {
+    const symbols = entry?.financeBrief?.symbols ?? [];
+    const snapshot = entry?.financeBrief?.lastSnapshot;
+    return `${symbols.length} 个标的${snapshot ? ` · ${snapshot.quote?.symbol ?? ""}` : ""}`;
+  }
+
+  if (entry?.kind === "live-stream") {
+    const sources = entry?.liveStream?.sources ?? [];
+    const activeSources = sources.filter((source) => source?.status !== "paused");
+    return `${sources.length} 个直播间${activeSources.length !== sources.length ? ` · ${activeSources.length} 个启用` : ""}`;
+  }
+
   return `${entry?.records?.length ?? 0} 条记录`;
+}
+
+export function getLiveStreamPlatformLabel(platform) {
+  if (platform === "bilibili") {
+    return "Bilibili";
+  }
+
+  if (platform === "xiaohongshu") {
+    return "小红书";
+  }
+
+  return "自定义";
+}
+
+export function getLiveStreamSourceLabel(source) {
+  const title = String(source?.title ?? "").trim();
+  const platform = getLiveStreamPlatformLabel(source?.platform);
+  const roomId = String(source?.roomId ?? "").trim();
+
+  return title || (roomId ? `${platform} ${roomId}` : platform);
+}
+
+export function normalizeLiveStreamUrl(input, platform = "custom") {
+  const rawValue = String(input ?? "").trim();
+
+  if (!rawValue) {
+    return "";
+  }
+
+  if (platform === "bilibili" && /^\d+$/.test(rawValue)) {
+    return `https://live.bilibili.com/blanc/${rawValue}`;
+  }
+
+  if (platform === "bilibili") {
+    const roomMatch = rawValue.match(/live\.bilibili\.com\/(?:blanc\/)?(\d+)/i);
+
+    if (roomMatch?.[1]) {
+      return `https://live.bilibili.com/blanc/${roomMatch[1]}`;
+    }
+  }
+
+  if (/^https?:\/\//i.test(rawValue)) {
+    return rawValue;
+  }
+
+  return "";
+}
+
+export function getLiveStreamInputPlaceholder(platform) {
+  if (platform === "bilibili") {
+    return "输入 Bilibili 房间号或直播间 URL";
+  }
+
+  if (platform === "xiaohongshu") {
+    return "粘贴小红书比赛直播页 URL";
+  }
+
+  return "粘贴 http/https 直播页 URL";
+}
+
+export function formatFinanceBriefNumber(value, options = {}) {
+  const numberValue = Number(value);
+
+  if (!Number.isFinite(numberValue)) {
+    return "--";
+  }
+
+  return new Intl.NumberFormat("zh-CN", {
+    minimumFractionDigits: options.minimumFractionDigits ?? 2,
+    maximumFractionDigits: options.maximumFractionDigits ?? 2
+  }).format(numberValue);
+}
+
+export function formatFinanceBriefSignedNumber(value, options = {}) {
+  const numberValue = Number(value);
+
+  if (!Number.isFinite(numberValue)) {
+    return "--";
+  }
+
+  const formatted = formatFinanceBriefNumber(Math.abs(numberValue), options);
+  return `${numberValue > 0 ? "+" : numberValue < 0 ? "-" : ""}${formatted}`;
+}
+
+export function formatFinanceBriefPercent(value) {
+  const numberValue = Number(value);
+
+  if (!Number.isFinite(numberValue)) {
+    return "--";
+  }
+
+  return `${formatFinanceBriefSignedNumber(numberValue, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+}
+
+export function formatFinanceBriefCompactNumber(value) {
+  const numberValue = Number(value);
+
+  if (!Number.isFinite(numberValue)) {
+    return "--";
+  }
+
+  return new Intl.NumberFormat("zh-CN", {
+    notation: "compact",
+    maximumFractionDigits: 2
+  }).format(numberValue);
+}
+
+export function getFinanceBriefChangeTone(value) {
+  const numberValue = Number(value);
+
+  if (!Number.isFinite(numberValue) || numberValue === 0) {
+    return "";
+  }
+
+  return numberValue > 0 ? "is-up" : "is-down";
+}
+
+export function getFinanceBriefRangeLabel(range) {
+  if (range === "1d") return "1日";
+  if (range === "5d") return "5日";
+  if (range === "3mo") return "3月";
+  if (range === "6mo") return "6月";
+  if (range === "1y") return "1年";
+  if (range === "ytd") return "年初至今";
+  if (range === "2y") return "2年";
+  if (range === "5y") return "5年";
+  return "1月";
+}
+
+export function getFinanceBriefIntervalLabel(interval) {
+  if (interval === "1m") return "1分钟";
+  if (interval === "5m") return "5分钟";
+  if (interval === "15m") return "15分钟";
+  if (interval === "30m") return "30分钟";
+  if (interval === "60m") return "小时线";
+  if (interval === "1wk") return "周线";
+  if (interval === "1mo") return "月线";
+  return "日线";
+}
+
+export function getFinanceBriefSymbolLabel(symbol) {
+  const name = String(symbol?.displayName ?? "").trim();
+  const code = String(symbol?.symbol ?? "").trim();
+  return name && code && name !== code ? `${name} · ${code}` : name || code || "未命名标的";
+}
+
+function parseFinanceBriefChartNumber(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value !== "number" && typeof value !== "string") {
+    return null;
+  }
+
+  if (typeof value === "string" && !value.trim()) {
+    return null;
+  }
+
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
+function normalizeFinanceBriefChartPoint(point) {
+  const time = String(point?.time ?? "").trim();
+  const timeValue = new Date(time).getTime();
+  const open = parseFinanceBriefChartNumber(point?.open);
+  const high = parseFinanceBriefChartNumber(point?.high);
+  const low = parseFinanceBriefChartNumber(point?.low);
+  const close = parseFinanceBriefChartNumber(point?.close);
+  const volume = parseFinanceBriefChartNumber(point?.volume);
+
+  if (
+    !time ||
+    !Number.isFinite(timeValue) ||
+    open === null ||
+    high === null ||
+    low === null ||
+    close === null ||
+    open <= 0 ||
+    high <= 0 ||
+    low <= 0 ||
+    close <= 0 ||
+    high < low ||
+    high < Math.max(open, close) ||
+    low > Math.min(open, close)
+  ) {
+    return null;
+  }
+
+  return {
+    ...point,
+    time,
+    open,
+    high,
+    low,
+    close,
+    ...(volume !== null ? { volume } : {})
+  };
+}
+
+function getFinanceBriefChartPointLimit(snapshot) {
+  const interval = String(snapshot?.interval ?? "");
+
+  if (["1m", "5m", "15m", "30m", "60m"].includes(interval)) {
+    return 10_000;
+  }
+
+  return 5_000;
+}
+
+function sampleFinanceBriefChartPoints(points, limit) {
+  if (!Number.isFinite(limit) || limit <= 0 || points.length <= limit) {
+    return points;
+  }
+
+  const lastIndex = points.length - 1;
+  const seenIndexes = new Set();
+
+  return Array.from({ length: limit }, (_, index) => {
+    const sourceIndex = Math.round((index / (limit - 1)) * lastIndex);
+
+    if (seenIndexes.has(sourceIndex)) {
+      return null;
+    }
+
+    seenIndexes.add(sourceIndex);
+    return points[sourceIndex] ?? null;
+  }).filter(Boolean);
+}
+
+function getFinanceBriefSortedChartPoints(snapshot) {
+  const points = snapshot?.quote?.points ?? [];
+
+  return points
+    .map(normalizeFinanceBriefChartPoint)
+    .filter(Boolean)
+    .slice()
+    .sort((left, right) => new Date(left.time).getTime() - new Date(right.time).getTime());
+}
+
+export function getFinanceBriefChartRows(snapshot) {
+  const normalizedPoints = getFinanceBriefSortedChartPoints(snapshot);
+  const visiblePoints = sampleFinanceBriefChartPoints(normalizedPoints, getFinanceBriefChartPointLimit(snapshot));
+
+  if (!visiblePoints.length) {
+    return [];
+  }
+
+  const lows = visiblePoints.map((point) => Number(point.low)).filter(Number.isFinite);
+  const highs = visiblePoints.map((point) => Number(point.high)).filter(Number.isFinite);
+  const min = Math.min(...lows);
+  const max = Math.max(...highs);
+  const span = Math.max(0.000001, max - min);
+  const toTop = (value) => `${Math.max(2, Math.min(98, ((max - value) / span) * 100))}%`;
+  const toHeight = (high, low) => `${Math.max(4, ((high - low) / span) * 100)}%`;
+
+  return visiblePoints.map((point) => {
+    const open = Number(point.open);
+    const close = Number(point.close);
+    const high = Number(point.high);
+    const low = Number(point.low);
+    const bodyTop = Math.max(open, close);
+    const bodyBottom = Math.min(open, close);
+    const bodyHeight = Math.max(2.5, ((bodyTop - bodyBottom) / span) * 100);
+
+    return {
+      ...point,
+      tone: close >= open ? "is-up" : "is-down",
+      wickTop: toTop(high),
+      wickHeight: toHeight(high, low),
+      bodyTop: toTop(bodyTop),
+      bodyHeight: `${bodyHeight}%`
+    };
+  });
+}
+
+export function getFinanceBriefChartBounds(snapshot) {
+  const rows = getFinanceBriefChartRows(snapshot);
+
+  if (!rows.length) {
+    return { high: "--", low: "--", count: 0 };
+  }
+
+  const high = Math.max(...rows.map((point) => Number(point.high)).filter(Number.isFinite));
+  const low = Math.min(...rows.map((point) => Number(point.low)).filter(Number.isFinite));
+
+  return {
+    high: formatFinanceBriefNumber(high),
+    low: formatFinanceBriefNumber(low),
+    count: rows.length
+  };
+}
+
+const FINANCE_BRIEF_INTRADAY_INTERVALS = new Set(["1m", "5m", "15m", "30m", "60m"]);
+const FINANCE_BRIEF_LONG_RANGES = new Set(["1y", "ytd", "2y", "5y"]);
+const FINANCE_BRIEF_MINUTE_MS = 60 * 1000;
+const FINANCE_BRIEF_HOUR_MS = 60 * FINANCE_BRIEF_MINUTE_MS;
+
+function isFinanceBriefIntradayInterval(interval) {
+  return FINANCE_BRIEF_INTRADAY_INTERVALS.has(interval);
+}
+
+function getFinanceBriefSnapshotTimeZone(snapshot) {
+  const timeZone = String(snapshot?.quote?.exchangeTimezoneName ?? "").trim();
+
+  if (!timeZone) {
+    return undefined;
+  }
+
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone }).format(new Date());
+    return timeZone;
+  } catch {
+    return undefined;
+  }
+}
+
+function formatFinanceBriefDateTimePart(value, options = {}, timeZone) {
+  const date = new Date(value ?? "");
+
+  if (Number.isNaN(date.getTime())) {
+    return "--";
+  }
+
+  const formatOptions = {
+    ...options,
+    ...(timeZone ? { timeZone } : {})
+  };
+
+  try {
+    return new Intl.DateTimeFormat("zh-CN", formatOptions).format(date);
+  } catch {
+    return new Intl.DateTimeFormat("zh-CN", options).format(date);
+  }
+}
+
+function getFinanceBriefAxisDateKey(value, timeZone) {
+  return formatFinanceBriefDateTimePart(
+    value,
+    {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    },
+    timeZone
+  );
+}
+
+function getFinanceBriefChartTimeTickCount(rows, snapshot) {
+  const interval = String(snapshot?.interval ?? "");
+  const range = String(snapshot?.range ?? "");
+
+  if (rows.length <= 2) {
+    return rows.length;
+  }
+
+  if (isFinanceBriefIntradayInterval(interval)) {
+    return Math.min(rows.length, range === "1d" ? 6 : 6);
+  }
+
+  if (interval === "1mo" || range === "5y") {
+    return Math.min(rows.length, 6);
+  }
+
+  return Math.min(rows.length, 5);
+}
+
+function getFinanceBriefChartTimeTickPoints(rows, tickCount) {
+  if (!rows.length || tickCount <= 0) {
+    return [];
+  }
+
+  if (tickCount === 1 || rows.length === 1) {
+    return [{ point: rows[0], position: 0 }];
+  }
+
+  const lastIndex = rows.length - 1;
+  const seenIndexes = new Set();
+
+  return Array.from({ length: tickCount }, (_, index) => {
+    const sourceIndex = Math.round((index / (tickCount - 1)) * lastIndex);
+
+    if (seenIndexes.has(sourceIndex)) {
+      return null;
+    }
+
+    seenIndexes.add(sourceIndex);
+    return {
+      point: rows[sourceIndex],
+      position: (sourceIndex / lastIndex) * 100
+    };
+  }).filter(Boolean);
+}
+
+function getFinanceBriefTimeClockParts(value, timeZone) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  const options = {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+    ...(timeZone ? { timeZone } : {})
+  };
+
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", options).formatToParts(date);
+    const hour = Number(parts.find((part) => part.type === "hour")?.value);
+    const minute = Number(parts.find((part) => part.type === "minute")?.value);
+    const second = Number(parts.find((part) => part.type === "second")?.value);
+
+    if (!Number.isFinite(hour) || !Number.isFinite(minute) || !Number.isFinite(second)) {
+      return null;
+    }
+
+    return {
+      hour: ((hour % 24) + 24) % 24,
+      minute,
+      second
+    };
+  } catch {
+    return null;
+  }
+}
+
+function getFinanceBriefIntradayTickStepHours(startTime, endTime, range) {
+  const durationHours = Math.max(1, (endTime - startTime) / FINANCE_BRIEF_HOUR_MS);
+  const maxTickCount = range === "1d" ? 9 : 8;
+
+  for (const stepHours of [1, 2, 3, 4, 6, 12, 24]) {
+    if (Math.floor(durationHours / stepHours) + 1 <= maxTickCount) {
+      return stepHours;
+    }
+  }
+
+  return 24;
+}
+
+function findFinanceBriefFirstWholeHourTick(startTime, endTime, stepHours, timeZone) {
+  const firstCandidate = Math.ceil(startTime / FINANCE_BRIEF_MINUTE_MS) * FINANCE_BRIEF_MINUTE_MS;
+  const searchLimit = Math.min(endTime, startTime + Math.max(stepHours + 2, 4) * FINANCE_BRIEF_HOUR_MS);
+
+  for (let candidate = firstCandidate; candidate <= searchLimit; candidate += FINANCE_BRIEF_MINUTE_MS) {
+    const clock = getFinanceBriefTimeClockParts(candidate, timeZone);
+
+    if (clock?.minute === 0 && clock.second === 0 && clock.hour % stepHours === 0) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function getFinanceBriefNiceIntradayTimeTickEntries(rows, snapshot) {
+  const interval = String(snapshot?.interval ?? "");
+
+  if (!isFinanceBriefIntradayInterval(interval) || rows.length <= 1) {
+    return [];
+  }
+
+  const startTime = new Date(rows[0]?.time ?? "").getTime();
+  const endTime = new Date(rows[rows.length - 1]?.time ?? "").getTime();
+
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime <= startTime) {
+    return [];
+  }
+
+  const range = String(snapshot?.range ?? "");
+  const timeZone = getFinanceBriefSnapshotTimeZone(snapshot);
+  const stepHours = getFinanceBriefIntradayTickStepHours(startTime, endTime, range);
+  const firstTick = findFinanceBriefFirstWholeHourTick(startTime, endTime, stepHours, timeZone);
+
+  if (firstTick === null) {
+    return [];
+  }
+
+  const ticks = [];
+
+  for (let tickTime = firstTick; tickTime <= endTime + 30_000 && ticks.length < 16; tickTime += stepHours * FINANCE_BRIEF_HOUR_MS) {
+    const position = ((tickTime - startTime) / (endTime - startTime)) * 100;
+
+    if (position >= 0 && position <= 100) {
+      ticks.push({
+        time: new Date(tickTime).toISOString(),
+        position
+      });
+    }
+  }
+
+  return ticks.length >= 1 ? ticks : [];
+}
+
+function getFinanceBriefChartTimeTickEntries(rows, snapshot) {
+  const niceTicks = getFinanceBriefNiceIntradayTimeTickEntries(rows, snapshot);
+
+  if (niceTicks.length) {
+    return niceTicks;
+  }
+
+  return getFinanceBriefChartTimeTickPoints(rows, getFinanceBriefChartTimeTickCount(rows, snapshot))
+    .map((entry) => ({
+      time: entry.point.time,
+      position: entry.position
+    }));
+}
+
+function formatFinanceBriefAxisPrimaryTime(value, options = {}) {
+  const interval = String(options.interval ?? "");
+  const range = String(options.range ?? "");
+  const timeZone = options.timeZone;
+  const isIntraday = isFinanceBriefIntradayInterval(interval);
+
+  if (isIntraday) {
+    return formatFinanceBriefDateTimePart(
+      value,
+      {
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23"
+      },
+      timeZone
+    );
+  }
+
+  if (interval === "1mo" || FINANCE_BRIEF_LONG_RANGES.has(range)) {
+    return formatFinanceBriefDateTimePart(
+      value,
+      {
+        year: "numeric",
+        month: "2-digit"
+      },
+      timeZone
+    );
+  }
+
+  return formatFinanceBriefDateTimePart(
+    value,
+    {
+      month: "2-digit",
+      day: "2-digit"
+    },
+    timeZone
+  );
+}
+
+function formatFinanceBriefAxisSecondaryTime(value, options = {}) {
+  const interval = String(options.interval ?? "");
+  const range = String(options.range ?? "");
+  const timeZone = options.timeZone;
+
+  if (isFinanceBriefIntradayInterval(interval)) {
+    return formatFinanceBriefDateTimePart(
+      value,
+      {
+        month: "2-digit",
+        day: "2-digit"
+      },
+      timeZone
+    );
+  }
+
+  if (interval === "1mo" || FINANCE_BRIEF_LONG_RANGES.has(range)) {
+    return "";
+  }
+
+  return formatFinanceBriefDateTimePart(
+    value,
+    {
+      weekday: "short"
+    },
+    timeZone
+  );
+}
+
+function formatFinanceBriefShortDateTime(value, snapshot = null) {
+  return formatFinanceBriefDateTimePart(
+    value,
+    {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23"
+    },
+    getFinanceBriefSnapshotTimeZone(snapshot)
+  );
+}
+
+export function formatFinanceBriefQuoteDateTime(value, snapshot = null) {
+  return formatFinanceBriefDateTimePart(
+    value,
+    {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23"
+    },
+    getFinanceBriefSnapshotTimeZone(snapshot)
+  );
+}
+
+function formatFinanceBriefDurationLabel(startValue, endValue) {
+  const startTime = new Date(startValue ?? "").getTime();
+  const endTime = new Date(endValue ?? "").getTime();
+
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime < startTime) {
+    return "覆盖 --";
+  }
+
+  const durationMinutes = Math.max(1, Math.round((endTime - startTime) / 60_000));
+
+  if (durationMinutes < 60) {
+    return `覆盖 ${durationMinutes} 分钟`;
+  }
+
+  const hours = Math.floor(durationMinutes / 60);
+  const minutes = durationMinutes % 60;
+
+  if (hours < 48) {
+    return `覆盖 ${hours} 小时${minutes ? ` ${minutes} 分钟` : ""}`;
+  }
+
+  const days = Math.floor(hours / 24);
+  const remainingHours = hours % 24;
+  return `覆盖 ${days} 天${remainingHours ? ` ${remainingHours} 小时` : ""}`;
+}
+
+export function getFinanceBriefChartSummary(snapshot) {
+  const points = getFinanceBriefSortedChartPoints(snapshot);
+
+  if (!points.length) {
+    return {
+      rangeLabel: "暂无可视区间",
+      durationLabel: "覆盖 --",
+      pointLabel: "0 根 K 线",
+      timeZoneLabel: "交易所时区 --"
+    };
+  }
+
+  const firstPoint = points[0];
+  const lastPoint = points[points.length - 1];
+  const exchangeName = String(snapshot?.quote?.exchangeName ?? "").trim();
+  const timeZoneName = String(snapshot?.quote?.timezone ?? snapshot?.quote?.exchangeTimezoneName ?? "").trim();
+
+  return {
+    rangeLabel: `${formatFinanceBriefShortDateTime(firstPoint.time, snapshot)} - ${formatFinanceBriefShortDateTime(lastPoint.time, snapshot)}`,
+    durationLabel: formatFinanceBriefDurationLabel(firstPoint.time, lastPoint.time),
+    pointLabel: `${points.length} 根 K 线`,
+    timeZoneLabel: [exchangeName, timeZoneName].filter(Boolean).join(" · ") || "交易所时区 --"
+  };
+}
+
+export function getFinanceBriefChartAxis(snapshot) {
+  const rows = getFinanceBriefChartRows(snapshot);
+
+  if (!rows.length) {
+    return {
+      priceTicks: [],
+      timeTicks: []
+    };
+  }
+
+  const highs = rows.map((point) => Number(point.high)).filter(Number.isFinite);
+  const lows = rows.map((point) => Number(point.low)).filter(Number.isFinite);
+  const high = Math.max(...highs);
+  const low = Math.min(...lows);
+  const middle = (high + low) / 2;
+  const interval = String(snapshot?.interval ?? "");
+  const range = String(snapshot?.range ?? "");
+  const timeZone = getFinanceBriefSnapshotTimeZone(snapshot);
+  const tickPoints = getFinanceBriefChartTimeTickEntries(rows, snapshot);
+  const seenTimes = new Set();
+  const timeTicks = tickPoints
+    .filter((entry) => {
+      if (seenTimes.has(entry.time)) {
+        return false;
+      }
+
+      seenTimes.add(entry.time);
+      return true;
+    })
+    .map((entry, index, entries) => {
+      const dateKey = getFinanceBriefAxisDateKey(entry.time, timeZone);
+      const previousDateKey = index > 0 ? getFinanceBriefAxisDateKey(entries[index - 1].time, timeZone) : "";
+      const isBoundary = index === 0 || index === entries.length - 1 || dateKey !== previousDateKey;
+
+      return {
+        label: formatFinanceBriefAxisPrimaryTime(entry.time, {
+          interval,
+          range,
+          timeZone
+        }),
+        subLabel: formatFinanceBriefAxisSecondaryTime(entry.time, {
+          interval,
+          range,
+          timeZone
+        }),
+        title: formatFinanceBriefQuoteDateTime(entry.time, snapshot),
+        position: `${entry.position}%`,
+        align: entry.position <= 1 ? "start" : entry.position >= 99 ? "end" : "center",
+        isBoundary
+      };
+    });
+
+  return {
+    priceTicks: [
+      { label: formatFinanceBriefNumber(high), position: "top" },
+      { label: formatFinanceBriefNumber(middle), position: "middle" },
+      { label: formatFinanceBriefNumber(low), position: "bottom" }
+    ],
+    timeTicks
+  };
 }
 
 export function getInfoRadarSourceKindLabel(kind) {
@@ -356,6 +1087,14 @@ export function getInfoRadarSourceKindLabel(kind) {
 
   if (kind === "manual") {
     return "手工";
+  }
+
+  if (kind === "github") {
+    return "GitHub";
+  }
+
+  if (kind === "reddit") {
+    return "Reddit";
   }
 
   return "来源";
@@ -430,7 +1169,7 @@ export function buildInfoRadarWindowFromDraft(draft, existingWindow = null, opti
     negativeKeywords: parseList(draft?.negativeKeywordsText),
     sources: (draft?.sources ?? [])
       .map((source) => {
-        const kind = ["rss", "web_page", "search", "wechat", "manual"].includes(source?.kind) ? source.kind : "web_page";
+        const kind = ["rss", "web_page", "search", "wechat", "github", "reddit", "manual"].includes(source?.kind) ? source.kind : "web_page";
         const titleText = String(source?.title ?? "").trim();
         const url = String(source?.url ?? "").trim();
         const query = String(source?.query ?? "").trim();
@@ -538,6 +1277,14 @@ export function getInfoRadarSourceTone(kind) {
 
   if (kind === "wechat") {
     return "is-wechat";
+  }
+
+  if (kind === "github") {
+    return "is-github";
+  }
+
+  if (kind === "reddit") {
+    return "is-reddit";
   }
 
   return "is-manual";

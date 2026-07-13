@@ -41,6 +41,19 @@ import type {
   InfoRadarSource,
   InfoRadarSourceKind,
   InfoRadarWindow,
+  LiveStreamPlatform,
+  LiveStreamSource,
+  LiveStreamSourceStatus,
+  FinanceBriefAssetKind,
+  FinanceBriefConfig,
+  FinanceBriefDerivedMetric,
+  FinanceBriefInterval,
+  FinanceBriefKlinePoint,
+  FinanceBriefProvider,
+  FinanceBriefQuoteSnapshot,
+  FinanceBriefRange,
+  FinanceBriefSnapshot,
+  FinanceBriefSymbol,
   SkillKind,
   SkillDefinition,
   ToolConfig,
@@ -100,7 +113,15 @@ import { readPromptAsset } from "./prompt-assets.js";
 const RETIRED_AGENT_PROFILE_IDS = new Set(["builtin:agent:arthur"]);
 const DEFAULT_INFO_RADAR_CARD_ID = "workflow_info_radar";
 const DEFAULT_API_WORKFLOW_CARD_ID = "workflow_api_test";
-const INFO_RADAR_SOURCE_KINDS = new Set<InfoRadarSourceKind>(["rss", "web_page", "search", "wechat", "manual"]);
+const DEFAULT_FINANCE_BRIEF_CARD_ID = "workflow_finance_brief";
+const DEFAULT_LIVE_STREAM_CARD_ID = "workflow_live_stream";
+const INFO_RADAR_SOURCE_KINDS = new Set<InfoRadarSourceKind>(["rss", "web_page", "search", "wechat", "github", "reddit", "manual"]);
+const LIVE_STREAM_PLATFORMS = new Set<LiveStreamPlatform>(["bilibili", "xiaohongshu", "custom"]);
+const LIVE_STREAM_SOURCE_STATUSES = new Set<LiveStreamSourceStatus>(["active", "paused"]);
+const FINANCE_BRIEF_ASSET_KINDS = new Set<FinanceBriefAssetKind>(["commodity", "stock", "index", "fund", "crypto", "forex", "other"]);
+const FINANCE_BRIEF_PROVIDERS = new Set<FinanceBriefProvider>(["yahoo"]);
+const FINANCE_BRIEF_RANGES = new Set<FinanceBriefRange>(["1d", "5d", "1mo", "3mo", "6mo", "1y", "ytd", "2y", "5y"]);
+const FINANCE_BRIEF_INTERVALS = new Set<FinanceBriefInterval>(["1m", "5m", "15m", "30m", "60m", "1d", "1wk", "1mo"]);
 
 async function readJsonFile<T>(filePath: string): Promise<T> {
   const content = await readFile(filePath, "utf8");
@@ -898,6 +919,8 @@ function getWeeklyProgressStatusLabel(status: WeeklyProgressItemStatus): string 
   switch (status) {
     case "completed":
       return "已完成";
+    case "testing":
+      return "测试中";
     case "in_progress":
       return "进行中";
     case "blocked":
@@ -920,6 +943,10 @@ function tryParseWeeklyProgressItemStatus(status: string | undefined): WeeklyPro
 
   if (["inprogress", "doing", "active", "进行中", "处理中", "~", "-"].includes(normalized)) {
     return "in_progress";
+  }
+
+  if (["testing", "test", "qa", "测试中", "测试", "联调", "验收中"].includes(normalized)) {
+    return "testing";
   }
 
   if (["blocked", "block", "受阻", "阻塞", "卡住", "!"].includes(normalized)) {
@@ -1151,6 +1178,10 @@ function deriveWeeklyProgressProjectStatus(tasks: WeeklyProgressTaskItem[]): Wee
     return "completed";
   }
 
+  if (meaningfulTasks.some((task) => task.status === "testing")) {
+    return "testing";
+  }
+
   if (meaningfulTasks.some((task) => task.status === "in_progress" || task.status === "completed")) {
     return "in_progress";
   }
@@ -1342,7 +1373,7 @@ function buildWeeklyProgressContent(projects: WeeklyProgressProjectItem[]): stri
 }
 
 function shouldCarryForwardWeeklyTaskStatus(status: WeeklyProgressItemStatus): boolean {
-  return status === "planned" || status === "in_progress" || status === "blocked";
+  return status === "planned" || status === "in_progress" || status === "testing" || status === "blocked";
 }
 
 function cloneWeeklyProgressTaskForCarryForward(task: WeeklyProgressTaskItem): WeeklyProgressTaskItem | null {
@@ -4565,6 +4596,353 @@ function normalizeStringArray(value: unknown): string[] {
   return value.map((entry) => String(entry ?? "").trim()).filter(Boolean);
 }
 
+function normalizeLiveStreamPlatform(value: unknown): LiveStreamPlatform {
+  const platform = String(value ?? "").trim();
+  return LIVE_STREAM_PLATFORMS.has(platform as LiveStreamPlatform) ? (platform as LiveStreamPlatform) : "custom";
+}
+
+function normalizeLiveStreamSourceStatus(value: unknown): LiveStreamSourceStatus {
+  const status = String(value ?? "").trim();
+  return LIVE_STREAM_SOURCE_STATUSES.has(status as LiveStreamSourceStatus) ? (status as LiveStreamSourceStatus) : "active";
+}
+
+function normalizeLiveStreamSource(input: Partial<LiveStreamSource> | null | undefined, index = 0): LiveStreamSource | null {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+
+  const title = String(input.title ?? "").trim();
+  const url = String(input.url ?? "").trim();
+  const roomId = String(input.roomId ?? "").trim();
+
+  if (!title || !url) {
+    return null;
+  }
+
+  return {
+    id: String(input.id ?? "").trim() || `live_stream_${randomUUID()}`,
+    title,
+    platform: normalizeLiveStreamPlatform(input.platform),
+    ...(roomId ? { roomId } : {}),
+    url,
+    notes: String(input.notes ?? "").trim(),
+    status: normalizeLiveStreamSourceStatus(input.status),
+    sortOrder: Math.max(0, Number(input.sortOrder ?? index) || index),
+    updatedAt: String(input.updatedAt ?? "").trim() || new Date().toISOString(),
+    ...(input.lastOpenedAt ? { lastOpenedAt: String(input.lastOpenedAt).trim() } : {})
+  };
+}
+
+function createDefaultLiveStreamSources(now = new Date().toISOString()): LiveStreamSource[] {
+  return [
+    {
+      id: "live_stream_bilibili_room_6",
+      title: "Bilibili 直播间 6",
+      platform: "bilibili",
+      roomId: "6",
+      url: "https://live.bilibili.com/blanc/6",
+      notes: "用户关注的固定 Bilibili 直播间，默认使用 blanc 纯净播放页",
+      status: "active",
+      sortOrder: 0,
+      updatedAt: now
+    }
+  ];
+}
+
+function normalizeLiveStreamConfig(input: Partial<NonNullable<WorkflowLibraryItem["liveStream"]>> | null | undefined): NonNullable<WorkflowLibraryItem["liveStream"]> {
+  const now = new Date().toISOString();
+  const rawConfig = input && typeof input === "object" ? input : {};
+  const defaultSources = createDefaultLiveStreamSources(now);
+  const normalizedSources = (Array.isArray(rawConfig.sources) ? rawConfig.sources : [])
+    .map(normalizeLiveStreamSource)
+    .filter((source): source is LiveStreamSource => Boolean(source));
+  const sourceById = new Map<string, LiveStreamSource>();
+
+  for (const source of [...defaultSources, ...normalizedSources]) {
+    sourceById.set(source.id, source);
+  }
+
+  const sources = Array.from(sourceById.values()).sort((left, right) => left.sortOrder - right.sortOrder);
+  const requestedActiveSourceId = String(rawConfig.activeSourceId ?? "").trim();
+  const activeSourceId = sources.some((source) => source.id === requestedActiveSourceId)
+    ? requestedActiveSourceId
+    : sources.find((source) => source.status === "active")?.id ?? sources[0]?.id;
+
+  return {
+    sources,
+    ...(activeSourceId ? { activeSourceId } : {}),
+    updatedAt: String(rawConfig.updatedAt ?? "").trim() || now
+  };
+}
+
+function normalizeFinanceBriefAssetKind(value: unknown): FinanceBriefAssetKind {
+  const kind = String(value ?? "").trim();
+  return FINANCE_BRIEF_ASSET_KINDS.has(kind as FinanceBriefAssetKind) ? (kind as FinanceBriefAssetKind) : "other";
+}
+
+function normalizeFinanceBriefProvider(value: unknown): FinanceBriefProvider {
+  const provider = String(value ?? "").trim();
+  return FINANCE_BRIEF_PROVIDERS.has(provider as FinanceBriefProvider) ? (provider as FinanceBriefProvider) : "yahoo";
+}
+
+function normalizeFinanceBriefRange(value: unknown): FinanceBriefRange {
+  const range = String(value ?? "").trim();
+  return FINANCE_BRIEF_RANGES.has(range as FinanceBriefRange) ? (range as FinanceBriefRange) : "1mo";
+}
+
+function normalizeFinanceBriefInterval(value: unknown): FinanceBriefInterval {
+  const interval = String(value ?? "").trim();
+  return FINANCE_BRIEF_INTERVALS.has(interval as FinanceBriefInterval) ? (interval as FinanceBriefInterval) : "1d";
+}
+
+function normalizeNullableFiniteNumber(value: unknown): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value !== "number" && typeof value !== "string") {
+    return null;
+  }
+
+  if (typeof value === "string" && !value.trim()) {
+    return null;
+  }
+
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
+function normalizeOptionalFiniteNumber(value: unknown): number | undefined {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "number" && typeof value !== "string") {
+    return undefined;
+  }
+
+  if (typeof value === "string" && !value.trim()) {
+    return undefined;
+  }
+
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : undefined;
+}
+
+function normalizeNullableFinanceBriefPrice(value: unknown): number | null {
+  const numberValue = normalizeNullableFiniteNumber(value);
+  return numberValue !== null && numberValue > 0 ? numberValue : null;
+}
+
+function normalizeFinanceBriefSymbol(input: Partial<FinanceBriefSymbol> | null | undefined, index = 0): FinanceBriefSymbol | null {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+
+  const symbol = String(input.symbol ?? "").trim().toUpperCase();
+
+  if (!symbol) {
+    return null;
+  }
+
+  return {
+    id: String(input.id ?? "").trim() || `finance_symbol_${randomUUID()}`,
+    symbol,
+    displayName: String(input.displayName ?? "").trim() || symbol,
+    assetKind: normalizeFinanceBriefAssetKind(input.assetKind),
+    market: String(input.market ?? "").trim(),
+    currency: String(input.currency ?? "").trim(),
+    provider: normalizeFinanceBriefProvider(input.provider),
+    notes: String(input.notes ?? "").trim(),
+    sortOrder: Math.max(0, Number(input.sortOrder ?? index) || index),
+    updatedAt: String(input.updatedAt ?? "").trim() || new Date().toISOString()
+  };
+}
+
+function createDefaultFinanceBriefSymbols(now = new Date().toISOString()): FinanceBriefSymbol[] {
+  return [
+    {
+      id: "finance_symbol_gold_futures",
+      symbol: "GC=F",
+      displayName: "黄金期货",
+      assetKind: "commodity",
+      market: "COMEX",
+      currency: "USD",
+      provider: "yahoo",
+      notes: "Yahoo Finance: Gold Futures",
+      sortOrder: 0,
+      updatedAt: now
+    },
+    {
+      id: "finance_symbol_cmb_600036",
+      symbol: "600036.SS",
+      displayName: "招商银行 A 股",
+      assetKind: "stock",
+      market: "Shanghai",
+      currency: "CNY",
+      provider: "yahoo",
+      notes: "Yahoo Finance: China Merchants Bank",
+      sortOrder: 1,
+      updatedAt: now
+    }
+  ];
+}
+
+function normalizeFinanceBriefKlinePoint(input: Partial<FinanceBriefKlinePoint> | null | undefined): FinanceBriefKlinePoint | null {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+
+  const time = String(input.time ?? "").trim();
+  const open = normalizeNullableFinanceBriefPrice(input.open);
+  const high = normalizeNullableFinanceBriefPrice(input.high);
+  const low = normalizeNullableFinanceBriefPrice(input.low);
+  const close = normalizeNullableFinanceBriefPrice(input.close);
+
+  if (!time || open === null || high === null || low === null || close === null) {
+    return null;
+  }
+
+  if (!Number.isFinite(new Date(time).getTime()) || high < low || high < Math.max(open, close) || low > Math.min(open, close)) {
+    return null;
+  }
+
+  const volume = normalizeOptionalFiniteNumber(input.volume);
+
+  return {
+    time,
+    open,
+    high,
+    low,
+    close,
+    ...(volume !== undefined ? { volume } : {})
+  };
+}
+
+function normalizeFinanceBriefQuoteSnapshot(
+  input: Partial<FinanceBriefQuoteSnapshot> | null | undefined
+): FinanceBriefQuoteSnapshot | null {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+
+  const symbol = String(input.symbol ?? "").trim().toUpperCase();
+  const points = (Array.isArray(input.points) ? input.points : [])
+    .map(normalizeFinanceBriefKlinePoint)
+    .filter((point): point is FinanceBriefKlinePoint => Boolean(point));
+
+  if (!symbol) {
+    return null;
+  }
+
+  return {
+    symbol,
+    displayName: String(input.displayName ?? "").trim() || symbol,
+    provider: normalizeFinanceBriefProvider(input.provider),
+    currency: String(input.currency ?? "").trim(),
+    exchangeName: String(input.exchangeName ?? "").trim(),
+    ...(String(input.exchangeTimezoneName ?? "").trim() ? { exchangeTimezoneName: String(input.exchangeTimezoneName).trim() } : {}),
+    ...(String(input.timezone ?? "").trim() ? { timezone: String(input.timezone).trim() } : {}),
+    ...(normalizeOptionalFiniteNumber(input.gmtoffset) !== undefined ? { gmtoffset: normalizeOptionalFiniteNumber(input.gmtoffset) } : {}),
+    ...(String(input.marketTime ?? "").trim() ? { marketTime: String(input.marketTime).trim() } : {}),
+    regularMarketPrice: normalizeNullableFinanceBriefPrice(input.regularMarketPrice),
+    previousClose: normalizeNullableFinanceBriefPrice(input.previousClose),
+    dayHigh: normalizeNullableFinanceBriefPrice(input.dayHigh),
+    dayLow: normalizeNullableFinanceBriefPrice(input.dayLow),
+    volume: normalizeNullableFiniteNumber(input.volume),
+    change: normalizeNullableFiniteNumber(input.change),
+    changePercent: normalizeNullableFiniteNumber(input.changePercent),
+    fetchedAt: String(input.fetchedAt ?? "").trim() || new Date().toISOString(),
+    points
+  };
+}
+
+function normalizeFinanceBriefDerivedMetric(
+  input: Partial<FinanceBriefDerivedMetric> | null | undefined,
+  index = 0
+): FinanceBriefDerivedMetric | null {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+
+  const value = normalizeNullableFiniteNumber(input.value);
+  const unit = String(input.unit ?? "").trim();
+
+  if (value === null || !unit) {
+    return null;
+  }
+
+  const id = String(input.id ?? "").trim() || `finance_metric_${index}`;
+
+  return {
+    id,
+    label: String(input.label ?? "").trim() || id,
+    value,
+    unit,
+    sourceName: String(input.sourceName ?? "").trim(),
+    sourceSymbol: String(input.sourceSymbol ?? "").trim().toUpperCase(),
+    calculatedAt: String(input.calculatedAt ?? "").trim() || new Date().toISOString(),
+    notes: String(input.notes ?? "").trim()
+  };
+}
+
+function normalizeFinanceBriefSnapshot(input: Partial<FinanceBriefSnapshot> | null | undefined): FinanceBriefSnapshot | undefined {
+  if (!input || typeof input !== "object") {
+    return undefined;
+  }
+
+  const quote = normalizeFinanceBriefQuoteSnapshot(input.quote);
+  const symbolId = String(input.symbolId ?? "").trim();
+  const derivedMetrics = (Array.isArray(input.derivedMetrics) ? input.derivedMetrics : [])
+    .map(normalizeFinanceBriefDerivedMetric)
+    .filter((metric): metric is FinanceBriefDerivedMetric => Boolean(metric));
+
+  if (!quote || !symbolId) {
+    return undefined;
+  }
+
+  return {
+    symbolId,
+    range: normalizeFinanceBriefRange(input.range),
+    interval: normalizeFinanceBriefInterval(input.interval),
+    fetchedAt: String(input.fetchedAt ?? "").trim() || quote.fetchedAt,
+    sourceName: String(input.sourceName ?? "").trim() || "Yahoo Finance",
+    sourceUrl: String(input.sourceUrl ?? "").trim(),
+    quote,
+    ...(derivedMetrics.length ? { derivedMetrics } : {})
+  };
+}
+
+function normalizeFinanceBriefConfig(input: Partial<FinanceBriefConfig> | null | undefined): FinanceBriefConfig {
+  const now = new Date().toISOString();
+  const rawConfig = input && typeof input === "object" ? input : {};
+  const defaultSymbols = createDefaultFinanceBriefSymbols(now);
+  const normalizedSymbols = (Array.isArray(rawConfig.symbols) ? rawConfig.symbols : [])
+    .map(normalizeFinanceBriefSymbol)
+    .filter((symbol): symbol is FinanceBriefSymbol => Boolean(symbol));
+  const symbolById = new Map<string, FinanceBriefSymbol>();
+
+  for (const symbol of [...defaultSymbols, ...normalizedSymbols]) {
+    symbolById.set(symbol.id, symbol);
+  }
+
+  const symbols = Array.from(symbolById.values()).sort((left, right) => left.sortOrder - right.sortOrder);
+  const requestedActiveSymbolId = String(rawConfig.activeSymbolId ?? "").trim();
+  const activeSymbolId = symbols.some((symbol) => symbol.id === requestedActiveSymbolId)
+    ? requestedActiveSymbolId
+    : symbols[0]?.id;
+  const lastSnapshot = normalizeFinanceBriefSnapshot(rawConfig.lastSnapshot);
+
+  return {
+    symbols,
+    ...(activeSymbolId ? { activeSymbolId } : {}),
+    range: normalizeFinanceBriefRange(rawConfig.range),
+    interval: normalizeFinanceBriefInterval(rawConfig.interval),
+    updatedAt: String(rawConfig.updatedAt ?? "").trim() || now,
+    ...(lastSnapshot ? { lastSnapshot } : {})
+  };
+}
+
 function normalizeInfoRadarSourceKind(value: unknown): InfoRadarSourceKind {
   const kind = String(value ?? "").trim();
   return INFO_RADAR_SOURCE_KINDS.has(kind as InfoRadarSourceKind) ? (kind as InfoRadarSourceKind) : "web_page";
@@ -4864,17 +5242,95 @@ function createDefaultApiWorkflowCard(): WorkflowLibraryItem {
   };
 }
 
+function createDefaultFinanceBriefCard(): WorkflowLibraryItem {
+  const now = new Date().toISOString();
+
+  return {
+    id: DEFAULT_FINANCE_BRIEF_CARD_ID,
+    kind: "finance-brief",
+    title: "金融快报",
+    summary: "查询黄金、股票等金融标的的最新行情和 K 线快照。",
+    description: "先从免密公开数据源抓取行情，后续可扩展到更多交易所、财经 API 和自定义数据源。",
+    tags: ["金融", "行情", "K线"],
+    status: "active",
+    usageCount: 0,
+    createdAt: now,
+    updatedAt: now,
+    records: [],
+    financeBrief: normalizeFinanceBriefConfig({ updatedAt: now })
+  };
+}
+
+function createDefaultLiveStreamCard(): WorkflowLibraryItem {
+  const now = new Date().toISOString();
+
+  return {
+    id: DEFAULT_LIVE_STREAM_CARD_ID,
+    kind: "live-stream",
+    title: "直播流",
+    summary: "收藏 Bilibili、小红书等固定直播间，在流程中心内直接观看。",
+    description: "维护常看的直播房间或比赛直播页，进入后使用内嵌原生网页舞台播放。",
+    tags: ["直播", "Bilibili", "小红书"],
+    status: "active",
+    usageCount: 0,
+    createdAt: now,
+    updatedAt: now,
+    records: [],
+    liveStream: normalizeLiveStreamConfig({ updatedAt: now })
+  };
+}
+
+function normalizeWorkflowLibraryItemKind(value: unknown): WorkflowLibraryItem["kind"] {
+  if (value === "info-radar" || value === "finance-brief" || value === "live-stream") {
+    return value;
+  }
+
+  return "api-test";
+}
+
+function getWorkflowDefaultCardId(kind: WorkflowLibraryItem["kind"]): string {
+  if (kind === "info-radar") {
+    return DEFAULT_INFO_RADAR_CARD_ID;
+  }
+
+  if (kind === "finance-brief") {
+    return DEFAULT_FINANCE_BRIEF_CARD_ID;
+  }
+
+  if (kind === "live-stream") {
+    return DEFAULT_LIVE_STREAM_CARD_ID;
+  }
+
+  return `workflow_${randomUUID()}`;
+}
+
+function getWorkflowDefaultTitle(kind: WorkflowLibraryItem["kind"]): string {
+  if (kind === "info-radar") {
+    return "信息雷达";
+  }
+
+  if (kind === "finance-brief") {
+    return "金融快报";
+  }
+
+  if (kind === "live-stream") {
+    return "直播流";
+  }
+
+  return "模型接口测试";
+}
+
 function normalizeWorkflowLibraryItem(input: Partial<WorkflowLibraryItem> | null | undefined): WorkflowLibraryItem | null {
   if (!input || typeof input !== "object") {
     return null;
   }
 
-  const kind = input.kind === "info-radar" ? "info-radar" : "api-test";
+  const kind = normalizeWorkflowLibraryItemKind(input.kind);
   const now = new Date().toISOString();
   const normalized: WorkflowLibraryItem = {
-    id: String(input.id ?? "").trim() || (kind === "info-radar" ? DEFAULT_INFO_RADAR_CARD_ID : `workflow_${randomUUID()}`),
+    id: String(input.id ?? "").trim() || getWorkflowDefaultCardId(kind),
     kind,
-    title: String(input.title ?? "").trim() || (kind === "info-radar" ? "信息雷达" : "模型接口测试"),
+    title: String(input.title ?? "").trim() || getWorkflowDefaultTitle(kind),
     summary: String(input.summary ?? "").trim(),
     description: String(input.description ?? "").trim(),
     tags: normalizeStringArray(input.tags),
@@ -4892,6 +5348,14 @@ function normalizeWorkflowLibraryItem(input: Partial<WorkflowLibraryItem> | null
       .filter((window): window is InfoRadarWindow => Boolean(window));
   }
 
+  if (kind === "finance-brief") {
+    normalized.financeBrief = normalizeFinanceBriefConfig(input.financeBrief);
+  }
+
+  if (kind === "live-stream") {
+    normalized.liveStream = normalizeLiveStreamConfig(input.liveStream);
+  }
+
   return normalized;
 }
 
@@ -4901,10 +5365,20 @@ function ensureWorkflowLibraryDefaults(items: WorkflowLibraryItem[]): WorkflowLi
     .filter((item): item is WorkflowLibraryItem => Boolean(item));
   const hasInfoRadar = normalizedItems.some((item) => item.kind === "info-radar");
   const hasApiWorkflow = normalizedItems.some((item) => item.kind === "api-test");
+  const hasFinanceBrief = normalizedItems.some((item) => item.kind === "finance-brief");
+  const hasLiveStream = normalizedItems.some((item) => item.kind === "live-stream");
   const nextItems = [...normalizedItems];
 
   if (!hasInfoRadar) {
     nextItems.unshift(createDefaultInfoRadarCard());
+  }
+
+  if (!hasFinanceBrief) {
+    nextItems.push(createDefaultFinanceBriefCard());
+  }
+
+  if (!hasLiveStream) {
+    nextItems.push(createDefaultLiveStreamCard());
   }
 
   if (!hasApiWorkflow) {

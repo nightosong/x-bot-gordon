@@ -39,7 +39,7 @@ Gordon 是一个面向持续演进的工作助手，当前以桌面端和 CLI �
   - `model-management`：模型管理页面组件、模型编辑状态、余额 / 用量运行态、Provider 字段配置与页面事件 actions 归属
   - `weekly`：任务笔记 / 任务清单的页面组件、配置、初始状态、任务树运行时 helper、日报 / 周报 / 述职报告辅助转换、编辑器同步、自动保存、报表输出状态、页面事件 actions 与后续业务逻辑归属
   - `command-workshop`：命令工坊页面组件、会话草稿、输入区状态、附件上下文拼装、Agent 消息转换、会话动作与运行编排归属
-  - `workflow-library`：流程中心页面组件、信息雷达窗口配置、workflow 配置、环境草稿、请求步骤草稿、curl / Body 解析、信息刷新 / 运行结果展示 helper、页面事件 actions 与执行编排归属
+  - `workflow-library`：流程中心页面组件、信息雷达窗口配置、金融快报行情状态、直播流房间配置、workflow 配置、环境草稿、请求步骤草稿、curl / Body 解析、信息刷新 / 金融行情 / 直播页加载 / 运行结果展示 helper、页面事件 actions 与执行编排归属
   - `marketplace`：应用广场页面组件、小说 / 漫画 / 视频 / 音乐 / 运势占卜应用入口配置、项目型应用通用封面管理、应用 Gordon 处理层、共享 AI 助手操作条、共享过程流组件、应用上下文 provider、漫画与视频项目 actions、音乐创作与运势解读 actions 与应用级状态归属
   - `writing`：`墨笔生花` 的配置、prompt 构建、书稿基础 actions、AI 工作流 actions 与 AI 抽屉组件
   - `extensions`：能力拓展页面组件、Agent / Skill / MCP / TOOL 编辑状态、Runner 状态与页面事件 actions 归属
@@ -53,7 +53,7 @@ Gordon 是一个面向持续演进的工作助手，当前以桌面端和 CLI �
   - 应用广场应用级 AI 助手统一使用 `AiAssistantActionBar.vue` 表达“状态 / 快速模式 / Gordon 处理”三段动作；快速模式负责轻量生成或专用工具调用，Gordon 处理负责默认 Agent 主导的深度任务推进，其中墨笔生花显式结合内置 `writing` Skill，丹青溢彩显式结合内置 `comic` Skill
   - 应用广场字段级 AI 优化能力，支持在具体编辑框旁唤起紧凑悬浮面板，调用优先模型生成结果并替换或追加回当前字段
   - 应用广场项目型资产通用封面能力，墨笔生花书籍、丹青溢彩漫画项目、流光绘影视频项目和瑶琴映月音乐专辑均支持封面 URL、本地上传、`image_gen` 生成、草稿预览、确认写回和下载；灵犀照命当前为对话态应用，暂不挂项目封面
-  - 流程中心页面，当前包含信息雷达与模型接口测试两类入口：信息雷达用于维护动态信息窗口、RSS / 网页 / 搜索 / 公众号线索来源、关键词过滤、刷新结果和信息流可视化；模型接口测试继续承接独立 curl 工作流舞台
+  - 流程中心页面，当前包含信息雷达、金融快报、直播流与模型接口测试四类入口：信息雷达用于维护动态信息窗口、RSS / 网页 / 搜索 / 公众号线索来源、关键词过滤、刷新结果和信息流可视化；金融快报用于查询黄金、股票等金融标的行情并展示 K 线快照；直播流用于收藏 Bilibili、小红书等固定直播页并在右侧原生网页舞台观看；模型接口测试继续承接独立 curl 工作流舞台
   - 命令工坊页面
   - 命令工坊输入区附件上传，支持图片、视频、文本、文档、表格和数据类文件作为会话上下文
   - 能力拓展管理页面
@@ -355,12 +355,15 @@ Gordon 是一个面向持续演进的工作助手，当前以桌面端和 CLI �
 
 ### 流程中心
 
-- 已从“效率工具”收敛为 `流程中心 / workflow`，采用“首页工作流卡片 -> 当前资源工作区 / 工作流列表 -> 执行 / 配置页”的结构；首页只承担入口，不把信息流、curl 详情和配置面板摊平
-- 当前内置两个默认卡片：`信息雷达` 与 `模型接口测试`
+- 已从“效率工具”收敛为 `流程中心 / workflow`，采用“首页工作流卡片 -> 当前资源工作区 / 工作流列表 -> 执行 / 配置页”的结构；首页只承担入口，不把信息流、行情看板、curl 详情和配置面板摊平
+- 当前内置四个默认卡片：`信息雷达`、`金融快报`、`直播流` 与 `模型接口测试`
+- 流程中心的当前卡片与工作区视图在模块切换时保持内存态；用户从任务笔记、命令工坊等页面切回流程中心会恢复离开前的资源工作区，只有点击流程中心内部返回入口才回到首页卡片列表
 - `信息雷达` 采用 Resource-Oriented Agent（面向资源的 Agent）思路，核心资源是 `InfoRadarWindow` 信息窗口；每个窗口维护 `sources / keywords / negativeKeywords / digestPrompt / items / runHistory / cadence`，用于追踪技术、政治、金融、科研、公众号等来源。当前支持 RSS / Atom、普通网页、公开搜索 RSS 和搜狗微信公众号线索由桌面主进程刷新，按关键词与排除词过滤、去重、记录刷新结果；其中公众号来源只做低频线索发现，不把公众号正文当作普通网页反复抓取，成功、空结果或限流后的搜索页访问时间会写入 source 的 `lastDiscoveredAt`，冷却期内跳过再次访问并复用已有条目；公众号条目长期只保存标题、作者、发布时间和摘要等线索，不保存 `mp.weixin.qq.com/s?...signature...` 临时链接，点击打开时会按标题 / 作者重新低频检索可用链接并在软件内阅读页加载；信息雷达初始化只提供能力入口，不硬编码预置具体信息窗口，Agent / 大模型、科研论文、金融、生物学等关注窗口属于用户配置，统一落在 `~/.gord/data/workbench/workflow-library.json`；页面内展示来源 / 标签筛选、普通信息流和相关性分数；来源阅读页由主进程 `BrowserView` 内嵌承载，标题栏只保留返回、单行标题和外部打开，正文区域随右侧主舞台铺满并提供加载 / 失败兜底
+- `金融快报` 核心资源是 `FinanceBriefConfig`，维护常用金融标的、当前区间 / 周期和最近行情快照。当前默认内置黄金期货 `GC=F` 与招商银行 A 股 `600036.SS`，通过桌面主进程调用 Yahoo Finance Chart API 拉取免密公开行情，解析为本地 `FinanceBriefSnapshot`；渲染层使用独立 `FinanceKlineChart.vue` 和 `lightweight-charts` 绘制 K 线、真实价格 / 时间坐标和成交量副图，支持十字线 OHLC（开高低收）读取、滚轮缩放、拖动浏览、最新价格线、MA5 / MA20、成交量开关和聚焦模式。区间支持 `1d / 5d / 1mo / 3mo / 6mo / 1y / ytd / 2y / 5y`，周期支持 `1m / 5m / 15m / 30m / 60m / 1d / 1wk / 1mo`，日内图会保留最多 10000 个有效行情点并按交易所时区格式化坐标，长区间分钟线会自动收敛到短区间以适配 Yahoo 免费接口限制；黄金类标的会保留原始美元 / 金衡盎司报价，并按 `1 金衡盎司 = 31.1034768 克` 派生 `USD/g` 克价，若 `CNY=X` 汇率可用则同步派生 `CNY/g`；用户也可以输入其它 Yahoo Finance symbol 做临时查询，查询成功后写回本地快照和常用标的列表
+- `直播流` 核心资源是 `LiveStreamConfig`，维护固定直播房间或直播页 URL，默认内置用户关注的 Bilibili `https://live.bilibili.com/blanc/6` 纯净播放页。渲染层采用左侧直播间轨道 + 右侧播放器舞台，Bilibili 支持输入房间号或完整直播间 URL，并统一归一化为 `/blanc/<roomId>` 播放页；小红书和自定义直播源先按固定直播页 URL 打开；桌面主进程通过独立 `BrowserView` 加载直播网页，并与信息雷达阅读页使用不同持久化分区，切换页面时会自动关闭对应原生视图。Bilibili 直播页加载后会注入播放器剧场模式，尽量隐藏网页头部、侧栏、聊天和推荐区域，并在识别播放器后隐藏同层级非播放器旁支模块，只保留播放器画面铺满直播舞台；若页面出现登录二维码、验证码或跳转到登录 / 授权页，会自动退出剧场模式并抬高登录弹层，确保二维码可完整扫码。直播流使用 `persist:gordon-live-stream` 持久化分区，扫码后的 Bilibili Cookie 会在 Gordon 内部直播间之间复用并随应用重启保留，但不直接共享系统 Chrome 的登录态；桌面主进程默认通过 `--log-level=3` 与 `--disable-logging` 静音 Chromium native 控制台噪声，减少 Bilibili WebRTC / P2P 探测失败刷屏，可通过 `GORDON_CHROMIUM_DISABLE_LOGGING=0` 临时恢复底层日志；该策略不禁用 WebRTC / P2P 探测，也不拦截 Bilibili 直播网络请求。当前不默认解析平台原始 `m3u8 / flv` 流，优先保持平台页面登录态、弹幕和播放兼容性
 - `模型接口测试` 继续承接历史工作流记录、动态请求步骤、`$BASE_URL / $API_KEY / $TASK_ID` 风格变量、步骤产出变量 JSONPath 提取、dev/test/pre/prod 环境 Base URL + APIKEY 注入、步骤级单次 / 轮询执行、轮询终止判断、请求 Body 快捷编辑与 JSON 修复、实时 stdout / stderr 输出和运行中主动中断，并支持从界面新建、编辑、删除和执行 curl 工作流
-- 渲染层 `features/workflow-library/workflowConfig.js` 承接流程中心默认配置、信息窗口草稿与 curl 记录草稿工厂，`features/workflow-library/workflowRuntime.js` 承接信息雷达展示 helper、curl 解析、Body 修复、环境归一化、record 草稿转换和运行结果展示 helper，`features/workflow-library/workflowActions.js` 承接选择同步、信息窗口编辑保存 / 删除 / 刷新、记录保存 / 复制 / 删除、环境 / Body 写回、运行中断和 IPC 进度回显动作
-- 流程中心资产统一通过本地 JSON 仓储持久化：`~/.gord/data/workbench/workflow-library.json`；其中 `WorkflowLibraryItem.kind` 当前支持 `info-radar` 与 `api-test`，旧 `api-suite` 会继续迁移为 `api-test`
+- 渲染层 `features/workflow-library/workflowConfig.js` 承接流程中心默认配置、信息窗口草稿、金融查询状态与 curl 记录草稿工厂，`features/workflow-library/workflowRuntime.js` 承接信息雷达展示 helper、金融行情展示 helper、curl 解析、Body 修复、环境归一化、record 草稿转换和运行结果展示 helper，`features/workflow-library/workflowActions.js` 承接选择同步、信息窗口编辑保存 / 删除 / 刷新、金融行情查询、记录保存 / 复制 / 删除、环境 / Body 写回、运行中断和 IPC 进度回显动作
+- 流程中心资产统一通过本地 JSON 仓储持久化：`~/.gord/data/workbench/workflow-library.json`；其中 `WorkflowLibraryItem.kind` 当前支持 `info-radar`、`finance-brief`、`live-stream` 与 `api-test`，旧 `api-suite` 会继续迁移为 `api-test`
 - 编辑页头部在滚动时会保持固定，项目推进视图也已移除项目卡片外层的额外包裹容器
 - 编辑页滚动已下沉到内部内容壳层，修复 sticky 头部滚动时的轻微上移感，并将滚动条收口为自动弱显的短轨样式
 - 返回列表已改为折线箭头图标入口，继续保留原有返回语义

@@ -1083,14 +1083,40 @@ export function createCommandWorkshopActions({
     refreshCommandSlashMenu();
   }
 
-  // 当斜杠面板打开时，↑ / ↓ 在命令间移动。
+  // ↓：在历史栈中向更新方向浏览；斜杠面板打开时优先控制面板。
   function handleCommandInputArrowDownKeydown(event) {
-    if (!isCommandSlashMenuOpen()) {
+    if (event?.isComposing || ui.command.isInputComposing) {
+      return;
+    }
+
+    if (isCommandSlashMenuOpen()) {
+      event?.preventDefault?.();
+      moveCommandSlashActive(1);
+      return;
+    }
+
+    const history = Array.isArray(ui.command.inputHistory) ? ui.command.inputHistory : [];
+    const cursor = Number(ui.command.inputHistoryCursor ?? -1);
+
+    // 未在历史浏览模式，不处理
+    if (cursor === -1) {
       return;
     }
 
     event?.preventDefault?.();
-    moveCommandSlashActive(1);
+    const prevCursor = cursor - 1;
+
+    if (prevCursor < 0) {
+      // 退出历史浏览，恢复草稿
+      ui.command.inputHistoryCursor = -1;
+      ui.command.draftInput = String(ui.command.inputHistoryDraft ?? "");
+      ui.command.inputHistoryDraft = "";
+    } else {
+      ui.command.inputHistoryCursor = prevCursor;
+      ui.command.draftInput = history[prevCursor];
+    }
+
+    focusCommandInput();
   }
 
   async function handleCommandAttachmentSelect() {
@@ -2410,6 +2436,26 @@ export function createCommandWorkshopActions({
     const technicalTag = getCommandToolProcessTag(call.serverName, call.toolName);
     const tags = [technicalTag, ...(options.tags ?? [])].filter(Boolean);
 
+    // 推断输出的结构类型，供 View 层专属渲染
+    function inferOutputKind(toolName, resultText) {
+      if (!resultText) return "plain";
+      const tn = String(toolName ?? "").toLowerCase();
+      if (/diff_paths|git_diff/.test(tn) || /^@@\s+-\d|^\-{3}\s+|^\+{3}\s+/.test(resultText)) return "diff";
+      if (/read_file|read_web_page|inspect_path|workspace.*read|read.*workspace/.test(tn)) {
+        // 判断结果是否是代码
+        if (/^```|```$|^\s{4}[^\s]/.test(resultText)) return "code";
+        return "file";
+      }
+      if (/web_search|web_research|search_repositories/.test(tn)) return "search";
+      if (/run_shell|run_command/.test(tn)) return "shell";
+      return "plain";
+    }
+
+    const outputKind = call.isError ? "plain" : inferOutputKind(call.toolName, call.resultText);
+    const successOutput = !call.isError && call.resultText && outputKind !== "plain"
+      ? truncateCommandProcessOutput(call.resultText)
+      : "";
+
     return {
       id: selectedStep?.id ? `${selectedStep.id}_process_tool` : `process_call_${call.createdAt ?? "tool"}_${call.toolName ?? index}`,
       kind: "execute",
@@ -2421,6 +2467,8 @@ export function createCommandWorkshopActions({
       detail: getCommandProcessCallDetail(call),
       tags,
       output,
+      outputKind,
+      successOutput,
       outputLabel: "错误输出",
       createdAt: terminalStep?.createdAt ?? call.createdAt ?? selectedStep?.createdAt ?? "",
       sortIndex: options.sortIndex >= 0 ? options.sortIndex : index
@@ -3053,6 +3101,239 @@ export function createCommandWorkshopActions({
     return "正在处理请求";
   }
 
+  // ===== 图片粘贴处理 =====
+  async function handleCommandInputPaste(event) {
+    if (!commandSelectedAgent.value) {
+      return;
+    }
+
+    const items = event?.clipboardData?.items;
+    if (!items) return;
+
+    const imageItems = Array.from(items).filter((item) => item.type.startsWith("image/"));
+    if (!imageItems.length) return;
+
+    event?.preventDefault?.();
+
+    for (const item of imageItems) {
+      const file = item.getAsFile();
+      if (!file) continue;
+
+      try {
+        const attachment = await createClipboardImageAttachment(file);
+        const currentIds = new Set(ui.command.attachments.map((a) => a.id));
+        if (!currentIds.has(attachment.id)) {
+          ui.command.attachments = [...ui.command.attachments, attachment];
+        }
+      } catch (error) {
+        console.error("Failed to read clipboard image", error);
+        setStatus(`粘贴图片失败：${getErrorMessage(error)}`, "danger");
+      }
+    }
+
+    if (imageItems.length) {
+      setStatus(`已粘贴 ${imageItems.length} 张图片。`, "success");
+    }
+  }
+
+  // ===== AI 自动标题生成 =====
+  async function generateCommandSessionTitleIfNeeded(session) {
+    if (!session?.id) return;
+    // 已有有效标题（非用户输入截取的"新对话"）且包含足够文字则跳过
+    const currentTitle = String(session.title ?? "");
+    if (currentTitle && currentTitle !== "新对话" && currentTitle.length >= 4) {
+      // 如果标题已经不是第一条输入截取结果，跳过重复生成
+      const firstUserMsg = (session.messages ?? []).find((m) => m?.role === "user");
+      const firstInput = String(firstUserMsg?.content ?? "").slice(0, 22);
+      if (!firstInput || !currentTitle.startsWith(firstInput.slice(0, 6))) {
+        return;
+      }
+    }
+
+    const messages = session.messages ?? [];
+    const assistantMsg = messages.find((m) => m?.role === "assistant" && m?.content?.trim());
+    const userMsg = messages.find((m) => m?.role === "user" && m?.content?.trim());
+    if (!assistantMsg || !userMsg) return;
+
+    const selectedAgent = commandSelectedAgent.value;
+    if (!selectedAgent?.modelProfileId) return;
+
+    const prompt = `请为以下对话生成一个简洁标题（5-12个汉字，不加书名号引号）：
+用户：${String(userMsg.content).slice(0, 200)}
+助手：${String(assistantMsg.content).slice(0, 200)}`;
+
+    try {
+      const result = await desktopApi?.callTextModel?.({
+        modelProfileId: selectedAgent.modelProfileId,
+        messages: [{ role: "user", content: prompt }],
+        maxOutputTokens: 30,
+        stream: false
+      });
+
+      const generatedTitle = String(result?.content ?? "").trim().replace(/^["""『「【\s]+|["""』」】\s]+$/g, "").slice(0, 20);
+      if (!generatedTitle) return;
+
+      const latestSession = workbench.commandSessions.find((s) => s.id === session.id);
+      if (!latestSession) return;
+
+      const updatedSession = { ...toPlainIpcData(latestSession), title: generatedTitle };
+      const sessions = await desktopApi?.upsertCommandWorkshopSession?.(updatedSession);
+      if (sessions) {
+        workbench.commandSessions = sortCommandWorkshopSessions(sessions.map((entry) => normalizeCommandWorkshopSession(entry)));
+      }
+    } catch {
+      // 标题生成失败静默处理，不影响主流程
+    }
+  }
+
+  // ===== 会话重命名 =====
+  async function handleCommandSessionRename(sessionId, newTitle) {
+    const normalizedTitle = String(newTitle ?? "").trim();
+    if (!normalizedTitle) return;
+
+    const session = workbench.commandSessions.find((s) => s.id === sessionId);
+    if (!session) return;
+
+    try {
+      const updatedSession = { ...toPlainIpcData(session), title: normalizedTitle };
+      const sessions = await desktopApi?.upsertCommandWorkshopSession?.(updatedSession);
+      if (sessions) {
+        workbench.commandSessions = sortCommandWorkshopSessions(sessions.map((entry) => normalizeCommandWorkshopSession(entry)));
+      }
+    } catch (error) {
+      console.error("Failed to rename session", error);
+      setStatus(`重命名失败：${getErrorMessage(error)}`, "danger");
+    }
+  }
+
+  // ===== 会话置顶 / 取消置顶 =====
+  async function handleCommandSessionPin(sessionId) {
+    const session = workbench.commandSessions.find((s) => s.id === sessionId);
+    if (!session) return;
+
+    try {
+      const updatedSession = { ...toPlainIpcData(session), pinned: !session.pinned };
+      const sessions = await desktopApi?.upsertCommandWorkshopSession?.(updatedSession);
+      if (sessions) {
+        workbench.commandSessions = sortCommandWorkshopSessions(sessions.map((entry) => normalizeCommandWorkshopSession(entry)));
+      }
+      setStatus(updatedSession.pinned ? "会话已置顶。" : "已取消置顶。", "success");
+    } catch (error) {
+      console.error("Failed to pin session", error);
+      setStatus(`操作失败：${getErrorMessage(error)}`, "danger");
+    }
+  }
+
+  // ===== 会话搜索过滤 =====
+  const filteredCommandSessions = computed(() => {
+    const query = String(ui.command.sessionSearchQuery ?? "").trim().toLowerCase();
+    const sessions = workbench.commandSessions ?? [];
+
+    const matched = query
+      ? sessions.filter((session) => {
+          const titleMatch = String(session.title ?? "").toLowerCase().includes(query);
+          const contentMatch = (session.messages ?? []).some((m) =>
+            String(m?.content ?? "").toLowerCase().includes(query)
+          );
+          return titleMatch || contentMatch;
+        })
+      : sessions;
+
+    // 置顶会话排在最前，其余按 updatedAt 排序
+    return [...matched].sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      return String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? ""));
+    });
+  });
+
+  // ===== 消息内联编辑 =====
+  function handleCommandMessageEditStart(messageId) {
+    const session = activeCommandSession.value;
+    if (!session) return;
+
+    const message = (session.messages ?? []).find((m) => m?.id === messageId && m?.role === "user");
+    if (!message) return;
+
+    ui.command.editingMessageId = messageId;
+    ui.command.editingMessageDraft = String(message.content ?? "");
+  }
+
+  function handleCommandMessageEditCancel() {
+    ui.command.editingMessageId = null;
+    ui.command.editingMessageDraft = "";
+    focusCommandInput();
+  }
+
+  async function handleCommandMessageEditSubmit(messageId) {
+    const session = activeCommandSession.value;
+    if (!session) return;
+
+    const newContent = String(ui.command.editingMessageDraft ?? "").trim();
+    if (!newContent) {
+      handleCommandMessageEditCancel();
+      return;
+    }
+
+    const messages = session.messages ?? [];
+    const msgIndex = messages.findIndex((m) => m?.id === messageId && m?.role === "user");
+    if (msgIndex === -1) {
+      handleCommandMessageEditCancel();
+      return;
+    }
+
+    ui.command.editingMessageId = null;
+    ui.command.editingMessageDraft = "";
+
+    // 截断到该消息（含），删除后续所有消息
+    const truncatedMessages = messages.slice(0, msgIndex + 1).map((m, i) =>
+      i === msgIndex ? { ...m, content: newContent } : m
+    );
+
+    const updatedSession = {
+      ...toPlainIpcData(session),
+      messages: toPlainIpcData(truncatedMessages, []),
+      updatedAt: new Date().toISOString()
+    };
+
+    try {
+      const sessions = await desktopApi?.upsertCommandWorkshopSession?.(toPlainIpcData(updatedSession));
+      if (sessions) {
+        workbench.commandSessions = sortCommandWorkshopSessions(sessions.map((entry) => normalizeCommandWorkshopSession(entry)));
+      } else {
+        upsertCommandWorkshopSessionState(updatedSession);
+      }
+    } catch (error) {
+      console.error("Failed to truncate session for edit", error);
+      upsertCommandWorkshopSessionState(updatedSession);
+    }
+
+    // 以截断后的内容重新提交（复用现有运行链）
+    ui.command.draftInput = newContent;
+    runOnNextTick(() => {
+      handleCommandSubmit();
+    });
+  }
+
+  // ===== 过程流步骤收折 =====
+  // 使用 Set 记录用户手动折叠的步骤 id；初始全部展开，用户可点击折叠
+  const collapsedProcessStepIds = new Set();
+
+  function isCommandProcessStepCollapsed(stepId) {
+    return collapsedProcessStepIds.has(stepId);
+  }
+
+  function toggleCommandProcessStepCollapse(stepId) {
+    if (collapsedProcessStepIds.has(stepId)) {
+      collapsedProcessStepIds.delete(stepId);
+    } else {
+      collapsedProcessStepIds.add(stepId);
+    }
+    // 触发响应式更新：对 ui 做一次轻量赋值
+    ui.command._processCollapseSeq = (Number(ui.command._processCollapseSeq ?? 0) + 1) % 1000;
+  }
+
+
   return {
     activeCommandMessages,
     activeCommandSession,
@@ -3064,6 +3345,7 @@ export function createCommandWorkshopActions({
     commandSelectedAgent,
     commandSettingsSummary,
     commandToolOptions,
+    filteredCommandSessions,
     focusCommandInput,
     getCommandArtifactProducts,
     getCommandLiveActivityItem,
@@ -3082,6 +3364,7 @@ export function createCommandWorkshopActions({
     handleCommandInputArrowUpKeydown,
     handleCommandInputArrowDownKeydown,
     handleCommandInputChange,
+    handleCommandInputPaste,
     handleCommandSlashSelect,
     commandSlashFilteredCommands,
     closeCommandSlashMenu,
@@ -3091,13 +3374,20 @@ export function createCommandWorkshopActions({
     handleCommandMessageContinue,
     hasCommandMessageContinuation,
     handleCommandMessageExport,
+    handleCommandMessageEditStart,
+    handleCommandMessageEditCancel,
+    handleCommandMessageEditSubmit,
     handleCommandQueueItemDelete,
     handleCommandQueueItemEdit,
     handleCommandQueueItemGuide,
     handleCommandRunCancel,
     handleCommandServerChange,
     handleCommandSessionDelete,
+    handleCommandSessionPin,
+    handleCommandSessionRename,
     handleCommandSubmit,
+    isCommandProcessStepCollapsed,
+    toggleCommandProcessStepCollapse,
     normalizeCommandWorkshopConfig,
     normalizeCommandWorkshopSession,
     normalizeCommandWorkshopSessions,
