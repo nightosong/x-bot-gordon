@@ -16,6 +16,7 @@
         'is-busy': isTaskRewriting(task.id),
         'is-planned': task.status === 'planned',
         'is-in-progress': task.status === 'in_progress',
+        'is-testing': task.status === 'testing',
         'is-completed': task.status === 'completed',
         'is-blocked': task.status === 'blocked',
         'is-dragging': draggingTaskId === task.id,
@@ -30,6 +31,7 @@
         :class="{
           'is-planned': task.status === 'planned',
           'is-in-progress': task.status === 'in_progress',
+          'is-testing': task.status === 'testing',
           'is-completed': task.status === 'completed',
           'is-blocked': task.status === 'blocked'
         }"

@@ -16,6 +16,8 @@ import type {
   ApplicationCoverImageSaveResult,
   CommandWorkshopSession,
   DailyReportGenerateRequest,
+  FinanceBriefQuoteRequest,
+  FinanceBriefSnapshot,
   GithubSkillImportRequest,
   InfoRadarRefreshResult,
   McpToolCallRequest,
@@ -49,6 +51,7 @@ let progressListenerIdSeed = 0;
 const agentRunProgressListeners = new Map<string, (_event: Electron.IpcRendererEvent, payload: AgentRunProgressEvent) => void>();
 const workflowRunProgressListeners = new Map<string, (_event: Electron.IpcRendererEvent, payload: unknown) => void>();
 const infoRadarReaderListeners = new Map<string, (_event: Electron.IpcRendererEvent, payload: unknown) => void>();
+const liveStreamViewListeners = new Map<string, (_event: Electron.IpcRendererEvent, payload: unknown) => void>();
 
 function toPlainIpcData<T>(value: T): T {
   const visited = new WeakSet<object>();
@@ -189,6 +192,10 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
     ipcRenderer.invoke("gordon:workflow-library:cancel-run", progressEventId),
   refreshInfoRadarWindow: (request: { cardId: string; windowId: string }): Promise<InfoRadarRefreshResult> =>
     ipcRenderer.invoke("gordon:workflow-library:refresh-info-window", toPlainIpcData(request)),
+  queryFinanceBriefQuote: (
+    request: FinanceBriefQuoteRequest
+  ): Promise<{ card: WorkflowLibraryItem; snapshot: FinanceBriefSnapshot }> =>
+    ipcRenderer.invoke("gordon:workflow-library:query-finance-quote", toPlainIpcData(request)),
   resolveInfoRadarWechatItemUrl: (request: { cardId: string; windowId: string; itemId: string }) =>
     ipcRenderer.invoke("gordon:workflow-library:resolve-wechat-item-url", toPlainIpcData(request)),
   openExternalUrl: (url: string): Promise<boolean> =>
@@ -198,6 +205,28 @@ contextBridge.exposeInMainWorld("gordonDesktop", {
   setInfoRadarReaderBounds: (bounds: { x: number; y: number; width: number; height: number }) =>
     ipcRenderer.invoke("gordon:workflow-library:info-reader:set-bounds", toPlainIpcData(bounds)),
   closeInfoRadarReader: () => ipcRenderer.invoke("gordon:workflow-library:info-reader:close"),
+  openLiveStreamView: (request: { url: string; bounds: { x: number; y: number; width: number; height: number } }) =>
+    ipcRenderer.invoke("gordon:workflow-library:live-stream:open", toPlainIpcData(request)),
+  setLiveStreamViewBounds: (bounds: { x: number; y: number; width: number; height: number }) =>
+    ipcRenderer.invoke("gordon:workflow-library:live-stream:set-bounds", toPlainIpcData(bounds)),
+  closeLiveStreamView: () => ipcRenderer.invoke("gordon:workflow-library:live-stream:close"),
+  onLiveStreamViewEvent: (listener: (payload: unknown) => void): string => {
+    const listenerId = `live_stream_listener_${Date.now()}_${progressListenerIdSeed++}`;
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload);
+    liveStreamViewListeners.set(listenerId, wrapped);
+    ipcRenderer.on("gordon:workflow-library:live-stream", wrapped);
+    return listenerId;
+  },
+  offLiveStreamViewEvent: (listenerId: string): void => {
+    const wrapped = liveStreamViewListeners.get(listenerId);
+
+    if (!wrapped) {
+      return;
+    }
+
+    ipcRenderer.removeListener("gordon:workflow-library:live-stream", wrapped);
+    liveStreamViewListeners.delete(listenerId);
+  },
   onInfoRadarReaderEvent: (listener: (payload: unknown) => void): string => {
     const listenerId = `info_reader_listener_${Date.now()}_${progressListenerIdSeed++}`;
     const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload);

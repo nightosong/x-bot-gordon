@@ -29,7 +29,7 @@ export function normalizeMarkdownForClipboard(value) {
   const oddSpacePattern = /[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g;
   const zeroWidthPattern = /[\u200B-\u200D\u2060\uFEFF]/g;
   const bulletLikePattern = /^[ \t]*[•●▪◦‣・·]\s+/;
-  const statusSuffixPattern = /(?:（|\()(已完成|进行中|待开始|受阻)(?:）|\))\s*$/;
+  const statusSuffixPattern = /(?:（|\()(已完成|进行中|测试中|待开始|受阻)(?:）|\))\s*$/;
   const normalizeListIndent = (indentWidth = 0) => {
     const width = Number.isFinite(indentWidth) ? Number(indentWidth) : 0;
 
@@ -45,7 +45,7 @@ export function normalizeMarkdownForClipboard(value) {
     .replace(zeroWidthPattern, "")
     .replace(oddSpacePattern, " ")
     .replace(/\t/g, "    ")
-    .replace(/((?:（|\()(?:已完成|进行中|待开始|受阻)(?:）|\)))(?=\\?[*+-]\s+)/g, "$1\n")
+    .replace(/((?:（|\()(?:已完成|进行中|测试中|待开始|受阻)(?:）|\)))(?=\\?[*+-]\s+)/g, "$1\n")
     .replace(/(\S)[ ]{2,}(?=(?:\\?[*+-]|\d+(?:\.\d+)*\.?|\d+\))\s+)/g, "$1\n")
     .split("\n")
     .map((line) => {
@@ -633,6 +633,10 @@ export function deriveWeeklyProjectStatus(tasks = []) {
 
   if (meaningfulTasks.every((task) => task.status === "completed")) {
     return "completed";
+  }
+
+  if (meaningfulTasks.some((task) => task.status === "testing")) {
+    return "testing";
   }
 
   if (meaningfulTasks.some((task) => task.status === "in_progress" || task.status === "completed")) {

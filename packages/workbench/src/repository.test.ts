@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import type { WeeklyProgressRecord } from "../../shared/src/index.js";
-import { listWeeklyProgress } from "./repository.js";
+import { listWeeklyProgress, listWorkflowLibrary } from "./repository.js";
 
 function toDateKey(date: Date): string {
   const year = date.getFullYear();
@@ -37,7 +37,7 @@ function getWeekRange(referenceDate = new Date()): { weekKey: string; startDate:
   };
 }
 
-test("listWeeklyProgress carries planned tasks into the new weekly report", async () => {
+test("listWeeklyProgress carries unfinished tasks into the new weekly report", async () => {
   const previousDataRoot = process.env.GORDON_DATA_ROOT;
   const dataRoot = await mkdtemp(path.join(os.tmpdir(), "gordon-weekly-carry-"));
 
@@ -67,6 +67,15 @@ test("listWeeklyProgress carries planned tasks into the new weekly report", asyn
               title: "待开始任务",
               detail: "",
               status: "planned",
+              createdAt: timestamp,
+              updatedAt: timestamp,
+              children: []
+            },
+            {
+              id: "weekly_task_testing",
+              title: "测试中任务",
+              detail: "",
+              status: "testing",
               createdAt: timestamp,
               updatedAt: timestamp,
               children: []
@@ -105,7 +114,132 @@ test("listWeeklyProgress carries planned tasks into the new weekly report", asyn
     assert.equal(archivedPreviousRecord?.status, "archived");
     assert.deepEqual(
       currentRecord.projects.flatMap((project) => project.tasks.map((task) => ({ title: task.title, status: task.status }))),
-      [{ title: "待开始任务", status: "planned" }]
+      [
+        { title: "待开始任务", status: "planned" },
+        { title: "测试中任务", status: "testing" }
+      ]
+    );
+  } finally {
+    if (previousDataRoot === undefined) {
+      delete process.env.GORDON_DATA_ROOT;
+    } else {
+      process.env.GORDON_DATA_ROOT = previousDataRoot;
+    }
+
+    await rm(dataRoot, { recursive: true, force: true });
+  }
+});
+
+test("listWorkflowLibrary removes empty Yahoo finance candles from cached snapshots", async () => {
+  const previousDataRoot = process.env.GORDON_DATA_ROOT;
+  const dataRoot = await mkdtemp(path.join(os.tmpdir(), "gordon-finance-candles-"));
+
+  process.env.GORDON_DATA_ROOT = dataRoot;
+
+  try {
+    const workflowFilePath = path.join(dataRoot, "workbench", "workflow-library.json");
+    const timestamp = "2026-07-13T02:07:00.000Z";
+
+    await mkdir(path.dirname(workflowFilePath), { recursive: true });
+    await writeFile(
+      workflowFilePath,
+      `${JSON.stringify(
+        [
+          {
+            id: "workflow_finance_brief",
+            kind: "finance-brief",
+            title: "金融快报",
+            summary: "",
+            description: "",
+            tags: [],
+            status: "active",
+            usageCount: 0,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            records: [],
+            financeBrief: {
+              symbols: [
+                {
+                  id: "finance_symbol_gold_futures",
+                  symbol: "GC=F",
+                  displayName: "黄金期货",
+                  assetKind: "commodity",
+                  market: "COMEX",
+                  currency: "USD",
+                  provider: "yahoo",
+                  notes: "",
+                  sortOrder: 0,
+                  updatedAt: timestamp
+                }
+              ],
+              activeSymbolId: "finance_symbol_gold_futures",
+              range: "1d",
+              interval: "1m",
+              updatedAt: timestamp,
+              lastSnapshot: {
+                symbolId: "finance_symbol_gold_futures",
+                range: "1d",
+                interval: "1m",
+                fetchedAt: timestamp,
+                sourceName: "Yahoo Finance",
+                sourceUrl: "",
+                quote: {
+                  symbol: "GC=F",
+                  displayName: "Gold Aug 26",
+                  provider: "yahoo",
+                  currency: "USD",
+                  exchangeName: "COMEX",
+                  regularMarketPrice: 0,
+                  previousClose: 4070.9,
+                  dayHigh: 4111.6,
+                  dayLow: 0,
+                  volume: null,
+                  change: 0,
+                  changePercent: 0,
+                  fetchedAt: timestamp,
+                  points: [
+                    {
+                      time: "2026-07-13T01:00:00.000Z",
+                      open: 4050,
+                      high: 4060,
+                      low: null,
+                      close: 4055
+                    },
+                    {
+                      time: "2026-07-13T01:01:00.000Z",
+                      open: 0,
+                      high: 0,
+                      low: 0,
+                      close: 0
+                    },
+                    {
+                      time: "2026-07-13T01:02:00.000Z",
+                      open: 4056,
+                      high: 4062,
+                      low: 4052,
+                      close: 4060
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ],
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+
+    const records = await listWorkflowLibrary();
+    const financeBrief = records.find((record) => record.kind === "finance-brief")?.financeBrief;
+
+    assert.ok(financeBrief?.lastSnapshot);
+    assert.equal(financeBrief.lastSnapshot.quote.regularMarketPrice, null);
+    assert.equal(financeBrief.lastSnapshot.quote.dayLow, null);
+    assert.deepEqual(
+      financeBrief.lastSnapshot.quote.points.map((point) => point.time),
+      ["2026-07-13T01:02:00.000Z"]
     );
   } finally {
     if (previousDataRoot === undefined) {

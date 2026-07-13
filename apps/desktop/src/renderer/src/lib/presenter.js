@@ -153,6 +153,10 @@ export const WEEKLY_PROGRESS_STATUS_META = {
     label: "进行中",
     tone: "in-progress"
   },
+  testing: {
+    label: "测试中",
+    tone: "testing"
+  },
   completed: {
     label: "已完成",
     tone: "completed"
@@ -487,6 +491,7 @@ export function getWeeklyProgressMetrics(record) {
     taskCount: 0,
     completedTaskCount: 0,
     activeTaskCount: 0,
+    testingTaskCount: 0,
     blockedTaskCount: 0,
     noteCount: 0
   };
@@ -515,6 +520,8 @@ export function getWeeklyProgressMetrics(record) {
         metrics.completedTaskCount += 1;
       } else if (task.status === "blocked") {
         metrics.blockedTaskCount += 1;
+      } else if (task.status === "testing") {
+        metrics.testingTaskCount += 1;
       } else if (task.status === "in_progress") {
         metrics.activeTaskCount += 1;
       }
@@ -551,6 +558,10 @@ export function getWeeklyProgressSummaryText(record) {
 
   if (metrics.activeTaskCount) {
     summaryParts.push(`进行中 ${metrics.activeTaskCount} 个`);
+  }
+
+  if (metrics.testingTaskCount) {
+    summaryParts.push(`测试中 ${metrics.testingTaskCount} 个`);
   }
 
   if (metrics.blockedTaskCount) {

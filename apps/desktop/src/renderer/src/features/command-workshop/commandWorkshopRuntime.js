@@ -62,6 +62,11 @@ ${attachment.extractedText.trim()}`;
 读取错误: ${attachment.errorMessage}`;
       }
 
+      if (attachment?.dataUrl) {
+        return `${header}
+说明: 该附件为粘贴图片，dataUrl 已通过视觉上下文传入。`;
+      }
+
       return `${header}
 说明: 该文件已作为附件传入，但当前没有可注入模型的文本正文。`;
     })
@@ -213,4 +218,31 @@ export function findLatestCommandTaskLedger(messages) {
   }
 
   return null;
+}
+
+/**
+ * 把从剪贴板读到的 File 对象转为命令工坊附件结构。
+ * 读取是异步的，调用方需要 await。
+ */
+export function createClipboardImageAttachment(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = String(event.target?.result ?? "");
+      const ext = file.type === "image/png" ? ".png" : file.type === "image/jpeg" ? ".jpg" : file.type === "image/webp" ? ".webp" : file.type === "image/gif" ? ".gif" : ".png";
+      resolve({
+        id: `command_attachment_clipboard_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        name: file.name || `粘贴图片${ext}`,
+        path: "",
+        mimeType: file.type || "image/png",
+        extension: ext,
+        sizeBytes: file.size,
+        kind: "image",
+        readStatus: "binary",
+        dataUrl
+      });
+    };
+    reader.onerror = () => reject(new Error("剪贴板图片读取失败"));
+    reader.readAsDataURL(file);
+  });
 }

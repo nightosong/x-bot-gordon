@@ -15,17 +15,23 @@ export type ProviderKind =
   | "grok"
   | "openai_like";
 export type WeeklyProgressStatus = "active" | "archived";
-export type WeeklyProgressItemStatus = "planned" | "in_progress" | "completed" | "blocked";
-export type WorkflowLibraryItemKind = "api-test" | "info-radar";
+export type WeeklyProgressItemStatus = "planned" | "in_progress" | "testing" | "completed" | "blocked";
+export type WorkflowLibraryItemKind = "api-test" | "info-radar" | "finance-brief" | "live-stream";
 export type WorkflowLibraryItemStatus = "active" | "draft";
 export type WorkflowEnvironmentId = "dev" | "test" | "pre" | "prod" | string;
 export type WorkflowVariableSource = "manual" | "response";
 export type WorkflowProtocolMode = "single" | "sequential" | "polling";
 export type WorkflowStepExecutionMode = "once" | "polling";
-export type InfoRadarSourceKind = "rss" | "web_page" | "search" | "wechat" | "manual";
+export type InfoRadarSourceKind = "rss" | "web_page" | "search" | "wechat" | "github" | "reddit" | "manual";
 export type InfoRadarWindowStatus = "active" | "paused";
 export type InfoRadarRefreshCadence = "manual" | "hourly" | "daily" | "weekly";
 export type InfoRadarRefreshStatus = "success" | "partial" | "failed";
+export type FinanceBriefAssetKind = "commodity" | "stock" | "index" | "fund" | "crypto" | "forex" | "other";
+export type FinanceBriefProvider = "yahoo";
+export type FinanceBriefRange = "1d" | "5d" | "1mo" | "3mo" | "6mo" | "1y" | "ytd" | "2y" | "5y";
+export type FinanceBriefInterval = "1m" | "5m" | "15m" | "30m" | "60m" | "1d" | "1wk" | "1mo";
+export type LiveStreamPlatform = "bilibili" | "xiaohongshu" | "custom";
+export type LiveStreamSourceStatus = "active" | "paused";
 export type ModelModality =
   | "text"
   | "vision"
@@ -487,6 +493,107 @@ export interface InfoRadarRefreshResult {
   run: InfoRadarRefreshRun;
 }
 
+export interface FinanceBriefSymbol {
+  id: string;
+  symbol: string;
+  displayName: string;
+  assetKind: FinanceBriefAssetKind;
+  market: string;
+  currency: string;
+  provider: FinanceBriefProvider;
+  notes: string;
+  sortOrder: number;
+  updatedAt: string;
+}
+
+export interface FinanceBriefKlinePoint {
+  time: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume?: number;
+}
+
+export interface FinanceBriefQuoteSnapshot {
+  symbol: string;
+  displayName: string;
+  provider: FinanceBriefProvider;
+  currency: string;
+  exchangeName: string;
+  exchangeTimezoneName?: string;
+  timezone?: string;
+  gmtoffset?: number;
+  marketTime?: string;
+  regularMarketPrice: number | null;
+  previousClose: number | null;
+  dayHigh: number | null;
+  dayLow: number | null;
+  volume: number | null;
+  change: number | null;
+  changePercent: number | null;
+  fetchedAt: string;
+  points: FinanceBriefKlinePoint[];
+}
+
+export interface FinanceBriefDerivedMetric {
+  id: string;
+  label: string;
+  value: number;
+  unit: string;
+  sourceName: string;
+  sourceSymbol: string;
+  calculatedAt: string;
+  notes: string;
+}
+
+export interface FinanceBriefSnapshot {
+  symbolId: string;
+  range: FinanceBriefRange;
+  interval: FinanceBriefInterval;
+  fetchedAt: string;
+  sourceName: string;
+  sourceUrl: string;
+  quote: FinanceBriefQuoteSnapshot;
+  derivedMetrics?: FinanceBriefDerivedMetric[];
+}
+
+export interface FinanceBriefConfig {
+  symbols: FinanceBriefSymbol[];
+  activeSymbolId?: string;
+  range: FinanceBriefRange;
+  interval: FinanceBriefInterval;
+  updatedAt: string;
+  lastSnapshot?: FinanceBriefSnapshot;
+}
+
+export interface FinanceBriefQuoteRequest {
+  cardId?: string;
+  symbolId?: string;
+  symbol?: string;
+  range?: FinanceBriefRange;
+  interval?: FinanceBriefInterval;
+}
+
+export interface LiveStreamSource {
+  id: string;
+  title: string;
+  platform: LiveStreamPlatform;
+  roomId?: string;
+  url: string;
+  notes: string;
+  status: LiveStreamSourceStatus;
+  sortOrder: number;
+  updatedAt: string;
+  lastOpenedAt?: string;
+}
+
+export interface LiveStreamConfig {
+  sources: LiveStreamSource[];
+  activeSourceId?: string;
+  updatedAt: string;
+}
+
 export interface WorkflowLibraryItem {
   id: string;
   kind: WorkflowLibraryItemKind;
@@ -501,6 +608,8 @@ export interface WorkflowLibraryItem {
   lastUsedAt?: string;
   records: WorkflowRecord[];
   infoWindows?: InfoRadarWindow[];
+  financeBrief?: FinanceBriefConfig;
+  liveStream?: LiveStreamConfig;
 }
 
 export interface ModelProfile {
@@ -808,6 +917,8 @@ export interface CommandWorkshopAttachment {
   readStatus: CommandWorkshopAttachmentReadStatus;
   extractedText?: string;
   errorMessage?: string;
+  /** 粘贴或拖入的图片：渲染层 FileReader 读取的 data URL，跳过主进程路径 */
+  dataUrl?: string;
 }
 
 export interface CommandWorkshopMessage {

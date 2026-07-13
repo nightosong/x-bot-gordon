@@ -115,6 +115,7 @@
               :active-info-window="activeInfoWindow"
               :active-info-windows="activeInfoWindows"
               :filtered-info-radar-items="filteredInfoRadarItems"
+              :filtered-info-radar-items-by-status="filteredInfoRadarItemsByStatus"
               :info-radar-metrics="infoRadarMetrics"
               :info-radar-source-filter-options="infoRadarSourceFilterOptions"
               :info-radar-topic-filter-options="infoRadarTopicFilterOptions"
@@ -131,7 +132,22 @@
               :workflow-run-status-label="workflowRunStatusLabel"
               :workflow-run-status-tone="workflowRunStatusTone"
               :active-workflow-steps="activeWorkflowSteps"
+              :active-finance-brief="activeFinanceBrief"
+              :active-finance-symbols="activeFinanceSymbols"
+              :active-finance-symbol="activeFinanceSymbol"
+              :active-finance-snapshot="activeFinanceSnapshot"
+              :active-finance-chart-rows="activeFinanceChartRows"
+              :active-finance-chart-axis="activeFinanceChartAxis"
+              :active-finance-chart-bounds="activeFinanceChartBounds"
+              :active-finance-chart-summary="activeFinanceChartSummary"
+              :finance-brief-symbol-options="financeBriefSymbolOptions"
+              :active-live-stream-config="activeLiveStreamConfig"
+              :active-live-stream-source="activeLiveStreamSource"
+              :active-live-stream-sources="activeLiveStreamSources"
+              :live-stream-platform-options="liveStreamPlatformOptions"
+              :live-stream-input-placeholder="liveStreamInputPlaceholder"
               :add-info-radar-source-draft="addInfoRadarSourceDraft"
+              :apply-info-radar-preset="applyInfoRadarPreset"
               :add-workflow-draft-environment="addWorkflowDraftEnvironment"
               :add-workflow-draft-step="addWorkflowDraftStep"
               :add-workflow-step-output="addWorkflowStepOutput"
@@ -139,9 +155,18 @@
               :delete-info-radar-window="deleteInfoRadarWindow"
               :delete-workflow-record="deleteWorkflowRecord"
               :duplicate-workflow-record="duplicateWorkflowRecord"
+              :format-finance-brief-compact-number="formatFinanceBriefCompactNumber"
+              :format-finance-brief-number="formatFinanceBriefNumber"
+              :format-finance-brief-percent="formatFinanceBriefPercent"
+              :format-finance-brief-quote-date-time="formatFinanceBriefQuoteDateTime"
+              :format-finance-brief-signed-number="formatFinanceBriefSignedNumber"
               :format-duration-ms="formatDurationMs"
               :format-local-date-time="formatLocalDateTime"
               :can-open-info-radar-item="canOpenInfoRadarItem"
+              :get-finance-brief-change-tone="getFinanceBriefChangeTone"
+              :get-finance-brief-interval-label="getFinanceBriefIntervalLabel"
+              :get-finance-brief-range-label="getFinanceBriefRangeLabel"
+              :get-finance-brief-symbol-label="getFinanceBriefSymbolLabel"
               :get-info-radar-cadence-label="getInfoRadarCadenceLabel"
               :get-info-radar-item-href="getInfoRadarItemHref"
               :get-info-radar-item-summary-text="getInfoRadarItemSummaryText"
@@ -151,6 +176,8 @@
               :get-info-radar-score-percent="getInfoRadarScorePercent"
               :get-info-radar-source-kind-label="getInfoRadarSourceKindLabel"
               :get-info-radar-source-tone="getInfoRadarSourceTone"
+              :get-live-stream-platform-label="getLiveStreamPlatformLabel"
+              :get-live-stream-source-label="getLiveStreamSourceLabel"
               :get-workflow-card-count-label="getWorkflowCardCountLabel"
               :get-workflow-run-completed-count="getWorkflowRunCompletedCount"
               :get-workflow-run-duration-label="getWorkflowRunDurationLabel"
@@ -168,11 +195,16 @@
               :handle-workflow-curl-copy="handleWorkflowCurlCopy"
               :handle-info-radar-reader-loading-end="handleInfoRadarReaderLoadingEnd"
               :handle-info-radar-reader-loading-start="handleInfoRadarReaderLoadingStart"
+              :handle-live-stream-loading-end="handleLiveStreamLoadingEnd"
+              :handle-live-stream-loading-start="handleLiveStreamLoadingStart"
               :is-workflow-step-expanded="isWorkflowStepExpanded"
               :open-info-radar-window="openInfoRadarWindow"
               :open-info-radar-window-editor="openInfoRadarWindowEditor"
               :open-info-radar-item-external="openInfoRadarItemExternal"
               :open-info-radar-item-reader="openInfoRadarItemReader"
+              :open-live-stream-external="openLiveStreamExternal"
+              :open-live-stream-from-input="openLiveStreamFromInput"
+              :open-live-stream-source="openLiveStreamSource"
               :open-workflow-card="openWorkflowCard"
               :open-workflow-record="openWorkflowRecord"
               :open-workflow-record-editor="openWorkflowRecordEditor"
@@ -184,9 +216,14 @@
               :remove-info-radar-source-draft="removeInfoRadarSourceDraft"
               :repair-workflow-body-draft="repairWorkflowBodyDraft"
               :refresh-active-info-radar-window="refreshActiveInfoRadarWindow"
+              :refresh-live-stream-view="refreshLiveStreamView"
+              :query-active-finance-brief="queryActiveFinanceBrief"
               :run-active-workflow-record="runActiveWorkflowRecord"
               :save-info-radar-window="saveInfoRadarWindow"
+              :save-live-stream-input-as-source="saveLiveStreamInputAsSource"
+              :mark-info-radar-item-status="markInfoRadarItemStatus"
               :save-workflow-record="saveWorkflowRecord"
+              :select-finance-brief-symbol="selectFinanceBriefSymbol"
               :select-workflow-environment="selectWorkflowEnvironment"
               :sync-workflow-body-draft-from-active-step="syncWorkflowBodyDraftFromActiveStep"
               :toggle-workflow-step-expanded="toggleWorkflowStepExpanded"
@@ -238,9 +275,18 @@
               :handle-command-queue-item-guide="handleCommandQueueItemGuide"
               :handle-command-run-cancel="handleCommandRunCancel"
               :handle-command-server-change="handleCommandServerChange"
+              :filtered-command-sessions="filteredCommandSessions"
+              :handle-command-input-paste="handleCommandInputPaste"
+              :handle-command-message-edit-start="handleCommandMessageEditStart"
+              :handle-command-message-edit-cancel="handleCommandMessageEditCancel"
+              :handle-command-message-edit-submit="handleCommandMessageEditSubmit"
               :handle-command-session-delete="handleCommandSessionDelete"
+              :handle-command-session-pin="handleCommandSessionPin"
+              :handle-command-session-rename="handleCommandSessionRename"
               :handle-command-submit="handleCommandSubmit"
               :has-command-draft-content="hasCommandDraftContent"
+              :is-command-process-step-collapsed="isCommandProcessStepCollapsed"
+              :toggle-command-process-step-collapse="toggleCommandProcessStepCollapse"
               :handle-rich-text-click="handleRichTextClick"
               :open-command-session="openCommandSession"
               :remove-command-attachment="removeCommandAttachment"
@@ -895,6 +941,17 @@ function handleRootAgentRunProgress(payload) {
   marketplaceAgentActions.handleMarketplaceAgentRunProgress(payload);
 }
 const {
+  activeFinanceBrief,
+  activeFinanceChartAxis,
+  activeFinanceChartBounds,
+  activeFinanceChartRows,
+  activeFinanceChartSummary,
+  activeFinanceSnapshot,
+  activeFinanceSymbol,
+  activeFinanceSymbols,
+  activeLiveStreamConfig,
+  activeLiveStreamSource,
+  activeLiveStreamSources,
   activeInfoWindow,
   activeInfoWindows,
   activeWorkflowApiKeyInputType,
@@ -906,6 +963,7 @@ const {
   activeWorkflowSteps,
   activeInfoReaderItem,
   addInfoRadarSourceDraft,
+  applyInfoRadarPreset,
   addWorkflowDraftEnvironment,
   addWorkflowDraftStep,
   addWorkflowStepOutput,
@@ -914,9 +972,20 @@ const {
   deleteWorkflowRecord,
   duplicateWorkflowRecord,
   filteredInfoRadarItems,
+  filteredInfoRadarItemsByStatus,
   filteredWorkflowRecords,
+  financeBriefSymbolOptions,
+  formatFinanceBriefCompactNumber,
+  formatFinanceBriefNumber,
+  formatFinanceBriefPercent,
+  formatFinanceBriefQuoteDateTime,
+  formatFinanceBriefSignedNumber,
   formatDurationMs,
   canOpenInfoRadarItem,
+  getFinanceBriefChangeTone,
+  getFinanceBriefIntervalLabel,
+  getFinanceBriefRangeLabel,
+  getFinanceBriefSymbolLabel,
   getInfoRadarCadenceLabel,
   getInfoRadarItemHref,
   getInfoRadarItemSummaryText,
@@ -926,6 +995,8 @@ const {
   getInfoRadarScorePercent,
   getInfoRadarSourceKindLabel,
   getInfoRadarSourceTone,
+  getLiveStreamPlatformLabel,
+  getLiveStreamSourceLabel,
   getWorkflowCardCountLabel,
   getWorkflowRunCompletedCount,
   getWorkflowRunDurationLabel,
@@ -938,6 +1009,8 @@ const {
   getWorkflowStepVisualRows,
   handleInfoRadarReaderLoadingEnd,
   handleInfoRadarReaderLoadingStart,
+  handleLiveStreamLoadingEnd,
+  handleLiveStreamLoadingStart,
   handleWorkflowApiKeyInput,
   handleWorkflowBack,
   handleWorkflowBodyDraftInput,
@@ -948,10 +1021,15 @@ const {
   infoRadarMetrics,
   infoRadarSourceFilterOptions,
   infoRadarTopicFilterOptions,
+  liveStreamInputPlaceholder,
+  liveStreamPlatformOptions,
   openInfoRadarWindow,
   openInfoRadarWindowEditor,
   openInfoRadarItemExternal,
   openInfoRadarItemReader,
+  openLiveStreamExternal,
+  openLiveStreamFromInput,
+  openLiveStreamSource,
   openWorkflowCard,
   openWorkflowRecord,
   openWorkflowRecordEditor,
@@ -963,9 +1041,14 @@ const {
   removeInfoRadarSourceDraft,
   repairWorkflowBodyDraft,
   refreshActiveInfoRadarWindow,
+  refreshLiveStreamView,
+  queryActiveFinanceBrief,
   runActiveWorkflowRecord,
   saveInfoRadarWindow,
+  saveLiveStreamInputAsSource,
+  markInfoRadarItemStatus,
   saveWorkflowRecord,
+  selectFinanceBriefSymbol,
   selectWorkflowEnvironment,
   syncWorkflowBodyDraftFromActiveStep,
   syncWorkflowSelection,
@@ -1002,6 +1085,7 @@ const {
   commandSelectedAgent,
   commandSettingsSummary,
   commandToolOptions,
+  filteredCommandSessions,
   focusCommandInput,
   getCommandArtifactProducts,
   getCommandLiveActivityItem,
@@ -1018,6 +1102,7 @@ const {
   handleCommandInputArrowUpKeydown,
   handleCommandInputArrowDownKeydown,
   handleCommandInputChange,
+  handleCommandInputPaste,
   handleCommandSlashSelect,
   commandSlashFilteredCommands,
   handleCommandLoadMcpTools,
@@ -1026,13 +1111,20 @@ const {
   handleCommandMessageContinue,
   hasCommandMessageContinuation,
   handleCommandMessageExport,
+  handleCommandMessageEditStart,
+  handleCommandMessageEditCancel,
+  handleCommandMessageEditSubmit,
   handleCommandQueueItemDelete,
   handleCommandQueueItemEdit,
   handleCommandQueueItemGuide,
   handleCommandRunCancel,
   handleCommandServerChange,
   handleCommandSessionDelete,
+  handleCommandSessionPin,
+  handleCommandSessionRename,
   handleCommandSubmit,
+  isCommandProcessStepCollapsed,
+  toggleCommandProcessStepCollapse,
   hasCommandDraftContent,
   normalizeCommandWorkshopConfig,
   normalizeCommandWorkshopSessions,
@@ -1285,6 +1377,42 @@ function restoreCommandWorkshopEntryState() {
   ui.command.view = workbench.commandSessions.length ? "list" : "chat";
 }
 
+function restoreWorkflowEntryState() {
+  syncWorkflowSelection();
+
+  const card = workbench.workflowLibrary.find((entry) => entry.id === ui.workflow.activeCardId);
+  const view = ui.workflow.view;
+
+  if (view === "library") {
+    return;
+  }
+
+  const isInfoView = view === "info" || view === "info-reader" || view === "info-editor";
+  const isApiTestView = view === "list" || view === "run" || view === "editor";
+  const hasKnownWorkflowView = isInfoView || isApiTestView || view === "finance" || view === "live-stream";
+
+  if (
+    !card ||
+    !hasKnownWorkflowView ||
+    (isInfoView && card.kind !== "info-radar") ||
+    (view === "finance" && card.kind !== "finance-brief") ||
+    (view === "live-stream" && card.kind !== "live-stream") ||
+    (isApiTestView && card.kind !== "api-test")
+  ) {
+    ui.workflow.view = "library";
+    ui.workflow.editingRecordId = null;
+    ui.workflow.editingInfoWindowId = null;
+    ui.workflow.activeInfoReaderItemId = null;
+    ui.workflow.isInfoReaderLoading = false;
+    ui.workflow.infoReaderError = "";
+    ui.workflow.infoReaderResolvedUrl = "";
+    ui.workflow.financeBriefError = "";
+    ui.workflow.liveStreamError = "";
+    ui.workflow.isLiveStreamLoading = false;
+    ui.workflow.runResult = null;
+  }
+}
+
 function setActiveFeature(featureId) {
   const previousFeatureId = activeFeature.value;
   activeFeature.value = featureId;
@@ -1306,8 +1434,7 @@ function setActiveFeature(featureId) {
   }
 
   if (featureId === FEATURE_WORKFLOW_LIBRARY) {
-    ui.workflow.view = "library";
-    syncWorkflowSelection();
+    restoreWorkflowEntryState();
   }
 
   if (featureId === FEATURE_COMMAND_WORKSHOP) {
