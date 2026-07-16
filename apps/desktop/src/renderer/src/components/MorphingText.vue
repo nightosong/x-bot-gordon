@@ -22,6 +22,14 @@ const props = defineProps({
     type: Number,
     default: 0
   },
+  baseHoldTime: {
+    type: Number,
+    default: -1
+  },
+  alternateHoldTime: {
+    type: Number,
+    default: -1
+  },
   ariaLabel: {
     type: String,
     default: ""
@@ -63,7 +71,6 @@ const filterId = `gordon-morphing-text-${Math.random().toString(36).slice(2, 10)
 const MAX_FRAME_DELTA_SECONDS = 1 / 12;
 
 let animationFrameId = 0;
-let reducedMotionTimerId = 0;
 let lastTime = 0;
 let morph = 0;
 let coolDown = props.coolDownTime;
@@ -133,10 +140,27 @@ function setStyles(fraction) {
 
   setLayerContent();
 
-  text2Ref.value.style.filter = `blur(${Math.min(8 / nextFraction - 8, 100)}px)`;
+  text2Ref.value.style.filter = `blur(${Math.min(4 / nextFraction - 4, 32)}px)`;
   text2Ref.value.style.opacity = `${Math.pow(nextFraction, 0.4)}`;
-  text1Ref.value.style.filter = `blur(${Math.min(8 / currentFraction - 8, 100)}px)`;
+  text1Ref.value.style.filter = `blur(${Math.min(4 / currentFraction - 4, 32)}px)`;
   text1Ref.value.style.opacity = `${Math.pow(currentFraction, 0.4)}`;
+}
+
+function normalizeHoldTime(value, fallback) {
+  const duration = Number(value);
+  return Number.isFinite(duration) && duration >= 0 ? duration : fallback;
+}
+
+function getCurrentHoldTime() {
+  const fallback = Math.max(Number(props.coolDownTime) || 0, 0);
+
+  if (!hasRandomCycle.value) {
+    return fallback;
+  }
+
+  return textIndex.value % 2 === 0
+    ? normalizeHoldTime(props.baseHoldTime, fallback)
+    : normalizeHoldTime(props.alternateHoldTime, fallback);
 }
 
 function doCoolDown() {
@@ -155,10 +179,9 @@ function doMorph() {
   morph += Math.abs(coolDown);
   coolDown = 0;
 
-  let fraction = morph / props.morphTime;
+  let fraction = morph / Math.max(Number(props.morphTime) || 0, 0.1);
 
-  if (fraction > 1) {
-    coolDown = props.coolDownTime;
+  if (fraction >= 1) {
     fraction = 1;
   }
 
@@ -167,6 +190,7 @@ function doMorph() {
   if (fraction === 1) {
     advanceText();
     morph = 0;
+    coolDown = getCurrentHoldTime();
   }
 }
 
@@ -180,7 +204,7 @@ function animate(timestamp) {
   const rawDelta = (timestamp - lastTime) / 1000;
   const delta = Math.min(Math.max(rawDelta, 0), MAX_FRAME_DELTA_SECONDS);
   lastTime = timestamp;
-  coolDown = Math.max(props.coolDownTime, 0) > 0 ? coolDown - delta : -delta;
+  coolDown -= delta;
 
   if (coolDown <= 0) {
     doMorph();
@@ -192,31 +216,33 @@ function animate(timestamp) {
 function stopAnimation() {
   cancelAnimationFrame(animationFrameId);
   animationFrameId = 0;
-  window.clearInterval(reducedMotionTimerId);
-  reducedMotionTimerId = 0;
-}
-
-function startReducedMotionCycle() {
-  doCoolDown();
-  reducedMotionTimerId = window.setInterval(() => {
-    advanceText();
-    doCoolDown();
-  }, Math.max(1200, (props.morphTime + props.coolDownTime) * 1000));
 }
 
 function startAnimation() {
   stopAnimation();
   lastTime = 0;
   morph = 0;
-  coolDown = Math.max(props.coolDownTime, 0);
+  textIndex.value = 0;
+  coolDown = getCurrentHoldTime();
 
-  if (reducedMotionQuery?.matches) {
-    startReducedMotionCycle();
+  if (reducedMotionQuery?.matches || document.hidden) {
+    doCoolDown();
     return;
   }
 
   doCoolDown();
   animationFrameId = requestAnimationFrame(animate);
+}
+
+function handleVisibilityChange() {
+  if (document.hidden) {
+    stopAnimation();
+    textIndex.value = 0;
+    doCoolDown();
+    return;
+  }
+
+  startAnimation();
 }
 
 watch(
@@ -232,12 +258,14 @@ watch(
 onMounted(() => {
   reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
   reducedMotionQuery.addEventListener("change", startAnimation);
+  document.addEventListener("visibilitychange", handleVisibilityChange);
   startAnimation();
 });
 
 onBeforeUnmount(() => {
   stopAnimation();
   reducedMotionQuery?.removeEventListener("change", startAnimation);
+  document.removeEventListener("visibilitychange", handleVisibilityChange);
 });
 </script>
 
@@ -245,7 +273,7 @@ onBeforeUnmount(() => {
   <h1
     class="morphing-text"
     :aria-label="accessibleLabel"
-    :style="{ filter: `url(#${filterId}) blur(0.45px) drop-shadow(0 0 16px rgba(92, 225, 194, 0.12))` }"
+    :style="{ filter: `url(#${filterId}) blur(0.18px) drop-shadow(0 0 12px rgba(104, 214, 183, 0.1))` }"
   >
     <span
       ref="text1Ref"

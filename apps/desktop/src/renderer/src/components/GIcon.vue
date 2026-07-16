@@ -38,6 +38,8 @@ import {
   Home,
   Image,
   LineChart,
+  ListTodo,
+  LayoutGrid,
   LoaderCircle,
   Maximize2,
   MessageSquarePlus,
@@ -58,9 +60,11 @@ import {
   Share2,
   Sparkles,
   Square,
+  SquareTerminal,
   Trash2,
   Upload,
   Video,
+  Workflow,
   Zap,
   X
 } from "lucide-vue-next";
@@ -112,6 +116,8 @@ const ICONS = {
   image: Image,
   jump: ExternalLink,
   lineChart: LineChart,
+  listTodo: ListTodo,
+  layoutGrid: LayoutGrid,
   loading: LoaderCircle,
   maximize: Maximize2,
   minimize: Minimize2,
@@ -137,8 +143,10 @@ const ICONS = {
   trash: Trash2,
   upload: Upload,
   video: Video,
+  workflow: Workflow,
   zap: Zap,
-  stop: Square
+  stop: Square,
+  terminal: SquareTerminal
 };
 
 const iconComponent = computed(() => ICONS[props.name] ?? MoreHorizontal);

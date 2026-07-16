@@ -79,7 +79,7 @@
           </div>
 
           <article
-            v-for="profile in workbench.modelSettings.profiles"
+            v-for="(profile, profileIndex) in workbench.modelSettings.profiles"
             :key="profile.id"
             class="model-config-card model-config-draggable-card"
             :class="{
@@ -115,6 +115,10 @@
                   <GIcon name="grip" :size="18" :stroke-width="2.15" />
                 </button>
 
+                <span class="model-card-rank" aria-hidden="true">
+                  {{ String(profileIndex + 1).padStart(2, "0") }}
+                </span>
+
                 <div
                   class="provider-avatar"
                   :class="[
@@ -147,6 +151,18 @@
                     <span class="model-card-meta-separator">/</span>
                     <span class="model-card-code">{{ profile.model }}</span>
                   </p>
+                  <div class="model-card-capabilities" aria-label="接口能力">
+                    <span class="model-card-mode">
+                      {{ profile.apiFormat === "responses" ? "RESPONSES" : "CHAT" }}
+                    </span>
+                    <span class="model-card-mode" :class="{ 'is-sync': profile.supportsStreaming === false }">
+                      {{ profile.supportsStreaming === false ? "SYNC" : "STREAM" }}
+                    </span>
+                    <span class="model-card-health">
+                      <i aria-hidden="true"></i>
+                      READY
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -194,37 +210,44 @@
                   <p v-else class="model-balance-widget-placeholder">点击刷新查询余额</p>
                 </div>
 
-                <button
-                  type="button"
-                  class="model-icon-button"
-                  :aria-label="`编辑 ${profile.displayName}`"
-                  title="编辑"
-                  @click="openModelEditor(profile)"
-                >
-                  <GIcon name="edit" />
-                </button>
+                <div v-else class="model-balance-widget model-balance-widget-empty" aria-hidden="true">
+                  <span>Telemetry</span>
+                  <strong>未配置</strong>
+                </div>
 
-                <button
-                  type="button"
-                  class="model-status-toggle model-default-radio"
-                  :class="{ 'is-active': isActiveModelProfile(profile) }"
-                  :aria-pressed="isActiveModelProfile(profile) ? 'true' : 'false'"
-                  :title="isActiveModelProfile(profile) ? '取消默认模型' : '设为默认模型'"
-                  :aria-label="isActiveModelProfile(profile) ? `${profile.displayName} 当前为默认模型` : `设 ${profile.displayName} 为默认模型`"
-                  @click="handleModelStatusToggle(profile.id)"
-                >
-                  <span class="model-default-radio-mark" aria-hidden="true"></span>
-                </button>
+                <div class="model-card-command-cluster" aria-label="模型操作">
+                  <button
+                    type="button"
+                    class="model-icon-button"
+                    :aria-label="`编辑 ${profile.displayName}`"
+                    title="编辑"
+                    @click="openModelEditor(profile)"
+                  >
+                    <GIcon name="edit" />
+                  </button>
 
-                <button
-                  type="button"
-                  class="model-icon-button model-icon-button-danger"
-                  :aria-label="`删除 ${profile.displayName}`"
-                  title="删除"
-                  @click="handleModelDelete(profile.id)"
-                >
-                  <GIcon name="delete" />
-                </button>
+                  <button
+                    type="button"
+                    class="model-status-toggle model-default-radio"
+                    :class="{ 'is-active': isActiveModelProfile(profile) }"
+                    :aria-pressed="isActiveModelProfile(profile) ? 'true' : 'false'"
+                    :title="isActiveModelProfile(profile) ? '取消默认模型' : '设为默认模型'"
+                    :aria-label="isActiveModelProfile(profile) ? `${profile.displayName} 当前为默认模型` : `设 ${profile.displayName} 为默认模型`"
+                    @click="handleModelStatusToggle(profile.id)"
+                  >
+                    <GIcon name="sparkles" :size="15" :stroke-width="2.1" />
+                  </button>
+
+                  <button
+                    type="button"
+                    class="model-icon-button model-icon-button-danger"
+                    :aria-label="`删除 ${profile.displayName}`"
+                    title="删除"
+                    @click="handleModelDelete(profile.id)"
+                  >
+                    <GIcon name="delete" />
+                  </button>
+                </div>
               </div>
             </div>
 

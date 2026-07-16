@@ -3,6 +3,18 @@
     <div class="robot-frame">
       <FallingStarsBackground class="robot-stars" color="#ffffff" :count="180" :speed="0.7" />
       <canvas ref="robotCanvasRef" class="robot-canvas" aria-label="Gordon robot"></canvas>
+      <div class="robot-hud" aria-hidden="true">
+        <span class="robot-hud-corner robot-hud-corner-nw"></span>
+        <span class="robot-hud-corner robot-hud-corner-ne"></span>
+        <span class="robot-hud-corner robot-hud-corner-sw"></span>
+        <span class="robot-hud-corner robot-hud-corner-se"></span>
+        <span class="robot-hud-scan"></span>
+        <span class="robot-hud-axis robot-hud-axis-top"></span>
+        <span class="robot-hud-axis robot-hud-axis-right"></span>
+        <span class="robot-hud-signal-bars">
+          <i></i><i></i><i></i><i></i><i></i>
+        </span>
+      </div>
     </div>
   </div>
 </template>

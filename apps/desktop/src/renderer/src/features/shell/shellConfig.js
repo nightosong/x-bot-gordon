@@ -61,30 +61,35 @@ export const BRAND_RANDOM_TEXTS = [
 export const FEATURE_ENTRIES = [
   {
     id: FEATURE_HOME,
+    icon: "home",
     kicker: "Home",
     title: "首页",
     tier: "flat"
   },
   {
     id: FEATURE_MARKETPLACE,
+    icon: "layoutGrid",
     kicker: "Market",
     title: "应用广场",
     tier: "wide"
   },
   {
     id: FEATURE_TASKS,
+    icon: "listTodo",
     kicker: "Tasks",
     title: "任务笔记",
     tier: "default"
   },
   {
     id: FEATURE_WORKFLOW_LIBRARY,
+    icon: "workflow",
     kicker: "workflow",
     title: "流程中心",
     tier: "wide"
   },
   {
     id: FEATURE_COMMAND_WORKSHOP,
+    icon: "terminal",
     kicker: "Command",
     title: "命令工坊",
     tier: "default"
@@ -94,10 +99,12 @@ export const FEATURE_ENTRIES = [
 export const HOME_SETTINGS_ITEMS = [
   {
     id: FEATURE_MODEL_MANAGEMENT,
+    icon: "settings",
     title: "模型管理"
   },
   {
     id: FEATURE_EXTENSIONS_MANAGEMENT,
+    icon: "sparkles",
     title: "能力拓展"
   }
 ];

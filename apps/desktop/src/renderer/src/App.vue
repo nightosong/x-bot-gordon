@@ -1425,10 +1425,6 @@ function setActiveFeature(featureId) {
     backModelManagement();
   }
 
-  if (featureId === FEATURE_TASKS) {
-    closeWeeklyEditor();
-  }
-
   if (featureId === FEATURE_MARKETPLACE && !ui.marketplace.view) {
     ui.marketplace.view = "apps";
   }

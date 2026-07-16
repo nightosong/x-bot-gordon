@@ -3,14 +3,15 @@
     <section class="brand-panel">
       <div class="brand-panel-head">
         <div class="brand-lockup">
-          <div class="brand-row">
-            <MorphingText
-              class="brand-title"
-              base-text="GORDON"
-              :random-texts="BRAND_RANDOM_TEXTS"
-              aria-label="GORDON"
-            />
-          </div>
+          <MorphingText
+            class="brand-title"
+            base-text="GORDON"
+            :random-texts="BRAND_RANDOM_TEXTS"
+            :morph-time="0.72"
+            :base-hold-time="9"
+            :alternate-hold-time="1.15"
+            aria-label="GORDON"
+          />
         </div>
 
         <details
@@ -31,8 +32,8 @@
               :class="{ 'is-active': activeFeature === item.id }"
               @click="selectFeature(item.id)"
             >
+              <GIcon :name="item.icon" :size="14" />
               <span class="home-settings-item-title">{{ item.title }}</span>
-              <span v-if="item.copy" class="home-settings-item-copy">{{ item.copy }}</span>
             </button>
           </div>
         </details>
@@ -40,38 +41,26 @@
     </section>
 
     <section class="feature-panel">
-      <div class="feature-board">
-        <article
-          v-for="(entry, index) in FEATURE_ENTRIES"
+      <nav class="feature-board" aria-label="主导航">
+        <button
+          v-for="entry in FEATURE_ENTRIES"
           :key="entry.id"
-          :class="getFeatureCardClass(entry, index)"
-          :data-graffiti="entry.kicker"
-          role="button"
-          tabindex="0"
+          type="button"
+          class="feature-card"
+          :class="{ 'is-active': entry.id === activeFeature }"
           :aria-label="`查看${entry.title}`"
           @click="selectFeature(entry.id)"
-          @keydown.enter.prevent="selectFeature(entry.id)"
-          @keydown.space.prevent="selectFeature(entry.id)"
-          @pointermove="handleCardPointerMove"
-          @pointerleave="handleCardPointerLeave"
-          @pointercancel="handleCardPointerLeave"
-          @pointerup="handleCardPointerLeave"
         >
-          <span class="feature-graffiti" aria-hidden="true" :data-text="entry.kicker"></span>
-
-          <div v-if="entry.tier === 'flat'" class="feature-card-flat-row">
-            <div>
-              <p class="feature-kicker">{{ entry.kicker }}</p>
-              <p class="feature-title">{{ entry.title }}</p>
-            </div>
-          </div>
-
-          <template v-else>
-            <p class="feature-kicker">{{ entry.kicker }}</p>
-            <p class="feature-title">{{ entry.title }}</p>
-          </template>
-        </article>
-      </div>
+          <span class="feature-card-icon" aria-hidden="true">
+            <GIcon :name="entry.icon" :size="17" :stroke-width="1.9" />
+          </span>
+          <span class="feature-card-copy">
+            <span class="feature-title">{{ entry.title }}</span>
+            <span class="feature-kicker">{{ entry.kicker }}</span>
+          </span>
+          <span class="feature-card-indicator" aria-hidden="true"></span>
+        </button>
+      </nav>
     </section>
   </section>
 </template>
@@ -96,52 +85,6 @@ const props = defineProps({
 const emit = defineEmits(["select"]);
 
 const homeSettingsMenuRef = ref(null);
-
-function resetTiltCard(card) {
-  if (!(card instanceof HTMLElement)) {
-    return;
-  }
-
-  card.style.setProperty("--rotate-x", "0deg");
-  card.style.setProperty("--rotate-y", "0deg");
-  card.style.setProperty("--lift", "0px");
-}
-
-function getFeatureCardClass(entry, index) {
-  const classes = ["feature-card", "tilt-card", `feature-card-${entry.tier}`];
-
-  if (entry.tier !== "flat") {
-    classes.push(index % 2 === 1 ? "feature-card-align-right" : "feature-card-align-left");
-  }
-
-  if (entry.id === props.activeFeature) {
-    classes.push("is-active");
-  }
-
-  return classes;
-}
-
-function handleCardPointerMove(event) {
-  const card = event.currentTarget;
-
-  if (!(card instanceof HTMLElement)) {
-    return;
-  }
-
-  const bounds = card.getBoundingClientRect();
-  const offsetX = event.clientX - bounds.left;
-  const offsetY = event.clientY - bounds.top;
-  const rotateY = ((offsetX / bounds.width) - 0.5) * 10;
-  const rotateX = (0.5 - (offsetY / bounds.height)) * 10;
-
-  card.style.setProperty("--rotate-x", `${rotateX.toFixed(2)}deg`);
-  card.style.setProperty("--rotate-y", `${rotateY.toFixed(2)}deg`);
-  card.style.setProperty("--lift", "-4px");
-}
-
-function handleCardPointerLeave(event) {
-  resetTiltCard(event.currentTarget);
-}
 
 function isHomeSettingsFeature(featureId) {
   return featureId === FEATURE_MODEL_MANAGEMENT || featureId === FEATURE_EXTENSIONS_MANAGEMENT;
