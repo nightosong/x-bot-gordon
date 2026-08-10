@@ -104,6 +104,7 @@ import { queryModelBalance } from "./model-balance.js";
 
 const currentFilePath = fileURLToPath(import.meta.url);
 const currentDir = path.dirname(currentFilePath);
+const rendererDevServerUrl = process.env.GORDON_RENDERER_DEV_SERVER_URL?.trim();
 const desktopAssetDir = path.resolve(currentDir, "..", "assets");
 const appIconFileName = process.platform === "win32" ? "gordon.ico" : "gordon.icns";
 const appIconPath = path.join(desktopAssetDir, appIconFileName);
@@ -5565,6 +5566,11 @@ async function createMainWindow(): Promise<void> {
       sandbox: true
     }
   });
+
+  if (rendererDevServerUrl) {
+    await window.loadURL(rendererDevServerUrl);
+    return;
+  }
 
   await window.loadFile(path.join(currentDir, "renderer", "index.html"));
 }

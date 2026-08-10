@@ -1,0 +1,4429 @@
+:root.gordon-saber-theme {
+  color-scheme: light;
+  --text: #102236;
+  --muted: #40566e;
+  --line: rgba(92, 142, 190, 0.28);
+  --panel: rgba(255, 255, 255, 0.72);
+  --panel-strong: rgba(250, 253, 255, 0.92);
+  --panel-soft: rgba(238, 247, 255, 0.68);
+  --accent: #3f85bf;
+  --accent-warm: #d49b33;
+  --accent-hot: #8f75ca;
+  --accent-blue: #66a8dc;
+  --cyber-surface: rgba(255, 255, 255, 0.72);
+  --cyber-surface-raised: rgba(255, 255, 255, 0.86);
+  --cyber-grid: rgba(83, 138, 190, 0.08);
+  --cyber-void: #eef7ff;
+  --shadow: 0 18px 48px rgba(40, 84, 128, 0.18);
+  --radius-xl: 12px;
+  --radius-lg: 10px;
+  --radius-md: 8px;
+  --g-scrollbar-thumb: rgba(63, 133, 191, 0.26);
+  --g-scrollbar-thumb-hover: rgba(143, 117, 202, 0.42);
+  --saber-paper: rgba(255, 255, 255, 0.78);
+  --saber-paper-strong: rgba(255, 255, 255, 0.9);
+  --saber-paper-soft: rgba(244, 250, 255, 0.74);
+  --saber-ink: #102236;
+  --saber-muted: #40566e;
+  --saber-line: rgba(111, 174, 220, 0.32);
+  --saber-line-strong: rgba(63, 133, 191, 0.42);
+  --saber-blue: #3f85bf;
+  --saber-blue-soft: rgba(102, 168, 220, 0.18);
+  --saber-gold: #d49b33;
+  --saber-gold-soft: rgba(239, 187, 84, 0.18);
+  --saber-lilac: #8f75ca;
+  --saber-lilac-soft: rgba(143, 117, 202, 0.16);
+  --saber-rose: #c96f9b;
+  --saber-danger: #c75f62;
+  --saber-focus: rgba(63, 133, 191, 0.34);
+  --saber-glass-blur: blur(18px) saturate(128%);
+  --saber-surface: rgba(255, 255, 255, 0.82);
+  --saber-surface-strong: rgba(255, 255, 255, 0.94);
+  --saber-surface-soft: rgba(244, 250, 255, 0.72);
+  --saber-control: rgba(255, 255, 255, 0.76);
+  --saber-control-hover: rgba(235, 247, 255, 0.9);
+  --saber-ink-soft: rgba(16, 34, 54, 0.82);
+  --saber-ink-faint: rgba(44, 62, 82, 0.82);
+  --saber-disabled: rgba(47, 66, 86, 0.84);
+  --saber-success: #2d7a68;
+  --saber-warning: #8a641a;
+  --saber-code-bg: rgba(18, 38, 58, 0.92);
+  --saber-code-text: rgba(245, 250, 255, 0.92);
+  --saber-surface-shadow: 0 12px 28px rgba(63, 113, 160, 0.12);
+  --atelier-paper: rgba(255, 255, 255, 0.86);
+  --atelier-paper-strong: rgba(255, 255, 255, 0.96);
+  --atelier-paper-soft: rgba(244, 250, 255, 0.76);
+  --atelier-cream: rgba(255, 250, 238, 0.74);
+  --atelier-wash: rgba(222, 239, 255, 0.54);
+  --atelier-border: rgba(88, 146, 196, 0.26);
+  --atelier-border-strong: rgba(63, 133, 191, 0.42);
+  --atelier-binding: rgba(63, 133, 191, 0.58);
+  --atelier-ribbon: rgba(212, 155, 51, 0.68);
+  --atelier-ribbon-soft: rgba(239, 187, 84, 0.18);
+  --atelier-lilac-wash: rgba(143, 117, 202, 0.1);
+  --atelier-shadow-soft: 0 10px 24px rgba(57, 105, 151, 0.1);
+  --atelier-shadow-lift: 0 14px 30px rgba(57, 105, 151, 0.14);
+  --weekly-progress-surface: rgba(255, 255, 255, 0.9);
+  --weekly-progress-surface-strong: rgba(255, 255, 255, 0.96);
+  --weekly-progress-surface-soft: rgba(244, 250, 255, 0.82);
+  --weekly-progress-border: rgba(58, 116, 162, 0.24);
+  --weekly-progress-border-strong: rgba(58, 116, 162, 0.38);
+  --weekly-progress-shadow: 0 14px 32px rgba(51, 100, 146, 0.14);
+  --weekly-progress-planned: #5f7184;
+  --weekly-progress-in-progress: #1f8a70;
+  --weekly-progress-testing: #2f78b7;
+  --weekly-progress-completed: #687785;
+  --weekly-progress-blocked: #b85c5f;
+}
+
+html.gordon-saber-theme,
+html.gordon-saber-theme body {
+  background: #eef7ff;
+  color: var(--saber-ink);
+}
+
+html.gordon-saber-theme body {
+  background-image:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.66), rgba(238, 247, 255, 0.36)),
+    linear-gradient(180deg, #eef7ff 0%, #dceeff 100%);
+  font-family:
+    "Avenir Next",
+    "SF Pro Text",
+    "PingFang SC",
+    "Hiragino Sans GB",
+    "Microsoft YaHei",
+    sans-serif;
+}
+
+html.gordon-saber-theme ::selection {
+  background: rgba(143, 117, 202, 0.32);
+  color: #102236;
+}
+
+html.gordon-saber-theme * {
+  scrollbar-color: var(--g-scrollbar-thumb) transparent;
+}
+
+html.gordon-saber-theme *::-webkit-scrollbar-thumb {
+  background-color: var(--g-scrollbar-thumb);
+}
+
+html.gordon-saber-theme *::-webkit-scrollbar-thumb:hover {
+  background-color: var(--g-scrollbar-thumb-hover);
+}
+
+html.gordon-saber-theme button,
+html.gordon-saber-theme input,
+html.gordon-saber-theme textarea,
+html.gordon-saber-theme select {
+  color: inherit;
+}
+
+html.gordon-saber-theme button:focus-visible,
+html.gordon-saber-theme a:focus-visible,
+html.gordon-saber-theme input:focus-visible,
+html.gordon-saber-theme textarea:focus-visible,
+html.gordon-saber-theme select:focus-visible,
+html.gordon-saber-theme [tabindex]:focus-visible {
+  outline: 2px solid rgba(63, 133, 191, 0.5);
+  outline-offset: 2px;
+}
+
+html.gordon-saber-theme .app-shell {
+  color: var(--saber-ink);
+  isolation: isolate;
+}
+
+html.gordon-saber-theme .ambient {
+  display: none;
+}
+
+html.gordon-saber-theme .app-shell::before,
+html.gordon-saber-theme .app-shell::after {
+  z-index: 0;
+}
+
+html.gordon-saber-theme .app-shell::before {
+  background:
+    radial-gradient(circle at 8% 8%, rgba(255, 255, 255, 0.52), transparent 27%),
+    linear-gradient(90deg, transparent 0 49.8%, rgba(63, 133, 191, 0.055) 50%, transparent 50.2%),
+    linear-gradient(transparent 0 49.8%, rgba(212, 155, 51, 0.045) 50%, transparent 50.2%);
+  background-size: auto, 220px 220px, 220px 220px;
+  opacity: 0.78;
+}
+
+html.gordon-saber-theme .app-shell::after {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.36), transparent 16%, rgba(255, 255, 255, 0.18) 100%),
+    radial-gradient(circle at 82% 10%, rgba(143, 117, 202, 0.12), transparent 30%);
+  mix-blend-mode: normal;
+  opacity: 0.78;
+}
+
+html.gordon-saber-theme .dashboard {
+  position: relative;
+}
+
+html.gordon-saber-theme .dashboard {
+  z-index: 1;
+}
+
+html.gordon-saber-theme .window-drag-region {
+  z-index: 3;
+}
+
+/* Reset legacy dark-theme text colors before applying Saber-specific accents below. */
+html.gordon-saber-theme .brand-panel,
+html.gordon-saber-theme .feature-panel,
+html.gordon-saber-theme .workspace-stage,
+html.gordon-saber-theme .gordon-dialog,
+html.gordon-saber-theme .home-settings-menu-panel,
+html.gordon-saber-theme .compact-select-menu {
+  color: var(--saber-ink);
+}
+
+html.gordon-saber-theme .brand-panel *,
+html.gordon-saber-theme .feature-panel *,
+html.gordon-saber-theme .workspace-stage *,
+html.gordon-saber-theme .gordon-dialog *,
+html.gordon-saber-theme .home-settings-menu-panel *,
+html.gordon-saber-theme .compact-select-menu * {
+  color: inherit;
+  -webkit-text-fill-color: currentColor;
+}
+
+html.gordon-saber-theme .workspace-stage :is(
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  strong,
+  summary,
+  [class*="title"],
+  [class*="name"],
+  [class*="heading"],
+  [class*="value"]
+) {
+  color: #102236;
+}
+
+html.gordon-saber-theme .workspace-stage :is(
+  small,
+  [class*="copy"],
+  [class*="meta"],
+  [class*="hint"],
+  [class*="description"],
+  [class*="subtitle"],
+  [class*="kicker"],
+  [class*="empty"],
+  [class*="label"]
+) {
+  color: #40566e;
+}
+
+html.gordon-saber-theme .workspace-stage :is(a, [class*="link"]) {
+  color: #275f8f;
+}
+
+html.gordon-saber-theme .workspace-stage :is(.is-success, [class*="success"]) {
+  color: #2d7a68;
+}
+
+html.gordon-saber-theme .workspace-stage :is(.is-warning, [class*="warning"]) {
+  color: #8a641a;
+}
+
+html.gordon-saber-theme .workspace-stage :is(.is-danger, .is-error, [class*="danger"], [class*="error"]) {
+  color: #a94147;
+}
+
+.saber-theme-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.saber-theme-backdrop-image {
+  position: absolute;
+  inset: -1px;
+  background-repeat: no-repeat;
+  background-size: cover;
+  filter: saturate(1.04) contrast(0.98);
+  opacity: 0.54;
+  transform: scale(1.002);
+  transform-origin: center;
+}
+
+.saber-theme-backdrop:not(.is-home) .saber-theme-backdrop-image {
+  filter: saturate(1.1) contrast(1.02);
+  opacity: 0.9;
+}
+
+.saber-theme-backdrop-image.is-home {
+  opacity: 0.74;
+  background-size: cover;
+}
+
+.saber-theme-backdrop-scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(238, 247, 255, 0.92) 0%, rgba(238, 247, 255, 0.72) 36%, rgba(238, 247, 255, 0.2) 74%, rgba(238, 247, 255, 0.08) 100%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(231, 242, 255, 0.66));
+}
+
+.saber-theme-backdrop:not(.is-home) .saber-theme-backdrop-scrim {
+  background:
+    linear-gradient(90deg, rgba(238, 247, 255, 0.68) 0%, rgba(238, 247, 255, 0.34) 34%, rgba(238, 247, 255, 0.06) 66%, rgba(238, 247, 255, 0) 100%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(231, 242, 255, 0.2));
+}
+
+.saber-theme-backdrop .saber-theme-backdrop-image.saber-backdrop-fade-enter-active {
+  z-index: 2;
+  transition:
+    opacity 1280ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 1600ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.saber-theme-backdrop .saber-theme-backdrop-image.saber-backdrop-fade-leave-active {
+  z-index: 1;
+  transition: opacity 1080ms cubic-bezier(0.32, 0, 0.67, 0) 180ms;
+}
+
+.saber-theme-backdrop .saber-theme-backdrop-image.saber-backdrop-fade-enter-from {
+  opacity: 0;
+  transform: scale(1.01);
+}
+
+.saber-theme-backdrop .saber-theme-backdrop-image.saber-backdrop-fade-enter-to,
+.saber-theme-backdrop .saber-theme-backdrop-image.saber-backdrop-fade-leave-to {
+  transform: scale(1.002);
+}
+
+.saber-theme-backdrop .saber-theme-backdrop-image.saber-backdrop-fade-leave-to {
+  opacity: 0;
+}
+
+html.gordon-saber-theme .brand-panel,
+html.gordon-saber-theme .feature-panel,
+html.gordon-saber-theme .workspace-panel,
+html.gordon-saber-theme .home-settings-menu-panel,
+html.gordon-saber-theme .compact-select-menu,
+html.gordon-saber-theme .gordon-dialog {
+  border: 1px solid var(--saber-line);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.88), rgba(244, 250, 255, 0.68) 52%, rgba(238, 247, 255, 0.52)),
+    rgba(255, 255, 255, 0.62);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.86),
+    0 18px 44px rgba(63, 113, 160, 0.16);
+  backdrop-filter: var(--saber-glass-blur);
+}
+
+html.gordon-saber-theme .workspace-panel {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.68), rgba(238, 247, 255, 0.48)),
+    rgba(255, 255, 255, 0.5);
+}
+
+html.gordon-saber-theme .workspace-panel:has(.workspace-stage:not(.anime-home-stage)) {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.46), rgba(238, 247, 255, 0.2)),
+    rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(2px) saturate(112%);
+}
+
+html.gordon-saber-theme .workspace-panel.workspace-panel-flush {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+html.gordon-saber-theme .workspace-panel.workspace-panel-flush:has(.workspace-stage:not(.anime-home-stage)) {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+html.gordon-saber-theme .brand-title,
+html.gordon-saber-theme .models-title,
+html.gordon-saber-theme .extensions-shell .models-title,
+html.gordon-saber-theme .command-chat-title,
+html.gordon-saber-theme .weekly-panel-title,
+html.gordon-saber-theme .model-section-title,
+html.gordon-saber-theme .workflow-library-card-title,
+html.gordon-saber-theme .marketplace-app-title,
+html.gordon-saber-theme .weekly-project-name-input {
+  color: #17314b;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.82);
+}
+
+html.gordon-saber-theme .brand-title,
+html.gordon-saber-theme .models-title,
+html.gordon-saber-theme .extensions-shell .models-title,
+html.gordon-saber-theme .model-section-title,
+html.gordon-saber-theme .workflow-library-card-title,
+html.gordon-saber-theme .marketplace-app-title,
+html.gordon-saber-theme .command-chat-title {
+  font-family:
+    "Avenir Next Condensed",
+    "Avenir Next",
+    "SF Pro Display",
+    "PingFang SC",
+    sans-serif;
+}
+
+html.gordon-saber-theme .brand-panel::after {
+  background: linear-gradient(90deg, var(--saber-gold), var(--saber-lilac));
+  box-shadow: 0 0 16px rgba(143, 117, 202, 0.22);
+}
+
+html.gordon-saber-theme .feature-panel {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(244, 250, 255, 0.54)),
+    rgba(255, 255, 255, 0.58);
+}
+
+html.gordon-saber-theme .feature-card {
+  color: rgba(16, 34, 54, 0.82);
+}
+
+html.gordon-saber-theme .feature-card:hover {
+  border-color: rgba(63, 133, 191, 0.2);
+  background: rgba(255, 255, 255, 0.48);
+  color: #1d2b3a;
+}
+
+html.gordon-saber-theme .feature-card.is-active {
+  border-color: rgba(63, 133, 191, 0.34);
+  background:
+    linear-gradient(90deg, rgba(102, 168, 220, 0.2), rgba(255, 255, 255, 0.42)),
+    rgba(255, 255, 255, 0.56);
+  color: #16334f;
+  box-shadow: inset 2px 0 0 var(--saber-blue), 0 10px 24px rgba(63, 133, 191, 0.12);
+}
+
+html.gordon-saber-theme .feature-card-icon,
+html.gordon-saber-theme .home-settings-menu summary,
+html.gordon-saber-theme .workflow-library-card-icon,
+html.gordon-saber-theme .workflow-library-card-arrow,
+html.gordon-saber-theme .model-icon-button,
+html.gordon-saber-theme .command-input-settings-trigger,
+html.gordon-saber-theme .command-input-attach,
+html.gordon-saber-theme .field-ai-trigger,
+html.gordon-saber-theme .field-ai-close {
+  border-color: rgba(63, 133, 191, 0.24);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.8), rgba(238, 247, 255, 0.56)),
+    rgba(255, 255, 255, 0.48);
+  color: rgba(16, 34, 54, 0.76);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86);
+}
+
+html.gordon-saber-theme .feature-card:hover .feature-card-icon,
+html.gordon-saber-theme .feature-card.is-active .feature-card-icon,
+html.gordon-saber-theme .home-settings-menu summary:hover,
+html.gordon-saber-theme .home-settings-menu[open] summary,
+html.gordon-saber-theme .home-settings-menu.has-active-selection summary,
+html.gordon-saber-theme .model-icon-button:hover,
+html.gordon-saber-theme .command-input-settings-trigger:hover,
+html.gordon-saber-theme .command-input-attach:hover,
+html.gordon-saber-theme .field-ai-trigger:hover,
+html.gordon-saber-theme .field-ai-trigger:focus-visible,
+html.gordon-saber-theme .field-ai-trigger.is-active {
+  border-color: rgba(63, 133, 191, 0.42);
+  background:
+    linear-gradient(135deg, rgba(102, 168, 220, 0.2), rgba(255, 255, 255, 0.72)),
+    rgba(255, 255, 255, 0.6);
+  color: var(--saber-blue);
+  box-shadow: 0 8px 20px rgba(63, 133, 191, 0.12);
+}
+
+html.gordon-saber-theme .feature-card.is-active .feature-card-indicator {
+  background: linear-gradient(180deg, var(--saber-blue), var(--saber-lilac));
+  box-shadow: 0 0 12px rgba(143, 117, 202, 0.28);
+}
+
+html.gordon-saber-theme .feature-kicker,
+html.gordon-saber-theme .mini-kicker,
+html.gordon-saber-theme .weekly-kpi-label,
+html.gordon-saber-theme .field-label,
+html.gordon-saber-theme .model-card-mode,
+html.gordon-saber-theme .model-card-health,
+html.gordon-saber-theme .model-card-rank {
+  color: rgba(64, 86, 110, 0.86);
+}
+
+html.gordon-saber-theme .home-settings-item {
+  color: rgba(16, 34, 54, 0.78);
+}
+
+html.gordon-saber-theme .home-settings-item:hover,
+html.gordon-saber-theme .home-settings-item.is-active {
+  border-color: rgba(63, 133, 191, 0.22);
+  background: rgba(102, 168, 220, 0.14);
+  color: #17314b;
+}
+
+.anime-home-stage {
+  position: relative;
+  overflow: hidden;
+  border-radius: inherit;
+  background: #eef7ff;
+  isolation: isolate;
+}
+
+.anime-home-image {
+  position: absolute;
+  inset: 0;
+  z-index: -3;
+  background-image: var(--anime-home-image);
+  background-position: right center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  filter: saturate(1.04) contrast(0.99);
+}
+
+.anime-home-soft-light {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background:
+    linear-gradient(90deg, rgba(238, 247, 255, 0.96) 0%, rgba(238, 247, 255, 0.72) 34%, rgba(238, 247, 255, 0.2) 72%, rgba(238, 247, 255, 0.02) 100%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(102, 168, 220, 0.08));
+}
+
+.anime-home-copy {
+  position: absolute;
+  left: clamp(28px, 5vw, 72px);
+  bottom: clamp(34px, 8vh, 96px);
+  display: grid;
+  gap: 8px;
+  max-width: min(440px, 48%);
+}
+
+.anime-home-kicker,
+.anime-home-status {
+  width: fit-content;
+  margin: 0;
+  border: 1px solid rgba(63, 133, 191, 0.26);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.58);
+  color: rgba(16, 34, 54, 0.76);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1;
+  backdrop-filter: blur(12px);
+}
+
+.anime-home-kicker {
+  padding: 6px 10px;
+}
+
+.anime-home-stage h1 {
+  margin: 0;
+  color: #17314b;
+  font-family:
+    "Avenir Next Condensed",
+    "Avenir Next",
+    "SF Pro Display",
+    "PingFang SC",
+    sans-serif;
+  font-size: clamp(58px, 9vw, 128px);
+  font-weight: 850;
+  line-height: 0.88;
+  letter-spacing: 0;
+  text-shadow: 0 2px 0 rgba(255, 255, 255, 0.76), 0 18px 42px rgba(63, 133, 191, 0.2);
+}
+
+.anime-home-stage p:not(.anime-home-kicker) {
+  margin: 0;
+  color: rgba(29, 43, 58, 0.74);
+  font-size: clamp(16px, 1.8vw, 24px);
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.anime-home-status {
+  margin-top: 6px;
+  padding: 6px 9px;
+  background: rgba(255, 255, 255, 0.5);
+  color: var(--saber-blue);
+}
+
+.anime-home-ribbon {
+  position: absolute;
+  right: clamp(18px, 3vw, 42px);
+  bottom: clamp(18px, 3vw, 42px);
+  display: grid;
+  gap: 8px;
+  width: min(32vw, 360px);
+}
+
+.anime-home-ribbon span {
+  display: block;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(63, 133, 191, 0.46), rgba(212, 155, 51, 0.42));
+}
+
+.anime-home-ribbon span:nth-child(2) {
+  width: 72%;
+  justify-self: end;
+  background: linear-gradient(90deg, transparent, rgba(143, 117, 202, 0.36), rgba(63, 133, 191, 0.38));
+}
+
+.anime-home-ribbon span:nth-child(3) {
+  width: 48%;
+  justify-self: end;
+}
+
+html.gordon-saber-theme .models-hero,
+html.gordon-saber-theme .weekly-hero,
+html.gordon-saber-theme .extensions-shell .models-hero,
+html.gordon-saber-theme .workflow-library-detail-head,
+html.gordon-saber-theme .writing-detail-head,
+html.gordon-saber-theme .weekly-panel-head-compact,
+html.gordon-saber-theme .command-chat-head {
+  border-color: rgba(63, 133, 191, 0.24);
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.74), rgba(238, 247, 255, 0.5) 56%, rgba(143, 117, 202, 0.08)),
+    rgba(255, 255, 255, 0.5);
+  box-shadow:
+    inset 0 -1px 0 rgba(63, 133, 191, 0.12),
+    0 12px 30px rgba(63, 113, 160, 0.12);
+  backdrop-filter: var(--saber-glass-blur);
+}
+
+html.gordon-saber-theme .models-metric-chip,
+html.gordon-saber-theme .weekly-kpi-card,
+html.gordon-saber-theme .workflow-library-card,
+html.gordon-saber-theme .marketplace-app-card,
+html.gordon-saber-theme .weekly-record-card,
+html.gordon-saber-theme .command-session-card,
+html.gordon-saber-theme .model-config-card,
+html.gordon-saber-theme .provider-card,
+html.gordon-saber-theme .placeholder-card,
+html.gordon-saber-theme .extension-card,
+html.gordon-saber-theme .thread-card,
+html.gordon-saber-theme .writing-book-card,
+html.gordon-saber-theme .weekly-project-card,
+html.gordon-saber-theme .workflow-info-window-card,
+html.gordon-saber-theme .workflow-info-feed-card,
+html.gordon-saber-theme .workflow-library-record-card,
+html.gordon-saber-theme .workflow-finance-command-deck,
+html.gordon-saber-theme .workflow-finance-toolbar,
+html.gordon-saber-theme .workflow-finance-stats-strip,
+html.gordon-saber-theme .workflow-finance-stage .workflow-finance-chart-panel,
+html.gordon-saber-theme .workflow-live-stage,
+html.gordon-saber-theme .workflow-live-rail,
+html.gordon-saber-theme .workflow-live-player-shell,
+html.gordon-saber-theme .workflow-library-main-card,
+html.gordon-saber-theme .writing-intro-card,
+html.gordon-saber-theme .writing-chapter-list-panel,
+html.gordon-saber-theme .writing-chapter-summary-panel,
+html.gordon-saber-theme .comic-chapter-inspector,
+html.gordon-saber-theme .comic-asset-panel,
+html.gordon-saber-theme .video-editor-surface,
+html.gordon-saber-theme .music-editor-surface,
+html.gordon-saber-theme .fortune-chat-card,
+html.gordon-saber-theme .fortune-input-card,
+html.gordon-saber-theme .fortune-output-card {
+  border-color: rgba(63, 133, 191, 0.24);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.82), rgba(244, 250, 255, 0.58) 46%, rgba(239, 187, 84, 0.06)),
+    rgba(255, 255, 255, 0.54);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.86),
+    0 12px 28px rgba(63, 113, 160, 0.12);
+  backdrop-filter: blur(14px) saturate(124%);
+}
+
+html.gordon-saber-theme .workflow-library-card:hover,
+html.gordon-saber-theme .marketplace-app-card:hover,
+html.gordon-saber-theme .weekly-record-card:hover,
+html.gordon-saber-theme .weekly-record-card.is-active,
+html.gordon-saber-theme .command-session-card:hover,
+html.gordon-saber-theme .command-session-card.is-active,
+html.gordon-saber-theme .models-shell .model-config-draggable-card:hover,
+html.gordon-saber-theme .writing-book-card:hover,
+html.gordon-saber-theme .workflow-info-window-card.is-active,
+html.gordon-saber-theme .workflow-info-window-card:hover,
+html.gordon-saber-theme .workflow-info-feed-card:hover,
+html.gordon-saber-theme .workflow-library-record-card:hover,
+html.gordon-saber-theme .workflow-library-record-card.is-active,
+html.gordon-saber-theme .writing-chapter-list-item:hover,
+html.gordon-saber-theme .writing-chapter-list-item.is-active {
+  border-color: rgba(63, 133, 191, 0.44);
+  background:
+    linear-gradient(90deg, rgba(102, 168, 220, 0.22), rgba(255, 255, 255, 0.68) 58%, rgba(143, 117, 202, 0.08)),
+    rgba(255, 255, 255, 0.68);
+  box-shadow:
+    inset 2px 0 0 var(--saber-blue),
+    0 16px 34px rgba(63, 113, 160, 0.16);
+}
+
+html.gordon-saber-theme .workflow-library-card::before,
+html.gordon-saber-theme .marketplace-app-card::before,
+html.gordon-saber-theme .weekly-record-card::before,
+html.gordon-saber-theme .weekly-project-card::before,
+html.gordon-saber-theme .writing-book-card::before {
+  background:
+    linear-gradient(90deg, rgba(102, 168, 220, 0.12), transparent 44%),
+    repeating-linear-gradient(90deg, rgba(63, 133, 191, 0.08) 0 1px, transparent 1px 16px);
+}
+
+html.gordon-saber-theme .workflow-library-card-icon::before,
+html.gordon-saber-theme .marketplace-app-card .marketplace-app-copy::before {
+  border-color: rgba(63, 133, 191, 0.22);
+  background: rgba(255, 255, 255, 0.62);
+  color: rgba(29, 43, 58, 0.58);
+}
+
+html.gordon-saber-theme .workflow-library-card:nth-child(1),
+html.gordon-saber-theme .marketplace-app-card,
+html.gordon-saber-theme .weekly-project-card {
+  border-left-color: rgba(63, 133, 191, 0.62);
+}
+
+html.gordon-saber-theme .workflow-library-card:nth-child(2),
+html.gordon-saber-theme .writing-app-card,
+html.gordon-saber-theme .workflow-finance-command-deck,
+html.gordon-saber-theme .weekly-hero {
+  border-left-color: rgba(212, 155, 51, 0.68);
+}
+
+html.gordon-saber-theme .workflow-library-card:nth-child(3),
+html.gordon-saber-theme .comic-app-card,
+html.gordon-saber-theme .video-app-card {
+  border-left-color: rgba(102, 168, 220, 0.72);
+}
+
+html.gordon-saber-theme .workflow-library-card:nth-child(4),
+html.gordon-saber-theme .music-app-card,
+html.gordon-saber-theme .fortune-app-card {
+  border-left-color: rgba(143, 117, 202, 0.68);
+}
+
+html.gordon-saber-theme .workflow-library-detail-shell,
+html.gordon-saber-theme .writing-detail-shell,
+html.gordon-saber-theme .comic-detail-shell,
+html.gordon-saber-theme .video-detail-shell,
+html.gordon-saber-theme .music-detail-shell,
+html.gordon-saber-theme .fortune-detail-shell,
+html.gordon-saber-theme .models-grid-subpage .model-editor-unified,
+html.gordon-saber-theme .command-chat-shell-immersive {
+  background:
+    linear-gradient(rgba(63, 133, 191, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(63, 133, 191, 0.05) 1px, transparent 1px),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.22), rgba(238, 247, 255, 0.08)),
+    rgba(255, 255, 255, 0.08);
+  background-size: 34px 34px, 34px 34px, auto, auto;
+  backdrop-filter: blur(2px) saturate(112%);
+}
+
+html.gordon-saber-theme .workflow-info-rail,
+html.gordon-saber-theme .writing-detail-rail,
+html.gordon-saber-theme .comic-detail-rail,
+html.gordon-saber-theme .video-detail-rail,
+html.gordon-saber-theme .music-detail-rail,
+html.gordon-saber-theme .fortune-rail {
+  border-right-color: rgba(63, 133, 191, 0.2);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.7), rgba(238, 247, 255, 0.42)),
+    rgba(255, 255, 255, 0.36);
+  backdrop-filter: blur(16px) saturate(122%);
+}
+
+html.gordon-saber-theme .model-action,
+html.gordon-saber-theme .gordon-dialog-button-primary,
+html.gordon-saber-theme .command-input-submit:not(.is-running),
+html.gordon-saber-theme .field-ai-run,
+html.gordon-saber-theme .field-ai-primary {
+  border: 1px solid rgba(63, 133, 191, 0.54);
+  background:
+    linear-gradient(135deg, #3f85bf, #66a8dc 64%, #8f75ca);
+  color: #ffffff;
+  box-shadow:
+    0 10px 26px rgba(63, 133, 191, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+html.gordon-saber-theme .model-action:hover,
+html.gordon-saber-theme .gordon-dialog-button-primary:hover,
+html.gordon-saber-theme .command-input-submit:not(.is-running):hover,
+html.gordon-saber-theme .field-ai-run:hover,
+html.gordon-saber-theme .field-ai-primary:hover {
+  border-color: rgba(63, 133, 191, 0.72);
+  background:
+    linear-gradient(135deg, #3477ad, #5ca2d8 62%, #8068bd);
+  color: #ffffff;
+  box-shadow: 0 14px 32px rgba(63, 133, 191, 0.28);
+}
+
+html.gordon-saber-theme .model-action-secondary,
+html.gordon-saber-theme .compact-select-trigger,
+html.gordon-saber-theme .field-input,
+html.gordon-saber-theme .field-textarea,
+html.gordon-saber-theme .field-ai-input,
+html.gordon-saber-theme .field-ai-output,
+html.gordon-saber-theme .gordon-dialog-input,
+html.gordon-saber-theme .command-input-frame,
+html.gordon-saber-theme .weekly-editor-segmented,
+html.gordon-saber-theme .writing-tab-bar,
+html.gordon-saber-theme .extensions-shell .extensions-list-tabs,
+html.gordon-saber-theme .fortune-method-strip {
+  border-color: rgba(63, 133, 191, 0.24);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(238, 247, 255, 0.58)),
+    rgba(255, 255, 255, 0.62);
+  color: var(--saber-ink);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
+}
+
+html.gordon-saber-theme .field-input:focus,
+html.gordon-saber-theme .field-textarea:focus,
+html.gordon-saber-theme .field-ai-input:focus,
+html.gordon-saber-theme .field-ai-output:focus,
+html.gordon-saber-theme .gordon-dialog-input:focus,
+html.gordon-saber-theme .compact-select-trigger:focus-visible,
+html.gordon-saber-theme .command-input-frame:focus-within {
+  border-color: rgba(63, 133, 191, 0.5);
+  box-shadow:
+    0 0 0 2px rgba(63, 133, 191, 0.12),
+    0 12px 28px rgba(63, 113, 160, 0.12);
+}
+
+html.gordon-saber-theme .compact-select:hover .compact-select-trigger,
+html.gordon-saber-theme .compact-select.is-open .compact-select-trigger,
+html.gordon-saber-theme .workflow-library-config-select:hover .compact-select-trigger,
+html.gordon-saber-theme .workflow-library-config-select.is-open .compact-select-trigger,
+html.gordon-saber-theme .command-settings-grid .command-settings-select:hover .compact-select-trigger,
+html.gordon-saber-theme .command-settings-grid .command-settings-select.is-open .compact-select-trigger,
+html.gordon-saber-theme .compact-select.command-permission-select:hover .compact-select-trigger,
+html.gordon-saber-theme .compact-select.command-permission-select.is-open .compact-select-trigger {
+  border-color: rgba(63, 133, 191, 0.38);
+  background:
+    linear-gradient(135deg, rgba(102, 168, 220, 0.18), rgba(255, 255, 255, 0.72)),
+    rgba(255, 255, 255, 0.72);
+  color: #17314b;
+  box-shadow: 0 0 0 2px rgba(63, 133, 191, 0.1);
+}
+
+html.gordon-saber-theme .workflow-library-config-select .compact-select-menu,
+html.gordon-saber-theme .command-settings-grid .command-settings-select .compact-select-menu {
+  border-color: rgba(63, 133, 191, 0.24);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(238, 247, 255, 0.74)),
+    rgba(255, 255, 255, 0.9);
+  color: var(--saber-ink);
+  box-shadow: 0 18px 42px rgba(63, 113, 160, 0.16);
+}
+
+html.gordon-saber-theme .workflow-library-config-select .compact-select-option,
+html.gordon-saber-theme .command-settings-grid .command-settings-select .compact-select-option {
+  color: rgba(16, 34, 54, 0.82);
+}
+
+html.gordon-saber-theme .field-input::placeholder,
+html.gordon-saber-theme .field-textarea::placeholder,
+html.gordon-saber-theme .field-ai-input::placeholder,
+html.gordon-saber-theme .command-input::placeholder {
+  color: var(--saber-disabled);
+}
+
+html.gordon-saber-theme .status-pill,
+html.gordon-saber-theme .pill,
+html.gordon-saber-theme .chip-list li,
+html.gordon-saber-theme .weekly-hero-badge,
+html.gordon-saber-theme .workflow-library-card-tag,
+html.gordon-saber-theme .model-card-mode {
+  border-color: rgba(63, 133, 191, 0.24);
+  background: rgba(102, 168, 220, 0.14);
+  color: #275f8f;
+}
+
+html.gordon-saber-theme .pill-neutral,
+html.gordon-saber-theme .weekly-hero-archive-badge {
+  border-color: rgba(98, 119, 140, 0.22);
+  background: rgba(255, 255, 255, 0.48);
+  color: rgba(16, 34, 54, 0.78);
+}
+
+html.gordon-saber-theme .pill-hot,
+html.gordon-saber-theme .status-pill.is-warning,
+html.gordon-saber-theme .model-icon-button-danger:hover,
+html.gordon-saber-theme .model-action-danger:hover {
+  border-color: rgba(212, 155, 51, 0.36);
+  background: rgba(239, 187, 84, 0.18);
+  color: #8a641a;
+}
+
+html.gordon-saber-theme .status-pill.is-success,
+html.gordon-saber-theme .model-card-health,
+html.gordon-saber-theme .models-shell-home .model-balance-remaining {
+  color: #2d7a68;
+}
+
+html.gordon-saber-theme .status-pill.is-danger,
+html.gordon-saber-theme .model-icon-button-danger,
+html.gordon-saber-theme .model-action-danger {
+  color: var(--saber-danger);
+}
+
+html.gordon-saber-theme .weekly-editor-tab.is-active,
+html.gordon-saber-theme .writing-tab.is-active,
+html.gordon-saber-theme .compact-select-option:hover,
+html.gordon-saber-theme .compact-select-option:focus-visible,
+html.gordon-saber-theme .compact-select-option.is-selected {
+  border-color: rgba(63, 133, 191, 0.3);
+  background:
+    linear-gradient(90deg, rgba(102, 168, 220, 0.2), rgba(255, 255, 255, 0.56)),
+    rgba(255, 255, 255, 0.58);
+  color: #17314b;
+  box-shadow: inset 0 -2px 0 var(--saber-gold);
+}
+
+html.gordon-saber-theme .weekly-form-shell-immersive {
+  --g-scrollbar-thumb: rgba(63, 133, 191, 0.24);
+  --g-scrollbar-thumb-hover: rgba(47, 120, 183, 0.38);
+}
+
+html.gordon-saber-theme .weekly-editor-stage {
+  padding: 6px 0 12px;
+}
+
+html.gordon-saber-theme .weekly-project-stack {
+  gap: 10px;
+}
+
+html.gordon-saber-theme .weekly-project-card {
+  overflow: visible;
+  border: 1px solid var(--weekly-progress-border);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(244, 250, 255, 0.86)),
+    var(--weekly-progress-surface);
+  box-shadow:
+    inset 3px 0 0 rgba(47, 120, 183, 0.56),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    var(--weekly-progress-shadow);
+  backdrop-filter: blur(16px) saturate(116%);
+}
+
+html.gordon-saber-theme .weekly-project-card::before {
+  border-radius: inherit;
+  background:
+    linear-gradient(90deg, rgba(47, 120, 183, 0.08), transparent 34%),
+    repeating-linear-gradient(90deg, rgba(58, 116, 162, 0.055) 0 1px, transparent 1px 18px);
+}
+
+html.gordon-saber-theme .weekly-project-card.is-collapsed {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(238, 247, 255, 0.82)),
+    var(--weekly-progress-surface);
+  box-shadow:
+    inset 3px 0 0 rgba(95, 113, 132, 0.48),
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    0 10px 24px rgba(51, 100, 146, 0.1);
+}
+
+html.gordon-saber-theme .weekly-project-head {
+  border-bottom-color: rgba(58, 116, 162, 0.16);
+  background:
+    linear-gradient(90deg, rgba(47, 120, 183, 0.08), rgba(255, 255, 255, 0.66) 46%, rgba(255, 255, 255, 0.28));
+}
+
+html.gordon-saber-theme .weekly-project-card.is-collapsed .weekly-project-head {
+  border-bottom-color: transparent;
+}
+
+html.gordon-saber-theme .weekly-project-body {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.48), rgba(238, 247, 255, 0.18)),
+    rgba(255, 255, 255, 0.16);
+}
+
+html.gordon-saber-theme .weekly-project-toggle {
+  border-color: rgba(58, 116, 162, 0.24);
+  background: rgba(255, 255, 255, 0.68);
+  color: #24435f;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
+}
+
+html.gordon-saber-theme .weekly-project-toggle:hover {
+  border-color: rgba(47, 120, 183, 0.38);
+  background: rgba(227, 243, 255, 0.84);
+  color: #1e5f92;
+}
+
+html.gordon-saber-theme .weekly-project-name-input {
+  border-color: rgba(58, 116, 162, 0.2);
+  background: rgba(255, 255, 255, 0.72);
+  color: #12263a;
+  text-shadow: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86);
+}
+
+html.gordon-saber-theme .weekly-project-name-input:hover:not(:focus) {
+  border-color: rgba(58, 116, 162, 0.32);
+  background: rgba(255, 255, 255, 0.86);
+}
+
+html.gordon-saber-theme .weekly-project-name-input:focus {
+  border-color: rgba(47, 120, 183, 0.5);
+  background: #ffffff;
+  box-shadow:
+    0 0 0 3px rgba(47, 120, 183, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+}
+
+html.gordon-saber-theme .weekly-task-list {
+  gap: 5px;
+}
+
+html.gordon-saber-theme .weekly-task-card {
+  --weekly-task-rail: rgba(95, 113, 132, 0.42);
+  --weekly-task-row-bg: rgba(95, 113, 132, 0.045);
+}
+
+html.gordon-saber-theme .weekly-task-card.is-planned,
+html.gordon-saber-theme .weekly-task-row.is-planned {
+  --weekly-task-rail: var(--weekly-progress-planned);
+  --weekly-task-row-bg: rgba(95, 113, 132, 0.07);
+}
+
+html.gordon-saber-theme .weekly-task-card.is-in-progress,
+html.gordon-saber-theme .weekly-task-row.is-in-progress {
+  --weekly-task-rail: var(--weekly-progress-in-progress);
+  --weekly-task-row-bg: rgba(31, 138, 112, 0.08);
+}
+
+html.gordon-saber-theme .weekly-task-card.is-testing,
+html.gordon-saber-theme .weekly-task-row.is-testing {
+  --weekly-task-rail: var(--weekly-progress-testing);
+  --weekly-task-row-bg: rgba(47, 120, 183, 0.09);
+}
+
+html.gordon-saber-theme .weekly-task-card.is-blocked,
+html.gordon-saber-theme .weekly-task-row.is-blocked {
+  --weekly-task-rail: var(--weekly-progress-blocked);
+  --weekly-task-row-bg: rgba(184, 92, 95, 0.09);
+}
+
+html.gordon-saber-theme .weekly-task-card.is-completed,
+html.gordon-saber-theme .weekly-task-row.is-completed {
+  --weekly-task-rail: var(--weekly-progress-completed);
+  --weekly-task-row-bg: rgba(104, 119, 133, 0.055);
+}
+
+html.gordon-saber-theme .weekly-task-row {
+  min-height: 36px;
+  padding: 3px 6px 3px 0;
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--weekly-task-row-bg), transparent 74%);
+  color: #183047;
+}
+
+html.gordon-saber-theme .weekly-task-row::before {
+  content: "";
+  position: absolute;
+  top: 7px;
+  bottom: 7px;
+  left: -10px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--weekly-task-rail);
+  opacity: 0.64;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.42);
+  pointer-events: none;
+}
+
+html.gordon-saber-theme .weekly-task-row:hover,
+html.gordon-saber-theme .weekly-task-row:has(.weekly-task-status-menu[open]),
+html.gordon-saber-theme .weekly-task-row:has(.weekly-task-action-menu[open]) {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--weekly-task-rail) 14%, transparent), transparent 72%),
+    rgba(255, 255, 255, 0.5);
+  box-shadow: inset 0 0 0 1px rgba(58, 116, 162, 0.12);
+}
+
+html.gordon-saber-theme .weekly-task-children {
+  border-left-color: rgba(58, 116, 162, 0.2);
+}
+
+html.gordon-saber-theme .weekly-task-index-button {
+  min-width: 34px;
+  height: 26px;
+  border-radius: 7px;
+  border-color: var(--weekly-index-border, rgba(95, 113, 132, 0.34));
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.74), rgba(255, 255, 255, 0.24)),
+    var(--weekly-index-bg, rgba(95, 113, 132, 0.14));
+  color: var(--weekly-index-fg, #2d4053);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    0 5px 12px rgba(51, 100, 146, 0.12);
+}
+
+html.gordon-saber-theme .workspace-stage .weekly-task-index-button {
+  color: var(--weekly-index-fg, #2d4053);
+}
+
+html.gordon-saber-theme .workspace-stage .weekly-task-index-label {
+  color: inherit;
+  -webkit-text-fill-color: currentColor;
+}
+
+html.gordon-saber-theme .weekly-task-index-button::before {
+  background: radial-gradient(circle at 26% 18%, rgba(255, 255, 255, 0.72), transparent 36%);
+  opacity: 0.7;
+}
+
+html.gordon-saber-theme .weekly-task-index-glow {
+  opacity: 0.08;
+  filter: blur(8px);
+}
+
+html.gordon-saber-theme .weekly-task-index-button:hover {
+  border-color: color-mix(in srgb, var(--weekly-index-border, rgba(47, 120, 183, 0.34)) 74%, #ffffff);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.36)),
+    var(--weekly-index-bg, rgba(47, 120, 183, 0.16));
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--weekly-index-bg, rgba(47, 120, 183, 0.16)) 56%, transparent),
+    0 8px 18px rgba(51, 100, 146, 0.16);
+}
+
+html.gordon-saber-theme .weekly-task-index-button.is-planned {
+  --weekly-index-bg: rgba(95, 113, 132, 0.17);
+  --weekly-index-border: rgba(95, 113, 132, 0.38);
+  --weekly-index-fg: #34495e;
+}
+
+html.gordon-saber-theme .weekly-task-index-button.is-in-progress {
+  --weekly-index-bg: rgba(31, 138, 112, 0.18);
+  --weekly-index-border: rgba(31, 138, 112, 0.42);
+  --weekly-index-fg: #12634f;
+}
+
+html.gordon-saber-theme .weekly-task-index-button.is-testing {
+  --weekly-index-bg: rgba(47, 120, 183, 0.19);
+  --weekly-index-border: rgba(47, 120, 183, 0.44);
+  --weekly-index-fg: #205f91;
+}
+
+html.gordon-saber-theme .weekly-task-index-button.is-blocked {
+  --weekly-index-bg: rgba(184, 92, 95, 0.18);
+  --weekly-index-border: rgba(184, 92, 95, 0.44);
+  --weekly-index-fg: #8a383d;
+}
+
+html.gordon-saber-theme .weekly-task-index-button.is-completed {
+  --weekly-index-bg: rgba(104, 119, 133, 0.13);
+  --weekly-index-border: rgba(104, 119, 133, 0.28);
+  --weekly-index-fg: #5b6874;
+}
+
+html.gordon-saber-theme .weekly-task-index-button.is-running {
+  border-color: rgba(31, 138, 112, 0.36);
+  background: rgba(31, 138, 112, 0.14);
+  color: #1f8a70;
+}
+
+html.gordon-saber-theme .weekly-task-status-menu[open] .weekly-task-index-button {
+  box-shadow:
+    0 0 0 3px rgba(47, 120, 183, 0.12),
+    0 12px 28px rgba(51, 100, 146, 0.18);
+}
+
+html.gordon-saber-theme .weekly-task-status-panel,
+html.gordon-saber-theme .weekly-task-action-panel {
+  border-color: rgba(58, 116, 162, 0.24);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(239, 247, 255, 0.94)),
+    rgba(255, 255, 255, 0.96);
+  color: #12263a;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    0 18px 40px rgba(51, 100, 146, 0.18);
+  backdrop-filter: blur(16px) saturate(118%);
+}
+
+html.gordon-saber-theme .weekly-task-status-option,
+html.gordon-saber-theme .weekly-task-action-option {
+  color: rgba(18, 38, 58, 0.82);
+}
+
+html.gordon-saber-theme .weekly-task-status-option:hover,
+html.gordon-saber-theme .weekly-task-status-option.is-active,
+html.gordon-saber-theme .weekly-task-action-option:hover {
+  background:
+    linear-gradient(90deg, rgba(47, 120, 183, 0.12), rgba(255, 255, 255, 0.62)),
+    rgba(238, 247, 255, 0.68);
+  color: #102236;
+}
+
+html.gordon-saber-theme .weekly-task-status-option.is-active {
+  box-shadow: inset 2px 0 0 var(--saber-blue);
+}
+
+html.gordon-saber-theme .weekly-task-status-option.is-active:has(.weekly-task-status-swatch.is-planned) {
+  box-shadow: inset 2px 0 0 var(--weekly-progress-planned);
+}
+
+html.gordon-saber-theme .weekly-task-status-option.is-active:has(.weekly-task-status-swatch.is-in-progress) {
+  box-shadow: inset 2px 0 0 var(--weekly-progress-in-progress);
+}
+
+html.gordon-saber-theme .weekly-task-status-option.is-active:has(.weekly-task-status-swatch.is-testing) {
+  box-shadow: inset 2px 0 0 var(--weekly-progress-testing);
+}
+
+html.gordon-saber-theme .weekly-task-status-option.is-active:has(.weekly-task-status-swatch.is-blocked) {
+  box-shadow: inset 2px 0 0 var(--weekly-progress-blocked);
+}
+
+html.gordon-saber-theme .weekly-task-status-option.is-active:has(.weekly-task-status-swatch.is-completed) {
+  box-shadow: inset 2px 0 0 var(--weekly-progress-completed);
+}
+
+html.gordon-saber-theme .weekly-task-status-swatch {
+  width: 10px;
+  height: 10px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 16%, transparent);
+}
+
+html.gordon-saber-theme .weekly-task-status-swatch.is-planned {
+  background: var(--weekly-progress-planned);
+  color: var(--weekly-progress-planned);
+}
+
+html.gordon-saber-theme .weekly-task-status-swatch.is-in-progress {
+  background: var(--weekly-progress-in-progress);
+  color: var(--weekly-progress-in-progress);
+}
+
+html.gordon-saber-theme .weekly-task-status-swatch.is-testing {
+  background: var(--weekly-progress-testing);
+  color: var(--weekly-progress-testing);
+}
+
+html.gordon-saber-theme .weekly-task-status-swatch.is-blocked {
+  background: var(--weekly-progress-blocked);
+  color: var(--weekly-progress-blocked);
+}
+
+html.gordon-saber-theme .weekly-task-status-swatch.is-completed {
+  background: var(--weekly-progress-completed);
+  color: var(--weekly-progress-completed);
+}
+
+html.gordon-saber-theme .weekly-task-collapse-button {
+  color: rgba(36, 67, 95, 0.72);
+}
+
+html.gordon-saber-theme .weekly-task-collapse-button:hover {
+  background: rgba(47, 120, 183, 0.1);
+  color: #205f91;
+}
+
+html.gordon-saber-theme .weekly-task-title-display,
+html.gordon-saber-theme .weekly-task-title-input,
+html.gordon-saber-theme .weekly-task-title-editor {
+  color: #172b40;
+}
+
+html.gordon-saber-theme .weekly-task-row.is-planned > .weekly-task-title-display,
+html.gordon-saber-theme .weekly-task-row.is-planned > .weekly-task-title-input,
+html.gordon-saber-theme .weekly-task-row.is-planned > .weekly-task-title-editor,
+html.gordon-saber-theme .weekly-task-row.is-planned > .weekly-task-detail-display,
+html.gordon-saber-theme .weekly-task-row.is-planned > .weekly-task-detail-input {
+  color: #30485e;
+}
+
+html.gordon-saber-theme .weekly-task-row.is-in-progress > .weekly-task-title-display,
+html.gordon-saber-theme .weekly-task-row.is-in-progress > .weekly-task-title-input,
+html.gordon-saber-theme .weekly-task-row.is-in-progress > .weekly-task-title-editor,
+html.gordon-saber-theme .weekly-task-row.is-in-progress > .weekly-task-detail-display,
+html.gordon-saber-theme .weekly-task-row.is-in-progress > .weekly-task-detail-input {
+  color: #173d36;
+}
+
+html.gordon-saber-theme .weekly-task-row.is-testing > .weekly-task-title-display,
+html.gordon-saber-theme .weekly-task-row.is-testing > .weekly-task-title-input,
+html.gordon-saber-theme .weekly-task-row.is-testing > .weekly-task-title-editor,
+html.gordon-saber-theme .weekly-task-row.is-testing > .weekly-task-detail-display,
+html.gordon-saber-theme .weekly-task-row.is-testing > .weekly-task-detail-input {
+  color: #1b3f60;
+}
+
+html.gordon-saber-theme .weekly-task-row.is-blocked > .weekly-task-title-display,
+html.gordon-saber-theme .weekly-task-row.is-blocked > .weekly-task-title-input,
+html.gordon-saber-theme .weekly-task-row.is-blocked > .weekly-task-title-editor,
+html.gordon-saber-theme .weekly-task-row.is-blocked > .weekly-task-detail-display,
+html.gordon-saber-theme .weekly-task-row.is-blocked > .weekly-task-detail-input {
+  color: #6e3035;
+}
+
+html.gordon-saber-theme .weekly-task-row.is-completed > .weekly-task-title-display,
+html.gordon-saber-theme .weekly-task-row.is-completed > .weekly-task-title-input,
+html.gordon-saber-theme .weekly-task-row.is-completed > .weekly-task-title-editor,
+html.gordon-saber-theme .weekly-task-row.is-completed > .weekly-task-detail-display,
+html.gordon-saber-theme .weekly-task-row.is-completed > .weekly-task-detail-input {
+  color: rgba(73, 91, 108, 0.68);
+  text-decoration-color: rgba(73, 91, 108, 0.48);
+}
+
+html.gordon-saber-theme .weekly-task-title-display.is-placeholder,
+html.gordon-saber-theme .weekly-task-title-input::placeholder,
+html.gordon-saber-theme .weekly-task-title-editor::placeholder {
+  color: var(--saber-disabled);
+}
+
+html.gordon-saber-theme .weekly-task-title-display:hover {
+  background: rgba(255, 255, 255, 0.56);
+}
+
+html.gordon-saber-theme .weekly-task-title-display:focus-visible,
+html.gordon-saber-theme .weekly-task-title-editor:focus {
+  background: #ffffff;
+  box-shadow:
+    0 0 0 2px rgba(47, 120, 183, 0.14),
+    inset 0 0 0 1px rgba(47, 120, 183, 0.24);
+}
+
+html.gordon-saber-theme .weekly-task-title-editor {
+  border-color: rgba(58, 116, 162, 0.22);
+  background: rgba(255, 255, 255, 0.86);
+}
+
+html.gordon-saber-theme .weekly-row-action {
+  border-color: rgba(58, 116, 162, 0.2);
+  background: rgba(255, 255, 255, 0.6);
+  color: rgba(18, 38, 58, 0.76);
+}
+
+html.gordon-saber-theme .weekly-row-action:hover {
+  border-color: rgba(47, 120, 183, 0.34);
+  background: rgba(235, 247, 255, 0.86);
+  color: #1e5f92;
+}
+
+html.gordon-saber-theme .weekly-row-action-add {
+  border-color: rgba(31, 138, 112, 0.24);
+  background: rgba(31, 138, 112, 0.1);
+  color: #12634f;
+}
+
+html.gordon-saber-theme .weekly-row-action-delete,
+html.gordon-saber-theme .weekly-task-action-option-danger {
+  border-color: rgba(184, 92, 95, 0.24);
+  background: rgba(184, 92, 95, 0.08);
+  color: #9a4146;
+}
+
+html.gordon-saber-theme .weekly-row-action-more {
+  background: transparent;
+  border-color: transparent;
+  color: rgba(18, 38, 58, 0.72);
+}
+
+html.gordon-saber-theme .weekly-task-action-option-danger:hover {
+  background: rgba(184, 92, 95, 0.12);
+  color: #842f35;
+}
+
+html.gordon-saber-theme .weekly-project-empty-inline,
+html.gordon-saber-theme .weekly-task-root-drop-hint,
+html.gordon-saber-theme .weekly-project-root-drop-zone:hover,
+html.gordon-saber-theme .weekly-project-root-drop-zone.is-active {
+  border-color: rgba(31, 138, 112, 0.28);
+  background: rgba(31, 138, 112, 0.08);
+  color: #12634f;
+}
+
+html.gordon-saber-theme .command-chat-scroll-region {
+  padding-right: 4px;
+}
+
+html.gordon-saber-theme .command-message {
+  border-color: rgba(63, 133, 191, 0.16);
+  background: rgba(255, 255, 255, 0.5);
+  color: var(--saber-ink);
+  box-shadow: 0 10px 28px rgba(63, 113, 160, 0.08);
+  backdrop-filter: blur(10px) saturate(118%);
+}
+
+html.gordon-saber-theme .command-message.is-assistant {
+  background: transparent;
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .command-message.is-user {
+  border-color: rgba(63, 133, 191, 0.3);
+  background:
+    linear-gradient(135deg, rgba(63, 133, 191, 0.92), rgba(102, 168, 220, 0.88) 68%, rgba(143, 117, 202, 0.88));
+  color: #ffffff;
+}
+
+html.gordon-saber-theme .command-message.is-error {
+  border-color: rgba(199, 95, 98, 0.34);
+  background: rgba(255, 240, 240, 0.76);
+}
+
+html.gordon-saber-theme .command-message-body {
+  color: inherit;
+}
+
+html.gordon-saber-theme .command-message.is-assistant .command-final-reply {
+  padding: 12px 14px;
+  border: 1px solid rgba(63, 133, 191, 0.18);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--saber-ink);
+  box-shadow: 0 12px 30px rgba(63, 113, 160, 0.1);
+  backdrop-filter: blur(14px) saturate(124%);
+}
+
+html.gordon-saber-theme .command-message-time,
+html.gordon-saber-theme .command-response-process-time,
+html.gordon-saber-theme .command-generated-product-copy,
+html.gordon-saber-theme .models-copy,
+html.gordon-saber-theme .workflow-library-card-subtitle,
+html.gordon-saber-theme .model-card-meta,
+html.gordon-saber-theme .command-session-meta {
+  color: rgba(64, 86, 110, 0.78);
+}
+
+html.gordon-saber-theme .command-message.is-user .command-message-time {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+html.gordon-saber-theme .command-message-action-button {
+  color: rgba(16, 34, 54, 0.64);
+}
+
+html.gordon-saber-theme .command-message.is-user .command-message-action-button {
+  color: rgba(255, 255, 255, 0.68);
+}
+
+html.gordon-saber-theme .command-message-action-button:hover,
+html.gordon-saber-theme .command-message-action-button:focus-visible,
+html.gordon-saber-theme .command-message-action-button.is-copied,
+html.gordon-saber-theme .command-message-action-button.is-loading {
+  border-color: rgba(63, 133, 191, 0.22);
+  background: rgba(102, 168, 220, 0.14);
+  color: var(--saber-blue);
+}
+
+html.gordon-saber-theme .command-message.is-user .command-rich-text :is(
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  p,
+  li,
+  strong,
+  em,
+  span,
+  [class*="title"],
+  [class*="heading"],
+  [class*="copy"],
+  [class*="meta"],
+  [class*="label"],
+  [class*="value"]
+) {
+  color: inherit;
+  -webkit-text-fill-color: currentColor;
+}
+
+html.gordon-saber-theme .command-message.is-user .command-rich-link {
+  color: #ffffff;
+  text-decoration-color: rgba(255, 255, 255, 0.52);
+}
+
+html.gordon-saber-theme .command-agent-card,
+html.gordon-saber-theme .command-prompt-chip,
+html.gordon-saber-theme .command-live-activity,
+html.gordon-saber-theme .command-message-retry,
+html.gordon-saber-theme .command-slash-menu,
+html.gordon-saber-theme .command-scroll-to-bottom,
+html.gordon-saber-theme .command-rich-quote,
+html.gordon-saber-theme .command-rich-table-wrap,
+html.gordon-saber-theme .command-math-inline,
+html.gordon-saber-theme .command-math-block {
+  border-color: rgba(63, 133, 191, 0.2);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.82), rgba(238, 247, 255, 0.58)),
+    rgba(255, 255, 255, 0.7);
+  color: var(--saber-ink);
+  box-shadow: 0 10px 26px rgba(63, 113, 160, 0.1);
+  backdrop-filter: blur(12px) saturate(118%);
+}
+
+html.gordon-saber-theme .command-agent-title,
+html.gordon-saber-theme .command-prompt-chip,
+html.gordon-saber-theme .command-rich-table,
+html.gordon-saber-theme .command-rich-table th,
+html.gordon-saber-theme .command-rich-table td,
+html.gordon-saber-theme .command-message-retry-copy,
+html.gordon-saber-theme .command-slash-item,
+html.gordon-saber-theme .command-slash-item-title,
+html.gordon-saber-theme .command-live-activity-title {
+  color: #102236;
+}
+
+html.gordon-saber-theme .command-agent-description,
+html.gordon-saber-theme .command-agent-capability,
+html.gordon-saber-theme .command-input-hint,
+html.gordon-saber-theme .command-slash-item-hint,
+html.gordon-saber-theme .command-live-activity-label,
+html.gordon-saber-theme .command-live-activity-time,
+html.gordon-saber-theme .command-live-activity-detail {
+  color: rgba(64, 86, 110, 0.82);
+}
+
+html.gordon-saber-theme .command-prompt-chip:hover,
+html.gordon-saber-theme .command-slash-item.is-active,
+html.gordon-saber-theme .command-slash-item:hover,
+html.gordon-saber-theme .command-scroll-to-bottom:hover,
+html.gordon-saber-theme .command-message-retry-button:hover {
+  border-color: rgba(63, 133, 191, 0.34);
+  background:
+    linear-gradient(90deg, rgba(102, 168, 220, 0.18), rgba(255, 255, 255, 0.72)),
+    rgba(255, 255, 255, 0.78);
+  color: #17314b;
+}
+
+html.gordon-saber-theme .command-message-retry.is-error {
+  border-color: rgba(199, 95, 98, 0.24);
+  background:
+    linear-gradient(135deg, rgba(255, 240, 240, 0.84), rgba(255, 255, 255, 0.7)),
+    rgba(255, 255, 255, 0.7);
+}
+
+html.gordon-saber-theme .command-message-retry.is-error .command-message-retry-copy,
+html.gordon-saber-theme .command-response-process-item.is-error .command-response-process-label,
+html.gordon-saber-theme .command-response-process-item.is-error .command-response-output summary,
+html.gordon-saber-theme .command-response-process-tag.is-error {
+  color: #a94147;
+}
+
+html.gordon-saber-theme .command-message-retry-button {
+  border-color: rgba(63, 133, 191, 0.28);
+  background: rgba(255, 255, 255, 0.72);
+  color: #275f8f;
+}
+
+html.gordon-saber-theme .command-message-retry-button-primary {
+  border-color: rgba(63, 133, 191, 0.42);
+  background: rgba(102, 168, 220, 0.16);
+  color: #275f8f;
+}
+
+html.gordon-saber-theme .command-response-process-mark {
+  border-color: rgba(63, 133, 191, 0.28);
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--saber-blue);
+  box-shadow: 0 0 0 2px rgba(238, 247, 255, 0.86);
+}
+
+html.gordon-saber-theme .command-response-process-label,
+html.gordon-saber-theme .command-response-process-title,
+html.gordon-saber-theme .command-response-process-detail,
+html.gordon-saber-theme .command-response-plan-list {
+  color: rgba(16, 34, 54, 0.82);
+}
+
+html.gordon-saber-theme .command-response-process-title {
+  color: #17314b;
+}
+
+html.gordon-saber-theme .command-response-process-tag {
+  background: rgba(102, 168, 220, 0.12);
+  color: rgba(16, 34, 54, 0.72);
+}
+
+html.gordon-saber-theme .command-response-process-tag.is-done {
+  background: rgba(86, 163, 143, 0.14);
+  color: #2d7a68;
+}
+
+html.gordon-saber-theme .command-response-process-tag.is-waiting,
+html.gordon-saber-theme .command-response-output summary {
+  background: rgba(239, 187, 84, 0.16);
+  color: #8a641a;
+}
+
+html.gordon-saber-theme .command-response-process-tag.is-technical,
+html.gordon-saber-theme .command-response-process-tag.is-waiting,
+html.gordon-saber-theme .command-response-process-tag.is-done,
+html.gordon-saber-theme .command-response-process-tag.is-error {
+  border: 0;
+}
+
+html.gordon-saber-theme .command-response-process-tag.is-technical {
+  background: rgba(64, 86, 110, 0.08);
+  color: rgba(64, 86, 110, 0.72);
+}
+
+html.gordon-saber-theme .command-response-process-item.is-plan .command-response-process-mark {
+  border-color: rgba(212, 155, 51, 0.4);
+  color: #8a641a;
+}
+
+html.gordon-saber-theme .command-response-process-item.is-error .command-response-process-mark {
+  border-color: rgba(199, 95, 98, 0.36);
+  color: #a94147;
+}
+
+html.gordon-saber-theme .command-rich-table thead {
+  background: rgba(102, 168, 220, 0.12);
+}
+
+html.gordon-saber-theme .command-rich-table th,
+html.gordon-saber-theme .command-rich-table td {
+  border-color: rgba(63, 133, 191, 0.16);
+}
+
+html.gordon-saber-theme .command-rich-list-marker,
+html.gordon-saber-theme .command-rich-list li::marker {
+  color: #275f8f;
+}
+
+html.gordon-saber-theme .command-rich-link,
+html.gordon-saber-theme .command-rich-text strong,
+html.gordon-saber-theme .command-rich-heading {
+  color: #17314b;
+}
+
+html.gordon-saber-theme .command-rich-text em,
+html.gordon-saber-theme .command-math-inline,
+html.gordon-saber-theme .command-math-block {
+  color: #8a641a;
+}
+
+html.gordon-saber-theme .command-inline-code {
+  background: rgba(102, 168, 220, 0.14);
+  color: #275f8f;
+}
+
+html.gordon-saber-theme .command-response-output pre,
+html.gordon-saber-theme .command-rich-text pre,
+html.gordon-saber-theme .command-rich-text code {
+  border-color: rgba(63, 133, 191, 0.18);
+  background: rgba(18, 38, 58, 0.88);
+  color: rgba(245, 250, 255, 0.92);
+}
+
+html.gordon-saber-theme .command-code-block {
+  border-color: rgba(63, 133, 191, 0.2);
+  background: rgba(18, 38, 58, 0.92);
+  color: rgba(245, 250, 255, 0.92);
+}
+
+html.gordon-saber-theme .command-code-head {
+  border-bottom-color: rgba(102, 168, 220, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+html.gordon-saber-theme .command-code-pre code,
+html.gordon-saber-theme .command-code-copy {
+  color: rgba(245, 250, 255, 0.92);
+}
+
+html.gordon-saber-theme .command-code-copy:hover {
+  border-color: rgba(102, 168, 220, 0.34);
+  background: rgba(102, 168, 220, 0.14);
+  color: #ffffff;
+}
+
+html.gordon-saber-theme .command-code-line-number,
+html.gordon-saber-theme .command-code-language,
+html.gordon-saber-theme .command-code-token-diff-symbol {
+  color: rgba(205, 222, 238, 0.58);
+}
+
+html.gordon-saber-theme .command-code-token-comment {
+  color: #8ba6bd;
+}
+
+html.gordon-saber-theme .command-code-token-string,
+html.gordon-saber-theme .command-code-token-key {
+  color: #f2c36d;
+}
+
+html.gordon-saber-theme .command-code-token-keyword,
+html.gordon-saber-theme .command-code-token-flag,
+html.gordon-saber-theme .command-code-token-command {
+  color: #8ec7ff;
+}
+
+html.gordon-saber-theme .command-code-token-type,
+html.gordon-saber-theme .command-code-token-variable {
+  color: #c4b4ff;
+}
+
+html.gordon-saber-theme .command-code-token-number {
+  color: #ffac9c;
+}
+
+html.gordon-saber-theme .command-code-token-function {
+  color: #8fe6d8;
+}
+
+html.gordon-saber-theme .command-live-waiting,
+html.gordon-saber-theme .command-generated-product-title,
+html.gordon-saber-theme .command-generated-product-link {
+  color: #275f8f;
+}
+
+html.gordon-saber-theme .command-message-attachment,
+html.gordon-saber-theme .command-attachment-chip,
+html.gordon-saber-theme .command-request-queue-item {
+  border-color: rgba(63, 133, 191, 0.24);
+  background: rgba(255, 255, 255, 0.76);
+  color: rgba(16, 34, 54, 0.82);
+}
+
+html.gordon-saber-theme .command-input-shell {
+  border-color: rgba(63, 133, 191, 0.22);
+  background: rgba(255, 255, 255, 0.52);
+  box-shadow: 0 -12px 32px rgba(63, 113, 160, 0.12);
+  backdrop-filter: var(--saber-glass-blur);
+}
+
+html.gordon-saber-theme .command-input-shell-plain {
+  background: transparent;
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .command-input {
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--saber-ink);
+  box-shadow: 0 12px 28px rgba(63, 113, 160, 0.12);
+}
+
+html.gordon-saber-theme .compact-select.command-permission-select .compact-select-trigger {
+  border-color: rgba(63, 133, 191, 0.22);
+  background: rgba(255, 255, 255, 0.74);
+  color: rgba(16, 34, 54, 0.8);
+}
+
+html.gordon-saber-theme .gordon-dialog-backdrop,
+html.gordon-saber-theme .image-lightbox-overlay {
+  background: rgba(213, 231, 249, 0.58);
+  backdrop-filter: blur(14px) saturate(116%);
+}
+
+html.gordon-saber-theme .gordon-dialog-mark {
+  border-color: rgba(143, 117, 202, 0.3);
+  background: rgba(143, 117, 202, 0.12);
+  color: var(--saber-lilac);
+}
+
+html.gordon-saber-theme .workflow-finance-stage .workflow-finance-chart-head,
+html.gordon-saber-theme .workflow-finance-chart-status,
+html.gordon-saber-theme .writing-intro-card-head,
+html.gordon-saber-theme .writing-chapter-panel-head,
+html.gordon-saber-theme .writing-chapter-summary-head,
+html.gordon-saber-theme .comic-inspector-fold > summary,
+html.gordon-saber-theme .fortune-chat-head {
+  border-bottom-color: rgba(63, 133, 191, 0.16);
+  background: rgba(255, 255, 255, 0.48);
+}
+
+html.gordon-saber-theme .models-shell-home .model-config-card,
+html.gordon-saber-theme .models-shell-home .model-config-card.is-model-preferred {
+  border-color: rgba(63, 133, 191, 0.24);
+  background:
+    linear-gradient(90deg, rgba(102, 168, 220, 0.14), transparent 36%),
+    rgba(255, 255, 255, 0.62);
+}
+
+html.gordon-saber-theme .models-shell-home .model-config-card::before {
+  background: linear-gradient(90deg, rgba(63, 133, 191, 0.72), rgba(212, 155, 51, 0.48), transparent);
+}
+
+html.gordon-saber-theme .models-shell-home .model-config-card.is-model-preferred {
+  border-color: rgba(212, 155, 51, 0.4);
+  box-shadow: inset 2px 0 0 rgba(212, 155, 51, 0.72), 0 12px 28px rgba(63, 113, 160, 0.1);
+}
+
+/* Broad readability pass for modules still carrying legacy dark Cyber styles. */
+html.gordon-saber-theme .workspace-stage :is(
+  .model-section,
+  .model-subpage-section,
+  .extension-subpage-section,
+  .model-editor,
+  .model-editor-unified,
+  .model-form,
+  .model-usage-content,
+  .provider-picker-card,
+  .model-usage-metric,
+  .model-usage-chart-card,
+  .model-usage-row,
+  .model-card-command-cluster,
+  .model-balance-widget,
+  .model-balance-widget-empty,
+  .extension-form,
+  .extension-config-card,
+  .extension-history-section,
+  .extension-selection-item,
+  .tool-provider-card,
+  .workflow-finance-console,
+  .workflow-finance-quote-panel,
+  .workflow-finance-chart-panel,
+  .workflow-finance-terminal-chart,
+  .workflow-finance-chart-legend,
+  .workflow-finance-empty,
+  .workflow-info-compact-search,
+  .workflow-info-preset-card,
+  .workflow-info-reader-loading,
+  .workflow-info-reader-fallback,
+  .workflow-info-source-editor-row,
+  .workflow-library-step-editor-card,
+  .workflow-library-response-chip,
+  .writing-ai-drawer,
+  .writing-ai-busy-card,
+  .writing-ai-current,
+  .writing-prompt-preview,
+  .writing-outline-planner-card,
+  .writing-agent-progress,
+  .writing-agent-progress-list,
+  .writing-export-summary,
+  .writing-cover-preview-panel,
+  .writing-cover-editor-panel,
+  .writing-cover-preview,
+  .writing-chapter-summary-popover,
+  .field-ai-popover,
+  .comic-asset-list-panel,
+  .comic-asset-detail-panel,
+  .comic-asset-detail-empty,
+  .comic-asset-filter-tabs,
+  .comic-asset-reference-picker,
+  .comic-storyboard-rail,
+  .comic-storyboard-stage,
+  .comic-storyboard-inspector,
+  .comic-chapter-image-stage,
+  .comic-chapter-story-panel,
+  .comic-outline-fold,
+  .comic-ai-control-menu,
+  .comic-ai-image-card,
+  .video-generation-stage,
+  .video-generation-inspector,
+  .video-shot-empty-preview,
+  .music-album-board,
+  .music-track-editor,
+  .music-track-list-panel,
+  .music-player-panel,
+  .music-create-album-hero,
+  .music-notes-panel,
+  .music-ai-drawer,
+  .music-ai-current,
+  .music-ai-output,
+  .fortune-mode-button,
+  .fortune-method-chip,
+  .fortune-message,
+  .fortune-composer,
+  .fortune-attachment-chip,
+  .command-settings-shell,
+  .command-composer,
+  .command-generated-product
+) {
+  border-color: var(--saber-line);
+  background:
+    linear-gradient(135deg, var(--saber-surface-strong), var(--saber-surface-soft) 54%, rgba(239, 187, 84, 0.05)),
+    var(--saber-surface);
+  color: var(--saber-ink);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.86),
+    var(--saber-surface-shadow);
+  backdrop-filter: blur(14px) saturate(120%);
+}
+
+html.gordon-saber-theme .workspace-stage :is(
+  .workflow-info-item,
+  .workflow-info-feed-card,
+  .workflow-info-window-card,
+  .workflow-library-record-card,
+  .workflow-info-item-link,
+  .writing-chapter-list-item,
+  .writing-chapter-dropdown-item,
+  .writing-ai-task-dropdown-item,
+  .comic-asset-list-item,
+  .comic-asset-reference-option,
+  .comic-source-ref-chip,
+  .comic-storyboard-card,
+  .comic-chapter-image-item,
+  .comic-ai-control-item,
+  .music-album-item,
+  .music-track-item,
+  .music-filter-tab,
+  .fortune-method-chip,
+  .command-slash-item,
+  .command-settings-tool-row,
+  .command-request-queue-item,
+  .command-message-attachment,
+  .command-attachment-chip,
+  .weekly-year-chip
+) {
+  border-color: rgba(63, 133, 191, 0.2);
+  background:
+    linear-gradient(90deg, rgba(102, 168, 220, 0.1), rgba(255, 255, 255, 0.58)),
+    rgba(255, 255, 255, 0.62);
+  color: var(--saber-ink-soft);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.76);
+}
+
+html.gordon-saber-theme .workspace-stage :is(
+  .workflow-info-item:hover,
+  .workflow-info-feed-card:hover,
+  .workflow-info-window-card:hover,
+  .workflow-info-window-card.is-active,
+  .workflow-library-record-card:hover,
+  .workflow-library-record-card.is-active,
+  .workflow-info-item-link:hover,
+  .writing-chapter-list-item:hover,
+  .writing-chapter-list-item.is-active,
+  .writing-chapter-dropdown-item:hover,
+  .writing-chapter-dropdown-item.is-active,
+  .writing-ai-task-dropdown-item:hover,
+  .writing-ai-task-dropdown-item.is-active,
+  .comic-asset-list-item:hover,
+  .comic-asset-list-item.is-active,
+  .comic-asset-reference-option:hover,
+  .comic-asset-reference-option.is-active,
+  .comic-storyboard-card:hover,
+  .comic-storyboard-card.is-active,
+  .comic-ai-control-item:hover,
+  .comic-ai-control-item.is-active,
+  .music-album-item:hover,
+  .music-album-item.is-active,
+  .music-track-item:hover,
+  .music-track-item.is-active,
+  .music-filter-tab:hover,
+  .music-filter-tab.is-active,
+  .fortune-mode-button:hover,
+  .fortune-mode-button.is-active,
+  .fortune-method-chip:hover,
+  .fortune-method-chip.is-active,
+  .command-slash-item:hover,
+  .command-slash-item.is-active,
+  .weekly-year-chip:hover,
+  .weekly-year-chip:focus-visible,
+  .weekly-year-chip.is-active
+) {
+  border-color: rgba(63, 133, 191, 0.38);
+  background:
+    linear-gradient(90deg, rgba(102, 168, 220, 0.2), rgba(255, 255, 255, 0.72) 58%, rgba(143, 117, 202, 0.08)),
+    rgba(255, 255, 255, 0.76);
+  color: #17314b;
+  box-shadow:
+    inset 2px 0 0 var(--saber-blue),
+    0 10px 22px rgba(63, 113, 160, 0.12);
+}
+
+html.gordon-saber-theme .workspace-stage :is(
+  input[type="text"],
+  input[type="search"],
+  input[type="url"],
+  input[type="password"],
+  input[type="date"],
+  input[type="number"],
+  textarea,
+  select,
+  .field-input,
+  .field-textarea,
+  .field-select,
+  .field-ai-input,
+  .field-ai-output,
+  .gordon-dialog-input,
+  .command-session-search-input,
+  .command-session-rename-input,
+  .writing-mini-input,
+  .writing-mini-select,
+  .writing-rail-title-input,
+  .writing-title-input,
+  .writing-chapter-search-input,
+  .writing-chapter-dropdown-trigger,
+  .writing-ai-task-dropdown-trigger,
+  .writing-ai-input,
+  .comic-inline-title-input,
+  .comic-ai-control-trigger,
+  .extension-editor-select .compact-select-trigger,
+  .model-api-format-select .compact-select-trigger,
+  .workflow-library-config-select .compact-select-trigger,
+  .workflow-info-filter-select .compact-select-trigger,
+  .command-settings-select .compact-select-trigger,
+  .music-editor-surface .compact-select-trigger,
+  .fortune-chat-input,
+  .workflow-live-url-field input,
+  .weekly-date-field input
+) {
+  border-color: rgba(63, 133, 191, 0.24);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(238, 247, 255, 0.62)),
+    var(--saber-control);
+  color: var(--saber-ink);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  -webkit-text-fill-color: currentColor;
+}
+
+html.gordon-saber-theme .workspace-stage :is(
+  input[type="text"],
+  input[type="search"],
+  input[type="url"],
+  input[type="password"],
+  input[type="date"],
+  input[type="number"],
+  textarea,
+  select,
+  .field-input,
+  .field-textarea,
+  .field-select,
+  .field-ai-input,
+  .field-ai-output,
+  .gordon-dialog-input,
+  .command-session-search-input,
+  .command-session-rename-input,
+  .writing-mini-input,
+  .writing-mini-select,
+  .writing-rail-title-input,
+  .writing-title-input,
+  .writing-chapter-search-input,
+  .writing-chapter-dropdown-trigger,
+  .writing-ai-task-dropdown-trigger,
+  .writing-ai-input,
+  .comic-inline-title-input,
+  .comic-ai-control-trigger,
+  .extension-editor-select .compact-select-trigger,
+  .model-api-format-select .compact-select-trigger,
+  .workflow-library-config-select .compact-select-trigger,
+  .workflow-info-filter-select .compact-select-trigger,
+  .command-settings-select .compact-select-trigger,
+  .music-editor-surface .compact-select-trigger,
+  .fortune-chat-input,
+  .workflow-live-url-field input,
+  .weekly-date-field input
+):is(:hover, :focus, :focus-visible) {
+  border-color: rgba(63, 133, 191, 0.48);
+  background: #ffffff;
+  box-shadow:
+    0 0 0 2px rgba(63, 133, 191, 0.12),
+    0 10px 22px rgba(63, 113, 160, 0.1);
+}
+
+html.gordon-saber-theme .workspace-stage :is(
+  input,
+  textarea,
+  .field-input,
+  .field-textarea,
+  .field-ai-input,
+  .field-ai-output,
+  .command-input,
+  .fortune-chat-input
+)::placeholder {
+  color: var(--saber-disabled);
+  -webkit-text-fill-color: var(--saber-disabled);
+}
+
+html.gordon-saber-theme .workspace-stage :is(
+  .model-action-secondary,
+  .weekly-mini-action,
+  .weekly-panel-settings-button,
+  .field-ai-ghost,
+  .writing-mini-text-button,
+  .writing-cover-edit-button,
+  .writing-cover-close-button,
+  .writing-cover-download-button,
+  .writing-export-format-button,
+  .writing-intro-toggle,
+  .writing-intro-add-button,
+  .writing-chapter-info-button,
+  .writing-ai-instruction-toggle,
+  .writing-prompt-preview-toggle,
+  .writing-ai-output-status,
+  .comic-asset-create-button,
+  .comic-asset-filter-tab,
+  .comic-asset-view-tool,
+  .comic-rail-mode-tab,
+  .comic-ai-control-trigger,
+  .workflow-library-run-control,
+  .workflow-info-item-link,
+  .fortune-clear-button,
+  .fortune-attach-button,
+  .music-filter-tab,
+  .music-inline-clear-button,
+  .music-clear-button,
+  .command-hero-action,
+  .command-message-retry-button,
+  .command-request-queue-guide,
+  .model-balance-refresh-button,
+  .field-secret-toggle
+) {
+  border-color: rgba(63, 133, 191, 0.24);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.84), rgba(238, 247, 255, 0.58)),
+    rgba(255, 255, 255, 0.62);
+  color: #275f8f;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  -webkit-text-fill-color: currentColor;
+}
+
+html.gordon-saber-theme .workspace-stage :is(
+  .model-action-secondary:hover,
+  .weekly-mini-action:hover,
+  .weekly-panel-settings-button:hover,
+  .field-ai-ghost:hover,
+  .writing-mini-text-button:hover,
+  .writing-cover-edit-button:hover,
+  .writing-cover-close-button:hover,
+  .writing-cover-download-button:hover,
+  .writing-export-format-button:hover,
+  .writing-export-format-button.is-active,
+  .writing-intro-toggle:hover,
+  .writing-intro-add-button:hover,
+  .writing-chapter-info-button:hover,
+  .writing-ai-instruction-toggle:hover,
+  .writing-prompt-preview-toggle:hover,
+  .writing-ai-output-status:hover,
+  .comic-asset-create-button:hover,
+  .comic-asset-filter-tab:hover,
+  .comic-asset-filter-tab.is-active,
+  .comic-asset-view-tool:hover,
+  .comic-rail-mode-tab:hover,
+  .comic-rail-mode-tab.is-active,
+  .comic-ai-control-trigger:hover,
+  .workflow-library-run-control:hover,
+  .workflow-info-item-link:hover,
+  .fortune-clear-button:hover,
+  .fortune-attach-button:hover,
+  .music-filter-tab:hover,
+  .music-filter-tab.is-active,
+  .music-inline-clear-button:hover,
+  .music-clear-button:hover,
+  .command-hero-action:hover,
+  .command-message-retry-button:hover,
+  .command-request-queue-guide:hover,
+  .model-balance-refresh-button:hover,
+  .field-secret-toggle:hover
+) {
+  border-color: rgba(63, 133, 191, 0.4);
+  background:
+    linear-gradient(135deg, rgba(102, 168, 220, 0.18), rgba(255, 255, 255, 0.78)),
+    var(--saber-control-hover);
+  color: #17314b;
+  box-shadow: 0 10px 22px rgba(63, 113, 160, 0.12);
+}
+
+html.gordon-saber-theme .workspace-stage :is(
+  .fortune-run-button,
+  .music-run-button,
+  .music-new-track-button,
+  .comic-asset-view-generate,
+  .writing-agent-run
+) {
+  border-color: rgba(63, 133, 191, 0.54);
+  background: linear-gradient(135deg, #3f85bf, #66a8dc 64%, #8f75ca);
+  color: #ffffff;
+  -webkit-text-fill-color: #ffffff;
+  box-shadow:
+    0 10px 26px rgba(63, 133, 191, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+html.gordon-saber-theme .workspace-stage :is(
+  .compact-select-menu,
+  .writing-chapter-dropdown-menu,
+  .writing-ai-task-dropdown-menu,
+  .comic-ai-control-menu,
+  .field-ai-popover,
+  .command-slash-menu,
+  .home-settings-menu-panel
+) {
+  border-color: rgba(63, 133, 191, 0.24);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(238, 247, 255, 0.86)),
+    rgba(255, 255, 255, 0.94);
+  color: var(--saber-ink);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 18px 42px rgba(63, 113, 160, 0.16);
+  backdrop-filter: blur(16px) saturate(118%);
+}
+
+html.gordon-saber-theme .workspace-stage :is(
+  .field-label,
+  .gordon-dialog-field-label,
+  .comic-ai-control-field > .field-label
+) {
+  color: #36536e;
+  font-weight: 760;
+}
+
+html.gordon-saber-theme .workspace-stage :is(
+  .writing-detail-rail .field-label,
+  .comic-detail-rail .field-label,
+  .video-detail-rail .field-label,
+  .music-detail-rail .field-label,
+  .fortune-form-grid .field-label,
+  .comic-asset-detail-panel .field-label
+) {
+  color: var(--saber-warning);
+}
+
+html.gordon-saber-theme .workspace-stage :is(
+  [class$="-meta"],
+  [class$="-copy"],
+  [class$="-hint"],
+  [class$="-caption"],
+  [class$="-subtitle"],
+  [class$="-description"],
+  [class$="-empty"],
+  .models-subcopy,
+  .field-hint,
+  .model-card-code,
+  .model-balance-time,
+  .model-balance-widget-placeholder,
+  .workflow-info-item-summary,
+  .workflow-info-item-source,
+  .writing-book-meta,
+  .writing-chapter-list-meta,
+  .writing-outline-planner-copy,
+  .comic-storyboard-beat,
+  .comic-storyboard-meta small,
+  .comic-image-param-list dt,
+  .music-track-toolbar-copy,
+  .fortune-message-meta,
+  .command-settings-caption
+) {
+  color: var(--saber-ink-faint);
+  -webkit-text-fill-color: currentColor;
+}
+
+html.gordon-saber-theme .workspace-stage :is(
+  [class$="-title"],
+  [class$="-name"],
+  [class$="-heading"],
+  .model-card-title,
+  .model-usage-profile-copy strong,
+  .workflow-info-item-title,
+  .writing-panel-title,
+  .writing-outline-planner-title,
+  .comic-storyboard-title-row strong,
+  .comic-storyboard-stage-head h3,
+  .comic-storyboard-editor-head h3,
+  .video-generation-stage-head h3,
+  .video-generation-inspector-head h3,
+  .music-player-meta .model-section-title,
+  .fortune-message-text strong
+) {
+  color: #102236;
+  -webkit-text-fill-color: currentColor;
+}
+
+html.gordon-saber-theme .workspace-stage :is(
+  .status-pill.is-success,
+  .is-success,
+  [class*="success"]
+) {
+  color: var(--saber-success);
+}
+
+html.gordon-saber-theme .workspace-stage :is(
+  .status-pill.is-warning,
+  .is-warning,
+  [class*="warning"]
+) {
+  color: var(--saber-warning);
+}
+
+html.gordon-saber-theme .workspace-stage :is(
+  .status-pill.is-danger,
+  .is-danger,
+  .is-error,
+  [class*="danger"],
+  [class*="error"]
+) {
+  color: #a94147;
+}
+
+html.gordon-saber-theme .workspace-stage :is(
+  .writing-app-mark,
+  .writing-book-cover,
+  .writing-book-cover-large,
+  .comic-app-mark,
+  .comic-project-cover,
+  .video-app-mark,
+  .video-project-cover,
+  .music-app-mark,
+  .music-mark-large,
+  .music-project-cover,
+  .music-album-cover,
+  .music-player-cover,
+  .fortune-app-mark,
+  .fortune-mark-large,
+  .workflow-live-frame,
+  .workflow-info-reader-frame,
+  .workflow-finance-kline-canvas,
+  .workflow-finance-chart-host,
+  .comic-chapter-image-frame,
+  .video-shot-result-preview,
+  .command-code-block,
+  .command-output-code,
+  .command-response-output pre,
+  .command-rich-text pre,
+  .command-rich-text code:not(.command-inline-code),
+  .writing-agent-progress-output pre,
+  .writing-prompt-preview pre,
+  .workflow-library-code-shell,
+  .fortune-output-body pre
+) {
+  background-color: var(--saber-code-bg);
+  color: var(--saber-code-text);
+  -webkit-text-fill-color: currentColor;
+}
+
+html.gordon-saber-theme .workspace-stage :is(
+  .writing-app-mark,
+  .writing-book-cover,
+  .writing-book-cover-large,
+  .comic-app-mark,
+  .comic-project-cover,
+  .video-app-mark,
+  .video-project-cover,
+  .music-app-mark,
+  .music-mark-large,
+  .music-project-cover,
+  .music-album-cover,
+  .music-player-cover,
+  .fortune-app-mark,
+  .fortune-mark-large
+) * {
+  color: inherit;
+  -webkit-text-fill-color: currentColor;
+}
+
+html.gordon-saber-theme .workspace-stage :is(
+  .command-code-block,
+  .command-output-code,
+  .command-response-output pre,
+  .command-rich-text pre,
+  .command-rich-text code:not(.command-inline-code),
+  .writing-agent-progress-output pre,
+  .writing-prompt-preview pre,
+  .workflow-library-code-shell,
+  .fortune-output-body pre
+) :is(span, code, pre, button) {
+  color: inherit;
+  -webkit-text-fill-color: currentColor;
+}
+
+html.gordon-saber-theme .command-message.is-user :is(
+  [class$="-meta"],
+  [class$="-copy"],
+  [class$="-hint"],
+  [class$="-caption"],
+  [class$="-subtitle"],
+  [class$="-description"],
+  [class$="-empty"],
+  .command-message-time
+) {
+  color: rgba(255, 255, 255, 0.76);
+  -webkit-text-fill-color: currentColor;
+}
+
+html.gordon-saber-theme .workspace-stage :is(button, input, textarea, select):disabled,
+html.gordon-saber-theme .workspace-stage :is(.is-disabled, [aria-disabled="true"]) {
+  color: var(--saber-disabled);
+  -webkit-text-fill-color: currentColor;
+}
+
+html.gordon-saber-theme .models-shell-home .models-hero::after {
+  background: linear-gradient(90deg, transparent, rgba(63, 133, 191, 0.48), rgba(212, 155, 51, 0.42));
+  box-shadow: 0 0 14px rgba(63, 133, 191, 0.16);
+}
+
+html.gordon-saber-theme .workspace-stage :is(
+  .model-empty,
+  .writing-shelf-empty,
+  .workflow-info-reader-loading,
+  .workflow-info-reader-fallback,
+  .weekly-project-empty-inline,
+  .weekly-task-root-drop-hint,
+  .comic-asset-detail-empty,
+  .comic-storyboard-empty,
+  .comic-chapter-image-empty,
+  .music-main-empty,
+  .music-empty-copy,
+  .fortune-chat-empty,
+  .fortune-output-empty,
+  .command-empty-card
+) {
+  border-color: rgba(63, 133, 191, 0.22);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.78), rgba(238, 247, 255, 0.52)),
+    rgba(255, 255, 255, 0.58);
+  color: rgba(48, 68, 88, 0.86);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  -webkit-text-fill-color: currentColor;
+}
+
+html.gordon-saber-theme .workspace-stage :is(
+  .model-empty-copy,
+  .writing-shelf-empty,
+  .comic-asset-empty-text,
+  .comic-source-ref-empty,
+  .writing-chapter-dropdown-empty,
+  .fortune-chat-empty span,
+  .fortune-output-empty span,
+  .music-empty-copy
+) {
+  color: rgba(48, 68, 88, 0.86);
+  -webkit-text-fill-color: currentColor;
+}
+
+/* Last-mile contrast rules for high-frequency overlays and inherited home copy. */
+html.gordon-saber-theme .workspace-stage .anime-home-copy {
+  color: #17314b;
+  -webkit-text-fill-color: currentColor;
+}
+
+html.gordon-saber-theme .workspace-stage .anime-home-kicker {
+  border-color: rgba(63, 133, 191, 0.3);
+  background: rgba(255, 255, 255, 0.68);
+  color: #24435f;
+  -webkit-text-fill-color: currentColor;
+}
+
+html.gordon-saber-theme .workspace-stage .anime-home-stage p:not(.anime-home-kicker) {
+  color: rgba(26, 45, 66, 0.84);
+  -webkit-text-fill-color: currentColor;
+}
+
+html.gordon-saber-theme .workspace-stage .anime-home-status {
+  border-color: rgba(63, 133, 191, 0.32);
+  background: rgba(255, 255, 255, 0.68);
+  color: #275f8f;
+  -webkit-text-fill-color: currentColor;
+}
+
+html.gordon-saber-theme .workspace-stage .weekly-task-status-panel,
+html.gordon-saber-theme .workspace-stage .weekly-task-action-panel,
+html.gordon-saber-theme .workspace-stage .compact-select-menu,
+html.gordon-saber-theme .workspace-stage .writing-chapter-dropdown-menu,
+html.gordon-saber-theme .workspace-stage .writing-ai-task-dropdown-menu,
+html.gordon-saber-theme .workspace-stage .comic-ai-control-menu,
+html.gordon-saber-theme .workspace-stage .field-ai-popover,
+html.gordon-saber-theme .workspace-stage .command-slash-menu,
+html.gordon-saber-theme .home-settings-menu-panel,
+html.gordon-saber-theme .writing-ai-output-status-tooltip {
+  border-color: rgba(63, 133, 191, 0.28);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(238, 247, 255, 0.9)),
+    rgba(255, 255, 255, 0.96);
+  color: #12263a;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    0 18px 42px rgba(63, 113, 160, 0.18);
+  -webkit-text-fill-color: currentColor;
+  backdrop-filter: blur(16px) saturate(118%);
+}
+
+html.gordon-saber-theme .workspace-stage .weekly-task-status-panel *,
+html.gordon-saber-theme .workspace-stage .weekly-task-action-panel *,
+html.gordon-saber-theme .workspace-stage .compact-select-menu *,
+html.gordon-saber-theme .workspace-stage .writing-chapter-dropdown-menu *,
+html.gordon-saber-theme .workspace-stage .writing-ai-task-dropdown-menu *,
+html.gordon-saber-theme .workspace-stage .comic-ai-control-menu *,
+html.gordon-saber-theme .workspace-stage .field-ai-popover *,
+html.gordon-saber-theme .workspace-stage .command-slash-menu *,
+html.gordon-saber-theme .home-settings-menu-panel *,
+html.gordon-saber-theme .writing-ai-output-status-tooltip * {
+  color: inherit;
+  -webkit-text-fill-color: currentColor;
+}
+
+html.gordon-saber-theme .workspace-stage .weekly-task-status-option,
+html.gordon-saber-theme .workspace-stage .weekly-task-action-option,
+html.gordon-saber-theme .workspace-stage .compact-select-option,
+html.gordon-saber-theme .workspace-stage .writing-chapter-dropdown-item,
+html.gordon-saber-theme .workspace-stage .writing-ai-task-dropdown-item,
+html.gordon-saber-theme .workspace-stage .comic-ai-control-item,
+html.gordon-saber-theme .workspace-stage .command-slash-item,
+html.gordon-saber-theme .home-settings-item {
+  color: rgba(18, 38, 58, 0.84);
+  -webkit-text-fill-color: currentColor;
+}
+
+html.gordon-saber-theme .workspace-stage .weekly-task-status-option:hover,
+html.gordon-saber-theme .workspace-stage .weekly-task-status-option.is-active,
+html.gordon-saber-theme .workspace-stage .weekly-task-action-option:hover,
+html.gordon-saber-theme .workspace-stage .compact-select-option:hover,
+html.gordon-saber-theme .workspace-stage .compact-select-option:focus-visible,
+html.gordon-saber-theme .workspace-stage .compact-select-option.is-selected,
+html.gordon-saber-theme .workspace-stage .writing-chapter-dropdown-item:hover,
+html.gordon-saber-theme .workspace-stage .writing-chapter-dropdown-item.is-active,
+html.gordon-saber-theme .workspace-stage .writing-ai-task-dropdown-item:hover,
+html.gordon-saber-theme .workspace-stage .writing-ai-task-dropdown-item.is-active,
+html.gordon-saber-theme .workspace-stage .comic-ai-control-item:hover,
+html.gordon-saber-theme .workspace-stage .comic-ai-control-item.is-active,
+html.gordon-saber-theme .workspace-stage .command-slash-item:hover,
+html.gordon-saber-theme .workspace-stage .command-slash-item.is-active,
+html.gordon-saber-theme .home-settings-item:hover,
+html.gordon-saber-theme .home-settings-item.is-active {
+  border-color: rgba(63, 133, 191, 0.36);
+  background:
+    linear-gradient(90deg, rgba(102, 168, 220, 0.18), rgba(255, 255, 255, 0.72)),
+    rgba(238, 247, 255, 0.76);
+  color: #102236;
+  -webkit-text-fill-color: currentColor;
+}
+
+html.gordon-saber-theme .workspace-stage .weekly-task-action-option-danger,
+html.gordon-saber-theme .workspace-stage .weekly-task-action-option-danger:hover {
+  color: #8f343a;
+  -webkit-text-fill-color: currentColor;
+}
+
+html.gordon-saber-theme .workspace-stage .compact-select.is-disabled,
+html.gordon-saber-theme .workspace-stage .compact-select.is-disabled .compact-select-trigger,
+html.gordon-saber-theme .workspace-stage button:disabled,
+html.gordon-saber-theme .workspace-stage input:disabled,
+html.gordon-saber-theme .workspace-stage textarea:disabled,
+html.gordon-saber-theme .workspace-stage select:disabled {
+  color: var(--saber-disabled);
+  -webkit-text-fill-color: currentColor;
+}
+
+html.gordon-saber-theme .writing-ai-output-status-tooltip::after {
+  border-right-color: rgba(63, 133, 191, 0.28);
+  border-bottom-color: rgba(63, 133, 191, 0.28);
+  background: rgba(255, 255, 255, 0.96);
+}
+
+/* Saber Atelier character pass: soften remaining HUD/console motifs into paper desk surfaces. */
+html.gordon-saber-theme .app-shell::before {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.42), rgba(238, 247, 255, 0.18)),
+    linear-gradient(180deg, rgba(255, 250, 238, 0.2), rgba(222, 239, 255, 0.12));
+  background-size: auto;
+  opacity: 0.58;
+}
+
+html.gordon-saber-theme .app-shell::after {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 22%, rgba(238, 247, 255, 0.12)),
+    radial-gradient(circle at 84% 12%, rgba(212, 155, 51, 0.1), transparent 26%);
+  opacity: 0.5;
+}
+
+html.gordon-saber-theme .workspace-panel:has(.workspace-stage:not(.anime-home-stage)),
+html.gordon-saber-theme .workspace-panel.workspace-panel-flush:has(.workspace-stage:not(.anime-home-stage)) {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.3), rgba(238, 247, 255, 0.14)),
+    rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(1px) saturate(108%);
+}
+
+html.gordon-saber-theme .workflow-library-detail-shell,
+html.gordon-saber-theme .writing-detail-shell,
+html.gordon-saber-theme .comic-detail-shell,
+html.gordon-saber-theme .video-detail-shell,
+html.gordon-saber-theme .music-detail-shell,
+html.gordon-saber-theme .fortune-detail-shell,
+html.gordon-saber-theme .models-grid-subpage .model-editor-unified,
+html.gordon-saber-theme .command-chat-shell-immersive {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.2), rgba(222, 239, 255, 0.1)),
+    rgba(255, 255, 255, 0.08);
+  background-size: auto;
+}
+
+html.gordon-saber-theme .brand-title,
+html.gordon-saber-theme .models-title,
+html.gordon-saber-theme .extensions-shell .models-title,
+html.gordon-saber-theme .model-section-title,
+html.gordon-saber-theme .workflow-library-card-title,
+html.gordon-saber-theme .marketplace-app-title,
+html.gordon-saber-theme .command-chat-title,
+html.gordon-saber-theme .anime-home-stage h1 {
+  font-family:
+    "Avenir Next",
+    "SF Pro Display",
+    "PingFang SC",
+    "Hiragino Sans GB",
+    "Microsoft YaHei",
+    sans-serif;
+  letter-spacing: 0;
+}
+
+html.gordon-saber-theme .feature-kicker,
+html.gordon-saber-theme .mini-kicker,
+html.gordon-saber-theme .gordon-dialog-kicker,
+html.gordon-saber-theme .weekly-kpi-label,
+html.gordon-saber-theme .field-label,
+html.gordon-saber-theme .workflow-info-rail-title-block .feature-kicker,
+html.gordon-saber-theme .workflow-library-main-card-hero .feature-kicker,
+html.gordon-saber-theme .comic-outline-detail-panel .feature-kicker,
+html.gordon-saber-theme .comic-storyboard-stage-copy .feature-kicker,
+html.gordon-saber-theme .extensions-shell .feature-kicker,
+html.gordon-saber-theme .writing-ai-head .feature-kicker {
+  font-family:
+    "Avenir Next",
+    "SF Pro Text",
+    "PingFang SC",
+    "Hiragino Sans GB",
+    "Microsoft YaHei",
+    sans-serif;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+html.gordon-saber-theme .feature-panel {
+  border-color: var(--atelier-border);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(244, 250, 255, 0.64)),
+    rgba(255, 255, 255, 0.62);
+  box-shadow: var(--atelier-shadow-soft);
+}
+
+html.gordon-saber-theme .feature-card {
+  border-color: rgba(88, 146, 196, 0.18);
+  border-radius: 10px;
+  background:
+    linear-gradient(90deg, rgba(255, 250, 238, 0.5), rgba(255, 255, 255, 0.58) 54%, rgba(222, 239, 255, 0.46)),
+    rgba(255, 255, 255, 0.54);
+  color: rgba(16, 34, 54, 0.84);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
+}
+
+html.gordon-saber-theme .feature-card::before {
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(90deg, rgba(212, 155, 51, 0.16) 0 3px, transparent 3px 100%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.44), transparent 62%);
+  opacity: 0.78;
+}
+
+html.gordon-saber-theme .feature-graffiti {
+  display: none;
+}
+
+html.gordon-saber-theme .feature-card:hover,
+html.gordon-saber-theme .feature-card.is-active {
+  transform: none;
+  border-color: var(--atelier-border-strong);
+  background:
+    linear-gradient(90deg, rgba(102, 168, 220, 0.18), rgba(255, 255, 255, 0.76) 58%, var(--atelier-lilac-wash)),
+    rgba(255, 255, 255, 0.74);
+  color: #12263a;
+  box-shadow:
+    inset 3px 0 0 var(--atelier-binding),
+    var(--atelier-shadow-lift);
+}
+
+html.gordon-saber-theme .feature-card-icon,
+html.gordon-saber-theme .home-settings-menu summary,
+html.gordon-saber-theme .workflow-library-card-icon,
+html.gordon-saber-theme .workflow-library-card-arrow,
+html.gordon-saber-theme .model-icon-button,
+html.gordon-saber-theme .command-input-settings-trigger,
+html.gordon-saber-theme .command-input-attach,
+html.gordon-saber-theme .field-ai-trigger,
+html.gordon-saber-theme .field-ai-close {
+  border-color: rgba(88, 146, 196, 0.24);
+  border-radius: 9px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(235, 247, 255, 0.68)),
+    rgba(255, 255, 255, 0.66);
+  color: #275f8f;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86);
+}
+
+html.gordon-saber-theme .feature-card.is-active .feature-card-icon {
+  border-color: rgba(212, 155, 51, 0.38);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 247, 225, 0.7)),
+    rgba(239, 187, 84, 0.16);
+  color: #8a641a;
+}
+
+html.gordon-saber-theme .feature-card-indicator {
+  width: 3px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(88, 146, 196, 0.22);
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .feature-card.is-active .feature-card-indicator {
+  background: linear-gradient(180deg, var(--atelier-ribbon), var(--saber-lilac));
+  box-shadow: none;
+  animation: none;
+}
+
+html.gordon-saber-theme .models-hero,
+html.gordon-saber-theme .weekly-hero,
+html.gordon-saber-theme .extensions-shell .models-hero,
+html.gordon-saber-theme .workflow-library-detail-head,
+html.gordon-saber-theme .writing-detail-head,
+html.gordon-saber-theme .weekly-panel-head-compact,
+html.gordon-saber-theme .command-chat-head {
+  border-color: var(--atelier-border);
+  background:
+    linear-gradient(90deg, var(--atelier-paper-strong), var(--atelier-paper-soft) 58%, var(--atelier-lilac-wash)),
+    rgba(255, 255, 255, 0.74);
+  box-shadow:
+    inset 0 -1px 0 rgba(63, 133, 191, 0.12),
+    inset 0 2px 0 rgba(255, 255, 255, 0.86),
+    var(--atelier-shadow-soft);
+}
+
+html.gordon-saber-theme .models-hero::after,
+html.gordon-saber-theme .weekly-hero::after,
+html.gordon-saber-theme .workflow-library-detail-head::after,
+html.gordon-saber-theme .writing-detail-head::after,
+html.gordon-saber-theme .command-chat-head::after {
+  background: linear-gradient(90deg, rgba(212, 155, 51, 0.58), rgba(63, 133, 191, 0.3), transparent);
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .models-metric-chip,
+html.gordon-saber-theme .weekly-kpi-card,
+html.gordon-saber-theme .workflow-library-card,
+html.gordon-saber-theme .marketplace-app-card,
+html.gordon-saber-theme .weekly-record-card,
+html.gordon-saber-theme .command-session-card,
+html.gordon-saber-theme .model-config-card,
+html.gordon-saber-theme .provider-card,
+html.gordon-saber-theme .placeholder-card,
+html.gordon-saber-theme .extension-card,
+html.gordon-saber-theme .thread-card,
+html.gordon-saber-theme .writing-book-card,
+html.gordon-saber-theme .weekly-project-card,
+html.gordon-saber-theme .workflow-info-window-card,
+html.gordon-saber-theme .workflow-info-feed-card,
+html.gordon-saber-theme .workflow-library-record-card,
+html.gordon-saber-theme .workflow-finance-command-deck,
+html.gordon-saber-theme .workflow-finance-toolbar,
+html.gordon-saber-theme .workflow-finance-stats-strip,
+html.gordon-saber-theme .workflow-live-stage,
+html.gordon-saber-theme .workflow-live-rail,
+html.gordon-saber-theme .workflow-library-main-card,
+html.gordon-saber-theme .writing-intro-card,
+html.gordon-saber-theme .writing-chapter-list-panel,
+html.gordon-saber-theme .writing-chapter-summary-panel,
+html.gordon-saber-theme .comic-chapter-inspector,
+html.gordon-saber-theme .comic-asset-panel,
+html.gordon-saber-theme .video-editor-surface,
+html.gordon-saber-theme .music-editor-surface,
+html.gordon-saber-theme .fortune-chat-card,
+html.gordon-saber-theme .fortune-input-card,
+html.gordon-saber-theme .fortune-output-card {
+  border-color: var(--atelier-border);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, var(--atelier-paper-strong), var(--atelier-paper-soft) 52%, rgba(255, 250, 238, 0.42)),
+    var(--atelier-paper);
+  color: var(--saber-ink);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    var(--atelier-shadow-soft);
+}
+
+html.gordon-saber-theme .workflow-library-card:hover,
+html.gordon-saber-theme .marketplace-app-card:hover,
+html.gordon-saber-theme .weekly-record-card:hover,
+html.gordon-saber-theme .weekly-record-card.is-active,
+html.gordon-saber-theme .command-session-card:hover,
+html.gordon-saber-theme .command-session-card.is-active,
+html.gordon-saber-theme .models-shell .model-config-draggable-card:hover,
+html.gordon-saber-theme .writing-book-card:hover,
+html.gordon-saber-theme .workflow-info-window-card.is-active,
+html.gordon-saber-theme .workflow-info-window-card:hover,
+html.gordon-saber-theme .workflow-info-feed-card:hover,
+html.gordon-saber-theme .workflow-library-record-card:hover,
+html.gordon-saber-theme .workflow-library-record-card.is-active,
+html.gordon-saber-theme .writing-chapter-list-item:hover,
+html.gordon-saber-theme .writing-chapter-list-item.is-active {
+  transform: none;
+  border-color: var(--atelier-border-strong);
+  background:
+    linear-gradient(90deg, rgba(102, 168, 220, 0.16), rgba(255, 255, 255, 0.78) 58%, rgba(255, 250, 238, 0.5)),
+    rgba(255, 255, 255, 0.78);
+  color: #12263a;
+  box-shadow:
+    inset 3px 0 0 var(--atelier-binding),
+    var(--atelier-shadow-lift);
+}
+
+html.gordon-saber-theme .workflow-library-card::before,
+html.gordon-saber-theme .marketplace-app-card::before,
+html.gordon-saber-theme .weekly-record-card::before,
+html.gordon-saber-theme .weekly-project-card::before,
+html.gordon-saber-theme .writing-book-card::before {
+  background:
+    linear-gradient(90deg, rgba(212, 155, 51, 0.16) 0 3px, transparent 3px 100%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.36), transparent 58%);
+  opacity: 0.78;
+}
+
+html.gordon-saber-theme .workflow-library-card,
+html.gordon-saber-theme .marketplace-app-card,
+html.gordon-saber-theme .weekly-record-card,
+html.gordon-saber-theme .writing-book-card {
+  border-left-width: 3px;
+  border-left-style: solid;
+}
+
+html.gordon-saber-theme .workflow-library-card:nth-child(1),
+html.gordon-saber-theme .marketplace-app-card,
+html.gordon-saber-theme .weekly-project-card,
+html.gordon-saber-theme .writing-book-card {
+  border-left-color: var(--atelier-binding);
+}
+
+html.gordon-saber-theme .workflow-library-card:nth-child(2),
+html.gordon-saber-theme .writing-app-card,
+html.gordon-saber-theme .weekly-hero,
+html.gordon-saber-theme .workflow-finance-command-deck {
+  border-left-color: var(--atelier-ribbon);
+}
+
+html.gordon-saber-theme .workflow-library-card:nth-child(3),
+html.gordon-saber-theme .comic-app-card,
+html.gordon-saber-theme .video-app-card {
+  border-left-color: rgba(102, 168, 220, 0.68);
+}
+
+html.gordon-saber-theme .workflow-library-card:nth-child(4),
+html.gordon-saber-theme .music-app-card,
+html.gordon-saber-theme .fortune-app-card {
+  border-left-color: rgba(143, 117, 202, 0.58);
+}
+
+html.gordon-saber-theme .workflow-library-card-icon::before,
+html.gordon-saber-theme .marketplace-app-card .marketplace-app-copy::before {
+  border-color: rgba(212, 155, 51, 0.26);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 247, 225, 0.72)),
+    rgba(239, 187, 84, 0.14);
+  color: #8a641a;
+  font-family:
+    "Avenir Next",
+    "SF Pro Text",
+    "PingFang SC",
+    sans-serif;
+  letter-spacing: 0;
+}
+
+html.gordon-saber-theme .workflow-library-card-icon::after,
+html.gordon-saber-theme .workflow-finance-instrument-mark::after {
+  background: var(--atelier-ribbon);
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .weekly-editor-segmented,
+html.gordon-saber-theme .writing-tab-bar,
+html.gordon-saber-theme .extensions-shell .extensions-list-tabs,
+html.gordon-saber-theme .fortune-method-strip,
+html.gordon-saber-theme .workflow-finance-segment-row {
+  border-color: var(--atelier-border);
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(235, 247, 255, 0.62)),
+    rgba(255, 255, 255, 0.68);
+  box-shadow: inset 0 -1px 0 rgba(63, 133, 191, 0.1);
+}
+
+html.gordon-saber-theme .weekly-editor-tab,
+html.gordon-saber-theme .writing-tab,
+html.gordon-saber-theme .extensions-shell .extensions-list-tab,
+html.gordon-saber-theme .fortune-method-chip,
+html.gordon-saber-theme .workflow-finance-segment-row button {
+  border-radius: 8px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+html.gordon-saber-theme .weekly-editor-tab.is-active,
+html.gordon-saber-theme .writing-tab.is-active,
+html.gordon-saber-theme .extensions-shell .extensions-list-tab.is-active,
+html.gordon-saber-theme .fortune-method-chip.is-active,
+html.gordon-saber-theme .workflow-finance-segment-row button.is-active {
+  border-color: rgba(212, 155, 51, 0.34);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 247, 225, 0.68)),
+    rgba(239, 187, 84, 0.14);
+  color: #17314b;
+  box-shadow: inset 0 -2px 0 var(--atelier-ribbon);
+}
+
+html.gordon-saber-theme .workflow-info-rail,
+html.gordon-saber-theme .writing-detail-rail,
+html.gordon-saber-theme .comic-detail-rail,
+html.gordon-saber-theme .video-detail-rail,
+html.gordon-saber-theme .music-detail-rail,
+html.gordon-saber-theme .fortune-rail {
+  border-right-color: rgba(88, 146, 196, 0.18);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(238, 247, 255, 0.48)),
+    rgba(255, 255, 255, 0.42);
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.62);
+}
+
+html.gordon-saber-theme .weekly-project-card {
+  border-radius: 8px;
+  box-shadow:
+    inset 3px 0 0 color-mix(in srgb, var(--weekly-task-rail, var(--atelier-binding)) 58%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    var(--atelier-shadow-soft);
+}
+
+html.gordon-saber-theme .weekly-project-card::before {
+  background:
+    linear-gradient(90deg, rgba(212, 155, 51, 0.12) 0 3px, transparent 3px 100%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.32), transparent 62%);
+}
+
+html.gordon-saber-theme .weekly-project-head {
+  background:
+    linear-gradient(90deg, rgba(255, 250, 238, 0.42), rgba(255, 255, 255, 0.68) 48%, rgba(222, 239, 255, 0.36));
+}
+
+html.gordon-saber-theme .weekly-task-row {
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--weekly-task-row-bg), rgba(255, 255, 255, 0.34) 76%);
+}
+
+html.gordon-saber-theme .weekly-task-row::before {
+  left: -9px;
+  width: 2px;
+  border-radius: 999px;
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .weekly-task-children {
+  border-left: 1px dashed rgba(88, 146, 196, 0.22);
+}
+
+html.gordon-saber-theme .weekly-task-index-button {
+  min-width: 34px;
+  border-radius: 8px 8px 6px 6px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.86),
+    0 4px 10px rgba(57, 105, 151, 0.1);
+}
+
+html.gordon-saber-theme .weekly-task-index-glow {
+  display: none;
+}
+
+html.gordon-saber-theme .workflow-info-launch-orbit,
+html.gordon-saber-theme .writing-ai-busy-orbit {
+  border-color: rgba(88, 146, 196, 0.28);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(235, 247, 255, 0.7)),
+    rgba(102, 168, 220, 0.12);
+  color: #275f8f;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86);
+}
+
+html.gordon-saber-theme .workflow-info-launch-orbit::after,
+html.gordon-saber-theme .writing-ai-busy-orbit::before {
+  inset: -4px;
+  border: 1px solid rgba(212, 155, 51, 0.22);
+  border-radius: 14px;
+  animation: none;
+  transform: rotate(-5deg);
+  opacity: 0.7;
+}
+
+html.gordon-saber-theme .workflow-info-radar-pulse {
+  width: 12px;
+  height: 12px;
+}
+
+html.gordon-saber-theme .workflow-info-radar-pulse-ring {
+  display: none;
+}
+
+html.gordon-saber-theme .workflow-info-radar-pulse-core {
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+  background: var(--saber-blue);
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .workflow-info-radar-pulse.is-live .workflow-info-radar-pulse-core,
+html.gordon-saber-theme .workflow-info-radar-pulse.is-live .workflow-info-radar-pulse-ring,
+html.gordon-saber-theme .workflow-info-radar-pulse.is-paused .workflow-info-radar-pulse-core,
+html.gordon-saber-theme .writing-ai-busy-orbit i {
+  animation: none;
+}
+
+html.gordon-saber-theme .writing-ai-busy-orbit i {
+  width: 6px;
+  height: 6px;
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .workflow-info-compact-console {
+  border-bottom-color: rgba(88, 146, 196, 0.14);
+  background:
+    linear-gradient(90deg, rgba(255, 250, 238, 0.42), rgba(255, 255, 255, 0.56) 52%, rgba(222, 239, 255, 0.38)),
+    rgba(255, 255, 255, 0.42);
+}
+
+html.gordon-saber-theme .workflow-info-item {
+  border: 1px solid rgba(88, 146, 196, 0.18);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(102, 168, 220, 0.08), rgba(255, 255, 255, 0.62) 48%, rgba(255, 250, 238, 0.34)),
+    rgba(255, 255, 255, 0.6);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78);
+}
+
+html.gordon-saber-theme .workflow-info-item::after {
+  background:
+    linear-gradient(110deg, transparent 0%, transparent 44%, rgba(255, 255, 255, 0.42) 50%, transparent 58%),
+    radial-gradient(circle at 98% 20%, rgba(212, 155, 51, 0.08), transparent 24%);
+}
+
+html.gordon-saber-theme .workflow-info-item::before {
+  width: 3px;
+  background: var(--atelier-binding);
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .workflow-info-item-visual {
+  border-color: rgba(88, 146, 196, 0.22);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(235, 247, 255, 0.68)),
+    rgba(102, 168, 220, 0.1);
+  color: #275f8f;
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .workflow-info-item-visual::after {
+  border-color: rgba(212, 155, 51, 0.18);
+}
+
+html.gordon-saber-theme .workflow-info-item-kicker-row,
+html.gordon-saber-theme .workflow-info-source-name,
+html.gordon-saber-theme .workflow-info-feed-summary,
+html.gordon-saber-theme .workflow-info-item-summary,
+html.gordon-saber-theme .workflow-info-run-note p,
+html.gordon-saber-theme .workflow-info-empty p {
+  color: var(--saber-ink-faint);
+}
+
+html.gordon-saber-theme .workflow-info-item-tag,
+html.gordon-saber-theme .workflow-info-compact-metrics span,
+html.gordon-saber-theme .workflow-info-run-note {
+  border-color: rgba(88, 146, 196, 0.2);
+  background: rgba(255, 255, 255, 0.62);
+  color: #275f8f;
+}
+
+html.gordon-saber-theme .workflow-info-compact-metrics strong,
+html.gordon-saber-theme .workflow-info-score-chip,
+html.gordon-saber-theme .workflow-info-refresh-icon {
+  color: #275f8f;
+}
+
+html.gordon-saber-theme .workflow-finance-stage {
+  color: var(--saber-ink);
+}
+
+html.gordon-saber-theme .workflow-finance-console,
+html.gordon-saber-theme .workflow-finance-quote-panel,
+html.gordon-saber-theme .workflow-finance-command-deck,
+html.gordon-saber-theme .workflow-finance-toolbar,
+html.gordon-saber-theme .workflow-finance-stats-strip {
+  border-color: var(--atelier-border);
+  background:
+    linear-gradient(135deg, var(--atelier-paper-strong), var(--atelier-paper-soft) 56%, rgba(255, 250, 238, 0.42)),
+    var(--atelier-paper);
+  color: var(--saber-ink);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    var(--atelier-shadow-soft);
+}
+
+html.gordon-saber-theme .workflow-finance-stage .workflow-finance-chart-panel {
+  border-color: var(--atelier-border);
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: var(--atelier-shadow-soft);
+}
+
+html.gordon-saber-theme .workflow-finance-title,
+html.gordon-saber-theme .workflow-finance-symbol,
+html.gordon-saber-theme .workflow-finance-instrument-copy p,
+html.gordon-saber-theme .workflow-finance-live-quote strong,
+html.gordon-saber-theme .workflow-finance-stats-strip strong,
+html.gordon-saber-theme .workflow-finance-derived-grid strong,
+html.gordon-saber-theme .workflow-finance-metric-grid strong {
+  color: #12263a;
+}
+
+html.gordon-saber-theme .workflow-finance-copy,
+html.gordon-saber-theme .workflow-finance-instrument-copy span,
+html.gordon-saber-theme .workflow-finance-sync-state,
+html.gordon-saber-theme .workflow-finance-tool-label,
+html.gordon-saber-theme .workflow-finance-segment-row span,
+html.gordon-saber-theme .workflow-finance-stats-strip small,
+html.gordon-saber-theme .workflow-finance-stats-strip em,
+html.gordon-saber-theme .workflow-finance-symbol-meta,
+html.gordon-saber-theme .workflow-finance-derived-grid em,
+html.gordon-saber-theme .workflow-finance-metric-grid small {
+  color: var(--saber-ink-faint);
+}
+
+html.gordon-saber-theme .workflow-finance-live-quote,
+html.gordon-saber-theme .workflow-finance-indicators {
+  border-color: rgba(88, 146, 196, 0.18);
+}
+
+html.gordon-saber-theme .workflow-finance-command-deck .workflow-finance-symbol-input,
+html.gordon-saber-theme .workflow-finance-symbol-input,
+html.gordon-saber-theme .workflow-finance-auto-refresh,
+html.gordon-saber-theme .workflow-finance-derived-grid span,
+html.gordon-saber-theme .workflow-finance-metric-grid span,
+html.gordon-saber-theme .workflow-finance-chart-context span,
+html.gordon-saber-theme .workflow-finance-chart-bounds span,
+html.gordon-saber-theme .workflow-finance-tool-options button,
+html.gordon-saber-theme .workflow-finance-indicators button {
+  border-color: rgba(88, 146, 196, 0.2);
+  background: rgba(255, 255, 255, 0.62);
+  color: #275f8f;
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .workflow-finance-command-deck .workflow-finance-symbol-input input,
+html.gordon-saber-theme .workflow-finance-symbol-input input {
+  color: #12263a;
+  font-family:
+    "Avenir Next",
+    "SF Pro Text",
+    "PingFang SC",
+    sans-serif;
+}
+
+html.gordon-saber-theme .workflow-finance-tool-options button.is-active,
+html.gordon-saber-theme .workflow-finance-indicators button.is-active,
+html.gordon-saber-theme .workflow-finance-auto-refresh,
+html.gordon-saber-theme .workflow-finance-stats-strip .is-derived::before {
+  border-color: rgba(212, 155, 51, 0.3);
+  background: rgba(239, 187, 84, 0.16);
+  color: #8a641a;
+}
+
+html.gordon-saber-theme .workflow-finance-sync-state i {
+  background: var(--saber-blue);
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .workflow-finance-sync-state i.is-busy {
+  animation: none;
+}
+
+html.gordon-saber-theme .workflow-finance-stage .workflow-finance-chart-head,
+html.gordon-saber-theme .workflow-finance-chart-status {
+  border-color: rgba(88, 146, 196, 0.16);
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.9), rgba(235, 247, 255, 0.72)),
+    rgba(255, 255, 255, 0.84);
+  color: var(--saber-ink-faint);
+}
+
+html.gordon-saber-theme .workflow-finance-chart-title,
+html.gordon-saber-theme .workflow-finance-stage .workflow-finance-chart-bounds,
+html.gordon-saber-theme .workflow-finance-stage .workflow-finance-chart-context span,
+html.gordon-saber-theme .workflow-finance-chart-status a {
+  color: var(--saber-ink-faint);
+}
+
+html.gordon-saber-theme .workflow-finance-terminal-chart,
+html.gordon-saber-theme .workflow-finance-chart-host,
+html.gordon-saber-theme .workflow-finance-kline-canvas {
+  background: #0f2030;
+}
+
+html.gordon-saber-theme .workflow-finance-chart-legend {
+  border-color: rgba(197, 220, 238, 0.16);
+  background: rgba(11, 24, 36, 0.88);
+  color: rgba(223, 237, 249, 0.76);
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .command-message {
+  border-radius: 12px;
+  box-shadow: var(--atelier-shadow-soft);
+}
+
+html.gordon-saber-theme .command-message.is-assistant .command-final-reply,
+html.gordon-saber-theme .command-agent-card,
+html.gordon-saber-theme .command-prompt-chip,
+html.gordon-saber-theme .command-live-activity,
+html.gordon-saber-theme .command-message-retry,
+html.gordon-saber-theme .command-rich-quote,
+html.gordon-saber-theme .command-rich-table-wrap,
+html.gordon-saber-theme .command-math-inline,
+html.gordon-saber-theme .command-math-block {
+  border-radius: 10px;
+  background:
+    linear-gradient(135deg, var(--atelier-paper-strong), var(--atelier-paper-soft) 58%, rgba(255, 250, 238, 0.36)),
+    var(--atelier-paper);
+  box-shadow: var(--atelier-shadow-soft);
+}
+
+html.gordon-saber-theme .command-response-process-mark {
+  border-color: rgba(88, 146, 196, 0.26);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(235, 247, 255, 0.7)),
+    rgba(255, 255, 255, 0.74);
+  color: #275f8f;
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .command-response-process-item.is-running .command-response-process-mark {
+  border-color: rgba(212, 155, 51, 0.34);
+  background: rgba(239, 187, 84, 0.16);
+  color: #8a641a;
+  animation: none;
+}
+
+html.gordon-saber-theme .command-response-process-tag {
+  border: 1px solid rgba(88, 146, 196, 0.18);
+  background: rgba(255, 255, 255, 0.6);
+  color: rgba(16, 34, 54, 0.72);
+}
+
+html.gordon-saber-theme .command-response-process-tag.is-technical {
+  font-family:
+    "Avenir Next",
+    "SF Pro Text",
+    "PingFang SC",
+    sans-serif;
+}
+
+html.gordon-saber-theme .command-input-shell {
+  border-color: var(--atelier-border);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.48), rgba(235, 247, 255, 0.32)),
+    rgba(255, 255, 255, 0.36);
+  box-shadow: 0 -10px 26px rgba(57, 105, 151, 0.1);
+}
+
+html.gordon-saber-theme .command-stream-cursor {
+  border-radius: 999px;
+  background: var(--atelier-ribbon);
+}
+
+html.gordon-saber-theme .model-action,
+html.gordon-saber-theme .gordon-dialog-button-primary,
+html.gordon-saber-theme .command-input-submit:not(.is-running),
+html.gordon-saber-theme .field-ai-run,
+html.gordon-saber-theme .field-ai-primary,
+html.gordon-saber-theme .fortune-run-button,
+html.gordon-saber-theme .music-run-button,
+html.gordon-saber-theme .music-new-track-button,
+html.gordon-saber-theme .comic-asset-view-generate,
+html.gordon-saber-theme .writing-agent-run {
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, #357daf, #66a8dc 66%, #8f75ca);
+  box-shadow:
+    0 10px 22px rgba(63, 133, 191, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+html.gordon-saber-theme .model-action-secondary,
+html.gordon-saber-theme .compact-select-trigger,
+html.gordon-saber-theme .field-input,
+html.gordon-saber-theme .field-textarea,
+html.gordon-saber-theme .field-ai-input,
+html.gordon-saber-theme .field-ai-output,
+html.gordon-saber-theme .gordon-dialog-input,
+html.gordon-saber-theme .command-input-frame,
+html.gordon-saber-theme .weekly-project-toggle,
+html.gordon-saber-theme .weekly-row-action {
+  border-radius: 8px;
+}
+
+html.gordon-saber-theme .anime-home-kicker,
+html.gordon-saber-theme .anime-home-status {
+  border-radius: 8px;
+  text-transform: none;
+}
+
+html.gordon-saber-theme .anime-home-ribbon span {
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(212, 155, 51, 0.48), rgba(63, 133, 191, 0.34));
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .weekly-panel-title-slot {
+  border-color: rgba(63, 133, 191, 0.24);
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.88), rgba(244, 250, 255, 0.7)),
+    rgba(255, 255, 255, 0.72);
+  color: var(--saber-ink);
+  box-shadow:
+    inset 0 -1px 0 rgba(212, 155, 51, 0.22),
+    0 8px 18px rgba(57, 105, 151, 0.08);
+}
+
+html.gordon-saber-theme .weekly-panel-title-slot .weekly-panel-title {
+  color: #17314b;
+}
+
+html.gordon-saber-theme .weekly-autosave-hint {
+  color: rgba(64, 86, 110, 0.74);
+}
+
+html.gordon-saber-theme .weekly-report-stage {
+  gap: 14px;
+  padding: 6px 0 14px;
+}
+
+html.gordon-saber-theme .weekly-report-stage.is-locked > :not(.weekly-report-lock-layer) {
+  opacity: 0.82;
+}
+
+html.gordon-saber-theme .weekly-report-lock-layer {
+  border-radius: 10px;
+  background: rgba(238, 247, 255, 0.36);
+}
+
+html.gordon-saber-theme .weekly-rail-card,
+html.gordon-saber-theme .weekly-report-main-card,
+html.gordon-saber-theme .weekly-report-summary-card {
+  border-color: var(--atelier-border);
+  border-radius: 10px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(244, 250, 255, 0.84) 52%, rgba(255, 250, 238, 0.46)),
+    rgba(255, 255, 255, 0.82);
+  color: var(--saber-ink);
+  box-shadow:
+    inset 3px 0 0 rgba(63, 133, 191, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    var(--atelier-shadow-soft);
+}
+
+html.gordon-saber-theme .weekly-report-summary-card {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(238, 247, 255, 0.82) 56%, rgba(143, 117, 202, 0.08)),
+    rgba(255, 255, 255, 0.78);
+}
+
+html.gordon-saber-theme .weekly-report-mode-tabs,
+html.gordon-saber-theme .weekly-report-output-tabs,
+html.gordon-saber-theme .weekly-report-summary-tabs,
+html.gordon-saber-theme .weekly-date-range-control {
+  border-color: rgba(63, 133, 191, 0.24);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(238, 247, 255, 0.64)),
+    rgba(255, 255, 255, 0.62);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
+}
+
+html.gordon-saber-theme .weekly-report-mode-tab,
+html.gordon-saber-theme .weekly-report-output-tab,
+html.gordon-saber-theme .weekly-report-summary-tab {
+  color: rgba(16, 34, 54, 0.72);
+  letter-spacing: 0;
+}
+
+html.gordon-saber-theme .weekly-report-mode-tab:hover:not(:disabled),
+html.gordon-saber-theme .weekly-report-output-tab:hover:not(:disabled),
+html.gordon-saber-theme .weekly-report-summary-tab:hover {
+  background: rgba(102, 168, 220, 0.14);
+  color: #17314b;
+}
+
+html.gordon-saber-theme .weekly-report-mode-tab.is-active,
+html.gordon-saber-theme .weekly-report-output-tab.is-active,
+html.gordon-saber-theme .weekly-report-summary-tab.is-active {
+  border-color: rgba(212, 155, 51, 0.34);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 247, 225, 0.7)),
+    rgba(239, 187, 84, 0.14);
+  color: #17314b;
+  box-shadow: inset 0 -2px 0 var(--atelier-ribbon);
+}
+
+html.gordon-saber-theme .weekly-report-summary-tab-meta {
+  color: rgba(64, 86, 110, 0.74);
+}
+
+html.gordon-saber-theme .weekly-report-summary-tab.is-active .weekly-report-summary-tab-meta {
+  color: #8a641a;
+}
+
+html.gordon-saber-theme .weekly-report-summary-score {
+  border-color: rgba(31, 138, 112, 0.28);
+  background:
+    linear-gradient(135deg, rgba(45, 122, 104, 0.14), rgba(255, 255, 255, 0.58)),
+    rgba(255, 255, 255, 0.62);
+  color: #1f6758;
+}
+
+html.gordon-saber-theme .weekly-report-inline-toggle {
+  min-height: 30px;
+  padding: 0 8px;
+  border: 1px solid rgba(63, 133, 191, 0.22);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+html.gordon-saber-theme .weekly-report-inline-toggle .command-inline-toggle-label {
+  color: rgba(16, 34, 54, 0.76);
+}
+
+html.gordon-saber-theme .weekly-report-inline-toggle input {
+  accent-color: var(--saber-blue);
+}
+
+html.gordon-saber-theme .weekly-date-field span,
+html.gordon-saber-theme .weekly-date-range-separator {
+  color: rgba(64, 86, 110, 0.74);
+}
+
+html.gordon-saber-theme .weekly-date-field input {
+  border-color: rgba(63, 133, 191, 0.18);
+  background: rgba(255, 255, 255, 0.76);
+  color: #17314b;
+  color-scheme: light;
+}
+
+html.gordon-saber-theme .weekly-date-field input:focus {
+  border-color: rgba(63, 133, 191, 0.46);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 0 3px rgba(63, 133, 191, 0.1);
+}
+
+html.gordon-saber-theme .weekly-date-field input::-webkit-calendar-picker-indicator {
+  opacity: 0.74;
+}
+
+html.gordon-saber-theme .weekly-performance-instruction-card,
+html.gordon-saber-theme .weekly-template-editor-card {
+  border-color: rgba(63, 133, 191, 0.22);
+  border-radius: 10px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.82), rgba(238, 247, 255, 0.64)),
+    rgba(255, 255, 255, 0.62);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
+}
+
+html.gordon-saber-theme .weekly-performance-instruction-toggle,
+html.gordon-saber-theme .weekly-template-collapse-button {
+  color: var(--saber-ink);
+}
+
+html.gordon-saber-theme .weekly-performance-instruction-toggle .action-icon,
+html.gordon-saber-theme .weekly-template-collapse-button .action-icon {
+  color: #8a641a;
+}
+
+html.gordon-saber-theme .weekly-performance-instruction-toggle span,
+html.gordon-saber-theme .weekly-template-collapse-button span {
+  color: #17314b;
+}
+
+html.gordon-saber-theme .weekly-performance-instruction-toggle small,
+html.gordon-saber-theme .weekly-template-collapse-button small {
+  color: rgba(64, 86, 110, 0.72);
+}
+
+html.gordon-saber-theme .weekly-report-output-head .field-label {
+  color: #17314b;
+}
+
+html.gordon-saber-theme .weekly-report-feedback,
+html.gordon-saber-theme .weekly-report-feedback.is-neutral {
+  color: rgba(64, 86, 110, 0.82);
+}
+
+html.gordon-saber-theme .weekly-report-feedback.is-success {
+  color: #2d7a68;
+}
+
+html.gordon-saber-theme .weekly-report-feedback.is-warning {
+  color: #8a641a;
+}
+
+html.gordon-saber-theme .weekly-report-feedback.is-danger {
+  color: #a94147;
+}
+
+html.gordon-saber-theme .weekly-report-run-button,
+html.gordon-saber-theme .weekly-report-share-button {
+  border-color: rgba(63, 133, 191, 0.28);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(235, 247, 255, 0.68)),
+    rgba(255, 255, 255, 0.72);
+  color: #275f8f;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.86),
+    0 8px 18px rgba(63, 113, 160, 0.12);
+}
+
+html.gordon-saber-theme .weekly-report-run-button:hover:not(:disabled),
+html.gordon-saber-theme .weekly-report-share-button:hover:not(:disabled),
+html.gordon-saber-theme .weekly-report-share-button.is-sent {
+  border-color: rgba(63, 133, 191, 0.46);
+  background:
+    linear-gradient(135deg, rgba(102, 168, 220, 0.22), rgba(255, 255, 255, 0.82)),
+    rgba(255, 255, 255, 0.82);
+  color: #17314b;
+}
+
+html.gordon-saber-theme .weekly-report-run-button.is-loading,
+html.gordon-saber-theme .weekly-report-share-button.is-loading {
+  border-color: rgba(31, 138, 112, 0.3);
+  background: rgba(45, 122, 104, 0.12);
+  color: #1f6758;
+}
+
+html.gordon-saber-theme .weekly-report-copy-button {
+  border: 1px solid rgba(63, 133, 191, 0.22);
+  background: rgba(255, 255, 255, 0.72);
+  color: #275f8f;
+  box-shadow: 0 8px 18px rgba(63, 113, 160, 0.1);
+}
+
+html.gordon-saber-theme .weekly-report-copy-button:hover:not(:disabled) {
+  border-color: rgba(63, 133, 191, 0.42);
+  background: rgba(235, 247, 255, 0.9);
+  color: #17314b;
+}
+
+html.gordon-saber-theme .weekly-report-copy-button.is-copied {
+  border-color: rgba(31, 138, 112, 0.3);
+  background: rgba(45, 122, 104, 0.12);
+  color: #1f6758;
+}
+
+html.gordon-saber-theme .weekly-report-copy-button:disabled {
+  border-color: rgba(63, 133, 191, 0.14);
+  background: rgba(255, 255, 255, 0.42);
+  color: rgba(64, 86, 110, 0.46);
+}
+
+html.gordon-saber-theme .weekly-report-output-preview {
+  border-color: rgba(63, 133, 191, 0.22);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(244, 250, 255, 0.78)),
+    rgba(255, 255, 255, 0.78);
+  color: var(--saber-ink);
+}
+
+html.gordon-saber-theme .weekly-report-output-preview.is-readonly {
+  border-color: rgba(63, 133, 191, 0.18);
+  background: rgba(244, 250, 255, 0.72);
+}
+
+html.gordon-saber-theme .weekly-report-rendered .command-rich-heading {
+  color: #17314b;
+}
+
+html.gordon-saber-theme .weekly-report-rendered .command-rich-paragraph,
+html.gordon-saber-theme .weekly-report-rendered .command-rich-list,
+html.gordon-saber-theme .weekly-report-rendered .command-rich-list-item-content {
+  color: rgba(16, 34, 54, 0.86);
+}
+
+html.gordon-saber-theme .weekly-report-rendered .command-rich-list li::marker,
+html.gordon-saber-theme .weekly-report-rendered .command-rich-list-marker {
+  color: #275f8f;
+}
+
+html.gordon-saber-theme .weekly-report-placeholder-copy {
+  color: rgba(64, 86, 110, 0.68);
+}
+
+html.gordon-saber-theme .weekly-quality-compact-item,
+html.gordon-saber-theme .weekly-insight-compact-item {
+  border-color: rgba(63, 133, 191, 0.18);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.74), rgba(238, 247, 255, 0.52)),
+    rgba(255, 255, 255, 0.56);
+}
+
+html.gordon-saber-theme .weekly-quality-compact-item.is-done {
+  border-color: rgba(31, 138, 112, 0.28);
+  background: rgba(45, 122, 104, 0.1);
+}
+
+html.gordon-saber-theme .weekly-quality-compact-mark {
+  background: rgba(64, 86, 110, 0.08);
+  color: rgba(64, 86, 110, 0.72);
+}
+
+html.gordon-saber-theme .weekly-quality-compact-item.is-done .weekly-quality-compact-mark {
+  background: rgba(45, 122, 104, 0.16);
+  color: #1f6758;
+}
+
+html.gordon-saber-theme .weekly-quality-title,
+html.gordon-saber-theme .weekly-insight-title {
+  color: #17314b;
+}
+
+html.gordon-saber-theme .weekly-quality-hint,
+html.gordon-saber-theme .weekly-rail-empty-copy,
+html.gordon-saber-theme .weekly-insight-detail {
+  color: rgba(64, 86, 110, 0.82);
+}
+
+html.gordon-saber-theme .weekly-insight-meta {
+  color: rgba(64, 86, 110, 0.72);
+}
+
+html.gordon-saber-theme .weekly-insight-compact-index {
+  background: rgba(239, 187, 84, 0.18);
+  color: #8a641a;
+}
+
+html.gordon-saber-theme .weekly-rail-empty {
+  border-color: rgba(63, 133, 191, 0.24);
+  background: rgba(255, 255, 255, 0.46);
+}
+
+/* Current Saber Atelier pass: flatten nested shells and replace hard dashboard cards with paper-like panels. */
+:root.gordon-saber-theme {
+  --atelier-sheet: rgba(255, 255, 255, 0.7);
+  --atelier-sheet-strong: rgba(255, 255, 255, 0.88);
+  --atelier-line-soft: rgba(90, 151, 202, 0.18);
+  --atelier-line-faint: rgba(90, 151, 202, 0.1);
+  --atelier-index-blue: rgba(63, 133, 191, 0.56);
+  --atelier-index-gold: rgba(212, 155, 51, 0.62);
+  --atelier-sketch-shadow: 0 10px 24px rgba(57, 105, 151, 0.08);
+}
+
+html.gordon-saber-theme .workspace-panel:has(.workspace-stage:not(.anime-home-stage)),
+html.gordon-saber-theme .workspace-panel.workspace-panel-flush:has(.workspace-stage:not(.anime-home-stage)) {
+  border-color: rgba(90, 151, 202, 0.18);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.22), rgba(238, 247, 255, 0.1)),
+    rgba(255, 255, 255, 0.1);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.26),
+    0 12px 34px rgba(57, 105, 151, 0.08);
+  backdrop-filter: blur(1px) saturate(108%);
+}
+
+html.gordon-saber-theme .feature-panel {
+  padding: 10px 8px;
+  border-color: rgba(90, 151, 202, 0.16);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(245, 251, 255, 0.42)),
+    rgba(255, 255, 255, 0.36);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.66),
+    0 10px 26px rgba(57, 105, 151, 0.07);
+}
+
+html.gordon-saber-theme .feature-board {
+  gap: 2px;
+}
+
+html.gordon-saber-theme .feature-card {
+  position: relative;
+  min-height: 50px;
+  padding: 7px 7px 7px 9px;
+  border: 0;
+  border-radius: 9px 4px 4px 9px;
+  background: transparent;
+  box-shadow: inset 0 -1px 0 rgba(90, 151, 202, 0.08);
+  clip-path: none;
+  color: rgba(20, 43, 66, 0.78);
+}
+
+html.gordon-saber-theme .feature-card::before {
+  content: "";
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 1px;
+  display: block;
+  width: 2px;
+  border-radius: 999px;
+  background: rgba(90, 151, 202, 0.16);
+  opacity: 1;
+}
+
+html.gordon-saber-theme .feature-card:hover,
+html.gordon-saber-theme .feature-card.is-active {
+  transform: none;
+  border-color: transparent;
+  background:
+    linear-gradient(90deg, rgba(102, 168, 220, 0.16), rgba(255, 255, 255, 0.52) 62%, rgba(143, 117, 202, 0.08)),
+    rgba(255, 255, 255, 0.34);
+  box-shadow:
+    inset 0 -1px 0 rgba(90, 151, 202, 0.1),
+    0 8px 18px rgba(57, 105, 151, 0.08);
+  color: #142b42;
+}
+
+html.gordon-saber-theme .feature-card.is-active {
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%);
+}
+
+html.gordon-saber-theme .feature-card:hover::before,
+html.gordon-saber-theme .feature-card.is-active::before {
+  background: linear-gradient(180deg, var(--atelier-index-gold), var(--atelier-index-blue), rgba(143, 117, 202, 0.56));
+}
+
+html.gordon-saber-theme .feature-card-icon {
+  border-color: rgba(90, 151, 202, 0.2);
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(232, 246, 255, 0.52)),
+    rgba(255, 255, 255, 0.44);
+  color: #2f78b7;
+  transform: rotate(-2deg);
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease,
+    color 180ms ease;
+}
+
+html.gordon-saber-theme .feature-card:hover .feature-card-icon,
+html.gordon-saber-theme .feature-card.is-active .feature-card-icon {
+  border-color: rgba(212, 155, 51, 0.34);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 248, 228, 0.62)),
+    rgba(239, 187, 84, 0.12);
+  color: #8a641a;
+  box-shadow: none;
+  transform: rotate(2deg);
+}
+
+html.gordon-saber-theme .feature-card .feature-title {
+  font-weight: 720;
+}
+
+html.gordon-saber-theme .feature-card .feature-kicker {
+  color: rgba(64, 86, 110, 0.68);
+  font-family:
+    "Avenir Next",
+    "SF Pro Text",
+    "PingFang SC",
+    "Hiragino Sans GB",
+    "Microsoft YaHei",
+    sans-serif;
+  text-transform: none;
+}
+
+html.gordon-saber-theme .feature-card-indicator {
+  width: 0;
+  height: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .feature-card.is-active .feature-card-indicator {
+  background: transparent;
+  box-shadow: none;
+  animation: none;
+}
+
+html.gordon-saber-theme .models-grid-subpage .model-editor-unified.model-usage-panel,
+html.gordon-saber-theme .workspace-stage .model-usage-panel {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+html.gordon-saber-theme .model-usage-panel .model-subpage-head.workflow-library-detail-head {
+  min-height: 0;
+  margin: 0 0 8px;
+  padding: 8px 10px 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .model-usage-panel .workflow-library-detail-title {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 18px 5px;
+}
+
+html.gordon-saber-theme .model-usage-panel .workflow-library-detail-title::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  bottom: 0;
+  left: 4px;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--atelier-index-gold), var(--atelier-index-blue), rgba(143, 117, 202, 0.38));
+  transform: skewX(-18deg);
+}
+
+html.gordon-saber-theme .model-usage-panel .model-usage-profile-badge {
+  border: 0;
+  border-radius: 9px 4px 9px 4px;
+  background:
+    linear-gradient(90deg, rgba(214, 238, 255, 0.78), rgba(255, 250, 238, 0.72)),
+    rgba(255, 255, 255, 0.58);
+  box-shadow: inset 3px 0 0 rgba(212, 155, 51, 0.54);
+}
+
+html.gordon-saber-theme .model-usage-panel .model-usage-content {
+  position: relative;
+  margin: 0 10px 10px;
+  padding: 18px 20px 20px;
+  overflow: auto;
+  border: 1px solid var(--atelier-line-soft);
+  border-radius: 10px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.76), rgba(246, 251, 255, 0.6) 52%, rgba(255, 250, 238, 0.32)),
+    rgba(255, 255, 255, 0.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.74),
+    var(--atelier-sketch-shadow);
+  backdrop-filter: blur(10px) saturate(112%);
+}
+
+html.gordon-saber-theme .model-usage-panel .model-usage-content::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 24px;
+  width: 96px;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--atelier-index-gold), rgba(143, 117, 202, 0.48), transparent);
+  transform: skewX(-18deg);
+  pointer-events: none;
+}
+
+html.gordon-saber-theme .model-usage-panel .model-usage-summary-grid {
+  gap: 8px;
+}
+
+html.gordon-saber-theme .model-usage-panel .model-usage-metric {
+  position: relative;
+  min-height: 74px;
+  padding: 13px 14px 13px 17px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 8px 4px 8px 4px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.58), rgba(238, 247, 255, 0.28)),
+    rgba(255, 255, 255, 0.24);
+  box-shadow:
+    inset 0 -1px 0 rgba(90, 151, 202, 0.12),
+    inset 3px 0 0 rgba(63, 133, 191, 0.34);
+}
+
+html.gordon-saber-theme .model-usage-panel .model-usage-metric::after {
+  content: "";
+  position: absolute;
+  top: 9px;
+  right: 12px;
+  width: 28px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(212, 155, 51, 0.34);
+  transform: rotate(-7deg);
+}
+
+html.gordon-saber-theme .model-usage-panel .model-usage-metric span {
+  color: rgba(64, 86, 110, 0.78);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+html.gordon-saber-theme .model-usage-panel .model-usage-metric strong {
+  color: #102236;
+  font-size: 19px;
+  font-weight: 820;
+}
+
+html.gordon-saber-theme .model-usage-panel .model-usage-chart-card {
+  gap: 12px;
+  min-height: 0;
+  padding: 2px 0 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .model-usage-panel .model-usage-card-head {
+  align-items: center;
+  padding: 2px 2px 0;
+  border-bottom: 1px solid var(--atelier-line-faint);
+}
+
+html.gordon-saber-theme .model-usage-panel .model-usage-card-head .feature-kicker {
+  color: rgba(143, 117, 202, 0.72);
+}
+
+html.gordon-saber-theme .model-usage-panel .model-usage-refresh-button {
+  border-radius: 10px;
+}
+
+html.gordon-saber-theme .model-usage-panel .model-usage-chart {
+  gap: 6px;
+  min-height: 210px;
+  padding: 8px 0 0;
+  background:
+    repeating-linear-gradient(180deg, transparent 0 27px, rgba(90, 151, 202, 0.08) 28px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.2), transparent 38%);
+}
+
+html.gordon-saber-theme .model-usage-panel .model-usage-bar-track {
+  justify-content: center;
+  min-height: 170px;
+  border-radius: 9px 9px 5px 5px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(102, 168, 220, 0.035)),
+    transparent;
+  box-shadow:
+    inset 0 -8px 14px rgba(255, 255, 255, 0.18);
+}
+
+html.gordon-saber-theme .model-usage-panel .model-usage-bar-fill {
+  width: min(64%, 30px);
+  min-width: 14px;
+  border-radius: 9px 9px 5px 5px;
+  background:
+    linear-gradient(180deg, rgba(239, 187, 84, 0.78), rgba(102, 207, 190, 0.86) 34%, rgba(92, 154, 211, 0.72)),
+    rgba(102, 168, 220, 0.68);
+  box-shadow:
+    0 -8px 18px rgba(102, 207, 190, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.46);
+}
+
+html.gordon-saber-theme .model-usage-panel .model-usage-day-label {
+  color: rgba(64, 86, 110, 0.72);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+html.gordon-saber-theme .model-usage-panel .model-usage-daily-list {
+  display: grid;
+  gap: 0 10px;
+  max-height: 140px;
+  padding: 4px 2px 0;
+  border-top: 1px solid var(--atelier-line-faint);
+  background: transparent;
+}
+
+html.gordon-saber-theme .model-usage-panel .model-usage-row {
+  padding: 8px 6px;
+  border: 0;
+  border-bottom: 1px solid rgba(90, 151, 202, 0.12);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: rgba(31, 51, 72, 0.76);
+  font-size: 12px;
+}
+
+html.gordon-saber-theme .model-usage-panel .model-usage-row strong {
+  color: #17314b;
+  font-size: 12px;
+  font-weight: 780;
+}
+
+/* Model ledger: one readable paper surface instead of a dashboard of nested cards. */
+html.gordon-saber-theme .models-shell-ledger {
+  --model-ink: #142c44;
+  --model-muted: #516b83;
+  --model-line: rgba(76, 136, 187, 0.24);
+  --model-wash: rgba(235, 246, 255, 0.78);
+}
+
+html.gordon-saber-theme .models-shell-ledger .models-hero {
+  min-height: 76px;
+  margin: 0 6px 10px;
+  padding: 10px 14px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--model-line);
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.32);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+html.gordon-saber-theme .models-shell-ledger .models-hero::after {
+  right: auto;
+  bottom: -1px;
+  left: 14px;
+  width: 136px;
+  height: 3px;
+  background: linear-gradient(90deg, var(--saber-gold), var(--saber-blue), transparent);
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .models-shell-ledger .models-title,
+html.gordon-saber-theme .models-shell-ledger .model-section-title,
+html.gordon-saber-theme .models-shell-ledger .model-card-title {
+  color: var(--model-ink);
+}
+
+html.gordon-saber-theme .models-shell-ledger .feature-kicker {
+  color: #6b5f91;
+  font-weight: 760;
+}
+
+html.gordon-saber-theme .models-shell-ledger .models-hero-metrics {
+  gap: 6px;
+}
+
+html.gordon-saber-theme .models-shell-ledger .models-metric-chip {
+  min-height: 42px;
+  padding: 7px 11px;
+  border: 0;
+  border-left: 3px solid rgba(86, 149, 200, 0.58);
+  border-radius: 2px 7px 7px 2px;
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow: inset 0 -1px 0 rgba(76, 136, 187, 0.14);
+}
+
+html.gordon-saber-theme .models-shell-ledger .models-metric-chip-primary {
+  border-left-color: rgba(205, 150, 51, 0.84);
+  background: rgba(255, 249, 232, 0.78);
+}
+
+html.gordon-saber-theme .models-shell-ledger .models-metric-copy small {
+  color: var(--model-muted);
+}
+
+html.gordon-saber-theme .models-shell-ledger .models-metric-copy strong {
+  color: var(--model-ink);
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-section {
+  overflow: hidden;
+  margin: 0 6px 12px;
+  border: 1px solid var(--model-line);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(227, 242, 255, 0.54), rgba(255, 255, 255, 0.94) 14%, rgba(255, 252, 245, 0.78)),
+    rgba(255, 255, 255, 0.88);
+  box-shadow: 0 12px 26px rgba(46, 93, 136, 0.1);
+  backdrop-filter: blur(9px) saturate(110%);
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-section-head {
+  min-height: 64px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--model-line);
+  background: rgba(255, 255, 255, 0.52);
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-count-pill {
+  border-color: rgba(76, 136, 187, 0.24);
+  background: rgba(234, 246, 255, 0.72);
+  color: #315a7d;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-configured-list {
+  gap: 0;
+  padding: 0;
+  background: transparent;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-config-card,
+html.gordon-saber-theme .models-shell-ledger .model-config-card.is-model-preferred {
+  min-height: 88px;
+  margin: 0;
+  padding: 11px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--model-line);
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.3);
+  box-shadow: none;
+  transition: background 180ms ease, box-shadow 180ms ease;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-config-card:last-child {
+  border-bottom: 0;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-config-card::before {
+  top: 10px;
+  bottom: 10px;
+  left: 0;
+  width: 4px;
+  height: auto;
+  border-radius: 0 4px 4px 0;
+  background: rgba(86, 149, 200, 0.48);
+  transform: none;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-config-card.is-model-preferred {
+  background: linear-gradient(90deg, rgba(255, 246, 215, 0.7), rgba(255, 255, 255, 0.42) 58%, rgba(231, 244, 255, 0.34));
+  box-shadow: inset 4px 0 0 var(--saber-gold);
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-config-card.is-model-preferred::before {
+  background: var(--saber-gold);
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-config-card:hover,
+html.gordon-saber-theme .models-shell-ledger .model-config-draggable-card:hover {
+  transform: none;
+  border-color: transparent;
+  background: linear-gradient(90deg, rgba(225, 241, 255, 0.72), rgba(255, 255, 255, 0.58) 62%, rgba(244, 238, 255, 0.34));
+  box-shadow: inset 4px 0 0 var(--saber-blue);
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-config-main {
+  gap: 10px;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-card-rank {
+  color: #7d6a37;
+  font-weight: 760;
+}
+
+html.gordon-saber-theme .models-shell-ledger .provider-avatar {
+  border-color: rgba(76, 136, 187, 0.3);
+  background: #f7fbff;
+  box-shadow: 0 3px 9px rgba(42, 92, 138, 0.1);
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-card-meta,
+html.gordon-saber-theme .models-shell-ledger .model-card-copy,
+html.gordon-saber-theme .models-shell-ledger .model-card-mode,
+html.gordon-saber-theme .models-shell-ledger .model-card-health {
+  color: var(--model-muted);
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-card-mode {
+  border-color: rgba(76, 136, 187, 0.24);
+  background: rgba(231, 244, 255, 0.62);
+  font-size: 10px;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-card-health {
+  color: #24735f;
+  font-weight: 720;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-default-badge {
+  border-color: rgba(205, 150, 51, 0.38);
+  background: rgba(255, 244, 207, 0.86);
+  color: #795411;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-balance-widget {
+  min-width: 190px;
+  padding: 7px 9px;
+  border: 1px solid rgba(76, 136, 187, 0.2);
+  border-radius: 5px;
+  background: rgba(248, 252, 255, 0.84);
+  box-shadow: inset 3px 0 0 rgba(86, 149, 200, 0.32);
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-balance-widget-empty {
+  color: var(--model-muted);
+  background: rgba(244, 248, 252, 0.66);
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-balance-time,
+html.gordon-saber-theme .models-shell-ledger .model-balance-widget-placeholder,
+html.gordon-saber-theme .models-shell-ledger .model-balance-used {
+  color: var(--model-muted);
+  font-size: 11px;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-balance-remaining {
+  color: #1f735f;
+  font-weight: 760;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-card-command-cluster {
+  gap: 4px;
+  padding-left: 7px;
+  border-left: 1px solid rgba(76, 136, 187, 0.18);
+  background: transparent;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-icon-button,
+html.gordon-saber-theme .models-shell-ledger .model-status-toggle {
+  min-width: 30px;
+  min-height: 30px;
+  border-color: rgba(76, 136, 187, 0.24);
+  background: rgba(255, 255, 255, 0.78);
+  color: #315a7d;
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-icon-button:hover,
+html.gordon-saber-theme .models-shell-ledger .model-status-toggle:hover {
+  border-color: rgba(63, 133, 191, 0.52);
+  background: rgba(222, 240, 255, 0.9);
+  color: #173d5e;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-status-toggle.is-active {
+  border-color: rgba(205, 150, 51, 0.5);
+  background: rgba(255, 244, 207, 0.92);
+  color: #795411;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-icon-button-danger {
+  color: #a94b55;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-icon-button-danger:hover {
+  border-color: rgba(190, 75, 86, 0.36);
+  background: rgba(255, 232, 234, 0.9);
+  color: #923a45;
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-panel {
+  --usage-ink: #142c44;
+  --usage-muted: #516b83;
+  --usage-line: rgba(76, 136, 187, 0.22);
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-panel .model-subpage-head.workflow-library-detail-head {
+  margin: 0 8px 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--usage-line);
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-content {
+  margin: 0 8px 12px;
+  padding: 20px;
+  border: 1px solid var(--usage-line);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(230, 244, 255, 0.64), rgba(255, 255, 255, 0.94) 16%, rgba(255, 252, 245, 0.8)),
+    rgba(255, 255, 255, 0.9);
+  box-shadow: 0 13px 28px rgba(46, 93, 136, 0.12);
+  backdrop-filter: blur(10px) saturate(112%);
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-content::before {
+  left: 22px;
+  width: 124px;
+  background: linear-gradient(90deg, var(--saber-gold), var(--saber-blue), transparent);
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-summary-grid {
+  gap: 0;
+  border: 1px solid var(--usage-line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.58);
+  overflow: hidden;
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-metric {
+  min-height: 76px;
+  padding: 14px 16px 13px 19px;
+  border: 0;
+  border-right: 1px solid var(--usage-line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: inset 3px 0 0 rgba(86, 149, 200, 0.46);
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-metric:last-child {
+  border-right: 0;
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-metric:nth-child(3),
+html.gordon-saber-theme .models-shell-usage .model-usage-metric:nth-child(4) {
+  box-shadow: inset 3px 0 0 rgba(205, 150, 51, 0.58);
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-metric::after {
+  right: 12px;
+  width: 20px;
+  background: rgba(205, 150, 51, 0.46);
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-metric span {
+  color: var(--usage-muted);
+  font-weight: 720;
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-metric strong {
+  color: var(--usage-ink);
+  font-size: 20px;
+  font-weight: 820;
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-chart-card {
+  margin-top: 18px;
+  padding: 0;
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-card-head {
+  min-height: 48px;
+  padding: 0 2px 8px;
+  border-bottom: 2px solid rgba(76, 136, 187, 0.2);
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-card-head .feature-kicker {
+  color: #6b5f91;
+  font-weight: 760;
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-card-head .model-section-title {
+  color: var(--usage-ink);
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-refresh-button {
+  border-radius: 6px;
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-chart {
+  min-height: 214px;
+  padding: 12px 4px 0;
+  background:
+    repeating-linear-gradient(180deg, transparent 0 31px, rgba(86, 149, 200, 0.13) 31px 32px),
+    linear-gradient(90deg, rgba(231, 244, 255, 0.36), transparent 18%);
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-bar-track {
+  min-height: 172px;
+  border-radius: 4px 4px 2px 2px;
+  background: rgba(127, 180, 221, 0.1);
+  box-shadow: inset 0 -1px 0 rgba(76, 136, 187, 0.32);
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-bar-fill {
+  position: relative;
+  width: min(60%, 28px);
+  min-width: 13px;
+  border-radius: 4px 4px 2px 2px;
+  background: linear-gradient(180deg, #4f93c8, #7aaedf);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.52);
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-bar-fill::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 3px;
+  border-radius: 4px 4px 0 0;
+  background: #d49b33;
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-day-label {
+  color: var(--usage-muted);
+  font-weight: 720;
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-daily-list {
+  gap: 0 16px;
+  max-height: 156px;
+  padding: 8px 2px 0;
+  border-top: 0;
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-row {
+  min-height: 34px;
+  padding: 8px 8px;
+  border-bottom-color: var(--usage-line);
+  color: var(--usage-muted);
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-row strong {
+  color: var(--usage-ink);
+  font-weight: 780;
+}
+
+html.gordon-saber-theme .models-shell-usage .model-empty {
+  border-color: rgba(76, 136, 187, 0.26);
+  background: rgba(245, 250, 255, 0.72);
+  color: var(--usage-muted);
+}
+
+html.gordon-saber-theme .models-shell-ledger :is(.model-icon-button, .model-status-toggle):focus-visible,
+html.gordon-saber-theme .models-shell-usage .model-icon-button:focus-visible {
+  outline: 3px solid rgba(63, 133, 191, 0.28);
+  outline-offset: 2px;
+}
+
+@media (max-width: 980px) {
+  html.gordon-saber-theme .models-shell-ledger .model-config-head {
+    align-items: stretch;
+  }
+
+  html.gordon-saber-theme .models-shell-ledger .model-card-actions-inline {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  html.gordon-saber-theme .models-shell-usage .model-usage-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  html.gordon-saber-theme .models-shell-usage .model-usage-metric:nth-child(2) {
+    border-right: 0;
+  }
+
+  html.gordon-saber-theme .models-shell-usage .model-usage-metric:nth-child(n + 3) {
+    border-top: 1px solid var(--usage-line);
+  }
+}
+
+@media (max-width: 760px) {
+  .saber-theme-backdrop-image,
+  .anime-home-image {
+    background-position: 62% center !important;
+  }
+
+  .saber-theme-backdrop-scrim,
+  .anime-home-soft-light {
+    background:
+      linear-gradient(180deg, rgba(238, 247, 255, 0.92) 0%, rgba(238, 247, 255, 0.68) 42%, rgba(238, 247, 255, 0.38) 100%);
+  }
+
+  .anime-home-copy {
+    left: 20px;
+    right: 20px;
+    bottom: 28px;
+    max-width: none;
+  }
+
+  .anime-home-stage h1 {
+    font-size: clamp(48px, 18vw, 82px);
+  }
+
+  .anime-home-ribbon {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .saber-theme-backdrop .saber-theme-backdrop-image.saber-backdrop-fade-enter-active,
+  .saber-theme-backdrop .saber-theme-backdrop-image.saber-backdrop-fade-leave-active {
+    transition: none;
+  }
+}

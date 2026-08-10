@@ -22,10 +22,6 @@ export default defineConfig({
         manualChunks(id) {
           const normalizedId = id.replaceAll("\\", "/");
 
-          if (normalizedId.includes("/node_modules/@splinetool/runtime/")) {
-            return undefined;
-          }
-
           if (normalizedId.includes("/node_modules/vue/") || normalizedId.includes("/node_modules/@vue/")) {
             return "vue-vendor";
           }

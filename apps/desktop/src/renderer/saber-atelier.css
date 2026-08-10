@@ -1,0 +1,1009 @@
+/*
+ * Saber Atelier Editorial
+ *
+ * The character artwork is atmospheric. Work surfaces stay calm, readable,
+ * and intentionally compact so this remains a daily-use desktop application.
+ */
+
+:root.gordon-saber-theme {
+  --atelier-canvas: #eaf2f7;
+  --atelier-paper: #fcfdfe;
+  --atelier-paper-soft: #f2f7fa;
+  --atelier-paper-muted: #e7f0f6;
+  --atelier-ink: #172b3d;
+  --atelier-ink-soft: #4f6576;
+  --atelier-line: #c6d8e4;
+  --atelier-line-strong: #9bbbd0;
+  --atelier-blue: #356b96;
+  --atelier-blue-hover: #2d5d84;
+  --atelier-blue-wash: #e1eff8;
+  --atelier-gold: #b7832e;
+  --atelier-gold-wash: #fff4d8;
+  --atelier-lilac: #7463a6;
+  --atelier-lilac-wash: #f0ecfa;
+  --atelier-success: #337663;
+  --atelier-danger: #a84f5a;
+  --atelier-danger-wash: #fff0f1;
+  --atelier-focus: rgba(53, 107, 150, 0.28);
+  --atelier-radius: 6px;
+  --atelier-radius-tight: 4px;
+  --atelier-shadow: 0 8px 20px rgba(44, 79, 109, 0.08);
+  --text: var(--atelier-ink);
+  --muted: var(--atelier-ink-soft);
+  --line: var(--atelier-line);
+  --panel: rgba(252, 253, 254, 0.92);
+  --panel-strong: var(--atelier-paper);
+  --panel-soft: var(--atelier-paper-soft);
+  --accent: var(--atelier-blue);
+  --accent-warm: var(--atelier-gold);
+  --accent-hot: var(--atelier-lilac);
+  --saber-ink: var(--atelier-ink);
+  --saber-muted: var(--atelier-ink-soft);
+  --saber-blue: var(--atelier-blue);
+  --saber-gold: var(--atelier-gold);
+  --saber-lilac: var(--atelier-lilac);
+  --saber-danger: var(--atelier-danger);
+}
+
+html.gordon-saber-theme,
+html.gordon-saber-theme body {
+  color: var(--atelier-ink);
+  background: var(--atelier-canvas);
+}
+
+html.gordon-saber-theme body,
+html.gordon-saber-theme button,
+html.gordon-saber-theme input,
+html.gordon-saber-theme textarea,
+html.gordon-saber-theme select {
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Avenir Next", sans-serif;
+  letter-spacing: 0;
+}
+
+html.gordon-saber-theme :is(.saber-theme-backdrop-scrim, .anime-home-soft-light) {
+  background: rgba(234, 242, 247, 0.42);
+}
+
+html.gordon-saber-theme :is(
+  .models-title,
+  .workflow-library-detail-title,
+  .writing-detail-title,
+  .command-chat-title,
+  .weekly-panel-title,
+  .anime-home-stage h1
+) {
+  color: var(--atelier-ink);
+  font-family: "Songti SC", "STSong", "Noto Serif CJK SC", serif;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+html.gordon-saber-theme :is(
+  .feature-kicker,
+  .mini-kicker,
+  .gordon-dialog-kicker,
+  .field-label,
+  .weekly-kpi-label,
+  .model-card-mode,
+  .model-card-health
+) {
+  color: var(--atelier-ink-soft);
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* Shell: a quiet index rail instead of stacked navigation cards. */
+html.gordon-saber-theme :is(.shell-root, .shell-sidebar, .shell-main, .workspace-panel, .workspace-stage) {
+  background: transparent;
+  box-shadow: none;
+}
+
+/* The app shell is atmosphere only. Non-home pages own one readable paper desk. */
+html.gordon-saber-theme .workspace-panel:has(.workspace-stage:not(.anime-home-stage)),
+html.gordon-saber-theme .workspace-panel.workspace-panel-flush:has(.workspace-stage:not(.anime-home-stage)) {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+html.gordon-saber-theme .shell-sidebar {
+  border-right: 1px solid rgba(198, 216, 228, 0.78);
+  background: rgba(247, 251, 253, 0.72);
+}
+
+html.gordon-saber-theme :is(.brand-panel, .feature-panel) {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .brand-panel {
+  margin: 8px 10px 12px;
+  padding: 8px 8px 12px;
+  border-bottom: 1px solid var(--atelier-line);
+}
+
+html.gordon-saber-theme .brand-panel::after {
+  content: "";
+  display: block;
+  width: 72px;
+  height: 2px;
+  margin-top: 8px;
+  background: var(--atelier-gold);
+}
+
+html.gordon-saber-theme .feature-panel {
+  gap: 2px;
+  padding: 0 8px;
+}
+
+html.gordon-saber-theme .feature-card,
+html.gordon-saber-theme .feature-card.feature-card-primary,
+html.gordon-saber-theme .feature-card.feature-card-flat,
+html.gordon-saber-theme .feature-card.feature-card-wide {
+  min-height: 44px;
+  padding: 7px 8px 7px 12px;
+  border: 0;
+  border-radius: var(--atelier-radius-tight);
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+html.gordon-saber-theme .feature-card::before,
+html.gordon-saber-theme .feature-card::after,
+html.gordon-saber-theme .feature-graffiti::before,
+html.gordon-saber-theme .feature-graffiti::after {
+  display: none;
+}
+
+html.gordon-saber-theme .feature-card:hover {
+  background: rgba(225, 239, 248, 0.72);
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .feature-card.is-active {
+  position: relative;
+  color: var(--atelier-ink);
+  background: rgba(252, 253, 254, 0.9);
+  box-shadow: inset 3px 0 0 var(--atelier-gold);
+}
+
+html.gordon-saber-theme .feature-card.is-active .feature-card-icon {
+  color: var(--atelier-blue);
+}
+
+html.gordon-saber-theme .feature-card-indicator,
+html.gordon-saber-theme .feature-card.is-active .feature-card-indicator {
+  width: 0;
+  height: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Shared controls: solid, small, and intentionally unadorned. */
+html.gordon-saber-theme :is(.model-action, .primary-button, .gordon-dialog-button-primary) {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--atelier-blue);
+  border-radius: var(--atelier-radius);
+  background: var(--atelier-blue);
+  color: #fff;
+  box-shadow: none;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+html.gordon-saber-theme :is(.model-action, .primary-button, .gordon-dialog-button-primary):hover:not(:disabled) {
+  background: var(--atelier-blue-hover);
+  border-color: var(--atelier-blue-hover);
+  box-shadow: none;
+  transform: none;
+}
+
+html.gordon-saber-theme :is(.model-action-secondary, .secondary-button, .compact-select-trigger) {
+  min-height: 32px;
+  border: 1px solid var(--atelier-line);
+  border-radius: var(--atelier-radius);
+  background: rgba(252, 253, 254, 0.94);
+  color: var(--atelier-ink);
+  box-shadow: none;
+}
+
+html.gordon-saber-theme :is(.model-action-secondary, .secondary-button, .compact-select-trigger):hover:not(:disabled) {
+  border-color: var(--atelier-line-strong);
+  background: var(--atelier-blue-wash);
+  color: var(--atelier-blue-hover);
+  box-shadow: none;
+  transform: none;
+}
+
+html.gordon-saber-theme :is(.model-icon-button, .action-icon-button, .weekly-row-action, .field-ai-trigger) {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  border: 1px solid transparent;
+  border-radius: var(--atelier-radius-tight);
+  background: transparent;
+  color: var(--atelier-blue);
+  box-shadow: none;
+}
+
+html.gordon-saber-theme :is(.model-icon-button, .action-icon-button, .weekly-row-action, .field-ai-trigger):hover:not(:disabled) {
+  border-color: rgba(155, 187, 208, 0.72);
+  background: var(--atelier-blue-wash);
+  color: var(--atelier-blue-hover);
+  box-shadow: none;
+  transform: none;
+}
+
+html.gordon-saber-theme :is(.model-icon-button-danger, .model-action-danger) {
+  color: var(--atelier-danger);
+}
+
+html.gordon-saber-theme :is(.model-icon-button-danger, .model-action-danger):hover:not(:disabled) {
+  border-color: rgba(168, 79, 90, 0.34);
+  background: var(--atelier-danger-wash);
+  color: #8f3d49;
+}
+
+html.gordon-saber-theme :is(.field-input, .field-textarea, .field-ai-input, .gordon-dialog-input, .command-input-frame) {
+  border: 1px solid var(--atelier-line);
+  border-radius: var(--atelier-radius);
+  background: rgba(252, 253, 254, 0.96);
+  color: var(--atelier-ink);
+  box-shadow: none;
+}
+
+html.gordon-saber-theme :is(.field-input, .field-textarea, .field-ai-input, .gordon-dialog-input, .command-input-frame):hover {
+  border-color: var(--atelier-line-strong);
+}
+
+html.gordon-saber-theme :is(.field-input, .field-textarea, .field-ai-input, .gordon-dialog-input, .command-input-frame):focus {
+  border-color: var(--atelier-blue);
+  box-shadow: 0 0 0 3px var(--atelier-focus);
+}
+
+html.gordon-saber-theme :is(.pill, .status-pill, .model-card-mode, .model-default-badge) {
+  border-radius: 999px;
+  box-shadow: none;
+}
+
+html.gordon-saber-theme :is(.pill-neutral, .status-pill) {
+  border-color: var(--atelier-line);
+  background: var(--atelier-paper-soft);
+  color: var(--atelier-ink-soft);
+}
+
+html.gordon-saber-theme :is(.status-pill.is-success, .model-card-health) {
+  color: var(--atelier-success);
+}
+
+html.gordon-saber-theme :is(button, input, textarea, select):focus-visible {
+  outline: 3px solid var(--atelier-focus);
+  outline-offset: 2px;
+}
+
+/* Page headers and main sheets. */
+html.gordon-saber-theme :is(
+  .models-hero,
+  .weekly-hero,
+  .workflow-library-detail-head,
+  .writing-detail-head,
+  .command-chat-head
+) {
+  min-height: 64px;
+  border: 0;
+  border-bottom: 1px solid var(--atelier-line);
+  border-radius: 0;
+  background: rgba(252, 253, 254, 0.72);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+html.gordon-saber-theme :is(
+  .models-hero,
+  .weekly-hero,
+  .workflow-library-detail-head,
+  .writing-detail-head,
+  .command-chat-head
+)::after {
+  width: 88px;
+  height: 2px;
+  background: var(--atelier-gold);
+  box-shadow: none;
+}
+
+html.gordon-saber-theme :is(
+  .model-section,
+  .model-editor,
+  .model-editor-unified,
+  .weekly-form-shell,
+  .workflow-library-detail-shell,
+  .writing-detail-shell,
+  .command-chat-shell,
+  .extensions-shell
+) {
+  border-color: var(--atelier-line);
+  border-radius: var(--atelier-radius);
+  background: rgba(252, 253, 254, 0.94);
+  color: var(--atelier-ink);
+  box-shadow: var(--atelier-shadow);
+  backdrop-filter: none;
+}
+
+html.gordon-saber-theme :is(
+  .model-section.model-section-immersive,
+  .command-chat-section.command-chat-section-immersive,
+  .weekly-shell,
+  .workflow-library-shell,
+  .models-shell,
+  .extensions-shell
+) {
+  border: 0;
+  border-radius: 0;
+  background: rgba(252, 253, 254, 0.92);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+html.gordon-saber-theme :is(
+  .workflow-library-detail-shell,
+  .writing-detail-shell,
+  .comic-detail-shell,
+  .video-detail-shell,
+  .music-detail-shell,
+  .fortune-detail-shell,
+  .models-grid-subpage .model-editor-unified,
+  .command-chat-shell.command-chat-shell-immersive
+) {
+  background-image: none;
+  background-color: var(--atelier-paper);
+  background-size: auto;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+html.gordon-saber-theme :is(
+  .model-section > .model-editor,
+  .model-section > .model-editor-unified,
+  .model-section > .model-section-body,
+  .workflow-library-detail-shell > .workflow-library-main-card,
+  .writing-detail-shell .writing-main-stage,
+  .command-chat-section > .command-chat-shell
+) {
+  border-color: transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html.gordon-saber-theme :is(.model-section-head, .model-usage-card-head, .weekly-panel-head, .writing-editor-head, .writing-chapter-panel-head) {
+  border-bottom-color: var(--atelier-line);
+  background: transparent;
+}
+
+/* Dense metrics read as a single line of annotations, not as four dashboard cards. */
+html.gordon-saber-theme :is(.models-hero-metrics .models-metric-chip, .weekly-overview-grid .weekly-kpi-card) {
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html.gordon-saber-theme :is(.models-hero-metrics .models-metric-chip, .weekly-overview-grid .weekly-kpi-card) + :is(.models-metric-chip, .weekly-kpi-card) {
+  border-left: 1px solid var(--atelier-line);
+}
+
+html.gordon-saber-theme :is(.model-section-title, .writing-panel-title, .workflow-library-card-title, .weekly-panel-title) {
+  color: var(--atelier-ink);
+  letter-spacing: 0;
+}
+
+/* Record rows: no floating-card grid for operational data. */
+html.gordon-saber-theme :is(
+  .weekly-record-card,
+  .command-session-card,
+  .workflow-library-record-card,
+  .workflow-info-feed-card,
+  .workflow-info-window-card,
+  .writing-chapter-list-item,
+  .comic-storyboard-card,
+  .extension-card
+) {
+  border: 0;
+  border-bottom: 1px solid var(--atelier-line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+html.gordon-saber-theme :is(
+  .weekly-record-card,
+  .command-session-card,
+  .workflow-library-record-card,
+  .workflow-info-feed-card,
+  .workflow-info-window-card,
+  .writing-chapter-list-item,
+  .comic-storyboard-card,
+  .extension-card
+):hover,
+html.gordon-saber-theme :is(.weekly-record-card, .command-session-card, .workflow-library-record-card, .workflow-info-window-card, .writing-chapter-list-item).is-active {
+  border-color: var(--atelier-line);
+  background: var(--atelier-blue-wash);
+  box-shadow: inset 3px 0 0 var(--atelier-blue);
+  transform: none;
+}
+
+html.gordon-saber-theme :is(.weekly-project-card, .writing-intro-card, .writing-editor-card, .writing-ai-card, .workflow-library-main-card) {
+  border-color: var(--atelier-line);
+  border-radius: var(--atelier-radius);
+  background: var(--atelier-paper);
+  box-shadow: none;
+}
+
+html.gordon-saber-theme :is(
+  .workflow-finance-command-deck,
+  .workflow-finance-toolbar,
+  .workflow-finance-stats-strip,
+  .workflow-finance-stage .workflow-finance-chart-panel,
+  .writing-chapter-list-panel,
+  .writing-chapter-summary-panel,
+  .comic-chapter-inspector,
+  .comic-asset-panel,
+  .video-editor-surface,
+  .music-editor-surface,
+  .fortune-chat-card,
+  .fortune-input-card,
+  .fortune-output-card
+) {
+  border-color: var(--atelier-line);
+  border-radius: var(--atelier-radius);
+  background: var(--atelier-paper);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+/* Entry cards are objects, not nested content surfaces. */
+html.gordon-saber-theme :is(.workflow-library-card, .marketplace-app-card, .writing-book-card) {
+  border-color: var(--atelier-line);
+  border-radius: var(--atelier-radius);
+  box-shadow: none;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+html.gordon-saber-theme :is(
+  .workflow-library-card,
+  .marketplace-app-card,
+  .weekly-record-card,
+  .weekly-project-card,
+  .writing-book-card
+)::before {
+  display: none;
+}
+
+html.gordon-saber-theme .workflow-library-card {
+  background: rgba(252, 253, 254, 0.9);
+}
+
+html.gordon-saber-theme :is(.workflow-library-card, .marketplace-app-card, .writing-book-card):hover {
+  border-color: var(--atelier-line-strong);
+  box-shadow: none;
+  transform: translateY(-1px);
+}
+
+html.gordon-saber-theme :is(.workflow-library-card-icon, .marketplace-app-mark, .writing-app-mark) {
+  border-color: var(--atelier-line);
+  border-radius: var(--atelier-radius-tight);
+  background: var(--atelier-paper-soft);
+  color: var(--atelier-blue);
+  box-shadow: none;
+}
+
+/* Data views stay document-like rather than dashboard-like. */
+html.gordon-saber-theme :is(.model-usage-content, .model-usage-chart-card, .model-usage-metric) {
+  border-color: var(--atelier-line);
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .model-usage-bar-fill {
+  background: var(--atelier-blue);
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .model-usage-bar-fill::after {
+  background: var(--atelier-gold);
+}
+
+html.gordon-saber-theme :is(.model-usage-row, .workflow-finance-stats-strip, .weekly-kpi-card) {
+  color: var(--atelier-ink-soft);
+  box-shadow: none;
+}
+
+/* Message, editor, and compose areas: one paper surface per task. */
+html.gordon-saber-theme .command-message.is-assistant {
+  border: 0;
+  border-bottom: 1px solid var(--atelier-line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .command-message.is-user {
+  border: 1px solid var(--atelier-line);
+  border-radius: var(--atelier-radius);
+  background: var(--atelier-blue-wash);
+  box-shadow: none;
+}
+
+html.gordon-saber-theme :is(.command-input-shell, .writing-ai-drawer, .writing-assistant-drawer) {
+  border-color: var(--atelier-line);
+  border-radius: var(--atelier-radius);
+  background: var(--atelier-paper);
+  box-shadow: var(--atelier-shadow);
+}
+
+html.gordon-saber-theme :is(.command-response-process-item, .writing-agent-progress-item) {
+  border-color: var(--atelier-line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html.gordon-saber-theme :is(.command-response-process-mark, .writing-agent-progress-marker) {
+  border-color: var(--atelier-line-strong);
+  border-radius: 50%;
+  background: var(--atelier-paper-soft);
+  color: var(--atelier-blue);
+  box-shadow: none;
+}
+
+/* Model management: a compact account ledger, not a dashboard of floating configuration cards. */
+html.gordon-saber-theme .models-shell-ledger {
+  --model-ink: var(--atelier-ink);
+  --model-muted: var(--atelier-ink-soft);
+  --model-line: var(--atelier-line);
+  --model-wash: var(--atelier-blue-wash);
+  background: rgba(252, 253, 254, 0.92);
+}
+
+html.gordon-saber-theme .models-shell-ledger .models-hero {
+  min-height: 68px;
+  margin: 0;
+  padding: 10px 16px;
+  background: rgba(252, 253, 254, 0.76);
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-section {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-section-head {
+  min-height: 52px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--atelier-line);
+  background: transparent;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-count-pill {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--atelier-ink-soft);
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-configured-list {
+  gap: 0;
+  padding: 0;
+  background: transparent;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-config-card,
+html.gordon-saber-theme .models-shell-ledger .model-config-card.is-model-preferred {
+  min-height: 64px;
+  margin: 0;
+  padding: 6px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--atelier-line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transition: background 160ms ease, box-shadow 160ms ease;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-config-card::before {
+  top: 12px;
+  bottom: 12px;
+  left: 0;
+  width: 3px;
+  height: auto;
+  border-radius: 0;
+  background: var(--atelier-line-strong);
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-config-card.is-model-preferred {
+  background: var(--atelier-gold-wash);
+  box-shadow: inset 3px 0 0 var(--atelier-gold);
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-config-card.is-model-preferred::before {
+  background: var(--atelier-gold);
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-config-card:hover,
+html.gordon-saber-theme .models-shell-ledger .model-config-draggable-card:hover {
+  background: var(--atelier-blue-wash);
+  box-shadow: inset 3px 0 0 var(--atelier-blue);
+  transform: none;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-config-main {
+  gap: 9px;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-drag-handle {
+  min-height: 52px;
+  margin-block: -6px;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-drag-handle {
+  border-right-color: var(--atelier-line);
+  color: var(--atelier-ink-soft);
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-card-rank {
+  color: var(--atelier-gold);
+  font-family: "Songti SC", "STSong", serif;
+  font-weight: 700;
+}
+
+html.gordon-saber-theme .models-shell-ledger .provider-avatar {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--atelier-line);
+  border-radius: var(--atelier-radius-tight);
+  background: var(--atelier-paper);
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-card-title {
+  color: var(--atelier-ink);
+  font-size: 13px;
+}
+
+html.gordon-saber-theme .models-shell-ledger :is(.model-card-meta, .model-card-copy) {
+  color: var(--atelier-ink-soft);
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-card-code {
+  color: var(--atelier-lilac);
+  font-family: "SFMono-Regular", "Menlo", monospace;
+}
+
+html.gordon-saber-theme .models-shell-ledger :is(.model-card-capabilities, .model-card-copy) {
+  display: none;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-card-mode {
+  min-height: 18px;
+  border-color: var(--atelier-line);
+  border-radius: 999px;
+  background: var(--atelier-paper-soft);
+  color: var(--atelier-ink-soft);
+  font-family: inherit;
+  font-size: 10px;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-card-health {
+  color: var(--atelier-success);
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-default-badge {
+  border-color: rgba(183, 131, 46, 0.42);
+  border-radius: 999px;
+  background: var(--atelier-gold-wash);
+  color: #765015;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-balance-widget {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  min-width: 272px;
+  padding: 0 8px;
+  border: 0;
+  border-left: 1px solid var(--atelier-line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-balance-widget-empty {
+  background: transparent;
+  color: var(--atelier-ink-soft);
+}
+
+html.gordon-saber-theme .models-shell-ledger :is(
+  .model-balance-time,
+  .model-balance-widget-placeholder,
+  .model-balance-used
+) {
+  color: var(--atelier-ink-soft);
+  font-size: 10px;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-balance-widget-copy {
+  justify-content: flex-end;
+  gap: 8px;
+  color: var(--atelier-ink-soft);
+  font-size: 10px;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-balance-widget-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-balance-refresh-button {
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  min-height: 26px;
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-balance-remaining {
+  color: var(--atelier-success);
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-card-command-cluster {
+  gap: 2px;
+  padding-left: 8px;
+  border-left: 1px solid var(--atelier-line);
+  background: transparent;
+}
+
+html.gordon-saber-theme .models-shell-ledger :is(.model-icon-button, .model-status-toggle) {
+  border-color: transparent;
+  background: transparent;
+  color: var(--atelier-blue);
+}
+
+html.gordon-saber-theme .models-shell-ledger :is(.model-icon-button, .model-status-toggle):hover:not(:disabled) {
+  border-color: var(--atelier-line-strong);
+  background: var(--atelier-paper);
+  color: var(--atelier-blue-hover);
+}
+
+html.gordon-saber-theme .models-shell-ledger .model-status-toggle.is-active {
+  background: var(--atelier-gold-wash);
+  color: var(--atelier-gold);
+}
+
+/* Usage statistics: a report page with a single chart and a compact ledger below it. */
+html.gordon-saber-theme .models-shell-usage .model-usage-panel {
+  --usage-ink: var(--atelier-ink);
+  --usage-muted: var(--atelier-ink-soft);
+  --usage-line: var(--atelier-line);
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-panel .model-subpage-head.workflow-library-detail-head {
+  margin: 0;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--atelier-line);
+  background: rgba(252, 253, 254, 0.76);
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-profile-badge {
+  border: 0;
+  border-left: 2px solid var(--atelier-gold);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-profile-copy span {
+  color: var(--atelier-ink-soft);
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-profile-copy strong {
+  color: var(--atelier-ink);
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-content {
+  margin: 0;
+  padding: 18px 20px 20px;
+  border: 0;
+  border-radius: 0;
+  background: var(--atelier-paper);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-content::before {
+  display: none;
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-summary-grid {
+  gap: 0;
+  border: 0;
+  border-bottom: 1px solid var(--atelier-line);
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-metric {
+  min-height: 68px;
+  padding: 8px 16px 10px;
+  border: 0;
+  border-right: 1px solid var(--atelier-line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-metric:last-child {
+  border-right: 0;
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-metric:nth-child(3),
+html.gordon-saber-theme .models-shell-usage .model-usage-metric:nth-child(4) {
+  box-shadow: inset 0 -2px 0 var(--atelier-gold);
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-metric::after {
+  display: none;
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-metric span {
+  color: var(--usage-muted);
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-metric strong {
+  color: var(--usage-ink);
+  font-size: 19px;
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-chart-card {
+  margin-top: 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-card-head {
+  min-height: 42px;
+  padding: 0 0 8px;
+  border-bottom: 1px solid var(--atelier-line);
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-card-head .feature-kicker {
+  color: var(--atelier-lilac);
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-chart {
+  min-height: 198px;
+  padding: 10px 4px 0;
+  background: repeating-linear-gradient(180deg, transparent 0 31px, rgba(155, 187, 208, 0.42) 31px 32px);
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-bar-track {
+  min-height: 156px;
+  border-radius: 3px 3px 0 0;
+  background: rgba(225, 239, 248, 0.48);
+  box-shadow: inset 0 -1px 0 var(--atelier-line-strong);
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-bar-fill {
+  width: min(58%, 26px);
+  min-width: 12px;
+  border-radius: 3px 3px 0 0;
+  background: var(--atelier-blue);
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-bar-fill::after {
+  height: 2px;
+  border-radius: 0;
+  background: var(--atelier-gold);
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-day-label {
+  color: var(--usage-muted);
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-daily-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 18px;
+  max-height: 168px;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--atelier-line);
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-row {
+  min-height: 32px;
+  padding: 7px 2px;
+  border: 0;
+  border-bottom: 1px solid var(--atelier-line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--usage-muted);
+}
+
+html.gordon-saber-theme .models-shell-usage .model-usage-row strong {
+  color: var(--usage-ink);
+}
+
+html.gordon-saber-theme .models-shell-usage .model-empty {
+  background: transparent;
+  color: var(--usage-muted);
+}
+
+html.gordon-saber-theme :is(.gordon-dialog-panel, .sheet-panel, .writing-export-dialog, .writing-cover-dialog) {
+  border-color: var(--atelier-line);
+  border-radius: 8px;
+  background: var(--atelier-paper);
+  color: var(--atelier-ink);
+  box-shadow: 0 18px 42px rgba(34, 61, 83, 0.18);
+}
+
+html.gordon-saber-theme :is(.model-empty, .empty-state, .empty-inline) {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--atelier-ink-soft);
+  box-shadow: none;
+}
+
+html.gordon-saber-theme .workspace-stage :is(
+  .model-empty,
+  .writing-shelf-empty,
+  .workflow-info-reader-loading,
+  .workflow-info-reader-fallback,
+  .weekly-project-empty-inline,
+  .weekly-task-root-drop-hint,
+  .comic-asset-detail-empty,
+  .comic-storyboard-empty,
+  .comic-chapter-image-empty,
+  .music-main-empty,
+  .music-empty-copy,
+  .fortune-chat-empty,
+  .fortune-output-empty,
+  .command-empty-card
+) {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+@media (max-width: 980px) {
+  html.gordon-saber-theme .shell-sidebar {
+    border-right: 0;
+    border-top: 1px solid var(--atelier-line);
+  }
+
+  html.gordon-saber-theme :is(.models-hero, .weekly-hero, .workflow-library-detail-head, .writing-detail-head, .command-chat-head) {
+    min-height: 56px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.gordon-saber-theme * {
+    transition-duration: 0ms !important;
+  }
+}

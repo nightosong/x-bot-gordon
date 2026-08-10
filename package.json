@@ -12,7 +12,10 @@
     "check": "tsc --noEmit -p tsconfig.json",
     "test:agent": "tsx --test packages/agent/src/**/*.test.ts",
     "dev:cli": "node --import tsx ./apps/cli/src/index.ts",
+    "dev:renderer": "vite --host 127.0.0.1 --port 5173 --config ./apps/desktop/vite.config.mjs",
     "dev:desktop": "pnpm build && electron ./dist/apps/desktop/src/main.js",
+    "dev:desktop:fast": "node ./scripts/dev/dev-desktop-fast.mjs",
+    "start:desktop": "electron ./dist/apps/desktop/src/main.js",
     "pack:mac": "pnpm run build && electron-builder --mac dir",
     "dist:mac": "pnpm run build && electron-builder --mac dmg",
     "clean:release:aux": "rm -rf release/mac-arm64 release/*.blockmap release/latest-mac.yml release/builder-debug.yml",
@@ -77,7 +80,6 @@
     "vite": "^7.1.7"
   },
   "dependencies": {
-    "@splinetool/runtime": "1.10.53",
     "fast-xml-parser": "^5.7.2",
     "jszip": "^3.10.1",
     "lightweight-charts": "^5.2.0",

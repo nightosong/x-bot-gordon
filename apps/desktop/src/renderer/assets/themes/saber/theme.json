@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "id": "preset-saber-ice-atelier",
+  "name": "Saber Ice Atelier",
+  "brandSubtitle": "CODEX SABER THEME",
+  "tagline": "Make something wonderful.",
+  "projectPrefix": "选择项目 · ",
+  "projectLabel": "◉  选择项目",
+  "statusText": "SABER THEME ONLINE",
+  "quote": "MAKE SOMETHING WONDERFUL",
+  "image": "bg00-standing.webp",
+  "homeImage": "home-background.png",
+  "backgroundVariants": [
+    "bg01-side-sitting.webp",
+    "bg02-floor-sit-folded.webp",
+    "bg03-kneeling-seiza.webp",
+    "bg04-prone-reading.webp",
+    "bg05-outward-side-lying.webp",
+    "bg06-outward-prone.webp",
+    "bg07-outward-kneeling.webp",
+    "bg08-outward-side-sit.webp",
+    "bg09-daily-hug-knees.webp",
+    "bg10-daily-reclining-legfill.webp",
+    "bg11-daily-kneel-hipcurve.webp",
+    "bg12-daily-side-lying-head-hand.webp",
+    "bg13-daily-right-crouch.webp",
+    "bg14-daily-side-kneel.webp",
+    "bg15-daily-outward-leg-extension.webp",
+    "bg16-daily-right-prone.webp",
+    "bg17-daily-right-seated.webp",
+    "bg18-daily-front-seated.webp"
+  ],
+  "backgroundRotation": {
+    "enabled": true,
+    "intervalMinutes": 2,
+    "mode": "random",
+    "includeDefault": true
+  },
+  "cardArt": [
+    "card-archer.webp",
+    "card-lancer.webp",
+    "card-berserker.webp",
+    "card-rider.webp"
+  ],
+  "environmentCardArt": "environment-card-canopy.png",
+  "filePanelArt": "file-panel-archer.png",
+  "reviewPanelArt": "review-panel-rin.png",
+  "appearance": "light",
+  "art": {
+    "safeArea": "left",
+    "taskMode": "ambient",
+    "focusX": 1,
+    "focusY": 1
+  },
+  "homeArt": {
+    "focusX": 1,
+    "focusY": 0.5
+  },
+  "colors": {
+    "background": "#eef7ff",
+    "panel": "#ffffff",
+    "panelAlt": "#f4faff",
+    "accent": "#3f85bf",
+    "accentAlt": "#66a8dc",
+    "secondary": "#78b9e7",
+    "highlight": "#7699d4",
+    "text": "#1d2b3a",
+    "muted": "#62778c",
+    "line": "rgba(111, 174, 220, .30)"
+  }
+}

@@ -5,6 +5,7 @@ import type { ModelBalanceQueryRequest, ModelBalanceSnapshot, ModelProfile } fro
 
 const BALANCE_PROTOCOL_EVAL_TIMEOUT_MS = 1200;
 const BALANCE_PROTOCOL_REQUEST_TIMEOUT_MS = 15000;
+const BALANCE_VALUE_EPSILON = 1e-6;
 const TEMPLATE_PATTERN = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g;
 
 type BalanceQueryProtocol = {
@@ -201,7 +202,7 @@ function toFiniteNumber(value: unknown): number | null {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
-function normalizeBalanceSnapshot(result: unknown): ModelBalanceSnapshot {
+export function normalizeBalanceSnapshot(result: unknown): ModelBalanceSnapshot {
   if (!result || typeof result !== "object") {
     throw new Error("余额提取器返回值无效，请返回包含余额字段的对象。");
   }
@@ -227,10 +228,22 @@ function normalizeBalanceSnapshot(result: unknown): ModelBalanceSnapshot {
     throw new Error("余额提取器必须返回 remaining / used，或返回可推导它们的 total。");
   }
 
+  if (used < -BALANCE_VALUE_EPSILON) {
+    throw new Error("余额提取器返回的 used 不能为负数，请检查 total 是否已按最新额度更新。");
+  }
+
+  if (total != null && total < -BALANCE_VALUE_EPSILON) {
+    throw new Error("余额提取器返回的 total 不能为负数。");
+  }
+
+  if (total != null && remaining - total > BALANCE_VALUE_EPSILON) {
+    throw new Error("余额提取器返回的 remaining 不能大于 total，请检查 total 是否已按最新额度更新。");
+  }
+
   return {
     planName: String(raw.planName ?? "").trim() || undefined,
-    remaining,
-    used,
+    remaining: Math.abs(remaining) <= BALANCE_VALUE_EPSILON ? 0 : remaining,
+    used: Math.abs(used) <= BALANCE_VALUE_EPSILON ? 0 : used,
     total,
     unit: String(raw.unit ?? "USD").trim() || "USD",
     queriedAt: new Date().toISOString()

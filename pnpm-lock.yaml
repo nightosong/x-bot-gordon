@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      '@splinetool/runtime':
-        specifier: 1.10.53
-        version: 1.10.53
       fast-xml-parser:
         specifier: ^5.7.2
         version: 5.7.2
@@ -514,9 +511,6 @@ packages:
   '@sindresorhus/is@4.6.0':
     resolution: {integrity: sha512-t09vSN3MdfsyCHoFcTRCH/iUtG7OJ0CsjzB8cjAmKc/va/kIgeDI/TxsigdncE/4be734m0cvIYwNaV4i2XqAw==}
     engines: {node: '>=10'}
-
-  '@splinetool/runtime@1.10.53':
-    resolution: {integrity: sha512-C0hl9yTbfr9sTbdTtVJ1g2K5DKNs1ijlgR9LWWp+rYfSnF0NJzYsozJ/Wra5RDJq/mUG6BPG52v+zpIMCV41mg==}
 
   '@szmarczak/http-timer@4.0.6':
     resolution: {integrity: sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w==}
@@ -1330,10 +1324,6 @@ packages:
     resolution: {integrity: sha512-NuAESUOUMrlIXOfHKzD6bpPu3tYt3xvjNdRIQ+FeT0lNb4K8WR70CaDxhuNguS2XG+GjkyMwOzsN5ZktImfhLA==}
     engines: {node: '>= 0.4'}
 
-  on-change@4.0.2:
-    resolution: {integrity: sha512-cMtCyuJmTx/bg2HCpHo3ZLeF7FZnBOapLqZHr2AlLeJ5Ul0Zu2mUJJz051Fdwu/Et2YW04ZD+TtU+gVy0ACNCA==}
-    engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
-
   once@1.4.0:
     resolution: {integrity: sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w==}
 
@@ -2105,11 +2095,6 @@ snapshots:
     optional: true
 
   '@sindresorhus/is@4.6.0': {}
-
-  '@splinetool/runtime@1.10.53':
-    dependencies:
-      on-change: 4.0.2
-      semver-compare: 1.0.0
 
   '@szmarczak/http-timer@4.0.6':
     dependencies:
@@ -3089,8 +3074,6 @@ snapshots:
   object-keys@1.1.1:
     optional: true
 
-  on-change@4.0.2: {}
-
   once@1.4.0:
     dependencies:
       wrappy: 1.0.2
@@ -3265,7 +3248,8 @@ snapshots:
 
   sax@1.6.0: {}
 
-  semver-compare@1.0.0: {}
+  semver-compare@1.0.0:
+    optional: true
 
   semver@5.7.2: {}
 

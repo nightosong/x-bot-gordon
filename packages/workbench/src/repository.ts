@@ -1664,9 +1664,30 @@ export async function saveModelProfileBalanceSnapshot(
 }
 
 const MODEL_BALANCE_HISTORY_RETENTION_DAYS = 95;
+const MODEL_BALANCE_VALUE_EPSILON = 1e-6;
 
 function sortModelBalanceHistory(entries: ModelBalanceHistoryEntry[]): ModelBalanceHistoryEntry[] {
   return [...entries].sort((left, right) => right.recordedAt.localeCompare(left.recordedAt));
+}
+
+function isValidModelBalanceSnapshot(snapshot: Partial<ModelBalanceSnapshot> | undefined): snapshot is ModelBalanceSnapshot {
+  const remaining = Number(snapshot?.remaining);
+  const used = Number(snapshot?.used);
+  const total = snapshot?.total == null ? null : Number(snapshot.total);
+
+  if (!Number.isFinite(remaining) || !Number.isFinite(used)) {
+    return false;
+  }
+
+  if (used < -MODEL_BALANCE_VALUE_EPSILON) {
+    return false;
+  }
+
+  if (total != null && (!Number.isFinite(total) || total < -MODEL_BALANCE_VALUE_EPSILON)) {
+    return false;
+  }
+
+  return !(total != null && remaining - total > MODEL_BALANCE_VALUE_EPSILON);
 }
 
 function normalizeModelBalanceHistoryEntry(input: Partial<ModelBalanceHistoryEntry>): ModelBalanceHistoryEntry | null {
@@ -1674,7 +1695,7 @@ function normalizeModelBalanceHistoryEntry(input: Partial<ModelBalanceHistoryEnt
   const snapshot = input.snapshot;
   const recordedAt = String(input.recordedAt ?? snapshot?.queriedAt ?? "").trim();
 
-  if (!profileId || !snapshot || !recordedAt) {
+  if (!profileId || !snapshot || !recordedAt || !isValidModelBalanceSnapshot(snapshot)) {
     return null;
   }
 

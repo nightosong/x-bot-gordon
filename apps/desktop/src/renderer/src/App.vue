@@ -1,5 +1,6 @@
 <template>
   <div class="app-shell">
+    <SaberThemeBackdrop :active-feature="activeFeature" />
     <div class="window-drag-region" aria-hidden="true"></div>
     <div class="ambient ambient-one"></div>
     <div class="ambient ambient-two"></div>
@@ -12,7 +13,7 @@
           <div id="workspace-panel-dialog-root" class="workspace-panel-dialog-root"></div>
 
           <template v-if="activeFeature === FEATURE_HOME">
-            <HomeRobotStage :set-status="setStatus" />
+            <HomeAnimeStage />
           </template>
 
           <template v-else-if="activeFeature === FEATURE_MODEL_MANAGEMENT">
@@ -406,7 +407,8 @@ import {
   FEATURE_TASKS,
   FEATURE_WORKFLOW_LIBRARY
 } from "./features/shell/shellConfig.js";
-import HomeRobotStage from "./features/shell/HomeRobotStage.vue";
+import HomeAnimeStage from "./features/shell/HomeAnimeStage.vue";
+import SaberThemeBackdrop from "./features/shell/SaberThemeBackdrop.vue";
 import { setupRootWatchers } from "./features/shell/rootWatchers.js";
 import ShellNavigation from "./features/shell/ShellNavigation.vue";
 import { createWorkbenchRuntime } from "./features/shell/workbenchRuntime.js";

@@ -7,12 +7,14 @@
         ui.modelManagement.view === 'list' ||
         ui.modelManagement.view === 'picker' ||
         ui.modelManagement.view === 'editor' ||
-        ui.modelManagement.view === 'usage'
+        ui.modelManagement.view === 'usage',
+      'models-shell-ledger': ui.modelManagement.view === 'list',
+      'models-shell-usage': ui.modelManagement.view === 'usage'
     }"
   >
     <section v-if="ui.modelManagement.view === 'list'" class="models-hero">
       <div>
-        <p class="feature-kicker">Model Management</p>
+        <p class="feature-kicker">模型名册</p>
         <p class="models-title">模型管理</p>
       </div>
       <div class="models-hero-metrics" aria-label="模型配置概览">
@@ -50,7 +52,7 @@
       <section v-if="ui.modelManagement.view === 'list'" class="model-section">
         <div class="model-section-head">
           <div>
-            <p class="feature-kicker">Configured</p>
+            <p class="feature-kicker">已配置</p>
             <p class="model-section-title">已配置列表</p>
           </div>
 
@@ -153,14 +155,14 @@
                   </p>
                   <div class="model-card-capabilities" aria-label="接口能力">
                     <span class="model-card-mode">
-                      {{ profile.apiFormat === "responses" ? "RESPONSES" : "CHAT" }}
+                      {{ profile.apiFormat === "responses" ? "Responses" : "Chat" }}
                     </span>
                     <span class="model-card-mode" :class="{ 'is-sync': profile.supportsStreaming === false }">
-                      {{ profile.supportsStreaming === false ? "SYNC" : "STREAM" }}
+                      {{ profile.supportsStreaming === false ? "标准" : "流式" }}
                     </span>
                     <span class="model-card-health">
                       <i aria-hidden="true"></i>
-                      READY
+                      已就绪
                     </span>
                   </div>
                 </div>
@@ -168,16 +170,23 @@
 
               <div class="model-card-actions model-card-actions-inline">
                 <div v-if="hasModelBalanceQuery(profile)" class="model-balance-widget">
-                  <div class="model-balance-widget-head">
-                    <span class="model-balance-time">
-                      {{
-                        isModelBalanceRefreshing(profile.id)
-                          ? "查询中..."
-                          : getModelBalanceSnapshot(profile)?.queriedAt
-                            ? `更新于 ${formatLocalDateTime(getModelBalanceSnapshot(profile).queriedAt)}`
-                            : "未查询"
-                      }}
+                  <span class="model-balance-time">
+                    {{
+                      isModelBalanceRefreshing(profile.id)
+                        ? "查询中..."
+                        : getModelBalanceSnapshot(profile)?.queriedAt
+                          ? `更新于 ${formatLocalDateTime(getModelBalanceSnapshot(profile).queriedAt)}`
+                          : "未查询"
+                    }}
+                  </span>
+                  <p v-if="getModelBalanceSnapshot(profile)" class="model-balance-widget-copy">
+                    <span class="model-balance-used">已使用 {{ formatBalanceNumber(getModelBalanceSnapshot(profile).used) }}</span>
+                    <span class="model-balance-remaining">
+                      剩余 {{ formatBalanceNumber(getModelBalanceSnapshot(profile).remaining) }} {{ getModelBalanceSnapshot(profile).unit }}
                     </span>
+                  </p>
+                  <p v-else class="model-balance-widget-placeholder">点击刷新查询余额</p>
+                  <div class="model-balance-widget-actions">
                     <button
                       type="button"
                       class="model-icon-button model-balance-refresh-button model-balance-stats-button"
@@ -199,20 +208,6 @@
                       <GIcon name="refresh" />
                     </button>
                   </div>
-
-                  <p v-if="getModelBalanceSnapshot(profile)" class="model-balance-widget-copy">
-                    <span class="model-balance-used">已使用：{{ formatBalanceNumber(getModelBalanceSnapshot(profile).used) }}</span>
-                    <span class="model-balance-remaining">
-                      剩余：{{ formatBalanceNumber(getModelBalanceSnapshot(profile).remaining) }} {{ getModelBalanceSnapshot(profile).unit }}
-                    </span>
-                  </p>
-
-                  <p v-else class="model-balance-widget-placeholder">点击刷新查询余额</p>
-                </div>
-
-                <div v-else class="model-balance-widget model-balance-widget-empty" aria-hidden="true">
-                  <span>Telemetry</span>
-                  <strong>未配置</strong>
                 </div>
 
                 <div class="model-card-command-cluster" aria-label="模型操作">
@@ -312,7 +307,7 @@
             <section class="model-usage-chart-card">
               <div class="model-usage-card-head">
                 <div>
-                  <p class="feature-kicker">Daily Usage</p>
+                  <p class="feature-kicker">用量记录</p>
                   <p class="model-section-title">近 30 天每日用量</p>
                 </div>
                 <button

@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import type { WeeklyProgressRecord } from "../../shared/src/index.js";
-import { listWeeklyProgress, listWorkflowLibrary } from "./repository.js";
+import { listModelBalanceHistory, listWeeklyProgress, listWorkflowLibrary } from "./repository.js";
 
 function toDateKey(date: Date): string {
   const year = date.getFullYear();
@@ -240,6 +240,78 @@ test("listWorkflowLibrary removes empty Yahoo finance candles from cached snapsh
     assert.deepEqual(
       financeBrief.lastSnapshot.quote.points.map((point) => point.time),
       ["2026-07-13T01:02:00.000Z"]
+    );
+  } finally {
+    if (previousDataRoot === undefined) {
+      delete process.env.GORDON_DATA_ROOT;
+    } else {
+      process.env.GORDON_DATA_ROOT = previousDataRoot;
+    }
+
+    await rm(dataRoot, { recursive: true, force: true });
+  }
+});
+
+test("listModelBalanceHistory filters invalid quota snapshots", async () => {
+  const previousDataRoot = process.env.GORDON_DATA_ROOT;
+  const dataRoot = await mkdtemp(path.join(os.tmpdir(), "gordon-model-balance-history-"));
+
+  process.env.GORDON_DATA_ROOT = dataRoot;
+
+  try {
+    const historyFilePath = path.join(dataRoot, "workbench", "model-balance-history.json");
+
+    await mkdir(path.dirname(historyFilePath), { recursive: true });
+    await writeFile(
+      historyFilePath,
+      `${JSON.stringify(
+        [
+          {
+            id: "valid_after_quota_change",
+            profileId: "model_test",
+            profileName: "测试模型",
+            provider: "openai_like",
+            model: "gpt-test",
+            snapshot: {
+              remaining: 1606.236,
+              used: 393.764,
+              total: 2000,
+              unit: "USD",
+              queriedAt: "2026-07-30T12:31:59.439Z"
+            },
+            source: "manual",
+            recordedAt: "2026-07-30T12:31:59.439Z",
+            updatedAt: "2026-07-30T12:31:59.439Z"
+          },
+          {
+            id: "invalid_negative_used",
+            profileId: "model_test",
+            profileName: "测试模型",
+            provider: "openai_like",
+            model: "gpt-test",
+            snapshot: {
+              remaining: 1606.236,
+              used: -606.236,
+              total: 1000,
+              unit: "USD",
+              queriedAt: "2026-07-30T12:31:24.053Z"
+            },
+            source: "manual",
+            recordedAt: "2026-07-30T12:31:24.053Z",
+            updatedAt: "2026-07-30T12:31:24.053Z"
+          }
+        ],
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+
+    const history = await listModelBalanceHistory("model_test");
+
+    assert.deepEqual(
+      history.map((entry) => entry.id),
+      ["valid_after_quota_change"]
     );
   } finally {
     if (previousDataRoot === undefined) {
